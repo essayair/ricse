@@ -1,0 +1,317 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>系统总览 · 萤石产业链平台</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="index.html" class="nav-item-top active"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="logistics/index.html" class="nav-item">运单管理</a>
+      <a href="logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="inventory/index.html" class="nav-item">在库总览</a>
+      <a href="logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="quality/index.html" class="nav-item">质检单管理</a>
+      <a href="monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="master/index.html#material" class="nav-item">物料品类</a>
+      <a href="master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="master/index.html#price" class="nav-item">价格基准</a>
+      <a href="master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="org/index.html" class="nav-item">公司维护</a>
+      <a href="org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="org/index.html#group" class="nav-item">部门组</a>
+      <a href="org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<!-- ── Main ── -->
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb"><span class="bc-cur">系统总览</span></div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="icon-btn">⚙</div>
+      <div class="user-chip">
+        <div class="avatar">运</div>
+        <span>运营管理员</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- Header -->
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">系统总览</div>
+        <div class="page-desc">2026年6月10日 · 数据更新于 09:32 &nbsp;|&nbsp; 玉门运营基地</div>
+      </div>
+      <div class="page-actions">
+        <a href="caixiao/index.html"><button class="btn btn-default">📋 查看合同</button></a>
+        <a href="caixiao/contract-new.html"><button class="btn btn-primary">+ 新建合同</button></a>
+      </div>
+    </div>
+
+    <!-- 异常告警条 -->
+    <div class="alert alert-danger mb-4">
+      <span>🚨</span>
+      <div>
+        <strong>待处理告警 3 条：</strong>
+        <span style="margin-left:8px">甘A·12345 磅差超限（进出差 0.8%）· </span>
+        <span>HT-2026003 质检熔断待协商 · </span>
+        <span>甘B·66789 在途超时 2.5 小时</span>
+        &nbsp;&nbsp;<span class="link">立即处理 →</span>
+      </div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-icon ic-blue">📥</div>
+        <div class="stat-body">
+          <div class="stat-label">本月采购量</div>
+          <div class="stat-val">2,450<span class="stat-unit">吨</span></div>
+          <div class="stat-note note-up">↑ 较上月 +12.3%</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-amber">🚛</div>
+        <div class="stat-body">
+          <div class="stat-label">当前在途车辆</div>
+          <div class="stat-val">12<span class="stat-unit">辆</span></div>
+          <div class="stat-note note-neutral">今日新增 3 辆发车</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-green">📦</div>
+        <div class="stat-body">
+          <div class="stat-label">当前库存总量</div>
+          <div class="stat-val">890<span class="stat-unit">吨</span></div>
+          <div class="stat-note note-down">↓ 较昨日 −45 吨</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-red">⚠</div>
+        <div class="stat-body">
+          <div class="stat-label">待处理告警</div>
+          <div class="stat-val">3<span class="stat-unit">条</span></div>
+          <div class="stat-note note-warn">磅差 2 · 质检熔断 1</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 业务主流程 -->
+    <div class="card mb-5">
+      <div class="card-hd">
+        <span class="card-title">业务主流程 — 今日进度</span>
+        <span class="text-sm text-muted">2026-06-10</span>
+      </div>
+      <div class="card-body">
+        <div class="flow">
+          <div class="flow-step">
+            <div class="flow-circle" style="background:#eff6ff">📋</div>
+            <div class="flow-label">采销订单</div>
+            <div class="flow-sub text-primary fw-700">5 单执行中</div>
+          </div>
+          <div class="flow-arr">→</div>
+          <div class="flow-step">
+            <div class="flow-circle" style="background:#fff7ed">🚛</div>
+            <div class="flow-label">物流运输</div>
+            <div class="flow-sub text-warning fw-700">12 车在途</div>
+          </div>
+          <div class="flow-arr">→</div>
+          <div class="flow-step">
+            <div class="flow-circle" style="background:#f0fdf4">⚖</div>
+            <div class="flow-label">过磅称重</div>
+            <div class="flow-sub text-muted fw-700">今日 8 次</div>
+          </div>
+          <div class="flow-arr">→</div>
+          <div class="flow-step">
+            <div class="flow-circle" style="background:#fdf4ff">🔬</div>
+            <div class="flow-label">质检化验</div>
+            <div class="flow-sub text-warning fw-700">3 批待检</div>
+          </div>
+          <div class="flow-arr">→</div>
+          <div class="flow-step">
+            <div class="flow-circle" style="background:#f0fdf4">📦</div>
+            <div class="flow-label">入库存储</div>
+            <div class="flow-sub text-success fw-700">890 吨在库</div>
+          </div>
+          <div class="flow-arr">→</div>
+          <div class="flow-step">
+            <div class="flow-circle" style="background:#fefce8">💰</div>
+            <div class="flow-label">价款结算</div>
+            <div class="flow-sub text-muted fw-700">2 单待审</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模块状态 + 最近动态 -->
+    <div class="g2">
+      <!-- 模块状态 -->
+      <div class="card">
+        <div class="card-hd"><span class="card-title">模块状态</span></div>
+        <div class="card-body">
+          <div class="mod-grid">
+            <a href="caixiao/index.html" class="mod-card">
+              <div class="mod-card-hd">
+                <div class="mod-icon ic-blue">📋</div>
+                <div><div class="mod-name">采销系统</div><div class="mod-desc">合同 / 订单 / 结算</div></div>
+              </div>
+              <div class="mod-stats">
+                <div class="mod-stat"><div class="ms-val">8</div><div class="ms-label">合同执行中</div></div>
+                <div class="mod-stat"><div class="ms-val">5</div><div class="ms-label">订单待发货</div></div>
+              </div>
+            </a>
+            <a href="logistics/dispatch.html" class="mod-card">
+              <div class="mod-card-hd">
+                <div class="mod-icon ic-amber">🚛</div>
+                <div><div class="mod-name">物流管理</div><div class="mod-desc">调度 / 运单 / 结算</div></div>
+              </div>
+              <div class="mod-stats">
+                <div class="mod-stat"><div class="ms-val">12</div><div class="ms-label">在途</div></div>
+                <div class="mod-stat"><div class="ms-val text-danger">1</div><div class="ms-label">超时告警</div></div>
+              </div>
+            </a>
+            <a href="inventory/index.html" class="mod-card">
+              <div class="mod-card-hd">
+                <div class="mod-icon ic-green">📦</div>
+                <div><div class="mod-name">库存管理</div><div class="mod-desc">批次 / 库位 / 盘点</div></div>
+              </div>
+              <div class="mod-stats">
+                <div class="mod-stat"><div class="ms-val">890</div><div class="ms-label">吨在库</div></div>
+                <div class="mod-stat"><div class="ms-val">14</div><div class="ms-label">批次</div></div>
+              </div>
+            </a>
+            <a href="quality/index.html" class="mod-card">
+              <div class="mod-card-hd">
+                <div class="mod-icon" style="background:#fdf4ff">🔬</div>
+                <div><div class="mod-name">质检化验</div><div class="mod-desc">取样 / 报告 / 熔断</div></div>
+              </div>
+              <div class="mod-stats">
+                <div class="mod-stat"><div class="ms-val text-warning">3</div><div class="ms-label">待检</div></div>
+                <div class="mod-stat"><div class="ms-val text-danger">1</div><div class="ms-label">熔断处理</div></div>
+              </div>
+            </a>
+            <a href="weighbridge/index.html" class="mod-card">
+              <div class="mod-card-hd">
+                <div class="mod-icon ic-blue">⚖</div>
+                <div><div class="mod-name">地磅管理</div><div class="mod-desc">磅单 / 防作弊</div></div>
+              </div>
+              <div class="mod-stats">
+                <div class="mod-stat"><div class="ms-val">8</div><div class="ms-label">今日磅单</div></div>
+                <div class="mod-stat"><div class="ms-val text-danger">2</div><div class="ms-label">磅差异常</div></div>
+              </div>
+            </a>
+            <a href="monitor/index.html" class="mod-card">
+              <div class="mod-card-hd">
+                <div class="mod-icon" style="background:#1e293b;color:#94a3b8">📹</div>
+                <div><div class="mod-name">监控录像</div><div class="mod-desc">实时 / 存证</div></div>
+              </div>
+              <div class="mod-stats">
+                <div class="mod-stat"><div class="ms-val">6</div><div class="ms-label">在线摄像头</div></div>
+                <div class="mod-stat"><div class="ms-val text-success">正常</div><div class="ms-label">系统状态</div></div>
+              </div>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 最近动态 -->
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">最近动态</span>
+          <span class="link text-sm">全部 →</span>
+        </div>
+        <div class="card-body">
+          <div class="timeline">
+            <div class="tl-item">
+              <div class="tl-dot err"></div>
+              <div class="tl-time">09:28</div>
+              <div class="tl-text">🚨 甘A·12345 磅差超限，净重偏差 0.8%</div>
+              <div class="tl-sub">地磅管理 · 需要人工复核</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot warn"></div>
+              <div class="tl-time">08:55</div>
+              <div class="tl-text">⚠ HT-2026003 质检熔断，水分超标 0.3%</div>
+              <div class="tl-sub">质检化验 · 待采销协商处理</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot done"></div>
+              <div class="tl-time">08:30</div>
+              <div class="tl-text">✅ 批次 PC-0610-03 完成入库，净重 68.5 吨</div>
+              <div class="tl-sub">库存管理 · 玉门堆场 A-03 库位</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot done"></div>
+              <div class="tl-time">08:12</div>
+              <div class="tl-text">✅ 甘B·88890 完成过磅，净重 72.4 吨</div>
+              <div class="tl-sub">地磅管理 · 关联运单 WB-20260610-06</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot"></div>
+              <div class="tl-time">07:45</div>
+              <div class="tl-text">📋 合同 HT-2026007 审核通过，已生成采购订单</div>
+              <div class="tl-sub">采销系统 · 玉门众鑫矿业 · 萤石粉97% · 200吨</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot done"></div>
+              <div class="tl-time">07:20</div>
+              <div class="tl-text">🚛 3 辆车从玉门出发，预计 14:00 到达巨化</div>
+              <div class="tl-sub">物流管理 · 销售订单 SO-20260610-002</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot idle"></div>
+              <div class="tl-time">昨日 18:30</div>
+              <div class="tl-text">💰 结算单 STL-2026-019 财务审核完成</div>
+              <div class="tl-sub">采销系统 · 巨化集团 · 尾款 ¥188,400</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- /main -->
+</div><!-- /app-layout -->
+</body>
+</html>

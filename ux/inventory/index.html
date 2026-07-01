@@ -1,0 +1,425 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>库存管理 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.stock-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.stock-fill { height: 100%; border-radius: 4px; background: var(--primary); }
+.stock-fill.warn { background: var(--warning); }
+.stock-fill.danger { background: var(--danger); }
+.batch-status { display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="index.html" class="nav-item active">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>库存管理</span><span class="bc-sep">›</span>
+      <span class="bc-cur">在库总览</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">库存管理 — 在库总览</div>
+        <div class="page-desc">以批次为核心；入库 / 出库 / 移库 / 盘点 · 全程可追溯</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default">📊 发起盘点</button>
+        <button class="btn btn-default">↔ 移库登记</button>
+        <a href="inbound-new.html"><button class="btn btn-primary">+ 手动入库</button></a>
+      </div>
+    </div>
+
+    <!-- 库存汇总 -->
+    <div class="stat-grid mb-5">
+      <div class="stat-card">
+        <div class="stat-icon ic-green">📦</div>
+        <div class="stat-body">
+          <div class="stat-label">在库总量</div>
+          <div class="stat-val">890<span class="stat-unit">吨</span></div>
+          <div class="stat-note note-down">↓ 今日出库 45 吨</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-blue">🔖</div>
+        <div class="stat-body">
+          <div class="stat-label">批次数</div>
+          <div class="stat-val">14<span class="stat-unit">批</span></div>
+          <div class="stat-note note-neutral">今日新增 2 批</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-amber">⚠</div>
+        <div class="stat-body">
+          <div class="stat-label">质检待确认</div>
+          <div class="stat-val">2<span class="stat-unit">批</span></div>
+          <div class="stat-note note-warn">需质检结论后方可出库</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:#fdf4ff">📐</div>
+        <div class="stat-body">
+          <div class="stat-label">库位使用率</div>
+          <div class="stat-val">62<span class="stat-unit">%</span></div>
+          <div class="stat-note note-neutral">A区 78% · B区 45%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 库位占用图 -->
+    <div class="g2 mb-5">
+      <div class="card">
+        <div class="card-hd"><span class="card-title">仓库库位占用</span></div>
+        <div class="card-body">
+          <div style="margin-bottom:16px">
+            <div class="flex-between mb-3">
+              <span class="fw-700">玉门堆场 A 区</span>
+              <span class="text-sm text-muted">容量 600吨</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+              <div style="background:var(--primary-bg);border:1px solid var(--primary-border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">A-01</div>
+                <div style="font-size:18px;font-weight:800;color:var(--primary)">145<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">萤石粉97%</div>
+                <div class="stock-bar"><div class="stock-fill" style="width:96%"></div></div>
+              </div>
+              <div style="background:var(--primary-bg);border:1px solid var(--primary-border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">A-02</div>
+                <div style="font-size:18px;font-weight:800;color:var(--primary)">120<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">萤石粉97%</div>
+                <div class="stock-bar"><div class="stock-fill" style="width:80%"></div></div>
+              </div>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">A-03</div>
+                <div style="font-size:18px;font-weight:800;color:var(--text)">68<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">萤石粉97%</div>
+                <div class="stock-bar"><div class="stock-fill" style="width:45%"></div></div>
+              </div>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">A-04</div>
+                <div style="font-size:18px;font-weight:800;color:var(--text)">95<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">萤石粉95%</div>
+                <div class="stock-bar"><div class="stock-fill" style="width:63%"></div></div>
+              </div>
+              <div style="background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">A-05</div>
+                <div style="font-size:18px;font-weight:800;color:var(--warning)">42<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">待质检</div>
+                <div class="stock-bar"><div class="stock-fill warn" style="width:28%"></div></div>
+              </div>
+              <div style="background:var(--surface-2);border:1px dashed var(--border);border-radius:var(--radius);padding:10px;text-align:center;color:var(--text-3)">
+                <div class="text-sm">A-06</div>
+                <div style="font-size:14px;margin-top:4px">空置</div>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div>
+            <div class="flex-between mb-3">
+              <span class="fw-700">玉门堆场 B 区</span>
+              <span class="text-sm text-muted">容量 800吨</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">B-01</div>
+                <div style="font-size:18px;font-weight:800">180<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">萤石粉90%</div>
+                <div class="stock-bar"><div class="stock-fill" style="width:60%"></div></div>
+              </div>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">B-02</div>
+                <div style="font-size:18px;font-weight:800">110<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">萤石块85%</div>
+                <div class="stock-bar"><div class="stock-fill" style="width:37%"></div></div>
+              </div>
+              <div style="background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:var(--radius);padding:10px;text-align:center">
+                <div class="text-sm fw-700">B-03</div>
+                <div style="font-size:18px;font-weight:800;color:var(--warning)">30<span style="font-size:12px;font-weight:400">吨</span></div>
+                <div class="text-xs text-muted">待质检</div>
+                <div class="stock-bar"><div class="stock-fill warn" style="width:10%"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 物料分布 -->
+      <div class="card">
+        <div class="card-hd"><span class="card-title">在库物料分布</span></div>
+        <div class="card-body">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div>
+              <div class="flex-between mb-2">
+                <span class="fw-700">萤石粉 CaF₂≥97%</span>
+                <span style="color:var(--primary);font-weight:700">333 吨</span>
+              </div>
+              <div class="stock-bar" style="height:10px"><div class="stock-fill" style="width:74.5%"></div></div>
+              <div class="flex-between text-xs text-muted mt-2">
+                <span>A-01 · A-02 · A-03 三个库位</span>
+                <span>37.4% 占比</span>
+              </div>
+            </div>
+            <div>
+              <div class="flex-between mb-2">
+                <span class="fw-700">萤石粉 CaF₂≥95%</span>
+                <span style="color:var(--primary);font-weight:700">95 吨</span>
+              </div>
+              <div class="stock-bar" style="height:10px"><div class="stock-fill" style="width:21.3%"></div></div>
+              <div class="flex-between text-xs text-muted mt-2">
+                <span>A-04 库位</span>
+                <span>10.7% 占比</span>
+              </div>
+            </div>
+            <div>
+              <div class="flex-between mb-2">
+                <span class="fw-700">萤石粉 CaF₂≥90%</span>
+                <span style="color:var(--primary);font-weight:700">180 吨</span>
+              </div>
+              <div class="stock-bar" style="height:10px"><div class="stock-fill" style="width:40.3%"></div></div>
+              <div class="flex-between text-xs text-muted mt-2">
+                <span>B-01 库位</span>
+                <span>20.2% 占比</span>
+              </div>
+            </div>
+            <div>
+              <div class="flex-between mb-2">
+                <span class="fw-700">萤石块 CaF₂≥85%</span>
+                <span style="color:var(--text);font-weight:700">110 吨</span>
+              </div>
+              <div class="stock-bar" style="height:10px"><div class="stock-fill" style="width:24.6%"></div></div>
+              <div class="flex-between text-xs text-muted mt-2">
+                <span>B-02 库位</span>
+                <span>12.4% 占比</span>
+              </div>
+            </div>
+            <div>
+              <div class="flex-between mb-2">
+                <span class="fw-700">待质检（暂锁定）</span>
+                <span style="color:var(--warning);font-weight:700">72 吨</span>
+              </div>
+              <div class="stock-bar" style="height:10px"><div class="stock-fill warn" style="width:16.1%"></div></div>
+              <div class="flex-between text-xs text-muted mt-2">
+                <span>A-05 · B-03 库位</span>
+                <span>8.1% 占比</span>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="flex-between">
+            <span class="fw-700">合计</span>
+            <span style="font-size:20px;font-weight:800;color:var(--primary)">890 吨</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批次列表 -->
+    <div class="card">
+      <div class="card-hd">
+        <span class="card-title">批次明细</span>
+        <div class="flex-c gap-2">
+          <select class="filter-select" style="padding:4px 10px;font-size:12px">
+            <option>全部物料</option>
+            <option>萤石粉97%</option>
+            <option>萤石粉95%</option>
+          </select>
+          <select class="filter-select" style="padding:4px 10px;font-size:12px">
+            <option>全部状态</option>
+            <option>可用</option>
+            <option>待质检</option>
+            <option>锁定</option>
+          </select>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="data-tbl">
+          <thead>
+            <tr>
+              <th>批次号</th>
+              <th>物料</th>
+              <th>来源合同</th>
+              <th>供应商</th>
+              <th>入库日期</th>
+              <th>库位</th>
+              <th>入库量</th>
+              <th>当前余量</th>
+              <th>品位(%)</th>
+              <th>水分(%)</th>
+              <th>质检结论</th>
+              <th>批次状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tbl-link">PC-0610-03</span></td>
+              <td>萤石粉97%</td>
+              <td><a href="../caixiao/index.html" class="tbl-link">HT-2026-001</a></td>
+              <td>玉门兴旺矿业</td>
+              <td>2026-06-10</td>
+              <td>A-03</td>
+              <td>68.5 吨</td>
+              <td>68.5 吨</td>
+              <td>97.3%</td>
+              <td>0.3%</td>
+              <td><span class="badge b-success">合格</span></td>
+              <td><span class="badge b-success">可用</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs">出库</button>
+                <button class="btn btn-default btn-xs">详情</button>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="tbl-link">PC-0610-02</span></td>
+              <td>萤石粉97%</td>
+              <td><a href="../caixiao/index.html" class="tbl-link">HT-2026-001</a></td>
+              <td>玉门兴旺矿业</td>
+              <td>2026-06-10</td>
+              <td>A-05</td>
+              <td>42.0 吨</td>
+              <td>42.0 吨</td>
+              <td>—</td>
+              <td>—</td>
+              <td><span class="badge b-warning">待质检</span></td>
+              <td><span class="badge b-warning">锁定</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-primary btn-xs">发起质检</button>
+                <button class="btn btn-default btn-xs">详情</button>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="tbl-link">PC-0609-05</span></td>
+              <td>萤石粉90%</td>
+              <td><a href="../caixiao/index.html" class="tbl-link">HT-2026-004</a></td>
+              <td>酒泉盛源矿业</td>
+              <td>2026-06-09</td>
+              <td>B-03</td>
+              <td>30.0 吨</td>
+              <td>30.0 吨</td>
+              <td>—</td>
+              <td>—</td>
+              <td><span class="badge b-warning">待质检</span></td>
+              <td><span class="badge b-warning">锁定</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-primary btn-xs">发起质检</button>
+                <button class="btn btn-default btn-xs">详情</button>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="tbl-link">PC-0608-04</span></td>
+              <td>萤石粉97%</td>
+              <td><a href="../caixiao/index.html" class="tbl-link">HT-2026-001</a></td>
+              <td>玉门兴旺矿业</td>
+              <td>2026-06-08</td>
+              <td>A-01</td>
+              <td>145.0 吨</td>
+              <td>145.0 吨</td>
+              <td>97.5%</td>
+              <td>0.2%</td>
+              <td><span class="badge b-success">合格</span></td>
+              <td><span class="badge b-success">可用</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs">出库</button>
+                <button class="btn btn-default btn-xs">详情</button>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="tbl-link">PC-0607-03</span></td>
+              <td>萤石粉97%</td>
+              <td><a href="../caixiao/index.html" class="tbl-link">HT-2026-001</a></td>
+              <td>玉门兴旺矿业</td>
+              <td>2026-06-07</td>
+              <td>A-02</td>
+              <td>120.0 吨</td>
+              <td>120.0 吨</td>
+              <td>97.1%</td>
+              <td>0.4%</td>
+              <td><span class="badge b-success">合格</span></td>
+              <td><span class="badge b-success">可用</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs">出库</button>
+                <button class="btn btn-default btn-xs">详情</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-ft">
+        <span class="text-sm text-muted">共 14 批次</span>
+        <div class="pager">
+          <div class="pg-btn active">1</div>
+          <div class="pg-btn">2</div>
+          <div class="pg-btn">»</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+</body>
+</html>

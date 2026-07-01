@@ -1,0 +1,480 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>磅单详情 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.weight-panel {
+  background:#0f172a;border-radius:var(--radius-lg);padding:24px 32px;
+  display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:0;align-items:center;
+}
+.wp-item { text-align:center;padding:0 16px }
+.wp-label { font-size:11px;color:#94a3b8;margin-bottom:6px;letter-spacing:.04em }
+.wp-val { font-size:38px;font-weight:800;font-variant-numeric:tabular-nums;color:#f1f5f9;line-height:1 }
+.wp-val.green { color:#34d399 }
+.wp-val.red { color:#f87171 }
+.wp-val.yellow { color:#fbbf24 }
+.wp-unit { font-size:14px;color:#64748b;margin-top:4px }
+.wp-sep { width:1px;background:#1e293b;height:60px }
+
+.diff-badge-lg { display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius);font-size:18px;font-weight:800 }
+.diff-ok { background:var(--success-bg);color:var(--success);border:1px solid var(--success-border) }
+.diff-warn { background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border) }
+
+.timeline { display:flex;flex-direction:column;gap:0 }
+.tl-item { display:flex;gap:16px;padding-bottom:20px;position:relative }
+.tl-dot { width:10px;height:10px;border-radius:50%;background:var(--primary);flex-shrink:0;margin-top:4px;position:relative;z-index:1 }
+.tl-dot.done { background:var(--success) }
+.tl-dot.warn { background:var(--danger) }
+.tl-dot.pending { background:var(--border) }
+.tl-item::before { content:'';position:absolute;left:4px;top:14px;bottom:0;width:1px;background:var(--border) }
+.tl-item:last-child::before { display:none }
+.tl-body { flex:1 }
+.tl-time { font-size:11px;color:var(--text-3) }
+.tl-title { font-size:13px;font-weight:600;margin-bottom:2px }
+.tl-desc { font-size:12px;color:var(--text-3) }
+
+.frame-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:10px }
+.frame-box { background:#0f172a;border-radius:var(--radius);aspect-ratio:4/3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:.15s;border:1px solid #1e293b }
+.frame-box:hover { background:#1e293b }
+.frame-box.warn-frame { border-color:var(--danger-border) }
+.hash-mono { font-family:monospace;font-size:11px;color:var(--success);background:var(--surface-2);padding:5px 8px;border-radius:4px;word-break:break-all }
+
+.info-row { display:flex;padding:8px 0;border-bottom:1px solid var(--border) }
+.info-row:last-child { border-bottom:none }
+.info-label { width:120px;font-size:12px;color:var(--text-3);flex-shrink:0 }
+.info-val { font-size:13px;font-weight:500 }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="index.html" class="nav-item active">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html" class="link">磅单管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="bc-id">磅单详情</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">磅</div><span>郑学（过磅员）</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <!-- 页头 -->
+    <div class="page-hd mb-5">
+      <div class="page-hd-left">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+          <div class="page-title" id="hd-id">WS-20260610-007</div>
+          <span id="hd-badge"></span>
+          <span id="hd-source"></span>
+        </div>
+        <div class="page-desc" id="hd-desc"></div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">← 返回列表</button></a>
+        <button class="btn btn-default" id="btn-image" onclick="openImages()">📷 查看影像</button>
+        <button class="btn btn-primary" id="btn-qc" onclick="goQC()">触发质检 →</button>
+      </div>
+    </div>
+
+    <!-- 异常告警 -->
+    <div id="error-alert" class="alert alert-danger mb-4" style="display:none">
+      <span>🚨</span>
+      <div>
+        <strong>磅差异常：</strong><span id="error-msg"></span>
+        磅单已锁定，需完成人工复核后方可用于结算。
+        <button class="btn btn-danger btn-sm" style="margin-left:8px" onclick="openReviewModal()">立即复核</button>
+      </div>
+    </div>
+
+    <!-- 重量大屏 -->
+    <div class="card mb-4">
+      <div class="card-hd"><span class="card-title">重量数据</span><span class="text-sm text-muted" id="weigh-time-sub"></span></div>
+      <div class="card-body">
+        <div class="weight-panel">
+          <div class="wp-item">
+            <div class="wp-label">毛重（含车厢）</div>
+            <div class="wp-val" id="wp-gross">—</div>
+            <div class="wp-unit">吨</div>
+          </div>
+          <div class="wp-sep"></div>
+          <div class="wp-item">
+            <div class="wp-label">皮重（空车）</div>
+            <div class="wp-val" id="wp-tare">—</div>
+            <div class="wp-unit">吨</div>
+          </div>
+          <div class="wp-sep"></div>
+          <div class="wp-item">
+            <div class="wp-label">净重（结算依据）</div>
+            <div class="wp-val green" id="wp-net">—</div>
+            <div class="wp-unit">吨</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;margin-top:16px">
+          <div class="text-sm text-muted">磅差（进出差率）：</div>
+          <div class="diff-badge-lg" id="diff-badge">—</div>
+          <div class="text-sm text-muted">阈值：±0.5%，超限自动锁定并转人工复核</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g2 mb-4">
+      <!-- 基本信息 -->
+      <div class="card">
+        <div class="card-hd"><span class="card-title">基本信息</span></div>
+        <div class="card-body">
+          <div class="info-row"><div class="info-label">磅单号</div><div class="info-val" id="info-id" style="font-family:monospace"></div></div>
+          <div class="info-row"><div class="info-label">车牌号</div><div class="info-val" id="info-plate"></div></div>
+          <div class="info-row"><div class="info-label">关联运单</div><div class="info-val"><a id="info-wb" href="#" class="tbl-link"></a></div></div>
+          <div class="info-row"><div class="info-label">过磅类型</div><div class="info-val" id="info-type"></div></div>
+          <div class="info-row"><div class="info-label">地磅编号</div><div class="info-val" id="info-scale"></div></div>
+          <div class="info-row"><div class="info-label">过磅时间</div><div class="info-val" id="info-time"></div></div>
+          <div class="info-row"><div class="info-label">操作员</div><div class="info-val" id="info-op"></div></div>
+          <div class="info-row"><div class="info-label">数据来源</div><div class="info-val" id="info-src"></div></div>
+          <div class="info-row"><div class="info-label">关联质检单</div><div class="info-val" id="info-qc">—</div></div>
+        </div>
+      </div>
+
+      <!-- 双磅单对比 -->
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">双磅单对比</span>
+          <span class="text-sm text-muted">我方磅单 vs 供方出发磅单</span>
+        </div>
+        <div class="card-body">
+          <div id="dual-weigh-content">
+            <div class="g2 mb-3">
+              <div style="background:var(--surface-2);border-radius:var(--radius);padding:16px;text-align:center">
+                <div class="text-xs text-muted mb-1">我方到货净重</div>
+                <div style="font-size:24px;font-weight:800;color:var(--primary)" id="dw-mine">—</div>
+                <div class="text-xs text-muted">吨 · 我方 1# 地磅</div>
+              </div>
+              <div style="background:var(--surface-2);border-radius:var(--radius);padding:16px;text-align:center">
+                <div class="text-xs text-muted mb-1">供方出发净重</div>
+                <div style="font-size:24px;font-weight:800;color:var(--text-2)" id="dw-supplier">—</div>
+                <div class="text-xs text-muted">吨 · 供方磅单</div>
+              </div>
+            </div>
+            <div class="info-row"><div class="info-label">差值</div><div class="info-val" id="dw-diff">—</div></div>
+            <div class="info-row"><div class="info-label">差率</div><div class="info-val" id="dw-rate">—</div></div>
+            <div class="info-row" style="border:none"><div class="info-label">结论</div><div class="info-val" id="dw-conclusion">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 关联影像 -->
+    <div class="card mb-4">
+      <div class="card-hd">
+        <span class="card-title">关联影像存证</span>
+        <span class="text-sm text-muted">过磅触发自动抓拍 · SHA256 时间戳哈希</span>
+      </div>
+      <div class="card-body">
+        <div class="frame-grid" id="frame-grid"></div>
+        <div class="hash-mono mt-3" id="hash-display"></div>
+        <div class="flex-c gap-2 mt-3">
+          <button class="btn btn-default btn-sm" onclick="window.location.href='../monitor/index.html'">前往监控录像查看完整存档 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 操作时间线 -->
+    <div class="card">
+      <div class="card-hd"><span class="card-title">操作记录</span></div>
+      <div class="card-body">
+        <div class="timeline" id="timeline"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<!-- 影像弹窗 -->
+<div style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center" id="img-modal" onclick="this.style.display='none'">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);width:560px;padding:28px" onclick="event.stopPropagation()">
+    <div class="card-title mb-3" id="img-modal-title">影像存证</div>
+    <div class="frame-grid" id="img-modal-frames"></div>
+    <div class="hash-mono mt-3" id="img-modal-hash"></div>
+    <div class="flex-c gap-2 mt-4" style="justify-content:flex-end">
+      <button class="btn btn-default" onclick="document.getElementById('img-modal').style.display='none'">关闭</button>
+      <button class="btn btn-default" onclick="window.location.href='../monitor/index.html'">前往监控 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 人工复核弹窗 -->
+<div style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center" id="review-modal" onclick="this.style.display='none'">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);width:480px;padding:28px" onclick="event.stopPropagation()">
+    <div class="card-title mb-1">磅差异常 · 人工复核</div>
+    <div class="text-sm text-muted mb-4" id="review-sub"></div>
+    <div class="alert alert-warn mb-4"><span>⚠</span><div class="text-sm">磅单已锁定，不可用于结算。需完成复核并定责后才可解锁或作废。</div></div>
+    <div class="form-item mb-3">
+      <label class="form-label req">复核结论</label>
+      <select class="form-ctrl">
+        <option>请选择复核结论…</option>
+        <option>磅差在合理范围，确认净重有效</option>
+        <option>需重新过磅（原磅单作废）</option>
+        <option>确认为供应商短量，维权处理</option>
+        <option>设备误差，按参考值修正</option>
+      </select>
+    </div>
+    <div class="form-item mb-3">
+      <label class="form-label req">复核责任人</label>
+      <select class="form-ctrl"><option>陈飞祥（现场负责人）</option><option>郑学（过磅员）</option></select>
+    </div>
+    <div class="form-item mb-4">
+      <label class="form-label">处理说明</label>
+      <textarea class="form-ctrl" rows="3" placeholder="说明磅差原因及处理方式…"></textarea>
+    </div>
+    <div class="flex-c gap-2" style="justify-content:flex-end">
+      <button class="btn btn-default" onclick="document.getElementById('review-modal').style.display='none'">取消</button>
+      <button class="btn btn-danger" onclick="submitReview()">确认复核 · 解锁磅单</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const records = {
+  'WS-20260610-007': {
+    id:'WS-20260610-007', plate:'甘A·55678', wb:'WB-20260610-07', wbDir:'销售发货',
+    type:'进场满载 → 净重计算', scale:'1# 地磅（A区入口）', time:'2026-06-10 08:50',
+    op:'郑学（过磅员）', src:'设备直连', qc:'QC-20260610-001（已出结论：合格）',
+    gross:80.20, tare:12.30, net:67.90, diff:0.1, diffOk:true,
+    supplierNet:68.02,
+    hash:'7d2c91…b340', status:'normal',
+    frames:[
+      {icon:'🚛',label:'进场抓拍 08:50'},
+      {icon:'⚖',label:'称重画面 08:52'},
+      {icon:'✅',label:'出场确认 09:31'},
+    ],
+    timeline:[
+      {dot:'done',time:'08:48',title:'车辆进场',desc:'甘A·55678 到达 1# 地磅入口，触发红外感应'},
+      {dot:'done',time:'08:50',title:'稳定取值完成',desc:'设备直连，5次均值取样，毛重 80.20 吨'},
+      {dot:'done',time:'08:52',title:'磅单生成',desc:'净重 67.90 吨，磅差 0.1%，状态：正常'},
+      {dot:'done',time:'08:52',title:'影像存证完成',desc:'3帧影像已打时间戳 SHA256 哈希'},
+      {dot:'done',time:'09:05',title:'触发质检',desc:'批次 PC-0610-03 质检单已创建，化验员：李化验员'},
+      {dot:'done',time:'10:30',title:'质检结论：合格',desc:'品位 97.3%，水分 0.3%，杂质 0.1%'},
+    ],
+  },
+  'WS-20260610-008': {
+    id:'WS-20260610-008', plate:'甘A·12345', wb:'WB-20260610-06', wbDir:'采购入库',
+    type:'进场满载 → 净重计算', scale:'1# 地磅（A区入口）', time:'2026-06-10 09:12',
+    op:'郑学（过磅员）', src:'设备直连', qc:'未触发（磅单锁定中）',
+    gross:87.50, tare:12.70, net:74.80, diff:0.8, diffOk:false,
+    supplierNet:75.41,
+    hash:'f91ab3…4d88', status:'error',
+    frames:[
+      {icon:'⚠',label:'进场抓拍 09:12',warn:true},
+      {icon:'📋',label:'仪表盘记录',warn:true},
+      {icon:'🔒',label:'锁定存证',warn:true},
+    ],
+    timeline:[
+      {dot:'done',time:'09:10',title:'车辆进场',desc:'甘A·12345 到达 1# 地磅入口'},
+      {dot:'done',time:'09:12',title:'稳定取值完成',desc:'毛重 87.50 吨，皮重 12.70 吨，净重 74.80 吨'},
+      {dot:'warn',time:'09:12',title:'磅差超限警报',desc:'磅差 0.8%，超过阈值 0.5%，磅单自动锁定'},
+      {dot:'warn',time:'09:12',title:'影像存证（异常标记）',desc:'SHA256: f91ab3…4d88，已标记为争议证据'},
+      {dot:'pending',time:'—',title:'等待人工复核',desc:'待现场负责人陈飞祥确认处理方式'},
+    ],
+  },
+  'WS-20260609-012': {
+    id:'WS-20260609-012', plate:'甘C·77890', wb:'WB-20260609-008', wbDir:'采购入库',
+    type:'进场满载 → 净重计算', scale:'1# 地磅（A区入口）', time:'2026-06-09 17:55',
+    op:'郑学（过磅员）', src:'设备直连', qc:'QC-20260610-002（化验中）',
+    gross:81.40, tare:12.60, net:68.80, diff:0.2, diffOk:true,
+    supplierNet:68.94,
+    hash:'a8e3f2…cc91', status:'qc',
+    frames:[
+      {icon:'🚛',label:'进场抓拍 17:55'},
+      {icon:'⚖',label:'称重画面 17:57'},
+      {icon:'✅',label:'出场确认 18:32'},
+    ],
+    timeline:[
+      {dot:'done',time:'17:53',title:'车辆进场',desc:'甘C·77890 到达 1# 地磅入口'},
+      {dot:'done',time:'17:55',title:'稳定取值完成',desc:'净重 68.80 吨，磅差 0.2%，状态：正常'},
+      {dot:'done',time:'17:57',title:'影像存证完成',desc:'SHA256: a8e3f2…cc91'},
+      {dot:'done',time:'18:10',title:'触发质检',desc:'批次 PC-0609-05，化验员：王化验员'},
+      {dot:'pending',time:'进行中',title:'质检进行中',desc:'化验员已取样，正在分析 CaF₂ 含量'},
+    ],
+  },
+};
+
+const urlId = new URLSearchParams(location.search).get('id') || 'WS-20260610-007';
+const r = records[urlId] || records['WS-20260610-007'];
+
+function render() {
+  document.title = r.id + ' · 磅单详情';
+  document.getElementById('bc-id').textContent = r.id;
+  document.getElementById('hd-id').textContent = r.id;
+
+  const badgeMap = {
+    normal:'<span class="badge b-success">正常</span>',
+    error:'<span class="badge b-danger">磅差异常 · 已锁定</span>',
+    qc:'<span class="badge b-info">已触发质检</span>',
+  };
+  document.getElementById('hd-badge').innerHTML = badgeMap[r.status] || '';
+  document.getElementById('hd-source').innerHTML = r.src === '设备直连'
+    ? '<span class="badge b-success">设备直连</span>'
+    : '<span class="badge b-default">人工录入</span>';
+  document.getElementById('hd-desc').textContent =
+    r.plate + ' · ' + r.wb + '（' + r.wbDir + '）· ' + r.time;
+
+  if (r.status === 'error') {
+    document.getElementById('error-alert').style.display = 'flex';
+    document.getElementById('error-msg').textContent = `磅差 ${r.diff}%（阈值 0.5%）。`;
+    document.getElementById('btn-qc').style.display = 'none';
+    document.getElementById('review-sub').textContent = r.id + ' · ' + r.plate + ' · 磅差 ' + r.diff + '%';
+  }
+  if (r.status === 'qc' || r.status === 'normal') {
+    document.getElementById('btn-qc').textContent = r.status === 'normal' ? '触发质检 →' : '查看质检单 →';
+  }
+
+  document.getElementById('wp-gross').textContent = r.gross.toFixed(2);
+  document.getElementById('wp-tare').textContent = r.tare.toFixed(2);
+  document.getElementById('wp-net').textContent = r.net.toFixed(2);
+  document.getElementById('weigh-time-sub').textContent = r.time + ' · ' + r.scale;
+
+  const diffEl = document.getElementById('diff-badge');
+  if (r.diffOk) {
+    diffEl.className = 'diff-badge-lg diff-ok';
+    diffEl.textContent = '± ' + r.diff + '%  ✓ 正常';
+  } else {
+    diffEl.className = 'diff-badge-lg diff-warn';
+    diffEl.textContent = '± ' + r.diff + '%  ⚠ 超限';
+  }
+
+  document.getElementById('info-id').textContent = r.id;
+  document.getElementById('info-plate').textContent = r.plate;
+  document.getElementById('info-wb').textContent = r.wb + '（' + r.wbDir + '）';
+  document.getElementById('info-wb').href = '../logistics/index.html';
+  document.getElementById('info-type').textContent = r.type;
+  document.getElementById('info-scale').textContent = r.scale;
+  document.getElementById('info-time').textContent = r.time;
+  document.getElementById('info-op').textContent = r.op;
+  document.getElementById('info-src').innerHTML = r.src === '设备直连'
+    ? '<span class="badge b-success">设备直连（可信）</span>'
+    : '<span class="badge b-default">人工录入（非可信）</span>';
+  document.getElementById('info-qc').textContent = r.qc;
+
+  // 双磅单
+  document.getElementById('dw-mine').textContent = r.net.toFixed(2);
+  document.getElementById('dw-supplier').textContent = r.supplierNet.toFixed(2);
+  const dDiff = (r.supplierNet - r.net).toFixed(2);
+  const dRate = Math.abs((r.supplierNet - r.net) / r.supplierNet * 100).toFixed(2);
+  document.getElementById('dw-diff').innerHTML = `<span style="color:${Math.abs(dDiff)>0.3?'var(--warning)':'var(--text-1)'}">${dDiff > 0 ? '+' : ''}${dDiff} 吨</span>`;
+  document.getElementById('dw-rate').textContent = dRate + '%';
+  document.getElementById('dw-conclusion').innerHTML = parseFloat(dRate) > 0.5
+    ? '<span class="badge b-danger">偏差超限，需协商</span>'
+    : '<span class="badge b-success">偏差正常</span>';
+
+  // 影像帧
+  const fg = document.getElementById('frame-grid');
+  fg.innerHTML = r.frames.map(f => `<div class="frame-box ${f.warn?'warn-frame':''}" onclick="openImages()">
+    <div style="font-size:30px">${f.icon}</div>
+    <div style="font-size:10px;color:${f.warn?'#f87171':'#94a3b8'}">${f.label}</div>
+  </div>`).join('');
+  document.getElementById('hash-display').textContent = 'SHA256: ' + r.hash + ' · 影像已不可篡改存证';
+
+  // 时间线
+  const tl = document.getElementById('timeline');
+  tl.innerHTML = r.timeline.map(t => `<div class="tl-item">
+    <div class="tl-dot ${t.dot}"></div>
+    <div class="tl-body">
+      <div class="tl-time">${t.time}</div>
+      <div class="tl-title">${t.title}</div>
+      <div class="tl-desc">${t.desc}</div>
+    </div>
+  </div>`).join('');
+}
+
+function openImages() {
+  const modal = document.getElementById('img-modal');
+  document.getElementById('img-modal-title').textContent = r.id + ' · 影像存证';
+  document.getElementById('img-modal-frames').innerHTML = r.frames.map(f =>
+    `<div class="frame-box ${f.warn?'warn-frame':''}">
+      <div style="font-size:30px">${f.icon}</div>
+      <div style="font-size:10px;color:${f.warn?'#f87171':'#94a3b8'}">${f.label}</div>
+    </div>`).join('');
+  document.getElementById('img-modal-hash').textContent = 'SHA256: ' + r.hash;
+  modal.style.display = 'flex';
+}
+
+function openReviewModal() { document.getElementById('review-modal').style.display = 'flex'; }
+function submitReview() {
+  if (confirm('确认提交复核结果？磅单状态将根据结论更新。')) {
+    document.getElementById('review-modal').style.display = 'none';
+    alert('复核完成！磅单状态已更新，相关人员已通知。');
+  }
+}
+
+function goQC() {
+  if (r.status === 'normal') {
+    if (confirm('为磅单 ' + r.id + ' 触发质检任务？\n\n将跳转至新建质检单页面。'))
+      window.location.href = '../quality/inspection-new.html?ws=' + r.id;
+  } else {
+    window.location.href = '../quality/index.html';
+  }
+}
+
+render();
+</script>
+</body>
+</html>

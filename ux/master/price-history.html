@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>价格历史 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:18px 0 12px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.price-filter{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius-lg);margin-bottom:20px}
+.trend-up{color:var(--danger)}
+.trend-dn{color:var(--success)}
+.trend-eq{color:var(--text-3)}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item active">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#price" class="link">价格基准</a><span class="bc-sep">›</span>
+      <span class="bc-cur">价格历史记录</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">价格历史记录</div>
+        <div class="page-desc">按物料和时间段筛选历史价格记录，支持导出</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" onclick="history.back()">返回</button>
+        <button class="btn btn-default" onclick="alert('导出功能：生产环境将导出 Excel')">导出 Excel</button>
+      </div>
+    </div>
+
+    <!-- 趋势图占位 -->
+    <div class="card mb-4">
+      <div class="card-hd">
+        <span class="card-title">价格走势</span>
+        <select id="trend-mat" class="form-ctrl" style="width:200px" onchange="renderChart()">
+          <option value="MAT-001">萤石粉 CaF₂≥97%</option>
+          <option value="MAT-002">萤石粉 CaF₂≥95%</option>
+          <option value="MAT-003">萤石粉 CaF₂≥90%</option>
+          <option value="MAT-004">萤石块 CaF₂≥85%</option>
+        </select>
+      </div>
+      <div class="card-body">
+        <div style="height:200px;background:var(--surface-2);border-radius:var(--radius-lg);display:flex;align-items:flex-end;padding:20px 24px;gap:0;position:relative">
+          <div id="price-chart" style="display:flex;align-items:flex-end;gap:4px;height:100%;width:100%"></div>
+          <div style="position:absolute;top:12px;left:24px;font-size:11px;color:var(--text-3)">元/吨（采购基准价）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="price-filter mb-0">
+      <label class="text-sm fw-700">物料：</label>
+      <select class="form-ctrl" id="filter-mat" style="width:220px" onchange="renderTable()">
+        <option value="">全部物料</option>
+        <option value="MAT-001">萤石粉 CaF₂≥97%</option>
+        <option value="MAT-002">萤石粉 CaF₂≥95%</option>
+        <option value="MAT-003">萤石粉 CaF₂≥90%</option>
+        <option value="MAT-004">萤石块 CaF₂≥85%</option>
+      </select>
+      <label class="text-sm fw-700">时间：</label>
+      <input type="date" class="form-ctrl" id="filter-from" value="2026-01-01" style="width:150px">
+      <span class="text-sm">至</span>
+      <input type="date" class="form-ctrl" id="filter-to" value="2026-06-23" style="width:150px">
+      <button class="btn btn-primary btn-sm" onclick="renderTable()">查询</button>
+      <button class="btn btn-default btn-sm" onclick="resetFilter()">重置</button>
+    </div>
+
+    <div class="card" style="margin-top:0;border-top:0;border-radius:0 0 var(--radius-lg) var(--radius-lg)">
+      <div class="card-body">
+        <table class="data-tbl" id="price-table">
+          <thead>
+            <tr>
+              <th>物料编码</th>
+              <th>物料名称</th>
+              <th>规格</th>
+              <th>生效日期</th>
+              <th>失效日期</th>
+              <th>采购基准价</th>
+              <th>销售基准价</th>
+              <th>价差</th>
+              <th>较上期</th>
+              <th>变更原因</th>
+              <th>维护人</th>
+            </tr>
+          </thead>
+          <tbody id="price-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+const ALL_PRICES = [
+  {matId:'MAT-001',matName:'萤石粉',spec:'CaF₂≥97%',from:'2026-06-01',to:'2026-06-30',buy:1450,sell:1550,reason:'市场行情上调，供应紧张',updater:'运营管理员'},
+  {matId:'MAT-001',matName:'萤石粉',spec:'CaF₂≥97%',from:'2026-05-01',to:'2026-05-31',buy:1400,sell:1500,reason:'5月例行调价',updater:'运营管理员'},
+  {matId:'MAT-001',matName:'萤石粉',spec:'CaF₂≥97%',from:'2026-04-01',to:'2026-04-30',buy:1400,sell:1500,reason:'季度初定价',updater:'运营管理员'},
+  {matId:'MAT-001',matName:'萤石粉',spec:'CaF₂≥97%',from:'2026-03-01',to:'2026-03-31',buy:1380,sell:1480,reason:'原材料成本下降',updater:'运营管理员'},
+  {matId:'MAT-001',matName:'萤石粉',spec:'CaF₂≥97%',from:'2026-02-01',to:'2026-02-28',buy:1420,sell:1520,reason:'春节后行情反弹',updater:'运营管理员'},
+  {matId:'MAT-001',matName:'萤石粉',spec:'CaF₂≥97%',from:'2026-01-01',to:'2026-01-31',buy:1390,sell:1490,reason:'新年定价',updater:'运营管理员'},
+  {matId:'MAT-002',matName:'萤石粉',spec:'CaF₂≥95%',from:'2026-06-01',to:'2026-06-30',buy:1280,sell:1380,reason:'市场行情上调',updater:'运营管理员'},
+  {matId:'MAT-002',matName:'萤石粉',spec:'CaF₂≥95%',from:'2026-05-01',to:'2026-05-31',buy:1250,sell:1350,reason:'5月例行调价',updater:'运营管理员'},
+  {matId:'MAT-002',matName:'萤石粉',spec:'CaF₂≥95%',from:'2026-04-01',to:'2026-04-30',buy:1250,sell:1350,reason:'季度初定价',updater:'运营管理员'},
+  {matId:'MAT-002',matName:'萤石粉',spec:'CaF₂≥95%',from:'2026-03-01',to:'2026-03-31',buy:1220,sell:1320,reason:'原材料成本下降',updater:'运营管理员'},
+  {matId:'MAT-003',matName:'萤石粉',spec:'CaF₂≥90%',from:'2026-06-01',to:'2026-06-30',buy:980,sell:1080,reason:'市场行情上调',updater:'运营管理员'},
+  {matId:'MAT-003',matName:'萤石粉',spec:'CaF₂≥90%',from:'2026-05-01',to:'2026-05-31',buy:950,sell:1050,reason:'5月例行调价',updater:'运营管理员'},
+  {matId:'MAT-004',matName:'萤石块',spec:'CaF₂≥85%',from:'2026-06-01',to:'2026-06-30',buy:780,sell:880,reason:'市场行情上调',updater:'运营管理员'},
+  {matId:'MAT-004',matName:'萤石块',spec:'CaF₂≥85%',from:'2026-05-01',to:'2026-05-31',buy:760,sell:860,reason:'5月例行调价',updater:'运营管理员'},
+  {matId:'MAT-004',matName:'萤石块',spec:'CaF₂≥85%',from:'2026-04-01',to:'2026-04-30',buy:760,sell:860,reason:'季度初定价',updater:'运营管理员'},
+];
+
+function renderTable() {
+  const matFilter = document.getElementById('filter-mat').value;
+  const fromFilter = document.getElementById('filter-from').value;
+  const toFilter = document.getElementById('filter-to').value;
+
+  let rows = ALL_PRICES.filter(p => {
+    if (matFilter && p.matId !== matFilter) return false;
+    if (fromFilter && p.from < fromFilter) return false;
+    if (toFilter && p.to > toFilter) return false;
+    return true;
+  });
+
+  // group by matId for computing trend
+  const byMat = {};
+  ALL_PRICES.forEach(p => { if(!byMat[p.matId]) byMat[p.matId]=[]; byMat[p.matId].push(p); });
+
+  let html = '';
+  rows.forEach(p => {
+    const sameMatList = byMat[p.matId];
+    const idx = sameMatList.findIndex(x => x.from === p.from);
+    const prev = sameMatList[idx+1];
+    let trend = '<span class="trend-eq">—</span>';
+    if (prev) {
+      const diff = p.buy - prev.buy;
+      if (diff > 0) trend = `<span class="trend-up">↑ +${diff}</span>`;
+      else if (diff < 0) trend = `<span class="trend-dn">↓ ${diff}</span>`;
+      else trend = '<span class="trend-eq">持平</span>';
+    }
+    const spread = p.sell - p.buy;
+    html += `<tr>
+      <td><a href="material-detail.html?id=${p.matId}" class="tbl-link">${p.matId}</a></td>
+      <td>${p.matName}</td>
+      <td>${p.spec}</td>
+      <td>${p.from}</td>
+      <td>${p.to}</td>
+      <td class="fw-700">¥${p.buy.toLocaleString()}</td>
+      <td class="fw-700">¥${p.sell.toLocaleString()}</td>
+      <td style="color:var(--text-3)">+${spread}</td>
+      <td>${trend}</td>
+      <td class="text-sm text-muted">${p.reason}</td>
+      <td>${p.updater}</td>
+    </tr>`;
+  });
+  document.getElementById('price-tbody').innerHTML = html || '<tr><td colspan="11" class="text-center text-muted">暂无数据</td></tr>';
+}
+
+function resetFilter() {
+  document.getElementById('filter-mat').value = '';
+  document.getElementById('filter-from').value = '2026-01-01';
+  document.getElementById('filter-to').value = '2026-06-23';
+  renderTable();
+}
+
+function renderChart() {
+  const matId = document.getElementById('trend-mat').value;
+  const data = ALL_PRICES.filter(p => p.matId === matId).slice().reverse();
+  const maxP = Math.max(...data.map(p => p.buy));
+  const minP = Math.min(...data.map(p => p.buy));
+  const range = maxP - minP || 1;
+  document.getElementById('price-chart').innerHTML = data.map(p => {
+    const h = 60 + ((p.buy - minP) / range * 100) | 0;
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+      <div style="font-size:10px;font-weight:700;color:var(--primary)">¥${p.buy}</div>
+      <div style="background:var(--primary);border-radius:4px 4px 0 0;width:100%;height:${h}px;opacity:.75"></div>
+      <div style="font-size:10px;color:var(--text-3)">${p.from.slice(5,7)}月</div>
+    </div>`;
+  }).join('');
+}
+
+// 从URL参数初始化筛选
+const urlParams = new URLSearchParams(location.search);
+const urlMat = urlParams.get('material');
+if (urlMat) {
+  document.getElementById('filter-mat').value = urlMat;
+  document.getElementById('trend-mat').value = urlMat;
+}
+
+renderTable();
+renderChart();
+</script>
+</body>
+</html>

@@ -1,0 +1,367 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>调度看板 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.dispatch-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+.vehicle-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  transition: box-shadow .15s;
+}
+.vehicle-card:hover { box-shadow: var(--shadow); }
+.vehicle-card.alert-card { border-color: var(--danger-border); background: var(--danger-bg); }
+.vehicle-card.warn-card  { border-color: var(--warning-border); background: var(--warning-bg); }
+.vc-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.plate { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing:.05em; }
+.vc-body { font-size: 12.5px; color: var(--text-2); display: flex; flex-direction: column; gap: 5px; }
+.vc-row { display: flex; justify-content: space-between; }
+.vc-label { color: var(--text-3); }
+.vc-val { font-weight: 600; color: var(--text); }
+.vc-progress { height: 4px; background: var(--border); border-radius: 2px; margin: 8px 0 4px; }
+.vc-progress-bar { height: 100%; border-radius: 2px; background: var(--primary); }
+.vc-ft { display: flex; gap: 6px; margin-top: 12px; }
+.map-placeholder {
+  width: 100%;
+  height: 280px;
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 13px;
+  border: 1px solid var(--border);
+  flex-direction: column;
+  gap: 8px;
+}
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="dispatch.html" class="nav-item active">调度看板</a>
+      <a href="index.html" class="nav-item">运单管理</a>
+      <a href="reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="inbound.html" class="nav-item">入库单管理</a>
+      <a href="outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>物流管理</span><span class="bc-sep">›</span>
+      <span class="bc-cur">调度看板</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">调度看板</div>
+        <div class="page-desc">实时监控在途车辆状态；GPS/北斗轨迹 · 电子围栏 · 异常告警</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default">📋 全部运单</button>
+        <a href="waybill-new.html"><button class="btn btn-primary">+ 发布运力需求</button></a>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stat-grid mb-5">
+      <div class="stat-card">
+        <div class="stat-icon ic-amber">🚛</div>
+        <div class="stat-body">
+          <div class="stat-label">在途车辆</div>
+          <div class="stat-val">12<span class="stat-unit">辆</span></div>
+          <div class="stat-note note-neutral">采购入库 7 · 销售发货 5</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-red">⚠</div>
+        <div class="stat-body">
+          <div class="stat-label">异常告警</div>
+          <div class="stat-val">1<span class="stat-unit">辆</span></div>
+          <div class="stat-note note-warn">甘B·66789 超时 2.5h</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-green">✅</div>
+        <div class="stat-body">
+          <div class="stat-label">今日到货</div>
+          <div class="stat-val">3<span class="stat-unit">车次</span></div>
+          <div class="stat-note note-up">↑ 净重合计 218 吨</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-blue">🏁</div>
+        <div class="stat-body">
+          <div class="stat-label">今日发车</div>
+          <div class="stat-val">5<span class="stat-unit">车次</span></div>
+          <div class="stat-note note-neutral">预计运费 ¥18,600</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g2 mb-5">
+      <!-- 地图区域 -->
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">车辆位置分布（北斗轨迹）</span>
+          <span class="badge b-success">实时</span>
+        </div>
+        <div class="card-body">
+          <div class="map-placeholder">
+            <div style="font-size:36px">🗺</div>
+            <div>地图组件集成区域</div>
+            <div class="text-sm">（接入北斗/高德 SDK 后展示实时轨迹）</div>
+            <div class="flex-c gap-2 mt-3">
+              <span class="badge b-success">正常 11辆</span>
+              <span class="badge b-danger">告警 1辆</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 告警车辆 -->
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">异常告警</span>
+          <span class="badge b-danger">1 条待处理</span>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-danger">
+            <span>🚨</span>
+            <div>
+              <div class="fw-700">甘B·66789 在途超时</div>
+              <div class="mt-2 text-sm">
+                <div>运单：WB-20260610-03 · 承运：玉门良运物流</div>
+                <div>路线：玉门堆场 → 巨化厂区（650km）</div>
+                <div>超时：计划 08:00 到达，当前 10:32 仍在途</div>
+                <div>当前位置：甘肃武威南收费站附近</div>
+                <div style="margin-top:8px">
+                  <strong>上次停留：</strong>07:45 嘉峪关服务区停留 45min（超限停留 ⚠）
+                </div>
+              </div>
+              <div class="flex-c gap-2 mt-3">
+                <button class="btn btn-danger btn-sm">联系司机</button>
+                <button class="btn btn-default btn-sm">查看轨迹</button>
+                <button class="btn btn-default btn-sm">挂起运单</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-warn">
+            <span>⚠</span>
+            <div>
+              <div class="fw-700">甘A·55678 接近围栏</div>
+              <div class="text-sm mt-2">距巨化厂区电子围栏约 2.3km，预计 12 分钟到达 · 已推送到货预警给现场</div>
+              <div class="flex-c gap-2 mt-3">
+                <button class="btn btn-warning btn-sm">通知现场备磅</button>
+                <button class="btn btn-default btn-sm">查看运单</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 在途车辆看板 -->
+    <div class="flex-between mb-3">
+      <span class="card-title">在途车辆（12 辆）</span>
+      <div class="flex-c gap-2">
+        <select class="filter-select">
+          <option>全部方向</option>
+          <option>采购入库</option>
+          <option>销售发货</option>
+        </select>
+        <select class="filter-select">
+          <option>全部状态</option>
+          <option>正常在途</option>
+          <option>异常告警</option>
+          <option>进入围栏</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="dispatch-grid">
+      <!-- 车辆1 - 告警 -->
+      <div class="vehicle-card alert-card">
+        <div class="vc-hd">
+          <div class="plate">甘B · 66789</div>
+          <span class="badge b-danger">超时告警</span>
+        </div>
+        <div class="vc-body">
+          <div class="vc-row"><span class="vc-label">运单</span><span class="vc-val">WB-20260610-03</span></div>
+          <div class="vc-row"><span class="vc-label">方向</span><span class="vc-val">采购入库</span></div>
+          <div class="vc-row"><span class="vc-label">路线</span><span class="vc-val">玉门 → 巨化厂区</span></div>
+          <div class="vc-row"><span class="vc-label">货物</span><span class="vc-val">萤石粉97% / 约72吨</span></div>
+          <div class="vc-row"><span class="vc-label">承运商</span><span class="vc-val">玉门良运物流</span></div>
+          <div class="vc-row"><span class="vc-label">超时</span><span class="vc-val text-danger">+2.5 小时</span></div>
+        </div>
+        <div class="vc-progress"><div class="vc-progress-bar" style="width:65%;background:var(--danger)"></div></div>
+        <div class="text-xs text-muted">行程进度 65%</div>
+        <div class="vc-ft">
+          <button class="btn btn-danger btn-xs">联系司机</button>
+          <button class="btn btn-default btn-xs">轨迹</button>
+        </div>
+      </div>
+
+      <!-- 车辆2 - 接近围栏 -->
+      <div class="vehicle-card warn-card">
+        <div class="vc-hd">
+          <div class="plate">甘A · 55678</div>
+          <span class="badge b-warning">接近围栏</span>
+        </div>
+        <div class="vc-body">
+          <div class="vc-row"><span class="vc-label">运单</span><span class="vc-val">WB-20260610-07</span></div>
+          <div class="vc-row"><span class="vc-label">方向</span><span class="vc-val">销售发货</span></div>
+          <div class="vc-row"><span class="vc-label">路线</span><span class="vc-val">玉门堆场 → 巨化</span></div>
+          <div class="vc-row"><span class="vc-label">货物</span><span class="vc-val">萤石粉97% / 约68吨</span></div>
+          <div class="vc-row"><span class="vc-label">承运商</span><span class="vc-val">金昌运通</span></div>
+          <div class="vc-row"><span class="vc-label">预计到达</span><span class="vc-val text-warning">约 12 分钟</span></div>
+        </div>
+        <div class="vc-progress"><div class="vc-progress-bar" style="width:96%;background:var(--warning)"></div></div>
+        <div class="text-xs text-muted">行程进度 96%</div>
+        <div class="vc-ft">
+          <button class="btn btn-warning btn-xs">通知备磅</button>
+          <button class="btn btn-default btn-xs">轨迹</button>
+        </div>
+      </div>
+
+      <!-- 车辆3 正常 -->
+      <div class="vehicle-card">
+        <div class="vc-hd">
+          <div class="plate">甘A · 12345</div>
+          <span class="badge b-primary">正常在途</span>
+        </div>
+        <div class="vc-body">
+          <div class="vc-row"><span class="vc-label">运单</span><span class="vc-val">WB-20260610-06</span></div>
+          <div class="vc-row"><span class="vc-label">方向</span><span class="vc-val">采购入库</span></div>
+          <div class="vc-row"><span class="vc-label">路线</span><span class="vc-val">玉门 → 玉门堆场A</span></div>
+          <div class="vc-row"><span class="vc-label">货物</span><span class="vc-val">萤石粉97% / 约75吨</span></div>
+          <div class="vc-row"><span class="vc-label">承运商</span><span class="vc-val">安泰货运</span></div>
+          <div class="vc-row"><span class="vc-label">预计到达</span><span class="vc-val">约 1.8 小时</span></div>
+        </div>
+        <div class="vc-progress"><div class="vc-progress-bar" style="width:72%"></div></div>
+        <div class="text-xs text-muted">行程进度 72%</div>
+        <div class="vc-ft">
+          <button class="btn btn-default btn-xs">详情</button>
+          <button class="btn btn-default btn-xs">轨迹</button>
+        </div>
+      </div>
+
+      <!-- 车辆4 正常 -->
+      <div class="vehicle-card">
+        <div class="vc-hd">
+          <div class="plate">甘B · 88890</div>
+          <span class="badge b-primary">正常在途</span>
+        </div>
+        <div class="vc-body">
+          <div class="vc-row"><span class="vc-label">运单</span><span class="vc-val">WB-20260610-05</span></div>
+          <div class="vc-row"><span class="vc-label">方向</span><span class="vc-val">采购入库</span></div>
+          <div class="vc-row"><span class="vc-label">路线</span><span class="vc-val">玉门 → 玉门堆场B</span></div>
+          <div class="vc-row"><span class="vc-label">货物</span><span class="vc-val">萤石块85% / 约80吨</span></div>
+          <div class="vc-row"><span class="vc-label">承运商</span><span class="vc-val">玉门良运物流</span></div>
+          <div class="vc-row"><span class="vc-label">预计到达</span><span class="vc-val">约 3.2 小时</span></div>
+        </div>
+        <div class="vc-progress"><div class="vc-progress-bar" style="width:45%"></div></div>
+        <div class="text-xs text-muted">行程进度 45%</div>
+        <div class="vc-ft">
+          <button class="btn btn-default btn-xs">详情</button>
+          <button class="btn btn-default btn-xs">轨迹</button>
+        </div>
+      </div>
+
+      <!-- 车辆5 -->
+      <div class="vehicle-card">
+        <div class="vc-hd">
+          <div class="plate">陇A · 33456</div>
+          <span class="badge b-info">已进围栏</span>
+        </div>
+        <div class="vc-body">
+          <div class="vc-row"><span class="vc-label">运单</span><span class="vc-val">WB-20260610-04</span></div>
+          <div class="vc-row"><span class="vc-label">方向</span><span class="vc-val">销售发货</span></div>
+          <div class="vc-row"><span class="vc-label">路线</span><span class="vc-val">玉门 → 浙江萤石化工</span></div>
+          <div class="vc-row"><span class="vc-label">货物</span><span class="vc-val">萤石粉95% / 约65吨</span></div>
+          <div class="vc-row"><span class="vc-label">承运商</span><span class="vc-val">西北货运联盟</span></div>
+          <div class="vc-row"><span class="vc-label">状态</span><span class="vc-val text-info">等待过磅</span></div>
+        </div>
+        <div class="vc-progress"><div class="vc-progress-bar" style="width:100%;background:var(--info)"></div></div>
+        <div class="text-xs text-muted">已到达目的地围栏</div>
+        <div class="vc-ft">
+          <button class="btn btn-primary btn-xs">通知地磅</button>
+          <button class="btn btn-default btn-xs">查看运单</button>
+        </div>
+      </div>
+
+      <!-- 更多提示 -->
+      <div class="vehicle-card" style="display:flex;align-items:center;justify-content:center;border-style:dashed;cursor:pointer;color:var(--text-3)">
+        <div style="text-align:center">
+          <div style="font-size:24px">+</div>
+          <div class="text-sm mt-2">还有 7 辆车</div>
+          <div class="text-xs">点击查看全部</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+</body>
+</html>

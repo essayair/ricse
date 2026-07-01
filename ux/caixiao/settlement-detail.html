@@ -1,0 +1,585 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>结算单 STL-2026-022 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+/* ── 履约状态条 ── */
+.status-bar {
+  display: flex; align-items: stretch;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 20px;
+}
+.status-step {
+  flex: 1; padding: 10px 8px; text-align: center;
+  font-size: 11.5px; color: var(--text-3);
+  border-right: 1px solid var(--border);
+}
+.status-step:last-child { border-right: none; }
+.status-step.done { background: var(--success-bg); color: var(--success); }
+.status-step.active { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
+.ss-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--border); color: var(--text-3);
+  font-size: 10px; font-weight: 700; margin-bottom: 3px;
+}
+.status-step.done .ss-num { background: var(--success); color: #fff; }
+.status-step.active .ss-num { background: var(--primary); color: #fff; }
+
+/* ── 正式单据文档区 ── */
+.doc-paper {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 40px 48px 48px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.doc-title {
+  text-align: center;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #111;
+  margin-bottom: 28px;
+}
+
+/* 单据头部信息 */
+.doc-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 40px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #222;
+}
+.doc-hrow {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  border-bottom: 1px solid #ccc;
+  padding: 3px 0;
+}
+.dh-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #444;
+}
+.dh-val {
+  flex: 1;
+  font-weight: 700;
+  color: #111;
+}
+
+/* 正式表格 */
+.doc-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin-bottom: 0;
+}
+.doc-tbl th {
+  background: #f0f0f0;
+  color: #222;
+  font-weight: 700;
+  padding: 8px 10px;
+  text-align: center;
+  border: 1px solid #bbb;
+  white-space: nowrap;
+}
+.doc-tbl td {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  color: #222;
+  vertical-align: middle;
+}
+.doc-tbl .td-r { text-align: right; }
+.doc-tbl .td-c { text-align: center; }
+.doc-tbl .row-deduct td { background: #fff8f8; color: #c0392b; }
+.doc-tbl .row-subtotal td { background: #f8f9fa; font-weight: 700; }
+.doc-tbl .row-sep td { background: #e8f0fe; font-weight: 700; font-size: 12px; color: #1a56db; }
+.doc-tbl .row-pay td { background: #fafff8; }
+
+/* 合计栏 */
+.doc-total-bar {
+  border: 1px solid #bbb;
+  border-top: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 40px;
+  padding: 10px 16px;
+  background: #f5f5f5;
+  font-size: 13px;
+  font-weight: 700;
+}
+.total-label { color: #555; font-weight: 600; }
+.total-amount { font-size: 16px; font-weight: 800; color: #1a56db; }
+
+/* 签章区 */
+.doc-footer {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.doc-sign-box {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 16px;
+}
+.doc-sign-title {
+  font-size: 12px; font-weight: 700; color: #555;
+  margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 6px;
+}
+.doc-sign-name { font-size: 14px; font-weight: 800; color: #111; margin-bottom: 4px; }
+.doc-sign-meta { font-size: 12px; color: #666; }
+.doc-sign-stamp {
+  margin-top: 12px;
+  width: 80px; height: 80px; border: 2px dashed #ccc; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #bbb; font-size: 11px; text-align: center; line-height: 1.4;
+}
+.doc-sign-date {
+  margin-top: 10px; font-size: 12px; color: #555;
+  display: flex; align-items: center; gap: 4px;
+}
+.doc-sign-date-line { flex: 1; border-bottom: 1px solid #999; min-width: 80px; }
+
+/* 打印样式 */
+@media print {
+  .no-print, .sidebar, .topbar { display: none !important; }
+  .main { margin: 0; padding: 0; }
+  .page { padding: 0; }
+  .doc-paper { border: none; box-shadow: none; padding: 20px; max-width: 100%; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="index.html" class="nav-item">合同管理</a>
+      <a href="order.html" class="nav-item">订单管理</a>
+      <a href="settlement.html" class="nav-item active">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检化验</div>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">⚖</span>地磅管理</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📹</span>监控录像</div>
+      <a href="../monitor/index.html" class="nav-item">实时监控</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="settlement.html" class="link">结算管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur">STL-2026-022</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <!-- ── 管理工作流区（打印隐藏）── -->
+    <div class="no-print">
+
+      <!-- 页头 -->
+      <div class="page-hd" style="margin-bottom:16px">
+        <div class="page-hd-left">
+          <div class="flex-c gap-3">
+            <div class="page-title">结算单 STL-2026-022</div>
+            <span class="badge b-warning">待财务审核</span>
+            <span class="badge b-default" style="font-size:11px">采购结算</span>
+          </div>
+          <div class="page-desc">HT-2026-001 · 玉门兴旺矿业有限公司 · 萤石粉 CaF₂≥97% · 制单：2026-06-07</div>
+        </div>
+        <div class="page-actions">
+          <a href="settlement.html"><button class="btn btn-default">← 返回列表</button></a>
+          <button class="btn btn-default" onclick="window.print()">🖨 打印</button>
+          <button class="btn btn-default" onclick="window.print()">📄 下载 PDF</button>
+          <button class="btn btn-primary" onclick="approveSettlement()">✓ 财务审核通过</button>
+        </div>
+      </div>
+
+      <!-- 6步履约状态条 -->
+      <div class="status-bar">
+        <div class="status-step done">
+          <div class="ss-num">✓</div>
+          <div>收货确认</div>
+          <div style="font-size:10px;margin-top:2px">06-07 07:20</div>
+        </div>
+        <div class="status-step done">
+          <div class="ss-num">✓</div>
+          <div>结算单生成</div>
+          <div style="font-size:10px;margin-top:2px">06-07 08:00</div>
+        </div>
+        <div class="status-step active">
+          <div class="ss-num">3</div>
+          <div>财务审核</div>
+          <div style="font-size:10px;margin-top:2px">待审核</div>
+        </div>
+        <div class="status-step">
+          <div class="ss-num">4</div>
+          <div>预付款支付</div>
+          <div style="font-size:10px;margin-top:2px">¥122,757</div>
+        </div>
+        <div class="status-step">
+          <div class="ss-num">5</div>
+          <div>尾款支付</div>
+          <div style="font-size:10px;margin-top:2px">¥21,663</div>
+        </div>
+        <div class="status-step">
+          <div class="ss-num">6</div>
+          <div>结算完成</div>
+          <div style="font-size:10px;margin-top:2px">待完成</div>
+        </div>
+      </div>
+
+      <!-- 审核提示 -->
+      <div class="alert alert-warn" style="margin-bottom:20px">
+        <span>⏳</span>
+        <div>
+          <strong>待财务审核：</strong>请核对下方结算单内容（磅单净重、质检扣款数据）无误后点击「财务审核通过」，
+          系统将自动发起预付款支付（¥122,757），预付款到期日 <strong>2026-06-10</strong>。
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 正式结算单文档 ── -->
+    <div class="doc-paper">
+
+      <div class="doc-title">业务确认及结算单</div>
+
+      <!-- 文档头部信息 -->
+      <div class="doc-header">
+        <div class="doc-hrow">
+          <span class="dh-label">供&emsp;方：</span>
+          <span class="dh-val">玉门兴旺矿业有限公司</span>
+        </div>
+        <div class="doc-hrow">
+          <span class="dh-label">结算单编号：</span>
+          <span class="dh-val">STL-2026-022</span>
+        </div>
+        <div class="doc-hrow">
+          <span class="dh-label">需&emsp;方：</span>
+          <span class="dh-val">甘肃萤石产业链运营有限公司</span>
+        </div>
+        <div class="doc-hrow">
+          <span class="dh-label">隶属框架合同编号：</span>
+          <span class="dh-val">HT-2026-001</span>
+        </div>
+        <div class="doc-hrow">
+          <span class="dh-label">结算截止日期：</span>
+          <span class="dh-val">2026-06-10</span>
+        </div>
+        <div class="doc-hrow">
+          <span class="dh-label">制&ensp;单&ensp;日&ensp;期：</span>
+          <span class="dh-val">2026-06-07</span>
+        </div>
+      </div>
+
+      <!-- 主体表格 -->
+      <table class="doc-tbl">
+        <thead>
+          <tr>
+            <th style="width:110px">订单编号</th>
+            <th style="width:78px">签约日期</th>
+            <th style="width:90px">供应商</th>
+            <th>规格 / 说明</th>
+            <th style="width:88px">数量（KG）</th>
+            <th style="width:90px">单价（元/吨）</th>
+            <th style="width:100px">销售金额（元）</th>
+            <th style="width:88px">已付款金额</th>
+            <th style="width:72px">付款方式</th>
+            <th style="width:72px">付款日期</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <!-- 主货款行 -->
+          <tr>
+            <td class="td-c">PO-20260601-003</td>
+            <td class="td-c">2026-06-01</td>
+            <td>玉门兴旺矿业</td>
+            <td>
+              萤石粉 CaF₂≥97%<br>
+              <span style="font-size:11px;color:#888">磅单 WS-20260607-004 · 磅重净重 100.20 吨</span>
+            </td>
+            <td class="td-r">100,200</td>
+            <td class="td-r">1,450.00</td>
+            <td class="td-r">145,290.00</td>
+            <td class="td-r">—</td>
+            <td class="td-c">银行转账</td>
+            <td class="td-c">待定</td>
+          </tr>
+
+          <!-- 扣款明细分组标题 -->
+          <tr class="row-sep">
+            <td colspan="10" style="padding-left:14px">
+              扣款明细（依质检报告 QC-20260608-004）
+            </td>
+          </tr>
+
+          <!-- 扣水行 -->
+          <tr class="row-deduct">
+            <td class="td-c" colspan="3" style="color:#999;font-size:11px">—</td>
+            <td>
+              扣水（水分实测 0.80%，合同标准 ≤0.50%，超标 0.30%）<br>
+              <span style="font-size:11px;opacity:.8">扣重：100,200 × 0.30% ≈ 300 KG</span>
+            </td>
+            <td class="td-r">−300</td>
+            <td class="td-r">1,450.00</td>
+            <td class="td-r" style="font-weight:700">−435.00</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+          </tr>
+
+          <!-- 扣杂行 -->
+          <tr class="row-deduct">
+            <td class="td-c" colspan="3" style="color:#999;font-size:11px">—</td>
+            <td>
+              扣杂（杂质实测 0.40%，合同标准 ≤0.30%，超标 0.10%）<br>
+              <span style="font-size:11px;opacity:.8">扣重：100,200 × 0.10% ≈ 100 KG；另扣价 ¥8/超标0.1%</span>
+            </td>
+            <td class="td-r">−300</td>
+            <td class="td-r">1,450.00</td>
+            <td class="td-r" style="font-weight:700">−435.00</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+          </tr>
+
+          <!-- 仓储费 -->
+          <tr>
+            <td class="td-c" colspan="3" style="color:#999;font-size:11px">—</td>
+            <td>仓储费</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+            <td class="td-r">0.00</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+          </tr>
+
+          <!-- 结算净量合计行 -->
+          <tr class="row-subtotal">
+            <td colspan="3" class="td-c" style="color:#555">结算净量合计</td>
+            <td>99,600 KG（99.60 吨）</td>
+            <td class="td-r">99,600</td>
+            <td class="td-r">1,450.00</td>
+            <td class="td-r" style="color:#1a56db">144,420.00</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+          </tr>
+
+          <!-- 付款计划分组标题 -->
+          <tr class="row-sep">
+            <td colspan="10" style="padding-left:14px">
+              付款计划（预付款 85% + 尾款 15%；合同条款第 5.2 条）
+            </td>
+          </tr>
+
+          <!-- 预付款行 -->
+          <tr class="row-pay">
+            <td colspan="3" class="td-c" style="color:#666">预付款（85%）</td>
+            <td style="color:#555">审核通过后 3 个工作日内支付；到期日：2026-06-10</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+            <td class="td-r" style="font-weight:700">122,757.00</td>
+            <td class="td-r" style="color:#e67e22;font-weight:700">0.00</td>
+            <td class="td-c">银行转账</td>
+            <td class="td-c">2026-06-10</td>
+          </tr>
+
+          <!-- 尾款行 -->
+          <tr class="row-pay">
+            <td colspan="3" class="td-c" style="color:#666">尾款（15%）</td>
+            <td style="color:#555">收货确认后 7 个工作日内支付；到期日：2026-06-17</td>
+            <td class="td-c">—</td>
+            <td class="td-c">—</td>
+            <td class="td-r" style="font-weight:700">21,663.00</td>
+            <td class="td-r" style="color:#e67e22;font-weight:700">0.00</td>
+            <td class="td-c">银行转账</td>
+            <td class="td-c">2026-06-17</td>
+          </tr>
+
+        </tbody>
+      </table>
+
+      <!-- 合计栏 -->
+      <div class="doc-total-bar">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="total-label">结算净量：</span>
+          <span style="font-size:15px;font-weight:800;color:#111">99,600 KG</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="total-label">结算总额：</span>
+          <span class="total-amount">¥ 144,420.00</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="total-label">（大写）</span>
+          <span style="font-size:13px;font-weight:700;color:#111">壹拾肆万肆仟肆佰贰拾元整</span>
+        </div>
+      </div>
+
+      <!-- 双方签章 -->
+      <div class="doc-footer">
+        <div class="doc-sign-box">
+          <div class="doc-sign-title">供方（盖章）</div>
+          <div class="doc-sign-name">玉门兴旺矿业有限公司</div>
+          <div class="doc-sign-meta">地址：甘肃省酒泉市玉门市工业园区</div>
+          <div class="doc-sign-meta">联系人：张建国 &nbsp;|&nbsp; 电话：139-xxxx-1234</div>
+          <div class="doc-sign-meta">开户行：中国农业银行玉门支行 &nbsp;|&nbsp; 账号：622x xxxx xxxx 1234</div>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:20px">
+            <div class="doc-sign-stamp">公章<br>待盖</div>
+            <div>
+              <div class="doc-sign-date">代表人签字：<div class="doc-sign-date-line"></div></div>
+              <div class="doc-sign-date" style="margin-top:10px">日&ensp;期：<div class="doc-sign-date-line"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="doc-sign-box">
+          <div class="doc-sign-title">需方（盖章）</div>
+          <div class="doc-sign-name">甘肃萤石产业链运营有限公司</div>
+          <div class="doc-sign-meta">地址：甘肃省兰州市城关区雁滩路 xx 号</div>
+          <div class="doc-sign-meta">联系人：采购部 &nbsp;|&nbsp; 电话：0931-xxxx-xxxx</div>
+          <div class="doc-sign-meta">开户行：中国工商银行兰州分行 &nbsp;|&nbsp; 账号：102x xxxx xxxx 5678</div>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:20px">
+            <div class="doc-sign-stamp">公章<br>待盖</div>
+            <div>
+              <div class="doc-sign-date">代表人签字：<div class="doc-sign-date-line"></div></div>
+              <div class="doc-sign-date" style="margin-top:10px">日&ensp;期：<div class="doc-sign-date-line"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 备注 -->
+      <div style="margin-top:20px;border-top:1px solid #ddd;padding-top:14px;font-size:12px;color:#666;line-height:2">
+        <strong>备注：</strong>
+        1. 本结算单依据《商品采购框架合同》HT-2026-001 第五条结算条款生成，以地磅净重为结算数量依据。&emsp;
+        2. 扣款数据来源于质检报告 QC-20260608-004，如有异议请在签署前书面提出。&emsp;
+        3. 双方签章确认后，本结算单即具法律效力，作为付款凭证及对账依据。&emsp;
+        4. 本单一式两份，供需双方各执一份。
+      </div>
+
+    </div><!-- /doc-paper -->
+
+    <!-- ── 审核操作区（打印隐藏）── -->
+    <div class="no-print" style="max-width:1000px;margin:16px auto 0">
+      <div class="card">
+        <div class="card-hd"><span class="card-title">财务审核操作</span></div>
+        <div class="card-body">
+          <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+            <div style="flex:1;min-width:260px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:8px">核对项（全部勾选后方可审核通过）</div>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <label class="flex-c gap-2 text-sm"><input type="checkbox" id="ck1"> 磅单净重 100.20 吨 已核对（WS-20260607-004）</label>
+                <label class="flex-c gap-2 text-sm"><input type="checkbox" id="ck2"> 质检扣款数据已核对（QC-20260608-004）</label>
+                <label class="flex-c gap-2 text-sm"><input type="checkbox" id="ck3"> 结算总额 ¥144,420 及大写金额正确</label>
+                <label class="flex-c gap-2 text-sm"><input type="checkbox" id="ck4"> 供方银行账号已核实（农行玉门支行）</label>
+              </div>
+            </div>
+            <div style="flex:1;min-width:200px">
+              <div class="form-item">
+                <label class="form-label">审核意见（可选）</label>
+                <textarea class="form-ctrl" rows="4" placeholder="填写备注，将记录至操作日志…"></textarea>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-end">
+              <button class="btn btn-primary" style="width:164px" onclick="approveSettlement()">✓ 审核通过 · 触发预付款</button>
+              <button class="btn btn-danger" style="width:164px" onclick="rejectSettlement()">✗ 退回修改</button>
+              <a href="settlement.html"><button class="btn btn-default" style="width:164px">← 返回列表</button></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<script>
+function approveSettlement() {
+  const checks = ['ck1','ck2','ck3','ck4'].map(id => document.getElementById(id).checked);
+  if (!checks.every(Boolean)) {
+    alert('请先勾选所有核对项后再审核通过。');
+    return;
+  }
+  if (confirm('确认审核通过？\n\n系统将自动执行：\n· 预付款 ¥122,757 提交支付（到期 2026-06-10）\n· 付款通知发送至供方联系人：张建国\n· 结算单状态更新为「预付款待付」')) {
+    alert('审核通过！\n预付款支付流程已触发，财务将收到付款提醒。');
+    window.location.href = 'settlement.html';
+  }
+}
+
+function rejectSettlement() {
+  const reason = prompt('请填写退回原因（将通知制单人修改并重新提交）：');
+  if (reason && reason.trim()) {
+    alert('结算单已退回。\n退回原因：\n"' + reason.trim() + '"\n制单人将收到修改通知。');
+    window.location.href = 'settlement.html';
+  }
+}
+</script>
+</body>
+</html>

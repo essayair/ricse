@@ -1,0 +1,501 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>合同详情 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.status-step {
+  flex: 1;
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+  border-right: 1px solid var(--border);
+  position: relative;
+}
+.status-step:last-child { border-right: none; }
+.status-step.done { background: var(--success-bg); color: var(--success); }
+.status-step.active { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
+.status-step .ss-icon { font-size: 18px; display: block; margin-bottom: 4px; }
+.ss-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.status-step.done .ss-num { background: var(--success); color: #fff; }
+.status-step.active .ss-num { background: var(--primary); color: #fff; }
+
+.split-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--primary-bg);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.detail-section { margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="index.html" class="nav-item active">合同管理</a>
+      <a href="order.html" class="nav-item">订单管理</a>
+      <a href="settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检化验</div>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">⚖</span>地磅管理</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📹</span>监控录像</div>
+      <a href="../monitor/index.html" class="nav-item">实时监控</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html" class="link">合同管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur">HT-2026-001 详情</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <!-- 页头 -->
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="flex-c gap-3">
+          <div class="page-title">HT-2026-001</div>
+          <span class="split-badge">⚡ 双边合同</span>
+          <span class="badge b-primary">执行中</span>
+        </div>
+        <div class="page-desc">供应商：玉门兴旺矿业 &nbsp;→&nbsp; 客户：巨化集团有限公司 &nbsp;·&nbsp; 萤石粉 CaF₂≥97% · 签订于 2026-06-01</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">← 返回列表</button></a>
+        <button class="btn btn-default">📄 导出 PDF</button>
+        <a href="dispatch-cmd.html"><button class="btn btn-primary">下达提货指令</button></a>
+      </div>
+    </div>
+
+    <!-- 履约进度条 -->
+    <div class="status-bar">
+      <div class="status-step done">
+        <div class="ss-num">✓</div>
+        <div>合同签订</div>
+        <div class="text-xs" style="margin-top:2px">2026-06-01</div>
+      </div>
+      <div class="status-step done">
+        <div class="ss-num">✓</div>
+        <div>审核通过</div>
+        <div class="text-xs" style="margin-top:2px">2026-06-01</div>
+      </div>
+      <div class="status-step active">
+        <div class="ss-num">3</div>
+        <div>执行中</div>
+        <div class="text-xs" style="margin-top:2px">已完成 64%</div>
+      </div>
+      <div class="status-step">
+        <div class="ss-num">4</div>
+        <div>全部收货</div>
+        <div class="text-xs" style="margin-top:2px">待完成</div>
+      </div>
+      <div class="status-step">
+        <div class="ss-num">5</div>
+        <div>结算完成</div>
+        <div class="text-xs" style="margin-top:2px">待完成</div>
+      </div>
+    </div>
+
+    <!-- 主体：左栏详情 + 右栏动态 -->
+    <div class="g2">
+
+      <!-- 左侧 -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- 基本信息 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">合同基本信息</span></div>
+          <div class="card-body">
+            <div class="kv-list">
+              <div class="kv-item"><div class="kv-key">合同编号</div><div class="kv-val fw-700">HT-2026-001</div></div>
+              <div class="kv-item"><div class="kv-key">合同类型</div><div class="kv-val"><span class="split-badge" style="font-size:11px">⚡ 双边合同</span></div></div>
+              <div class="kv-item"><div class="kv-key">交易方向</div><div class="kv-val"><span class="text-xs" style="color:var(--text-2)">双边居中 · 低价买入 + 高价卖出 · 赚取价差</span></div></div>
+              <div class="kv-item" style="background:var(--surface-2);border-radius:var(--radius);padding:8px 12px"><div class="kv-key" style="color:var(--text-3)">供应商（买入方）</div><div class="kv-val"><a href="../master/index.html" class="tbl-link fw-700">玉门兴旺矿业有限公司</a></div></div>
+              <div class="kv-item" style="padding-left:12px"><div class="kv-key">供应商联系人</div><div class="kv-val">张建国 · 139-xxxx-1234</div></div>
+              <div class="kv-item" style="padding-left:12px"><div class="kv-key">收货地点</div><div class="kv-val">玉门堆场 A区</div></div>
+              <div class="kv-item" style="padding-left:12px"><div class="kv-key">采购单价</div><div class="kv-val fw-700">¥1,450 / 吨</div></div>
+              <div class="kv-item" style="background:var(--primary-bg);border-radius:var(--radius);padding:8px 12px;margin-top:4px"><div class="kv-key" style="color:var(--info)">客户（卖出方）</div><div class="kv-val"><a href="../master/index.html" class="tbl-link fw-700">巨化集团有限公司</a></div></div>
+              <div class="kv-item" style="padding-left:12px"><div class="kv-key">客户联系人</div><div class="kv-val">孙晓峰 · 571-xxxx-7890</div></div>
+              <div class="kv-item" style="padding-left:12px"><div class="kv-key">发货地点</div><div class="kv-val">玉门堆场 A区 → 浙江衢州巨化厂区</div></div>
+              <div class="kv-item" style="padding-left:12px"><div class="kv-key">销售单价</div><div class="kv-val fw-700" style="color:var(--success)">¥1,550 / 吨 <span class="text-xs text-muted">（买卖价差 ¥100/吨）</span></div></div>
+              <div class="kv-item"><div class="kv-key">物料</div><div class="kv-val">萤石粉 CaF₂≥97%</div></div>
+              <div class="kv-item"><div class="kv-key">合同数量</div><div class="kv-val fw-700">500 吨</div></div>
+              <div class="kv-item"><div class="kv-key">签订日期</div><div class="kv-val">2026-06-01</div></div>
+              <div class="kv-item"><div class="kv-key">预计履约期</div><div class="kv-val">2026-06-01 至 2026-07-31</div></div>
+              <div class="kv-item"><div class="kv-key">签约人</div><div class="kv-val">运营管理员</div></div>
+              <div class="kv-item"><div class="kv-key">合同状态</div><div class="kv-val"><span class="badge b-primary">执行中</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 价格与结算条款 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">价格与结算条款</span></div>
+          <div class="card-body">
+            <!-- 采购端（我方付款）-->
+            <div class="text-xs fw-700 text-muted" style="padding:4px 0 6px">采购端 · 我方付款给供应商</div>
+            <div class="kv-list" style="background:var(--surface-2);border-radius:var(--radius);padding:4px 8px;margin-bottom:12px">
+              <div class="kv-item"><div class="kv-key">采购结算价</div><div class="kv-val fw-700">¥1,450/吨（合同锁价）</div></div>
+              <div class="kv-item"><div class="kv-key">结算数量依据</div><div class="kv-val">以地磅净重为准</div></div>
+              <div class="kv-item"><div class="kv-key">我方预付比例</div><div class="kv-val fw-700">85%（质检合格后付款给供应商）</div></div>
+              <div class="kv-item"><div class="kv-key">尾款周期</div><div class="kv-val">收货确认后 7 个工作日内付清</div></div>
+              <div class="kv-item"><div class="kv-key">供应商授信额度</div><div class="kv-val">¥500,000（已用 29%，余 ¥355,000）</div></div>
+              <div class="kv-item"><div class="kv-key">扣水规则</div><div class="kv-val">水分每超 0.1% 扣 ¥10/吨</div></div>
+              <div class="kv-item"><div class="kv-key">扣杂规则</div><div class="kv-val">杂质每超 0.1% 扣 ¥8/吨</div></div>
+            </div>
+            <!-- 销售端（我方收款）-->
+            <div class="text-xs fw-700 text-muted" style="padding:4px 0 6px">销售端 · 客户付款给我方</div>
+            <div class="kv-list" style="background:var(--primary-bg);border-radius:var(--radius);padding:4px 8px">
+              <div class="kv-item"><div class="kv-key">销售结算价</div><div class="kv-val fw-700" style="color:var(--success)">¥1,550/吨</div></div>
+              <div class="kv-item"><div class="kv-key">客户预付比例</div><div class="kv-val fw-700">80%（发货前收取）</div></div>
+              <div class="kv-item"><div class="kv-key">尾款周期</div><div class="kv-val">客户签收后 10 个工作日</div></div>
+              <div class="kv-item"><div class="kv-key">客户授信额度</div><div class="kv-val">¥2,000,000（已用 23%，余 ¥1,535,000）</div></div>
+              <div class="kv-item"><div class="kv-key">开票要求</div><div class="kv-val">我方向客户开具增值税专用发票（13%）</div></div>
+            </div>
+            <div class="alert alert-info mt-3">
+              <span>ℹ</span>
+              <div class="text-sm">【待现状确认】预付比例（85%）、尾款周期、抹零规则由谁最终确定？是否所有合同统一口径？</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 双边拆单说明 -->
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">双边拆单说明</span>
+            <span class="split-badge" style="font-size:11px">系统自动拆分</span>
+          </div>
+          <div class="card-body">
+            <div class="alert alert-info mb-3">
+              <span>ℹ</span>
+              <div class="text-sm">本合同为双边合同，系统已自动拆分为 1 张采购订单（买入）和 1 张销售订单（卖出）。拆单价格差即平台毛利。</div>
+            </div>
+            <table class="data-tbl">
+              <thead>
+                <tr><th>拆分方向</th><th>订单号</th><th>对手方</th><th>单价</th><th>数量</th><th>金额</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="badge b-info">采购端（买入）</span></td>
+                  <td><a href="order.html" class="tbl-link">PO-20260601-001</a></td>
+                  <td>玉门兴旺矿业</td>
+                  <td>¥1,450/吨</td>
+                  <td>500 吨</td>
+                  <td>¥725,000</td>
+                </tr>
+                <tr>
+                  <td><span class="badge b-success">销售端（卖出）</span></td>
+                  <td><a href="order.html" class="tbl-link">SO-20260601-001</a></td>
+                  <td>巨化集团有限公司</td>
+                  <td>¥1,550/吨</td>
+                  <td>500 吨</td>
+                  <td>¥775,000</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="flex-between mt-3 text-sm">
+              <span class="text-muted">预计平台毛利（价差）</span>
+              <span class="fw-700" style="color:var(--success)">¥100/吨 × 500吨 = ¥50,000</span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /左侧 -->
+
+      <!-- 右侧 -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- 履约进度 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">履约进度</span></div>
+          <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div>
+                <div class="flex-between text-sm mb-2">
+                  <span class="fw-700">已到货量</span>
+                  <span class="fw-700" style="color:var(--primary)">320 / 500 吨（64%）</span>
+                </div>
+                <div style="height:10px;background:var(--border);border-radius:5px;overflow:hidden">
+                  <div style="width:64%;height:100%;background:var(--primary);border-radius:5px"></div>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div class="g2">
+                <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius);padding:12px">
+                  <div class="text-xs text-muted">已入库批次</div>
+                  <div style="font-size:22px;font-weight:800;color:var(--success)">4</div>
+                  <div class="text-xs text-muted">批</div>
+                </div>
+                <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius);padding:12px">
+                  <div class="text-xs text-muted">在途车辆</div>
+                  <div style="font-size:22px;font-weight:800;color:var(--primary)">3</div>
+                  <div class="text-xs text-muted">辆</div>
+                </div>
+                <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius);padding:12px">
+                  <div class="text-xs text-muted">已结算额</div>
+                  <div style="font-size:22px;font-weight:800;color:var(--success)">¥289K</div>
+                  <div class="text-xs text-muted">元</div>
+                </div>
+                <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius);padding:12px">
+                  <div class="text-xs text-muted">待结算额</div>
+                  <div style="font-size:22px;font-weight:800;color:var(--warning)">¥436K</div>
+                  <div class="text-xs text-muted">元</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关联发货批次 -->
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">关联发货指令</span>
+            <a href="dispatch-cmd.html"><button class="btn btn-primary btn-sm">+ 下达指令</button></a>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-tbl">
+              <thead>
+                <tr><th>指令号</th><th>计划量</th><th>实际净重</th><th>承运商</th><th>车牌</th><th>状态</th><th>日期</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><a href="dispatch-cmd-detail.html" class="tbl-link">CMD-001</a></td>
+                  <td>100 吨</td>
+                  <td><span style="color:var(--success)">98.4 吨</span></td>
+                  <td>安泰货运</td>
+                  <td>甘A·12345</td>
+                  <td><span class="badge b-success">已完成</span></td>
+                  <td>06-05</td>
+                  <td><a href="dispatch-cmd-detail.html"><button class="btn btn-default btn-xs">详情</button></a></td>
+                </tr>
+                <tr>
+                  <td><a href="dispatch-cmd-detail.html" class="tbl-link">CMD-002</a></td>
+                  <td>120 吨</td>
+                  <td><span style="color:var(--success)">119.6 吨</span></td>
+                  <td>玉门良运</td>
+                  <td>甘B·66789</td>
+                  <td><span class="badge b-success">已完成</span></td>
+                  <td>06-07</td>
+                  <td><a href="dispatch-cmd-detail.html"><button class="btn btn-default btn-xs">详情</button></a></td>
+                </tr>
+                <tr style="background:var(--primary-bg)">
+                  <td><a href="dispatch-cmd-detail.html" class="tbl-link fw-700">CMD-003</a></td>
+                  <td>100 吨</td>
+                  <td><span class="text-muted">过磅中…</span></td>
+                  <td>安泰货运</td>
+                  <td>甘A·12345</td>
+                  <td><span class="badge b-primary">运输中</span></td>
+                  <td>06-10</td>
+                  <td class="flex-c gap-1">
+                    <a href="dispatch-cmd-detail.html"><button class="btn btn-primary btn-xs">详情</button></a>
+                  </td>
+                </tr>
+                <tr>
+                  <td><a href="dispatch-cmd-detail.html" class="tbl-link">CMD-004</a></td>
+                  <td>100 吨</td>
+                  <td><span class="text-muted">—</span></td>
+                  <td>玉门良运</td>
+                  <td>待指派</td>
+                  <td><span class="badge b-warning">待发货</span></td>
+                  <td>计划 06-14</td>
+                  <td class="flex-c gap-1">
+                    <a href="dispatch-cmd-detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+                    <button class="btn btn-default btn-xs">撤销</button>
+                  </td>
+                </tr>
+                <tr style="background:var(--surface-2)">
+                  <td colspan="8" style="padding:10px 14px">
+                    <span class="text-muted text-sm">剩余 <strong>80 吨</strong> 待排期（合同总量 500 吨，已排期 420 吨）</span>
+                    <a href="dispatch-cmd.html"><button class="btn btn-primary btn-xs" style="margin-left:12px">+ 排期</button></a>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 关联结算单 -->
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">关联结算单</span>
+            <a href="settlement.html" class="link text-sm">查看全部 →</a>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-tbl">
+              <thead>
+                <tr><th>结算单号</th><th>结算净量</th><th>结算金额</th><th>预付款</th><th>尾款</th><th>状态</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><a href="settlement.html" class="tbl-link">STL-2026-018</a></td>
+                  <td>98.4 吨</td>
+                  <td>¥142,680</td>
+                  <td>¥121,278</td>
+                  <td>¥21,402</td>
+                  <td><span class="badge b-success">已结清</span></td>
+                </tr>
+                <tr>
+                  <td><a href="settlement.html" class="tbl-link">STL-2026-022</a></td>
+                  <td>99.6 吨</td>
+                  <td>¥144,420</td>
+                  <td>¥122,757</td>
+                  <td>¥21,663</td>
+                  <td><span class="badge b-warning">待审核</span></td>
+                </tr>
+                <tr>
+                  <td colspan="6" style="padding:10px 14px">
+                    <span class="text-muted text-sm">第 3、4 批次结算单将在收货后自动生成</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 操作历史 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">操作历史</span></div>
+          <div class="card-body">
+            <div class="timeline">
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">2026-06-10 07:45</div>
+                <div class="tl-text">第 3 批提货指令下达（CMD-003，100吨）</div>
+                <div class="tl-sub">操作人：运营管理员</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">2026-06-07 09:20</div>
+                <div class="tl-text">第 2 批入库完成，净重 120.0 吨，批次 PC-0607-03</div>
+                <div class="tl-sub">质检合格 · 库位 A-02</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">2026-06-07 08:00</div>
+                <div class="tl-text">结算单 STL-2026-022 生成，待财务审核</div>
+                <div class="tl-sub">第 2 批次 · 99.6 吨 · ¥144,420</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">2026-06-05 14:30</div>
+                <div class="tl-text">第 1 批入库完成，净重 100.0 吨，批次 PC-0605-01</div>
+                <div class="tl-sub">质检合格 · 库位 A-01</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">2026-06-05 16:00</div>
+                <div class="tl-text">结算单 STL-2026-018 已结清，尾款 ¥21,402 已付</div>
+                <div class="tl-sub">财务：赵雪</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">2026-06-01 10:00</div>
+                <div class="tl-text">合同 HT-2026-001 审核通过，自动生成采购订单与销售订单</div>
+                <div class="tl-sub">审核人：运营管理员</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot idle"></div>
+                <div class="tl-time">2026-06-01 09:00</div>
+                <div class="tl-text">合同录入，提交审核</div>
+                <div class="tl-sub">录入人：采购员-王明</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /右侧 -->
+
+    </div><!-- /g2 -->
+
+  </main>
+</div>
+</div>
+</body>
+</html>

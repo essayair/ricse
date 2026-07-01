@@ -1,0 +1,300 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>入库单管理 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="dispatch.html" class="nav-item">调度看板</a>
+      <a href="index.html" class="nav-item">运单管理</a>
+      <a href="reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="inbound.html" class="nav-item active">入库单管理</a>
+      <a href="outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>物流管理</span><span class="bc-sep">›</span>
+      <span class="bc-cur">入库单管理</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">物流入库单</div>
+        <div class="page-desc">采购到货确认 · 关联运单 + 磅单 → 通知库管建业务入库单</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">← 运单管理</button></a>
+        <a href="inbound-new.html"><button class="btn btn-primary">+ 新建入库确认</button></a>
+      </div>
+    </div>
+
+    <!-- 统计卡 -->
+    <div class="stat-grid mb-5">
+      <div class="stat-card">
+        <div class="stat-icon ic-amber">⏳</div>
+        <div class="stat-body">
+          <div class="stat-label">待确认到货</div>
+          <div class="stat-val">2<span class="stat-unit">单</span></div>
+          <div class="stat-note note-warn">需完成磅单关联后确认</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-green">✅</div>
+        <div class="stat-body">
+          <div class="stat-label">今日已确认</div>
+          <div class="stat-val">1<span class="stat-unit">单</span></div>
+          <div class="stat-note note-up">已通知库管建入库单</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-blue">📦</div>
+        <div class="stat-body">
+          <div class="stat-label">本月入库量</div>
+          <div class="stat-val">1,842<span class="stat-unit">吨</span></div>
+          <div class="stat-note note-neutral">28车次</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-red">⚠</div>
+        <div class="stat-body">
+          <div class="stat-label">短量异常</div>
+          <div class="stat-val">1<span class="stat-unit">单</span></div>
+          <div class="stat-note note-warn">IB-20260608-003 差量 0.8吨</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 标签页 -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(this,'all')">全部</div>
+      <div class="tab" onclick="switchTab(this,'pending')">待确认</div>
+      <div class="tab" onclick="switchTab(this,'confirmed')">已确认</div>
+      <div class="tab" onclick="switchTab(this,'transferred')">已转入库单</div>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="filter-bar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="入库单号 / 运单号 / 供应商…">
+      </div>
+      <select class="filter-select">
+        <option>全部仓库</option>
+        <option>玉门堆场A</option>
+        <option>玉门堆场B</option>
+      </select>
+      <div class="filter-date-range">
+        <input type="date" value="2026-06-01">
+        <span class="text-muted">至</span>
+        <input type="date" value="2026-06-10">
+      </div>
+    </div>
+
+    <!-- 待确认提示 -->
+    <div class="alert alert-warn mb-4" id="pending-alert">
+      <span>⚠</span>
+      <div>
+        <div class="fw-700">2辆在途车辆预计今日到达，请提前联系库管备磅</div>
+        <div class="text-sm mt-1">WB-20260610-06（甘A·12345，预计 14:00）· WB-20260610-02（甘B·88890，预计 16:00）</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tbl-wrap">
+        <table class="data-tbl">
+          <thead>
+            <tr>
+              <th>入库单号</th>
+              <th>关联运单</th>
+              <th>供应商</th>
+              <th>物料</th>
+              <th>计划量</th>
+              <th>磅单净重</th>
+              <th>差量</th>
+              <th>到货时间</th>
+              <th>收货仓库</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="inbound-tbody">
+            <!-- 待确认 -->
+            <tr data-status="pending">
+              <td><span class="tbl-link">IB-20260610-002</span><div class="text-xs text-muted">待磅单关联</div></td>
+              <td><span class="tbl-link" onclick="window.location.href='index.html'">WB-20260610-02</span></td>
+              <td>玉门良运矿区（玉门矿区）</td>
+              <td>萤石块 85%</td>
+              <td>80 吨</td>
+              <td><span class="text-muted">在途中</span></td>
+              <td>—</td>
+              <td><span class="text-muted">预计 16:00</span></td>
+              <td>玉门堆场B</td>
+              <td><span class="badge b-neutral">待确认</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs" onclick="window.location.href='dispatch.html'">跟踪位置</button>
+              </td>
+            </tr>
+            <tr data-status="pending">
+              <td><span class="tbl-link">IB-20260610-001</span><div class="text-xs text-muted">待磅单关联</div></td>
+              <td><span class="tbl-link" onclick="window.location.href='index.html'">WB-20260610-06</span></td>
+              <td>玉门兴旺矿业</td>
+              <td>萤石粉 97%</td>
+              <td>75 吨</td>
+              <td><span class="text-muted">在途中</span></td>
+              <td>—</td>
+              <td><span class="text-muted">预计 14:00</span></td>
+              <td>玉门堆场A</td>
+              <td><span class="badge b-neutral">待确认</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs" onclick="window.location.href='dispatch.html'">跟踪位置</button>
+              </td>
+            </tr>
+            <!-- 已确认/待转 -->
+            <tr data-status="confirmed">
+              <td><span class="tbl-link">IB-20260609-002</span></td>
+              <td><span class="tbl-link" onclick="window.location.href='index.html'">WB-20260609-008</span></td>
+              <td>酒泉盛源矿业</td>
+              <td>萤石粉 90%</td>
+              <td>68.5 吨</td>
+              <td class="text-success fw-600">67.8 吨</td>
+              <td><span class="text-warning">-0.7吨</span></td>
+              <td>06-09 18:23</td>
+              <td>玉门堆场A</td>
+              <td><span class="badge b-success">已确认</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-primary btn-xs" onclick="notifyWarehouse('IB-20260609-002')">通知库管建单</button>
+                <button class="btn btn-default btn-xs">查看磅单</button>
+              </td>
+            </tr>
+            <!-- 已转入库单 -->
+            <tr data-status="transferred">
+              <td><span class="tbl-link">IB-20260609-001</span></td>
+              <td><span class="tbl-link" onclick="window.location.href='index.html'">WB-20260609-007</span></td>
+              <td>玉门兴旺矿业</td>
+              <td>萤石粉 97%</td>
+              <td>72.0 吨</td>
+              <td class="text-success fw-600">71.2 吨</td>
+              <td><span class="text-warning">-0.8吨</span></td>
+              <td>06-09 14:30</td>
+              <td>玉门堆场A</td>
+              <td><span class="badge b-info">已转入库单</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs">查看入库单</button>
+                <button class="btn btn-default btn-xs">查看磅单</button>
+              </td>
+            </tr>
+            <tr data-status="transferred">
+              <td><span class="tbl-link">IB-20260608-003</span></td>
+              <td><span class="tbl-link" onclick="window.location.href='index.html'">WB-20260608-005</span></td>
+              <td>玉门众鑫矿业</td>
+              <td>萤石粉 95%</td>
+              <td>75 吨</td>
+              <td class="fw-600">74.2 吨</td>
+              <td>
+                <span class="text-danger fw-600">-0.8吨</span>
+                <div class="text-xs text-danger">超出短装下限</div>
+              </td>
+              <td>06-08 16:45</td>
+              <td>玉门堆场B</td>
+              <td><span class="badge b-info">已转入库单</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs">查看入库单</button>
+                <button class="btn btn-default btn-xs">差量申诉</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-ft">
+        <span class="text-sm text-muted">共 5 条</span>
+        <a href="inbound-new.html"><button class="btn btn-primary btn-sm">+ 新建入库确认单</button></a>
+      </div>
+    </div>
+
+    <div class="alert alert-info mt-4">
+      <span>ℹ</span>
+      <div class="text-sm">
+        <strong>入库确认流程：</strong>车辆到厂 → 地磅过磅（现场操作）→ 在此创建入库确认单（关联运单+磅单）→ 确认到货数量 → 通知仓储库管建业务入库单 → 库存正式形成
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<script>
+function switchTab(el, type) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('#inbound-tbody tr').forEach(r => {
+    r.style.display = (type === 'all' || r.dataset.status === type) ? '' : 'none';
+  });
+  document.getElementById('pending-alert').style.display = (type === 'all' || type === 'pending') ? '' : 'none';
+}
+
+function notifyWarehouse(id) {
+  if (confirm('确认通知仓储库管创建业务入库单？\n\n通知后，库管将在库存管理中正式建立批次库存记录，本操作不可撤销。')) {
+    alert('已通知库管！业务入库单创建请求已发送，请在库存管理中查看进度。\n\n入库单号：' + id);
+  }
+}
+</script>
+</body>
+</html>

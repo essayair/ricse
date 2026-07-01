@@ -1,0 +1,496 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新建运单 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="dispatch.html" class="nav-item">调度看板</a>
+      <a href="index.html" class="nav-item active">运单管理</a>
+      <a href="reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="inbound.html" class="nav-item">入库单管理</a>
+      <a href="outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html" class="link">运单管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur">新建运单</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">新建运单</div>
+        <div class="page-desc">手动创建运输任务；通常由采销发货指令自动触发生成</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="submitWaybill()">确认创建</button>
+      </div>
+    </div>
+
+    <div style="max-width:860px">
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">运输基本信息</span></div>
+        <div class="card-body">
+          <div class="form-section">
+            <div class="form-section-title">关联订单</div>
+            <div class="form-grid fg2">
+              <div class="form-item">
+                <label class="form-label req">运输方向</label>
+                <select class="form-ctrl" id="direction" onchange="toggleDirection()">
+                  <option value="in">采购入库（供应商 → 仓库）</option>
+                  <option value="out">销售发货（仓库 → 客户）</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">关联订单</label>
+                <select class="form-ctrl" id="order-sel" onchange="fillOrderData()">
+                  <option value="">请选择订单…</option>
+                  <option value="PO-20260601-001">PO-20260601-001 · 玉门兴旺矿业 · 萤石粉97% · 100吨</option>
+                  <option value="PO-20260605-001">PO-20260605-001 · 酒泉盛源矿业 · 萤石粉90% · 200吨</option>
+                  <option value="SO-20260601-001">SO-20260601-001 · 巨化集团 · 萤石粉97% · 100吨</option>
+                </select>
+              </div>
+            </div>
+            <!-- 合作伙伴信息带出展示 -->
+            <div id="partner-info" style="display:none;margin-top:10px" class="alert alert-info">
+              <span>🏢</span>
+              <div id="partner-info-body" style="font-size:13px"></div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">路线信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req" id="from-label">发货地</label>
+                <input class="form-ctrl" type="text" id="from-place" list="from-list"
+                  placeholder="选择订单后自动带出，可手动修改">
+                <div class="form-hint" id="from-hint"></div>
+                <datalist id="from-list">
+                  <option>玉门兴旺矿区（甘肃玉门）</option>
+                  <option>玉门众鑫矿区（甘肃玉门）</option>
+                  <option>酒泉盛源矿区（甘肃酒泉）</option>
+                  <option>玉门堆场 A区</option>
+                  <option>玉门堆场 B区</option>
+                </datalist>
+              </div>
+              <div class="form-item">
+                <label class="form-label req" id="to-label">目的地</label>
+                <input class="form-ctrl" type="text" id="to-place" list="to-list"
+                  placeholder="选择订单后自动带出，可手动修改">
+                <div class="form-hint" id="to-hint"></div>
+                <datalist id="to-list">
+                  <option>玉门堆场 A区</option>
+                  <option>玉门堆场 B区</option>
+                  <option>巨化厂区（浙江衢州）</option>
+                  <option>浙江萤石化工（金华）</option>
+                  <option>江西氟化工集团（江西南昌）</option>
+                </datalist>
+              </div>
+              <div class="form-item">
+                <label class="form-label">预计距离</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" id="distance" placeholder="自动估算">
+                  <span class="text-muted">km</span>
+                </div>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">运输方式</label>
+                <select class="form-ctrl">
+                  <option>汽运（公路运输）</option>
+                  <option>铁运（铁路运输）</option>
+                  <option>船运（水路运输）</option>
+                  <option>多式联运</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">货物信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">物料</label>
+                <select class="form-ctrl" id="material-sel">
+                  <option value="">选订单后自动带出，可手动选择</option>
+                  <option value="97">萤石粉 CaF₂≥97%</option>
+                  <option value="95">萤石粉 CaF₂≥95%</option>
+                  <option value="90">萤石粉 CaF₂≥90%</option>
+                  <option value="85">萤石块 CaF₂≥85%</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">计划载量</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="本趟运输量">
+                  <span class="text-muted">吨</span>
+                </div>
+              </div>
+              <div class="form-item">
+                <label class="form-label">计划发车时间</label>
+                <input class="form-ctrl" type="datetime-local" value="2026-06-11T08:00">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">承运商与车辆</span></div>
+        <div class="card-body">
+          <div class="form-section">
+            <div class="form-section-title">承运商信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">承运商</label>
+                <select class="form-ctrl" id="carrier">
+                  <option value="">请选择承运商…</option>
+                  <option value="yl">玉门良运物流</option>
+                  <option value="jc">金昌运通</option>
+                  <option value="at">安泰货运</option>
+                  <option value="xb">西北货运联盟</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">车牌号</label>
+                <select class="form-ctrl">
+                  <option value="">请选择车辆…</option>
+                  <option>甘A·12345（安泰货运）</option>
+                  <option>甘B·66789（玉门良运）</option>
+                  <option>甘B·88890（玉门良运）</option>
+                  <option>甘A·55678（金昌运通）</option>
+                  <option>陇A·33456（西北货运联盟）</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">司机姓名</label>
+                <input class="form-ctrl" type="text" placeholder="自动带出，可修改" id="driver">
+              </div>
+              <div class="form-item">
+                <label class="form-label">司机电话</label>
+                <input class="form-ctrl" type="text" placeholder="自动带出，可修改" id="driver-phone">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">运费信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">运费承担方</label>
+                <select class="form-ctrl" id="freight-payer" onchange="toggleFreightPayer()">
+                  <option value="self">我方承担</option>
+                  <option value="supplier">供应商承担</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">吨单价</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" id="unit-price" step="0.01" min="0"
+                    placeholder="输入运价" oninput="calcFreight()">
+                  <span class="text-muted" style="white-space:nowrap">元/吨</span>
+                </div>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">结算依据</label>
+                <select class="form-ctrl" id="settlement-basis" onchange="onBasisChange()">
+                  <option value="min">按最小值（默认）</option>
+                  <option value="own">按我方磅单</option>
+                  <option value="supplier">按发货磅单</option>
+                  <option value="fixed">按协议固定值</option>
+                </select>
+              </div>
+              <div class="form-item" id="fixed-weight-row" style="display:none">
+                <label class="form-label req">协议固定值</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" id="fixed-weight" step="0.01" min="0"
+                    placeholder="固定吨数" oninput="calcFreight()">
+                  <span class="text-muted">吨</span>
+                </div>
+              </div>
+              <div class="form-item">
+                <label class="form-label">总运费（自动计算）</label>
+                <input class="form-ctrl" type="text" id="total-freight" readonly
+                  style="background:var(--surface-2)" placeholder="关联磅单后自动计算">
+              </div>
+            </div>
+            <div id="supplier-payer-tip" class="alert alert-info mt-3" style="display:none">
+              <span>ℹ</span>
+              <div class="text-sm">运费承担方为<strong>供应商承担</strong>，吨单价与总运费无需填写，字段已置灰。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">超时与围栏设置</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">超时告警阈值</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="2" placeholder="小时数">
+                <span class="text-muted" style="white-space:nowrap">小时以上告警</span>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label">偏航告警距离</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="5" placeholder="公里">
+                <span class="text-muted">km</span>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label">围栏预警提前</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="3">
+                <span class="text-muted" style="white-space:nowrap">km 提前推送</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">备注</span></div>
+        <div class="card-body">
+          <textarea class="form-ctrl" placeholder="特殊运输要求、注意事项…" rows="3"></textarea>
+        </div>
+      </div>
+
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="submitWaybill()">确认创建运单 →</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+/* ── 运费字段联动 ──────────────────────────────────── */
+function toggleFreightPayer() {
+  const isSup = document.getElementById('freight-payer').value === 'supplier';
+  const unitPriceEl = document.getElementById('unit-price');
+  const totalEl     = document.getElementById('total-freight');
+  const tip         = document.getElementById('supplier-payer-tip');
+  unitPriceEl.disabled = isSup;
+  unitPriceEl.style.background = isSup ? 'var(--surface-2)' : '';
+  unitPriceEl.style.color      = isSup ? 'var(--text-3)' : '';
+  totalEl.placeholder = isSup ? '供应商承担，无需填写' : '关联磅单后自动计算';
+  if (isSup) totalEl.value = '';
+  tip.style.display = isSup ? 'flex' : 'none';
+  calcFreight();
+}
+
+function onBasisChange() {
+  const basis = document.getElementById('settlement-basis').value;
+  document.getElementById('fixed-weight-row').style.display = basis === 'fixed' ? '' : 'none';
+  calcFreight();
+}
+
+function calcFreight() {
+  const isSup   = document.getElementById('freight-payer').value === 'supplier';
+  const totalEl = document.getElementById('total-freight');
+  if (isSup) { totalEl.value = ''; return; }
+  const unitPrice = parseFloat(document.getElementById('unit-price').value) || 0;
+  const basis     = document.getElementById('settlement-basis').value;
+  if (basis === 'fixed') {
+    const fixedWt = parseFloat(document.getElementById('fixed-weight').value) || 0;
+    if (unitPrice && fixedWt) {
+      totalEl.value = '¥' + (unitPrice * fixedWt).toFixed(2);
+    } else {
+      totalEl.value = '';
+    }
+  } else {
+    totalEl.placeholder = unitPrice ? '关联磅单后自动计算（¥' + unitPrice.toFixed(2) + '/吨）' : '关联磅单后自动计算';
+    totalEl.value = '';
+  }
+}
+
+/* ── 订单 → 合作伙伴 映射数据（生产环境从主数据接口获取） */
+const orderMap = {
+  'PO-20260601-001': {
+    direction: 'in',
+    partner: '玉门兴旺矿业有限公司',
+    partnerType: '供应商',
+    contact: '李总 · 0937-6123456',
+    partnerAddr: '甘肃省酒泉市玉门市',
+    shipAddr: '玉门兴旺矿区装货区（甘肃玉门，距堆场约 25km）',
+    from: '玉门兴旺矿区（甘肃玉门）',
+    to: '玉门堆场 A区',
+    material: '萤石粉 CaF₂≥97%',
+    materialVal: '97',
+    qty: 100,
+    remaining: 75,
+    distKm: 25,
+  },
+  'PO-20260605-001': {
+    direction: 'in',
+    partner: '酒泉盛源矿业有限公司',
+    partnerType: '供应商',
+    contact: '王经理 · 0937-7234567',
+    partnerAddr: '甘肃省酒泉市肃州区',
+    shipAddr: '酒泉盛源矿区发货站（甘肃酒泉，距堆场约 85km）',
+    from: '酒泉盛源矿区（甘肃酒泉）',
+    to: '玉门堆场 A区',
+    material: '萤石粉 CaF₂≥90%',
+    materialVal: '90',
+    qty: 200,
+    remaining: 132,
+    distKm: 85,
+  },
+  'SO-20260601-001': {
+    direction: 'out',
+    partner: '巨化集团有限公司',
+    partnerType: '客户',
+    contact: '采购部 · 0570-8812345',
+    partnerAddr: '浙江省衢州市衢江区',
+    shipAddr: '巨化厂区原料仓（浙江衢州，距玉门约 2,100km）',
+    from: '玉门堆场 A区',
+    to: '巨化厂区（浙江衢州）',
+    material: '萤石粉 CaF₂≥97%',
+    materialVal: '97',
+    qty: 100,
+    remaining: 100,
+    distKm: 2100,
+  },
+};
+
+function fillOrderData() {
+  const id = document.getElementById('order-sel').value;
+  const o = orderMap[id];
+  const pi = document.getElementById('partner-info');
+  const pib = document.getElementById('partner-info-body');
+
+  if (!o) {
+    pi.style.display = 'none';
+    document.getElementById('from-place').value = '';
+    document.getElementById('to-place').value = '';
+    document.getElementById('from-hint').textContent = '';
+    document.getElementById('to-hint').textContent = '';
+    document.getElementById('distance').value = '';
+    setMaterial('');
+    return;
+  }
+
+  /* 合作伙伴信息展示 */
+  const role = o.direction === 'in' ? '供应商' : '客户';
+  const addrLabel = o.direction === 'in' ? '发货地址' : '收货地址';
+  pib.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div><span style="color:var(--text-3)">${role}</span><br><strong>${o.partner}</strong></div>
+      <div><span style="color:var(--text-3)">联系人</span><br>${o.contact}</div>
+      <div><span style="color:var(--text-3)">${addrLabel}</span><br>${o.shipAddr}</div>
+      <div><span style="color:var(--text-3)">待运量</span><br><strong>${o.remaining} / ${o.qty} 吨</strong></div>
+    </div>`;
+  pi.style.display = 'flex';
+
+  /* 自动填入发货地 / 目的地 */
+  document.getElementById('from-place').value = o.from;
+  document.getElementById('to-place').value = o.to;
+  document.getElementById('from-hint').textContent = o.direction === 'in'
+    ? `📍 来自供应商 ${o.partner} 的发货地址`
+    : '📍 我方发货仓库';
+  document.getElementById('to-hint').textContent = o.direction === 'out'
+    ? `📍 来自客户 ${o.partner} 的收货地址`
+    : '📍 我方收货仓库';
+
+  /* 预计距离 */
+  document.getElementById('distance').value = o.distKm;
+
+  /* 物料 */
+  setMaterial(o.materialVal);
+
+  /* 同步方向下拉 */
+  document.getElementById('direction').value = o.direction;
+  toggleDirection();
+}
+
+function setMaterial(val) {
+  const sel = document.getElementById('material-sel');
+  for (let i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === val) { sel.selectedIndex = i; return; }
+  }
+  sel.selectedIndex = 0;
+}
+
+function toggleDirection() {
+  const dir = document.getElementById('direction').value;
+  document.getElementById('from-label').textContent = dir === 'in' ? '发货地（供应商/矿区）' : '发货地（我方仓库）';
+  document.getElementById('to-label').textContent   = dir === 'in' ? '目的地（我方仓库）'    : '目的地（客户收货地）';
+}
+
+function submitWaybill() {
+  const from = document.getElementById('from-place').value.trim();
+  const to   = document.getElementById('to-place').value.trim();
+  if (!from || !to) { alert('请填写发货地和目的地'); return; }
+  if (confirm('确认创建运单？创建后将通知司机及目的地备磅。')) {
+    window.location.href = 'index.html';
+  }
+}
+
+</script>
+</body>
+</html>

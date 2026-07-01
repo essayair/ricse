@@ -1,0 +1,396 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新建入库确认单 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.weigh-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.weigh-card:hover { border-color: var(--primary); }
+.weigh-card.selected { border-color: var(--primary); background: var(--primary-bg); }
+.weigh-card-hd { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.weigh-nums { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 10px; font-size: 12.5px; }
+.weigh-num-item { text-align: center; }
+.weigh-num-label { color: var(--text-3); margin-bottom: 3px; }
+.weigh-num-val { font-size: 15px; font-weight: 700; color: var(--text); }
+.weigh-num-val.net { color: var(--success); }
+.step-indicator { display: flex; align-items: center; gap: 0; margin-bottom: 28px; }
+.step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.step-dot.done { background: var(--success); color: #fff; }
+.step-dot.active { background: var(--primary); color: #fff; }
+.step-dot.pending { background: var(--border); color: var(--text-3); }
+.step-line { flex: 1; height: 2px; background: var(--border); }
+.step-line.done { background: var(--success); }
+.step-label { font-size: 11px; color: var(--text-3); text-align: center; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="dispatch.html" class="nav-item">调度看板</a>
+      <a href="index.html" class="nav-item">运单管理</a>
+      <a href="reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="inbound.html" class="nav-item active">入库单管理</a>
+      <a href="outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="inbound.html" class="link">入库单管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur">新建入库确认单</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">新建入库确认单</div>
+        <div class="page-desc">关联运单 + 选择磅单 → 确认到货数量 → 通知库管建业务入库单</div>
+      </div>
+      <div class="page-actions">
+        <a href="inbound.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="submitInbound()">确认入库 →</button>
+      </div>
+    </div>
+
+    <!-- 步骤指示器 -->
+    <div style="max-width:680px;margin-bottom:28px">
+      <div class="step-indicator">
+        <div>
+          <div class="step-dot done">✓</div>
+          <div class="step-label">选运单</div>
+        </div>
+        <div class="step-line done"></div>
+        <div>
+          <div class="step-dot done">✓</div>
+          <div class="step-label">关联磅单</div>
+        </div>
+        <div class="step-line done"></div>
+        <div>
+          <div class="step-dot active">3</div>
+          <div class="step-label">填写到货信息</div>
+        </div>
+        <div class="step-line"></div>
+        <div>
+          <div class="step-dot pending">4</div>
+          <div class="step-label">确认&通知库管</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="max-width:860px">
+
+      <!-- Step 1: 关联运单 -->
+      <div class="card mb-4">
+        <div class="card-hd">
+          <span class="card-title">① 关联运单</span>
+          <span class="badge b-success">已选择</span>
+        </div>
+        <div class="card-body">
+          <div class="form-grid fg2">
+            <div class="form-item">
+              <label class="form-label req">选择运单</label>
+              <select class="form-ctrl" id="waybill-sel" onchange="fillWaybill()">
+                <option value="">请选择到达的运单…</option>
+                <option value="WB-20260609-008" selected>WB-20260609-008 · 安泰货运 · 甘C·77890 · 萤石粉90%</option>
+                <option value="WB-20260610-06">WB-20260610-06 · 安泰货运 · 甘A·12345 · 萤石粉97%（在途）</option>
+                <option value="WB-20260610-02">WB-20260610-02 · 玉门良运 · 甘B·88890 · 萤石块85%（在途）</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">关联发货指令（可选）</label>
+              <select class="form-ctrl">
+                <option>FG-20260601-003 · PO-20260601-002 · 酒泉盛源矿业</option>
+                <option value="">无关联发货指令</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 运单信息自动带入 -->
+          <div class="alert alert-info mt-3" id="waybill-info">
+            <span>🚛</span>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:13px">
+              <div><span style="color:var(--text-3)">供应商</span><br><strong>酒泉盛源矿业</strong></div>
+              <div><span style="color:var(--text-3)">物料</span><br><strong>萤石粉 CaF₂≥90%</strong></div>
+              <div><span style="color:var(--text-3)">合同量</span><br><strong>68.5 吨</strong></div>
+              <div><span style="color:var(--text-3)">承运商/车牌</span><br><strong>安泰货运 / 甘C·77890</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: 关联磅单 -->
+      <div class="card mb-4">
+        <div class="card-hd">
+          <span class="card-title">② 关联磅单数据</span>
+          <span class="badge b-success">已选择</span>
+        </div>
+        <div class="card-body">
+          <div class="form-item mb-3">
+            <label class="form-label req">选择磅单</label>
+            <select class="form-ctrl" onchange="selectWeighbill(this.value)">
+              <option value="PD-20260609-018" selected>PD-20260609-018 · 甘C·77890 · 过磅时间 06-09 17:58</option>
+              <option value="">手动输入（无对应磅单）</option>
+            </select>
+          </div>
+
+          <!-- 磅单数据展示 -->
+          <div id="weigh-display">
+            <div class="weigh-card selected">
+              <div class="weigh-card-hd">
+                <span>PD-20260609-018 · 甘C·77890</span>
+                <span class="badge b-success">已选</span>
+              </div>
+              <div class="weigh-nums">
+                <div class="weigh-num-item">
+                  <div class="weigh-num-label">毛重</div>
+                  <div class="weigh-num-val">96.2 吨</div>
+                </div>
+                <div class="weigh-num-item">
+                  <div class="weigh-num-label">皮重（车辆）</div>
+                  <div class="weigh-num-val">28.4 吨</div>
+                </div>
+                <div class="weigh-num-item">
+                  <div class="weigh-num-label">净重</div>
+                  <div class="weigh-num-val net">67.8 吨</div>
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-3);margin-top:8px">过磅时间：2026-06-09 17:58 · 地磅操作员：张磅工</div>
+            </div>
+
+            <div class="alert alert-warn mt-3">
+              <span>⚠</span>
+              <div class="text-sm">
+                <strong>数量差异提示：</strong>合同计划量 68.5 吨，磅单净重 67.8 吨，差量 <strong>-0.7 吨（-1.02%）</strong>，在合同短装比例范围内（≤5%），可正常确认入库。
+              </div>
+            </div>
+          </div>
+
+          <!-- 手动输入区（磅单不存在时） -->
+          <div id="manual-weigh" style="display:none">
+            <div class="form-grid fg3 mt-3">
+              <div class="form-item">
+                <label class="form-label req">毛重</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="请输入">
+                  <span class="text-muted">吨</span>
+                </div>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">皮重</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="请输入">
+                  <span class="text-muted">吨</span>
+                </div>
+              </div>
+              <div class="form-item">
+                <label class="form-label">净重（自动计算）</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="毛重 - 皮重" readonly style="background:var(--surface-2)">
+                  <span class="text-muted">吨</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: 到货信息 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">③ 到货信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">到货时间</label>
+              <input class="form-ctrl" type="datetime-local" value="2026-06-09T18:23">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">收货仓库</label>
+              <select class="form-ctrl">
+                <option>玉门堆场 A区</option>
+                <option>玉门堆场 B区</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">结算数量依据</label>
+              <select class="form-ctrl">
+                <option>以磅单净重为准</option>
+                <option>以合同量为准</option>
+                <option>以质检后量为准</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">司机签到确认</label>
+              <select class="form-ctrl">
+                <option>司机已现场确认签字</option>
+                <option>司机确认（电话）</option>
+                <option>暂未确认</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">外观质量</label>
+              <select class="form-ctrl">
+                <option>正常，无异常</option>
+                <option>轻微受潮，已记录</option>
+                <option>包装破损，已记录</option>
+                <option>其他异常，见备注</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">质检取样</label>
+              <select class="form-ctrl">
+                <option>已取样，送检质检部门</option>
+                <option>本批次免检（合格供应商）</option>
+                <option>暂未取样</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-item mt-3">
+            <label class="form-label">备注（异常说明）</label>
+            <textarea class="form-ctrl" rows="2" placeholder="如有短量原因、货物外观异常等，请在此说明…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: 预览与通知 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">④ 确认预览 · 通知库管</span></div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            <span>ℹ</span>
+            <div style="font-size:13px">
+              <div class="fw-700 mb-2">入库确认单预览</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                <div><span style="color:var(--text-3)">关联运单</span><br>WB-20260609-008</div>
+                <div><span style="color:var(--text-3)">供应商</span><br>酒泉盛源矿业</div>
+                <div><span style="color:var(--text-3)">物料</span><br>萤石粉 CaF₂≥90%</div>
+                <div><span style="color:var(--text-3)">合同量</span><br>68.5 吨</div>
+                <div><span style="color:var(--text-3)">实收净重</span><br><strong class="text-success">67.8 吨</strong></div>
+                <div><span style="color:var(--text-3)">差量</span><br><span class="text-warning">-0.7吨（-1.02%）</span></div>
+                <div><span style="color:var(--text-3)">收货仓库</span><br>玉门堆场A</div>
+                <div><span style="color:var(--text-3)">到货时间</span><br>06-09 18:23</div>
+                <div><span style="color:var(--text-3)">关联磅单</span><br>PD-20260609-018</div>
+              </div>
+            </div>
+          </div>
+          <div class="alert alert-warn mt-3">
+            <span>📢</span>
+            <div class="text-sm">
+              点击"确认入库"后，系统将自动通知<strong>仓储库管</strong>在库存管理中创建业务入库单（批次 IN-20260609-008），库存将正式形成并开始批次成本计算。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="inbound.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-default" onclick="saveDraft()">暂存草稿</button>
+        <button class="btn btn-primary" onclick="submitInbound()">确认入库 · 通知库管 →</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+function fillWaybill() {
+  const val = document.getElementById('waybill-sel').value;
+  const map = {
+    'WB-20260609-008': { supplier:'酒泉盛源矿业', material:'萤石粉 CaF₂≥90%', qty:'68.5 吨', carrier:'安泰货运 / 甘C·77890' },
+    'WB-20260610-06':  { supplier:'玉门兴旺矿业', material:'萤石粉 CaF₂≥97%', qty:'75 吨', carrier:'安泰货运 / 甘A·12345' },
+    'WB-20260610-02':  { supplier:'玉门良运矿区', material:'萤石块 CaF₂≥85%', qty:'80 吨', carrier:'玉门良运物流 / 甘B·88890' },
+  };
+  const w = map[val];
+  if (w) {
+    document.getElementById('waybill-info').innerHTML = `<span>🚛</span>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:13px">
+        <div><span style="color:var(--text-3)">供应商</span><br><strong>${w.supplier}</strong></div>
+        <div><span style="color:var(--text-3)">物料</span><br><strong>${w.material}</strong></div>
+        <div><span style="color:var(--text-3)">合同量</span><br><strong>${w.qty}</strong></div>
+        <div><span style="color:var(--text-3)">承运商/车牌</span><br><strong>${w.carrier}</strong></div>
+      </div>`;
+  }
+}
+
+function selectWeighbill(val) {
+  if (!val) {
+    document.getElementById('weigh-display').style.display = 'none';
+    document.getElementById('manual-weigh').style.display = 'block';
+  } else {
+    document.getElementById('weigh-display').style.display = 'block';
+    document.getElementById('manual-weigh').style.display = 'none';
+  }
+}
+
+function saveDraft() {
+  alert('草稿已保存，可在入库单列表中继续编辑。');
+}
+
+function submitInbound() {
+  if (confirm('确认入库并通知库管？\n\n本操作将创建物流入库确认单，并向仓储库管发送建单通知。确认后实收量以磅单净重 67.8 吨为准。')) {
+    window.location.href = 'inbound.html';
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>物料详情 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.mat-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px}
+.mat-tab{padding:10px 24px;font-size:13.5px;font-weight:600;color:var(--text-3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.mat-tab:hover{color:var(--primary)}
+.mat-tab.active{color:var(--primary);border-color:var(--primary)}
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:18px 0 12px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.detail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 28px}
+.detail-item{display:flex;flex-direction:column;gap:5px}
+.detail-label{font-size:11.5px;color:var(--text-3);font-weight:500}
+.detail-val{font-size:13.5px;color:var(--text);font-weight:500}
+.spec-table{width:100%;border-collapse:collapse}
+.spec-table th{padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:700;color:var(--text-2);border-bottom:1px solid var(--border);text-align:left}
+.spec-table td{padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border)}
+.qc-indicator{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface-2);border-radius:var(--radius);margin-bottom:8px}
+.qc-ind-num{width:24px;height:24px;background:var(--primary);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item active">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#material" class="link">物料品类</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="bc-name">物料详情</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">物料详情</div>
+        <div class="page-desc" id="page-desc">—</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html#material"><button class="btn btn-default">返回列表</button></a>
+        <button class="btn btn-default" id="btn-edit">编辑</button>
+        <button class="btn btn-default" id="btn-toggle">停用</button>
+      </div>
+    </div>
+
+    <div style="max-width:960px">
+      <!-- 统计卡 -->
+      <div class="g4 mb-4" id="stat-row"></div>
+
+      <div class="card">
+        <div class="card-body" style="padding-bottom:0">
+          <div class="mat-tabs">
+            <div class="mat-tab active" onclick="switchTab(this,'tab-basic')">基本信息</div>
+            <div class="mat-tab" onclick="switchTab(this,'tab-qc')">质检指标模板</div>
+            <div class="mat-tab" onclick="switchTab(this,'tab-price')">价格记录</div>
+            <div class="mat-tab" onclick="switchTab(this,'tab-contract')">关联合同</div>
+          </div>
+        </div>
+
+        <!-- 基本信息 -->
+        <div id="tab-basic" class="card-body" style="padding-top:8px">
+          <div class="section-divider">基本属性</div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="detail-label">物料编码</div><div class="detail-val" id="d-code">—</div></div>
+            <div class="detail-item"><div class="detail-label">物料品名</div><div class="detail-val" id="d-name">—</div></div>
+            <div class="detail-item"><div class="detail-label">物料大类</div><div class="detail-val" id="d-category">—</div></div>
+            <div class="detail-item"><div class="detail-label">计量单位</div><div class="detail-val" id="d-unit">—</div></div>
+            <div class="detail-item"><div class="detail-label">是否虚拟物料</div><div class="detail-val" id="d-virtual">—</div></div>
+            <div class="detail-item"><div class="detail-label">当前状态</div><div class="detail-val" id="d-status">—</div></div>
+          </div>
+          <div class="section-divider">规格标准</div>
+          <table class="spec-table" id="spec-table">
+            <thead><tr><th>指标项目</th><th>条件</th><th>标准值</th><th>单位</th></tr></thead>
+            <tbody id="spec-tbody"></tbody>
+          </table>
+          <div class="section-divider">商品编码映射</div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="detail-label">内部编码</div><div class="detail-val" id="d-internal">—</div></div>
+            <div class="detail-item"><div class="detail-label">HS编码（海关）</div><div class="detail-val" id="d-hs">—</div></div>
+            <div class="detail-item"><div class="detail-label">税务商品编码</div><div class="detail-val" id="d-tax">—</div></div>
+          </div>
+          <div class="section-divider">备注</div>
+          <div class="detail-val" id="d-remark" style="color:var(--text-2)">—</div>
+        </div>
+
+        <!-- 质检指标模板 -->
+        <div id="tab-qc" class="card-body" style="display:none;padding-top:8px">
+          <div id="qc-content"></div>
+        </div>
+
+        <!-- 价格记录 -->
+        <div id="tab-price" class="card-body" style="display:none;padding-top:8px">
+          <div class="flex-between mb-3">
+            <span class="text-sm text-muted">显示最近6个月价格记录</span>
+            <a href="price-history.html" id="price-hist-link"><button class="btn btn-default btn-sm">查看完整历史</button></a>
+          </div>
+          <table class="data-tbl">
+            <thead><tr><th>生效日期</th><th>失效日期</th><th>采购基准价</th><th>销售基准价</th><th>变动方向</th><th>变更原因</th><th>维护人</th></tr></thead>
+            <tbody id="price-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- 关联合同 -->
+        <div id="tab-contract" class="card-body" style="display:none;padding-top:8px">
+          <div class="flex-between mb-3">
+            <span class="text-sm text-muted">最近关联的10份合同</span>
+            <a href="../caixiao/index.html"><button class="btn btn-default btn-sm">查看全部合同</button></a>
+          </div>
+          <table class="data-tbl">
+            <thead><tr><th>合同编号</th><th>合同类型</th><th>合同方</th><th>品位规格</th><th>合同量</th><th>合同状态</th><th>签订日期</th></tr></thead>
+            <tbody id="contract-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+const MATERIALS = {
+  'MAT-001': {
+    name:'萤石粉', category:'萤石粉', unit:'吨', virtual:'否', status:'active',
+    internal:'', hs:'25291100', tax:'1092030000', remark:'主要采购品种，用于销往巨化等氟化工企业',
+    specs:[
+      {name:'CaF₂含量',cond:'≥',val:'97',unit:'%'},
+      {name:'水分',cond:'≤',val:'0.5',unit:'%'},
+      {name:'粒度-200目',cond:'≥',val:'90',unit:'%'},
+      {name:'SiO₂',cond:'≤',val:'1.2',unit:'%'},
+      {name:'CaCO₃',cond:'≤',val:'0.5',unit:'%'},
+    ],
+    qcTpl:'QC-v3.1', qcName:'萤石粉标准模板',
+    qcIndicators:[
+      {no:1,name:'CaF₂含量',std:'≥97%',method:'EDTA滴定法',critical:true},
+      {no:2,name:'水分含量',std:'≤0.5%',method:'烘干称重法',critical:true},
+      {no:3,name:'粒度分布',std:'-200目过筛率≥90%',method:'湿法筛分',critical:false},
+      {no:4,name:'SiO₂含量',std:'≤1.2%',method:'化学分析',critical:false},
+      {no:5,name:'CaCO₃含量',std:'≤0.5%',method:'化学分析',critical:false},
+    ],
+    prices:[
+      {from:'2026-06-01',to:'2026-06-30',buy:1450,sell:1550,reason:'市场行情上调，供应紧张',updater:'运营管理员'},
+      {from:'2026-05-01',to:'2026-05-31',buy:1400,sell:1500,reason:'5月例行调价',updater:'运营管理员'},
+      {from:'2026-04-01',to:'2026-04-30',buy:1400,sell:1500,reason:'季度初定价',updater:'运营管理员'},
+      {from:'2026-03-01',to:'2026-03-31',buy:1380,sell:1480,reason:'原材料成本下降',updater:'运营管理员'},
+    ],
+    contracts:[
+      {no:'CG2026001',type:'采购合同',party:'玉门兴旺矿业',spec:'CaF₂≥97%',qty:'500吨',status:'执行中',date:'2026-06-05'},
+      {no:'XS2026001',type:'销售合同',party:'巨化集团',spec:'CaF₂≥97%',qty:'800吨',status:'执行中',date:'2026-06-08'},
+      {no:'XS2026002',type:'销售合同',party:'浙江萤石化工',spec:'CaF₂≥97%',qty:'200吨',status:'已完成',date:'2026-05-20'},
+    ],
+    stats:{inStock:'333吨',monthBuy:'1,200吨',monthSell:'980吨',contractCnt:8},
+  },
+  'MAT-002': {
+    name:'萤石粉', category:'萤石粉', unit:'吨', virtual:'否', status:'active',
+    internal:'', hs:'25291100', tax:'1092030000', remark:'',
+    specs:[
+      {name:'CaF₂含量',cond:'≥',val:'95',unit:'%'},
+      {name:'水分',cond:'≤',val:'1.0',unit:'%'},
+      {name:'粒度-200目',cond:'≥',val:'85',unit:'%'},
+      {name:'SiO₂',cond:'≤',val:'2.0',unit:'%'},
+      {name:'CaCO₃',cond:'≤',val:'0.8',unit:'%'},
+    ],
+    qcTpl:'QC-v3.1', qcName:'萤石粉标准模板',
+    qcIndicators:[
+      {no:1,name:'CaF₂含量',std:'≥95%',method:'EDTA滴定法',critical:true},
+      {no:2,name:'水分含量',std:'≤1.0%',method:'烘干称重法',critical:true},
+      {no:3,name:'粒度分布',std:'-200目过筛率≥85%',method:'湿法筛分',critical:false},
+      {no:4,name:'SiO₂含量',std:'≤2.0%',method:'化学分析',critical:false},
+      {no:5,name:'CaCO₃含量',std:'≤0.8%',method:'化学分析',critical:false},
+    ],
+    prices:[
+      {from:'2026-06-01',to:'2026-06-30',buy:1280,sell:1380,reason:'市场行情上调',updater:'运营管理员'},
+      {from:'2026-05-01',to:'2026-05-31',buy:1250,sell:1350,reason:'5月例行调价',updater:'运营管理员'},
+    ],
+    contracts:[
+      {no:'CG2026003',type:'采购合同',party:'酒泉盛源矿业',spec:'CaF₂≥95%',qty:'300吨',status:'执行中',date:'2026-06-10'},
+    ],
+    stats:{inStock:'120吨',monthBuy:'800吨',monthSell:'650吨',contractCnt:5},
+  },
+};
+
+// 默认 MAT-001
+const params = new URLSearchParams(location.search);
+const matId = params.get('id') || 'MAT-001';
+const m = MATERIALS[matId] || MATERIALS['MAT-001'];
+
+document.getElementById('bc-name').textContent = matId + ' · ' + m.name;
+document.getElementById('page-title').textContent = m.name + ' · ' + matId;
+document.getElementById('page-desc').textContent = m.category + ' · ' + m.specs[0]?.name + m.specs[0]?.cond + m.specs[0]?.val + m.specs[0]?.unit;
+document.getElementById('btn-edit').onclick = () => location.href = `material-new.html?id=${matId}&mode=edit`;
+document.getElementById('btn-toggle').textContent = m.status==='active' ? '停用' : '启用';
+document.getElementById('btn-toggle').onclick = () => {
+  if(confirm(`确认${m.status==='active'?'停用':'启用'}物料 ${matId}？`)) alert('操作成功');
+};
+
+// 统计卡
+const s = m.stats;
+document.getElementById('stat-row').innerHTML = `
+  <div class="stat-mini" style="background:var(--surface-2);border-radius:var(--radius);padding:14px 16px">
+    <div class="sm-label" style="font-size:11.5px;color:var(--text-3)">当前库存</div>
+    <div class="sm-val" style="font-size:18px;font-weight:800">${s.inStock}</div>
+  </div>
+  <div class="stat-mini" style="background:var(--surface-2);border-radius:var(--radius);padding:14px 16px">
+    <div class="sm-label" style="font-size:11.5px;color:var(--text-3)">本月采购量</div>
+    <div class="sm-val" style="font-size:18px;font-weight:800">${s.monthBuy}</div>
+  </div>
+  <div class="stat-mini" style="background:var(--surface-2);border-radius:var(--radius);padding:14px 16px">
+    <div class="sm-label" style="font-size:11.5px;color:var(--text-3)">本月销售量</div>
+    <div class="sm-val" style="font-size:18px;font-weight:800">${s.monthSell}</div>
+  </div>
+  <div class="stat-mini" style="background:var(--surface-2);border-radius:var(--radius);padding:14px 16px">
+    <div class="sm-label" style="font-size:11.5px;color:var(--text-3)">关联合同数</div>
+    <div class="sm-val" style="font-size:18px;font-weight:800">${s.contractCnt}<span style="font-size:13px;font-weight:400;color:var(--text-2);margin-left:3px">份</span></div>
+  </div>
+`;
+
+// 基本信息
+document.getElementById('d-code').textContent = matId;
+document.getElementById('d-name').textContent = m.name;
+document.getElementById('d-category').textContent = m.category;
+document.getElementById('d-unit').textContent = m.unit;
+document.getElementById('d-virtual').textContent = m.virtual;
+document.getElementById('d-status').innerHTML = m.status==='active' ? '<span class="badge b-success">启用</span>' : '<span class="badge b-default">停用</span>';
+document.getElementById('d-internal').textContent = m.internal || '—';
+document.getElementById('d-hs').textContent = m.hs || '—';
+document.getElementById('d-tax').textContent = m.tax || '—';
+document.getElementById('d-remark').textContent = m.remark || '—';
+
+// 规格表
+let specHtml = '';
+m.specs.forEach(s => { specHtml += `<tr><td>${s.name}</td><td>${s.cond}</td><td class="fw-700">${s.val}</td><td>${s.unit}</td></tr>`; });
+document.getElementById('spec-tbody').innerHTML = specHtml;
+
+// 质检模板
+let qcHtml = `<div class="section-divider">质检模板：${m.qcName}（${m.qcTpl}）</div>`;
+m.qcIndicators.forEach(ind => {
+  qcHtml += `<div class="qc-indicator">
+    <div class="qc-ind-num">${ind.no}</div>
+    <div style="flex:1">
+      <div class="fw-700" style="font-size:13px">${ind.name} ${ind.critical?'<span class="badge b-danger" style="font-size:10px">关键指标</span>':''}</div>
+      <div class="text-sm text-muted">标准：${ind.std} &nbsp;·&nbsp; 检测方法：${ind.method}</div>
+    </div>
+  </div>`;
+});
+document.getElementById('qc-content').innerHTML = qcHtml;
+
+// 价格记录
+let priceHtml = '';
+m.prices.forEach((p,i) => {
+  const prev = m.prices[i+1];
+  let trend = '—';
+  if (prev) {
+    if(p.buy > prev.buy) trend = `<span style="color:var(--success)">↑ +${p.buy-prev.buy}</span>`;
+    else if(p.buy < prev.buy) trend = `<span style="color:var(--danger)">↓ ${p.buy-prev.buy}</span>`;
+    else trend = '<span style="color:var(--text-3)">持平</span>';
+  }
+  priceHtml += `<tr><td>${p.from}</td><td>${p.to}</td><td class="fw-700">¥${p.buy.toLocaleString()}/吨</td><td class="fw-700">¥${p.sell.toLocaleString()}/吨</td><td>${trend}</td><td>${p.reason}</td><td>${p.updater}</td></tr>`;
+});
+document.getElementById('price-tbody').innerHTML = priceHtml;
+document.getElementById('price-hist-link').href = `price-history.html?material=${matId}`;
+
+// 关联合同
+let conHtml = '';
+m.contracts.forEach(c => {
+  const statusCls = c.status==='执行中'?'b-primary':'b-success';
+  conHtml += `<tr><td><a href="../caixiao/index.html" class="tbl-link">${c.no}</a></td><td>${c.type}</td><td>${c.party}</td><td>${c.spec}</td><td>${c.qty}</td><td><span class="badge ${statusCls}">${c.status}</span></td><td>${c.date}</td></tr>`;
+});
+document.getElementById('contract-tbody').innerHTML = conHtml;
+
+function switchTab(el, tabId) {
+  document.querySelectorAll('.mat-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['tab-basic','tab-qc','tab-price','tab-contract'].forEach(id => {
+    document.getElementById(id).style.display = id===tabId ? 'block' : 'none';
+  });
+}
+</script>
+</body>
+</html>

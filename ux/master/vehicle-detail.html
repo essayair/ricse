@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>车辆详情 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.v-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px}
+.v-tab{padding:10px 24px;font-size:13.5px;font-weight:600;color:var(--text-3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.v-tab:hover{color:var(--primary)}
+.v-tab.active{color:var(--primary);border-color:var(--primary)}
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:18px 0 12px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.detail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 28px}
+.detail-item{display:flex;flex-direction:column;gap:4px}
+.detail-label{font-size:11.5px;color:var(--text-3);font-weight:500}
+.detail-val{font-size:13.5px;color:var(--text);font-weight:500}
+.map-placeholder{background:var(--surface-2);border-radius:var(--radius-lg);border:1.5px dashed var(--border);height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-3)}
+.track-event{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border)}
+.track-dot{width:10px;height:10px;border-radius:50%;background:var(--primary);flex-shrink:0;margin-top:4px}
+.track-dot.grey{background:var(--border)}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item active">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#vehicle" class="link">车辆管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="bc-plate">车辆详情</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">车辆详情</div>
+        <div class="page-desc" id="page-desc">—</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html#vehicle"><button class="btn btn-default">返回列表</button></a>
+        <button class="btn btn-default" id="btn-edit">编辑</button>
+        <button class="btn btn-default" id="btn-toggle">停用</button>
+      </div>
+    </div>
+
+    <div style="max-width:960px">
+      <!-- 统计卡 -->
+      <div class="g4 mb-4" id="stat-row"></div>
+
+      <div class="card">
+        <div class="card-body" style="padding-bottom:0">
+          <div class="v-tabs">
+            <div class="v-tab active" onclick="switchTab(this,'tab-basic')">车辆档案</div>
+            <div class="v-tab" onclick="switchTab(this,'tab-track')">GPS 轨迹</div>
+            <div class="v-tab" onclick="switchTab(this,'tab-weigh')">历史磅单</div>
+            <div class="v-tab" onclick="switchTab(this,'tab-trans')">运输统计</div>
+          </div>
+        </div>
+
+        <!-- 档案 -->
+        <div id="tab-basic" class="card-body" style="padding-top:8px">
+          <div class="section-divider">车辆基本信息</div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="detail-label">车牌号码</div><div class="detail-val fw-700 text-lg" id="d-plate">—</div></div>
+            <div class="detail-item"><div class="detail-label">车辆类型</div><div class="detail-val" id="d-vtype">—</div></div>
+            <div class="detail-item"><div class="detail-label">当前状态</div><div class="detail-val" id="d-vstatus">—</div></div>
+            <div class="detail-item"><div class="detail-label">整备质量（皮重）</div><div class="detail-val" id="d-tare">—</div></div>
+            <div class="detail-item"><div class="detail-label">核定载重</div><div class="detail-val" id="d-maxload">—</div></div>
+            <div class="detail-item"><div class="detail-label">车牌颜色</div><div class="detail-val" id="d-platecolor">—</div></div>
+          </div>
+          <div class="section-divider">承运商 / 车主</div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="detail-label">归属承运商</div><div class="detail-val" id="d-carrier">—</div></div>
+            <div class="detail-item"><div class="detail-label">车主姓名</div><div class="detail-val" id="d-owner">—</div></div>
+            <div class="detail-item"><div class="detail-label">车主手机</div><div class="detail-val" id="d-owner-tel">—</div></div>
+          </div>
+          <div class="section-divider">关联司机</div>
+          <div id="d-drivers"></div>
+          <div class="section-divider">定位设备</div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="detail-label">设备类型</div><div class="detail-val" id="d-devtype">—</div></div>
+            <div class="detail-item"><div class="detail-label">设备编号</div><div class="detail-val" id="d-devid">—</div></div>
+            <div class="detail-item"><div class="detail-label">最后上线</div><div class="detail-val" id="d-devlast">—</div></div>
+          </div>
+          <div class="section-divider">证件有效期</div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="detail-label">行驶证号</div><div class="detail-val" id="d-cert">—</div></div>
+            <div class="detail-item"><div class="detail-label">年检到期日</div><div class="detail-val" id="d-annual">—</div></div>
+            <div class="detail-item"><div class="detail-label">交强险到期日</div><div class="detail-val" id="d-ins">—</div></div>
+          </div>
+        </div>
+
+        <!-- GPS 轨迹 -->
+        <div id="tab-track" class="card-body" style="display:none;padding-top:8px">
+          <div class="flex-between mb-3">
+            <div style="display:flex;gap:8px;align-items:center">
+              <span class="text-sm">选择日期：</span>
+              <input type="date" class="form-ctrl" style="width:160px" value="2026-06-23">
+              <button class="btn btn-default btn-sm">查询</button>
+            </div>
+            <div id="last-pos" class="text-sm text-muted"></div>
+          </div>
+          <div class="map-placeholder mb-4">
+            <div style="font-size:40px;margin-bottom:10px">🗺</div>
+            <div class="fw-700 mb-1">地图轨迹区域</div>
+            <div class="text-sm">生产环境将接入北斗/高德 API 显示实时轨迹</div>
+            <div class="text-sm mt-2" id="map-last-info">最后位置：玉门市工业园区（更新于 06:42）</div>
+          </div>
+          <div class="fw-700 mb-2 text-sm">今日位置事件</div>
+          <div id="track-events"></div>
+        </div>
+
+        <!-- 历史磅单 -->
+        <div id="tab-weigh" class="card-body" style="display:none;padding-top:8px">
+          <div class="flex-between mb-3">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="date" class="form-ctrl" style="width:160px" value="2026-06-01">
+              <span class="text-sm">至</span>
+              <input type="date" class="form-ctrl" style="width:160px" value="2026-06-23">
+              <button class="btn btn-default btn-sm">查询</button>
+            </div>
+            <a href="../weighbridge/index.html"><button class="btn btn-default btn-sm">查看磅站台账</button></a>
+          </div>
+          <table class="data-tbl">
+            <thead><tr><th>磅单号</th><th>过磅日期</th><th>过磅仓库</th><th>物料</th><th>毛重</th><th>皮重</th><th>净重</th><th>关联运单</th></tr></thead>
+            <tbody id="weigh-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- 运输统计 -->
+        <div id="tab-trans" class="card-body" style="display:none;padding-top:8px">
+          <div class="g4 mb-4" id="trans-stats"></div>
+          <div class="fw-700 mb-3 text-sm">近6个月运输趋势（吨）</div>
+          <div style="height:180px;background:var(--surface-2);border-radius:var(--radius-lg);display:flex;align-items:flex-end;padding:20px;gap:12px">
+            <div id="bar-chart" style="display:flex;align-items:flex-end;gap:12px;height:100%;width:100%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+const VEHICLES = {
+  'V-001':{
+    plate:'甘F·A1234',vtype:'半挂车（标准型）',vstatus:'active',tare:10.5,maxload:30,platecolor:'黄牌',
+    carrier:'玉门良运物流有限公司',owner:'王建国',ownerTel:'138xxxx5678',
+    drivers:[{name:'王建国',idcard:'62xxxxxxxxxxxx2345',tel:'138xxxx5678',role:'主驾'},{name:'李明',idcard:'62xxxxxxxxxxxx8901',tel:'139xxxx4321',role:'副驾'}],
+    devType:'北斗 OBD 终端',devId:'BD-123456',devLast:'2026-06-23 06:42',
+    cert:'甘F·A1234行驶证',annual:'2027-05-20',ins:'2026-12-31',
+    stats:{trips:47,totalTon:'1,410',avgTon:'30',certDays:332},
+    lastPos:'玉门市工业园区（2026-06-23 06:42）',
+    trackEvents:[
+      {time:'06:42',loc:'玉门堆场（WH-001）入场',type:'arrive'},
+      {time:'07:15',loc:'地磅A 过磅完成，净重 28.5 吨',type:'weigh'},
+      {time:'07:40',loc:'出发前往嘉峪关',type:'depart'},
+    ],
+    weighBills:[
+      {no:'WB2026-0623-001',date:'2026-06-23',wh:'玉门堆场',mat:'萤石粉97%',gross:39.2,tare:10.7,net:28.5,order:'YD2026-0623-001'},
+      {no:'WB2026-0620-005',date:'2026-06-20',wh:'玉门堆场',mat:'萤石粉95%',gross:40.1,tare:10.5,net:29.6,order:'YD2026-0620-003'},
+      {no:'WB2026-0618-002',date:'2026-06-18',wh:'玉门堆场',mat:'萤石粉97%',gross:38.8,tare:10.6,net:28.2,order:'YD2026-0618-001'},
+    ],
+    monthlyTons:[210,180,245,220,198,233],
+  },
+  'V-002':{
+    plate:'甘F·B5678',vtype:'半挂车（标准型）',vstatus:'active',tare:11.2,maxload:30,platecolor:'黄牌',
+    carrier:'玉门良运物流有限公司',owner:'张华',ownerTel:'137xxxx1234',
+    drivers:[{name:'张华',idcard:'62xxxxxxxxxxxx6789',tel:'137xxxx1234',role:'主驾'}],
+    devType:'北斗 OBD 终端',devId:'BD-789012',devLast:'2026-06-23 08:15',
+    cert:'甘F·B5678行驶证',annual:'2026-11-18',ins:'2026-11-30',
+    stats:{trips:32,totalTon:'960',avgTon:'30',certDays:148},
+    lastPos:'玉门—嘉峪关 途中（G30连霍高速）',
+    trackEvents:[
+      {time:'05:30',loc:'玉门堆场（WH-001）入场',type:'arrive'},
+      {time:'06:00',loc:'地磅A 过磅完成，净重 29.2 吨',type:'weigh'},
+      {time:'06:20',loc:'出发前往嘉峪关',type:'depart'},
+    ],
+    weighBills:[
+      {no:'WB2026-0623-002',date:'2026-06-23',wh:'玉门堆场',mat:'萤石粉97%',gross:40.4,tare:11.2,net:29.2,order:'YD2026-0623-002'},
+    ],
+    monthlyTons:[145,160,188,175,190,152],
+  },
+};
+
+const params = new URLSearchParams(location.search);
+const vid = params.get('id') || 'V-001';
+const v = VEHICLES[vid] || VEHICLES['V-001'];
+
+document.getElementById('bc-plate').textContent = v.plate;
+document.getElementById('page-title').textContent = v.plate + ' · 车辆详情';
+document.getElementById('page-desc').textContent = v.vtype + ' · ' + v.carrier;
+document.getElementById('btn-edit').onclick = () => location.href = `vehicle-new.html?id=${vid}&mode=edit`;
+document.getElementById('btn-toggle').textContent = v.vstatus==='active' ? '停用' : '启用';
+
+// 统计
+document.getElementById('stat-row').innerHTML = [
+  {label:'本年运输次数',val:v.stats.trips+'次'},
+  {label:'本年运输量',val:v.stats.totalTon+'吨'},
+  {label:'平均载货量',val:v.stats.avgTon+'吨/次'},
+  {label:'年检剩余天数',val:v.stats.certDays+'天',warn:v.stats.certDays<90},
+].map(s=>`<div style="background:var(--surface-2);border-radius:var(--radius);padding:14px 16px;${s.warn?'border:1.5px solid var(--warning)':''}"><div style="font-size:11.5px;color:var(--text-3)">${s.label}</div><div style="font-size:18px;font-weight:800;color:${s.warn?'var(--warning)':'var(--text)'}">${s.val}</div></div>`).join('');
+
+// 档案
+['plate','vtype','tare','maxload','platecolor','carrier','owner','ownerTel','devType','devId','devLast','cert','annual','ins'].forEach(k=>{
+  const el = document.getElementById('d-'+k.replace(/([A-Z])/g,(m)=>'-'+m.toLowerCase()));
+  if(el) el.textContent = v[k] || '—';
+});
+document.getElementById('d-plate').textContent = v.plate;
+document.getElementById('d-vtype').textContent = v.vtype;
+document.getElementById('d-tare').textContent = v.tare + ' 吨';
+document.getElementById('d-maxload').textContent = v.maxload + ' 吨';
+document.getElementById('d-platecolor').textContent = v.platecolor;
+document.getElementById('d-carrier').textContent = v.carrier;
+document.getElementById('d-owner').textContent = v.owner;
+document.getElementById('d-owner-tel').textContent = v.ownerTel;
+document.getElementById('d-devtype').textContent = v.devType;
+document.getElementById('d-devid').textContent = v.devId;
+document.getElementById('d-devlast').textContent = v.devLast;
+document.getElementById('d-cert').textContent = v.cert;
+document.getElementById('d-annual').textContent = v.annual;
+document.getElementById('d-ins').textContent = v.ins;
+document.getElementById('d-vstatus').innerHTML = v.vstatus==='active'?'<span class="badge b-success">在用</span>':'<span class="badge b-default">停用</span>';
+
+// 司机列表
+document.getElementById('d-drivers').innerHTML = `<table class="data-tbl"><thead><tr><th>姓名</th><th>身份证号</th><th>手机号</th><th>角色</th></tr></thead><tbody>${v.drivers.map(d=>`<tr><td>${d.name}</td><td>${d.idcard}</td><td>${d.tel}</td><td><span class="badge ${d.role==='主驾'?'b-primary':'b-default'}">${d.role}</span></td></tr>`).join('')}</tbody></table>`;
+
+// GPS
+document.getElementById('last-pos').textContent = '最后位置：' + v.lastPos;
+document.getElementById('map-last-info').textContent = '最后位置：' + v.lastPos;
+document.getElementById('track-events').innerHTML = v.trackEvents.map(e=>`<div class="track-event"><div class="track-dot ${e.type==='weigh'?'grey':''}"></div><div><div class="fw-700 text-sm">${e.time}</div><div class="text-sm text-muted">${e.loc}</div></div></div>`).join('');
+
+// 磅单
+document.getElementById('weigh-tbody').innerHTML = v.weighBills.map(w=>`<tr><td><a href="../weighbridge/index.html" class="tbl-link">${w.no}</a></td><td>${w.date}</td><td>${w.wh}</td><td>${w.mat}</td><td>${w.gross}吨</td><td>${w.tare}吨</td><td class="fw-700">${w.net}吨</td><td><a href="../logistics/index.html" class="tbl-link">${w.order}</a></td></tr>`).join('');
+
+// 运输统计
+const months=['1月','2月','3月','4月','5月','6月'];
+const maxT = Math.max(...v.monthlyTons);
+document.getElementById('trans-stats').innerHTML=[
+  {label:'本年累计运输',val:v.stats.totalTon+'吨'},
+  {label:'本年运输次数',val:v.stats.trips+'次'},
+  {label:'平均载货量',val:v.stats.avgTon+'吨/次'},
+  {label:'本月运输量',val:v.monthlyTons[5]+'吨'},
+].map(s=>`<div style="background:var(--surface-2);border-radius:var(--radius);padding:14px 16px"><div style="font-size:11.5px;color:var(--text-3)">${s.label}</div><div style="font-size:18px;font-weight:800">${s.val}</div></div>`).join('');
+document.getElementById('bar-chart').innerHTML=v.monthlyTons.map((t,i)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1"><div style="background:var(--primary);border-radius:4px 4px 0 0;width:100%;height:${(t/maxT*130)|0}px;opacity:.8"></div><div style="font-size:11px;font-weight:700">${t}</div><div style="font-size:11px;color:var(--text-3)">${months[i]}</div></div>`).join('');
+
+function switchTab(el, tabId) {
+  document.querySelectorAll('.v-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  ['tab-basic','tab-track','tab-weigh','tab-trans'].forEach(id=>{
+    document.getElementById(id).style.display=id===tabId?'block':'none';
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# icpux · 萤石产业链运营平台
+【此项目为原型页面】
+矿产（萤石）供应链全链路管理系统，当前为**静态 HTML 原型**，用于快速验证业务流程与交互设计。
+
+## 快速开始
+
+直接在浏览器打开 `index.html` 即可浏览所有页面，纯静态，无需服务器或构建步骤，所有链接均可点击跳转。
+
+## 业务流程
+
+```
+主数据 → 采销合同 → 物流运输 → 地磅过磅 → 质检化验 → 入库存储 → 价款结算
+```
+
+## 项目结构
+
+```
+├── index.html              # 入口：系统总览 / 工作台
+├── assets/css/style.css    # 全局样式（CSS 设计系统）
+├── caixiao/                # 采销系统：合同、订单、调度、结算
+├── logistics/              # 物流管理：调度看板、运单、出入库、对账
+├── inventory/              # 库存管理：在库总览、批次库位
+├── weighbridge/            # 地磅管理：磅单上传、称重明细
+├── quality/                # 质检化验：取样、报告、熔断
+├── monitor/                # 监控录像：实时画面、存证
+├── master/                 # 主数据：往来单位、物料、仓库、车辆、价格、用户、审批
+├── org/                    # 组织数据：公司、部门、岗位
+└── docs/                   # 产品文档：PRD、技术架构、各角色需求
+```
+
+## 相关文档
+
+- [功能特性 PRD](docs/function-prd.md)
+- [技术架构设计](docs/tech-architect.md)
+- [采销业务员 · 合同管理](docs/02_采销业务员-合同管理.md)
+- [物流运营 · 物流管理](docs/03_物流运营-物流管理.md)
+- [现场一线 · 地磅质检监控](docs/04_现场一线-地磅质检监控.md)
+- [仓储库管 · 库存管理](docs/05_仓储库管-库存管理.md)
+- [财务结算 · 资金付款管理](docs/06_财务结算-资金付款管理.md)
+- [运营管理者 · 工作台](docs/07_运营管理者-工作台.md)
+
+## 技术规划
+
+原型验证完成后，将升级为全栈生产系统（参见 [tech-architect.md](docs/tech-architect.md)）：
+
+- **后端**：NestJS + TypeScript + Prisma + PostgreSQL + Redis
+- **前端**：Next.js 14 (App Router) + Ant Design 5 + TanStack Query
+- **部署**：Docker Compose → 云服务器，GitHub Actions CI/CD

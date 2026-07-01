@@ -1,0 +1,272 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>手动入库 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item active">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检化验</div>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">⚖</span>地磅管理</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📹</span>监控录像</div>
+      <a href="../monitor/index.html" class="nav-item">实时监控</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html" class="link">库存管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur">手动入库</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">手动入库登记</div>
+        <div class="page-desc">手动创建入库单并生成批次；正常入库由"到货 + 过磅 + 质检合格"自动触发</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="submitInbound()">确认入库</button>
+      </div>
+    </div>
+
+    <div style="max-width:820px">
+
+      <div class="alert alert-warn mb-4">
+        <span>⚠</span>
+        <div class="text-sm">手动入库记录将打「人工录入」标签，质检结论未确认前批次保持锁定状态，不可出库。建议优先通过正常流程自动触发入库。</div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">入库来源</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">关联采购订单</label>
+              <select class="form-ctrl">
+                <option value="">请选择订单…</option>
+                <option>PO-20260601-001 · 玉门兴旺矿业 · 97% · 100吨</option>
+                <option>PO-20260601-002 · 玉门兴旺矿业 · 97% · 120吨</option>
+                <option>PO-20260605-001 · 酒泉盛源矿业 · 90% · 200吨</option>
+                <option value="none">无关联订单（临时入库）</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">关联运单</label>
+              <select class="form-ctrl">
+                <option value="">请选择运单…（可选）</option>
+                <option>WB-20260610-06 · 甘A·12345</option>
+                <option>WB-20260610-02 · 甘B·88890</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">关联磅单</label>
+              <select class="form-ctrl">
+                <option value="">请选择磅单…（可选）</option>
+                <option>WS-20260610-008 · 甘A·12345 · 净重74.8吨</option>
+                <option>WS-20260610-009 · 甘B·88890 · 称重中</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">货物信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">物料品种</label>
+              <select class="form-ctrl">
+                <option value="">请选择…</option>
+                <option>萤石粉 CaF₂≥97%</option>
+                <option>萤石粉 CaF₂≥95%</option>
+                <option>萤石粉 CaF₂≥90%</option>
+                <option>萤石块 CaF₂≥85%</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">入库数量（净重）</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" placeholder="以磅单净重为准">
+                <span class="text-muted">吨</span>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">供应商</label>
+              <select class="form-ctrl">
+                <option value="">请选择…</option>
+                <option>玉门兴旺矿业有限公司</option>
+                <option>玉门众鑫萤石矿业</option>
+                <option>酒泉盛源矿业</option>
+                <option>嘉峪关矿冶有限公司</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">库位指定</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">仓库</label>
+              <select class="form-ctrl" id="warehouse">
+                <option value="">请选择仓库…</option>
+                <option value="A">玉门堆场 A区</option>
+                <option value="B">玉门堆场 B区</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">库位</label>
+              <select class="form-ctrl" id="location">
+                <option value="">先选仓库…</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">入库日期</label>
+              <input class="form-ctrl" type="date" value="2026-06-11">
+            </div>
+          </div>
+          <div class="alert alert-info mt-3">
+            <span>ℹ</span>
+            <div class="text-sm">A-01(145/150吨 96%) · A-02(120/150吨 80%) · A-03(68/150吨 45%) · <strong>A-06(空置 可用)</strong> · B-01(180/300吨 60%) · B-02(110/300吨 37%)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">质检状态</span></div>
+        <div class="card-body">
+          <div class="form-grid fg2">
+            <div class="form-item">
+              <label class="form-label req">质检状态</label>
+              <select class="form-ctrl" id="qc-status" onchange="toggleQC()">
+                <option value="pending">待质检（入库后锁定，等待质检）</option>
+                <option value="passed">已质检合格（附质检单号）</option>
+                <option value="skip">跳过质检（需说明原因）</option>
+              </select>
+            </div>
+            <div class="form-item" id="qc-ref-item" style="display:none">
+              <label class="form-label req">关联质检单</label>
+              <select class="form-ctrl">
+                <option value="">请选择质检单…</option>
+                <option>QC-20260610-001 · 合格 · 97.3%品位 0.3%水分</option>
+                <option>QC-20260610-003 · 待检</option>
+              </select>
+            </div>
+            <div class="form-item" id="qc-reason-item" style="display:none">
+              <label class="form-label req">跳过原因</label>
+              <input class="form-ctrl" type="text" placeholder="请说明跳过质检的原因…">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">备注</span></div>
+        <div class="card-body">
+          <textarea class="form-ctrl" placeholder="入库特殊情况、手动录入原因…" rows="3"></textarea>
+        </div>
+      </div>
+
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="submitInbound()">确认入库 →</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+const locs = {
+  A: ['A-01 (96%满)', 'A-02 (80%满)', 'A-03 (45%满)', 'A-04 (63%满)', 'A-05 (待质检)', 'A-06 (空置 ✓推荐)'],
+  B: ['B-01 (60%满)', 'B-02 (37%满)', 'B-03 (待质检)', 'B-04 (空置 ✓推荐)'],
+};
+document.getElementById('warehouse').onchange = function() {
+  const sel = document.getElementById('location');
+  sel.innerHTML = '<option value="">请选择库位…</option>';
+  (locs[this.value] || []).forEach(l => {
+    const o = document.createElement('option');
+    o.textContent = l;
+    sel.appendChild(o);
+  });
+};
+function toggleQC() {
+  const v = document.getElementById('qc-status').value;
+  document.getElementById('qc-ref-item').style.display = v === 'passed' ? 'flex' : 'none';
+  document.getElementById('qc-reason-item').style.display = v === 'skip' ? 'flex' : 'none';
+}
+function submitInbound() {
+  if (confirm('确认提交入库单？将生成新批次并更新库存台账。')) {
+    window.location.href = 'index.html';
+  }
+}
+</script>
+</body>
+</html>

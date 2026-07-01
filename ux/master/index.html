@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>主数据管理 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.cap-bar{display:inline-block;width:72px;height:6px;background:var(--border);border-radius:3px;vertical-align:middle;margin-right:6px;overflow:hidden}
+.cap-fill{height:100%;border-radius:3px}
+.cap-lo{background:var(--success)}.cap-mid{background:var(--warning)}.cap-hi{background:var(--danger)}
+.wh-hd-row td{background:var(--surface-2);font-weight:700;cursor:pointer;user-select:none}
+.zone-hd-row td{background:#fafbfc;font-weight:600;cursor:pointer;padding-left:36px!important}
+.loc-row td:first-child{padding-left:60px}
+.toggle-arrow{display:inline-block;transition:transform .15s;margin-right:6px;color:var(--text-3)}
+.collapsed .toggle-arrow{transform:rotate(-90deg)}
+/* approval flow visual */
+.flow-chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 0}
+.flow-node{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:56px}
+.fn-circle{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid}
+.fn-init{background:#f0fdf4;border-color:var(--success);color:var(--success)}
+.fn-appr{background:var(--primary-bg);border-color:var(--primary);color:var(--primary)}
+.fn-cond{background:var(--warning-bg);border-color:var(--warning);color:var(--warning)}
+.fn-label{font-size:10px;color:var(--text-3);text-align:center;line-height:1.2}
+.fn-arrow{color:var(--text-3);font-size:14px;flex-shrink:0;margin-top:-10px}
+.fn-cc{background:#fdf4ff;border-color:#a855f7;color:#7c3aed}
+/* modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--surface);border-radius:var(--radius-lg);padding:28px 32px;max-width:680px;width:94%;max-height:82vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.modal-title{font-size:15px;font-weight:700}
+.modal-close{font-size:20px;cursor:pointer;color:var(--text-3);line-height:1}
+.modal-close:hover{color:var(--text)}
+.af-section{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:14px 0 8px;border-bottom:1px solid var(--border);margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item" data-nav="partner">往来单位</a>
+      <a href="index.html#material" class="nav-item" data-nav="material">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item" data-nav="warehouse">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item" data-nav="vehicle">车辆管理</a>
+      <a href="index.html#price" class="nav-item" data-nav="price">价格基准</a>
+      <a href="index.html#user" class="nav-item" data-nav="user">用户与权限</a>
+      <a href="index.html#approval" class="nav-item" data-nav="approval">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="bc-cur">主数据管理</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">主数据管理</div>
+        <div class="page-desc" id="page-desc">全平台共享基础档案，统一管理往来单位、物料、仓库库位、车辆、价格基准</div>
+      </div>
+      <div class="page-actions" id="page-actions"></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="tab-bar">
+      <div class="tab" data-tab="partner"  onclick="location.hash='partner'">往来单位</div>
+      <div class="tab" data-tab="material" onclick="location.hash='material'">物料品类</div>
+      <div class="tab" data-tab="warehouse" onclick="location.hash='warehouse'">仓库库位</div>
+      <div class="tab" data-tab="vehicle"  onclick="location.hash='vehicle'">车辆管理</div>
+      <div class="tab" data-tab="price"    onclick="location.hash='price'">价格基准</div>
+      <div class="tab" data-tab="user"     onclick="location.hash='user'">用户与权限</div>
+      <div class="tab" data-tab="approval" onclick="location.hash='approval'">审批流程配置</div>
+    </div>
+
+    <!-- ══ 往来单位 ══ -->
+    <div id="t-partner">
+      <div class="filter-bar">
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" placeholder="搜索企业名称 / 编码 / 法人…"></div>
+        <select class="filter-select"><option>全部类型</option><option>供应商</option><option>客户</option><option>承运商</option><option>供应商兼客户</option></select>
+        <select class="filter-select"><option>全部类别</option><option>核心合作伙伴</option><option>普通合作伙伴</option><option>临时合作伙伴</option></select>
+        <select class="filter-select"><option>全部状态</option><option>合作中</option><option>额度预警</option><option>已停用</option></select>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead><tr><th>编码</th><th>企业名称</th><th>类型</th><th>省市</th><th>法人</th><th>联系电话</th><th>类别</th><th>纳税评级</th><th>授信额度</th><th>已用额度</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td class="text-muted" style="font-size:12px">BP-2022-001</td><td><a href="partner-detail.html?id=BP-2022-001" class="tbl-link">巨化集团有限公司</a></td><td><span class="badge b-success">客户</span></td><td>浙江 / 衢州</td><td>孙晓峰</td><td>571-xxxx-7890</td><td><span class="badge b-primary">核心</span></td><td><span class="badge b-success">A级</span></td><td>¥200万</td><td><span style="color:var(--success)">¥46.5万 (23%)</span></td><td><span class="badge b-success">合作中</span></td><td class="flex-c gap-2"><a href="partner-detail.html?id=BP-2022-001"><button class="btn btn-default btn-xs">详情</button></a><a href="partner-new.html?id=BP-2022-001&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="text-muted" style="font-size:12px">BP-2022-002</td><td><a href="partner-detail.html?id=BP-2022-002" class="tbl-link">浙江萤石化工有限公司</a></td><td><span class="badge b-success">客户</span></td><td>浙江 / 金华</td><td>陈卫国</td><td>579-xxxx-4321</td><td><span class="badge b-primary">核心</span></td><td><span class="badge b-success">A级</span></td><td>¥50万</td><td><span style="color:var(--success)">¥20.7万 (41%)</span></td><td><span class="badge b-success">合作中</span></td><td class="flex-c gap-2"><a href="partner-detail.html?id=BP-2022-002"><button class="btn btn-default btn-xs">详情</button></a><a href="partner-new.html?id=BP-2022-002&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="text-muted" style="font-size:12px">BP-2023-001</td><td><a href="partner-detail.html?id=BP-2023-001" class="tbl-link">玉门兴旺矿业有限公司</a></td><td><span class="badge b-info">供应商</span></td><td>甘肃 / 酒泉</td><td>张建国</td><td>139-xxxx-1234</td><td><span class="badge b-primary">核心</span></td><td><span class="badge b-success">A级</span></td><td>¥50万</td><td><span style="color:var(--success)">¥14.5万 (29%)</span></td><td><span class="badge b-success">合作中</span></td><td class="flex-c gap-2"><a href="partner-detail.html?id=BP-2023-001"><button class="btn btn-default btn-xs">详情</button></a><a href="partner-new.html?id=BP-2023-001&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="text-muted" style="font-size:12px">BP-2023-002</td><td><a href="partner-detail.html?id=BP-2023-002" class="tbl-link">玉门众鑫萤石矿业</a></td><td><span class="badge b-info">供应商</span></td><td>甘肃 / 酒泉</td><td>李明辉</td><td>135-xxxx-5678</td><td><span class="badge b-default">普通</span></td><td><span class="badge b-warning">B级</span></td><td>¥15万</td><td><span style="color:var(--danger)">¥13.8万 (92%) ⚠</span></td><td><span class="badge b-warning">额度预警</span></td><td class="flex-c gap-2"><a href="partner-detail.html?id=BP-2023-002"><button class="btn btn-default btn-xs">详情</button></a><a href="partner-new.html?id=BP-2023-002&mode=edit"><button class="btn btn-warning btn-xs">编辑</button></a></td></tr>
+              <tr><td class="text-muted" style="font-size:12px">BP-2023-003</td><td><a href="partner-detail.html?id=BP-2023-003" class="tbl-link">酒泉盛源矿业</a></td><td><span class="badge b-info">供应商</span></td><td>甘肃 / 酒泉</td><td>王富贵</td><td>138-xxxx-9012</td><td><span class="badge b-primary">核心</span></td><td><span class="badge b-success">A级</span></td><td>¥30万</td><td><span style="color:var(--success)">¥19.6万 (65%)</span></td><td><span class="badge b-success">合作中</span></td><td class="flex-c gap-2"><a href="partner-detail.html?id=BP-2023-003"><button class="btn btn-default btn-xs">详情</button></a><a href="partner-new.html?id=BP-2023-003&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="text-muted" style="font-size:12px">BP-2023-004</td><td><a href="partner-detail.html?id=BP-2023-004" class="tbl-link">玉门良运物流有限公司</a></td><td><span class="badge b-default">承运商</span></td><td>甘肃 / 酒泉</td><td>周良</td><td>138-xxxx-1111</td><td><span class="badge b-primary">核心</span></td><td>—</td><td>—</td><td>—</td><td><span class="badge b-success">合作中</span></td><td class="flex-c gap-2"><a href="partner-detail.html?id=BP-2023-004"><button class="btn btn-default btn-xs">详情</button></a><a href="partner-new.html?id=BP-2023-004&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="text-muted" style="font-size:12px">BP-2024-001</td><td><a href="partner-detail.html?id=BP-2024-001" class="tbl-link">嘉峪关矿冶有限公司</a></td><td><span class="badge b-info">供应商</span></td><td>甘肃 / 嘉峪关</td><td>赵俊峰</td><td>187-xxxx-3456</td><td><span class="badge b-default">普通</span></td><td><span class="badge b-success">A级</span></td><td>¥20万</td><td><span style="color:var(--success)">¥0 (0%)</span></td><td><span class="badge b-success">合作中</span></td><td class="flex-c gap-2"><a href="partner-detail.html?id=BP-2024-001"><button class="btn btn-default btn-xs">详情</button></a><a href="partner-new.html?id=BP-2024-001&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft"><span class="text-sm text-muted">共 7 条</span><div class="pager"><div class="pg-btn active">1</div></div></div>
+      </div>
+    </div>
+
+    <!-- ══ 物料品类 ══ -->
+    <div id="t-material" style="display:none">
+      <div class="filter-bar">
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" placeholder="搜索物料编码 / 品名 / 规格…"></div>
+        <select class="filter-select"><option>全部大类</option><option>萤石粉</option><option>萤石块</option><option>虚拟物料</option></select>
+        <select class="filter-select"><option>全部状态</option><option>启用</option><option>停用</option></select>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead><tr><th>物料编码</th><th>品名</th><th>规格标准</th><th>大类</th><th>计量单位</th><th>质检指标模板</th><th>参考价格</th><th>商品编码</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="text-muted" style="font-size:12px">MAT-001</td>
+                <td><a href="material-detail.html?id=MAT-001" class="tbl-link">萤石粉</a></td>
+                <td>CaF₂≥97%，水分≤0.5%，粒度-200目≥90%</td>
+                <td>萤石粉</td><td>吨</td>
+                <td><span class="badge b-info">QC-v3.1 · 5项指标</span></td>
+                <td>¥1,450/吨</td>
+                <td><span class="tag">HS 25291100</span></td>
+                <td><span class="badge b-success">启用</span></td>
+                <td class="flex-c gap-2"><a href="material-detail.html?id=MAT-001"><button class="btn btn-default btn-xs">详情</button></a><a href="material-new.html?id=MAT-001&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="font-size:12px">MAT-002</td>
+                <td><a href="material-detail.html?id=MAT-002" class="tbl-link">萤石粉</a></td>
+                <td>CaF₂≥95%，水分≤1.0%，粒度-200目≥85%</td>
+                <td>萤石粉</td><td>吨</td>
+                <td><span class="badge b-info">QC-v3.1 · 5项指标</span></td>
+                <td>¥1,280/吨</td>
+                <td><span class="tag">HS 25291100</span></td>
+                <td><span class="badge b-success">启用</span></td>
+                <td class="flex-c gap-2"><a href="material-detail.html?id=MAT-002"><button class="btn btn-default btn-xs">详情</button></a><a href="material-new.html?id=MAT-002&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="font-size:12px">MAT-003</td>
+                <td><a href="material-detail.html?id=MAT-003" class="tbl-link">萤石粉</a></td>
+                <td>CaF₂≥90%，水分≤1.5%，粒度-200目≥80%</td>
+                <td>萤石粉</td><td>吨</td>
+                <td><span class="badge b-info">QC-v3.1 · 5项指标</span></td>
+                <td>¥980/吨</td>
+                <td><span class="tag">HS 25291100</span></td>
+                <td><span class="badge b-success">启用</span></td>
+                <td class="flex-c gap-2"><a href="material-detail.html?id=MAT-003"><button class="btn btn-default btn-xs">详情</button></a><a href="material-new.html?id=MAT-003&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="font-size:12px">MAT-004</td>
+                <td><a href="material-detail.html?id=MAT-004" class="tbl-link">萤石块</a></td>
+                <td>CaF₂≥85%，块度 15-50mm</td>
+                <td>萤石块</td><td>吨</td>
+                <td><span class="badge b-warning">QC-v2.0 · 3项指标</span></td>
+                <td>¥780/吨</td>
+                <td><span class="tag">HS 25291900</span></td>
+                <td><span class="badge b-success">启用</span></td>
+                <td class="flex-c gap-2"><a href="material-detail.html?id=MAT-004"><button class="btn btn-default btn-xs">详情</button></a><a href="material-new.html?id=MAT-004&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="font-size:12px">MAT-005</td>
+                <td><a href="material-detail.html?id=MAT-005" class="tbl-link">精制萤石粉（委托加工）</a></td>
+                <td>CaF₂≥99%，水分≤0.1%，粒度-325目≥95%</td>
+                <td>虚拟物料</td><td>吨</td>
+                <td><span class="badge b-info">QC-v3.2 · 6项指标</span></td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="badge b-default">停用</span></td>
+                <td class="flex-c gap-2"><a href="material-detail.html?id=MAT-005"><button class="btn btn-default btn-xs">详情</button></a><a href="material-new.html?id=MAT-005&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft"><span class="text-sm text-muted">共 5 条</span><div class="pager"><div class="pg-btn active">1</div></div></div>
+      </div>
+    </div>
+
+    <!-- ══ 仓库库位 ══ -->
+    <div id="t-warehouse" style="display:none">
+      <div class="filter-bar">
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" placeholder="搜索库位编码 / 仓库名…"></div>
+        <select class="filter-select"><option>全部仓库</option><option>玉门堆场</option><option>嘉峪关中转站</option></select>
+        <select class="filter-select"><option>全部类型</option><option>自有仓</option><option>第三方仓</option><option>监管仓</option></select>
+        <select class="filter-select"><option>全部状态</option><option>正常</option><option>接近满仓</option><option>停用</option></select>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl" id="wh-table">
+            <thead><tr><th>仓库 / 库区 / 库位</th><th>仓库类型</th><th>设计容量</th><th>当前库存</th><th>使用率</th><th>适用物料</th><th>地磅关联</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="wh-tbody"></tbody>
+          </table>
+        </div>
+        <div class="card-ft">
+          <span class="text-sm text-muted">2个仓库 · 3个库区 · 6个库位 · 总容量 1,550吨 · 当前 623吨 (40%)</span>
+          <button class="btn btn-default btn-sm" onclick="expandAll()">全部展开</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 车辆管理 ══ -->
+    <div id="t-vehicle" style="display:none">
+      <div class="filter-bar">
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" placeholder="搜索车牌号 / 司机 / 承运商…"></div>
+        <select class="filter-select"><option>全部状态</option><option>空闲</option><option>在途</option><option>围栏内</option><option>接近围栏</option><option>超时告警</option></select>
+        <select class="filter-select"><option>全部承运商</option><option>玉门良运物流</option><option>安泰货运</option><option>金昌运通</option><option>西北货运联盟</option></select>
+        <select class="filter-select"><option>全部车型</option><option>重型半挂</option><option>厢式货车</option></select>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead><tr><th>车牌号</th><th>车型</th><th>额定载重</th><th>皮重</th><th>北斗设备</th><th>所属承运商</th><th>司机</th><th>联系电话</th><th>当前状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td class="fw-700"><a href="vehicle-detail.html?id=GAN-A12345" class="tbl-link">甘A·12345</a></td><td>重型半挂</td><td>50吨</td><td>12.7吨</td><td><span class="badge b-success">BD-2023-0612</span></td><td>安泰货运</td><td>刘德华</td><td>138-xxxx-2345</td><td><span class="badge b-primary">在途</span></td><td class="flex-c gap-2"><a href="vehicle-detail.html?id=GAN-A12345"><button class="btn btn-default btn-xs">详情</button></a><a href="vehicle-new.html?id=GAN-A12345&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="fw-700"><a href="vehicle-detail.html?id=GAN-A55678" class="tbl-link">甘A·55678</a></td><td>重型半挂</td><td>50吨</td><td>12.3吨</td><td><span class="badge b-success">BD-2023-0915</span></td><td>金昌运通</td><td>张国强</td><td>158-xxxx-6789</td><td><span class="badge b-warning">接近围栏</span></td><td class="flex-c gap-2"><a href="vehicle-detail.html?id=GAN-A55678"><button class="btn btn-default btn-xs">详情</button></a><a href="vehicle-new.html?id=GAN-A55678&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="fw-700"><a href="vehicle-detail.html?id=GAN-B66789" class="tbl-link">甘B·66789</a></td><td>重型半挂</td><td>55吨</td><td>13.2吨</td><td><span class="badge b-success">BD-2022-0408</span></td><td>玉门良运物流</td><td>王五</td><td>139-xxxx-9012</td><td><span class="badge b-danger">超时告警</span></td><td class="flex-c gap-2"><a href="vehicle-detail.html?id=GAN-B66789"><button class="btn btn-default btn-xs">详情</button></a><a href="vehicle-new.html?id=GAN-B66789&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="fw-700"><a href="vehicle-detail.html?id=GAN-B88890" class="tbl-link">甘B·88890</a></td><td>重型半挂</td><td>55吨</td><td>12.8吨</td><td><span class="badge b-success">BD-2024-0101</span></td><td>玉门良运物流</td><td>陈六</td><td>137-xxxx-3456</td><td><span class="badge b-primary">在途</span></td><td class="flex-c gap-2"><a href="vehicle-detail.html?id=GAN-B88890"><button class="btn btn-default btn-xs">详情</button></a><a href="vehicle-new.html?id=GAN-B88890&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="fw-700"><a href="vehicle-detail.html?id=LONG-A33456" class="tbl-link">陇A·33456</a></td><td>重型半挂</td><td>50吨</td><td>13.0吨</td><td><span class="badge b-success">BD-2023-0520</span></td><td>西北货运联盟</td><td>李七</td><td>188-xxxx-7890</td><td><span class="badge b-info">围栏内</span></td><td class="flex-c gap-2"><a href="vehicle-detail.html?id=LONG-A33456"><button class="btn btn-default btn-xs">详情</button></a><a href="vehicle-new.html?id=LONG-A33456&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+              <tr><td class="fw-700"><a href="vehicle-detail.html?id=GAN-C11234" class="tbl-link">甘C·11234</a></td><td>重型半挂</td><td>50吨</td><td>12.5吨</td><td><span class="badge b-warning">BD-2021-0303 · 待更新</span></td><td>玉门良运物流</td><td>周八</td><td>136-xxxx-4567</td><td><span class="badge b-default">空闲</span></td><td class="flex-c gap-2"><a href="vehicle-detail.html?id=GAN-C11234"><button class="btn btn-default btn-xs">详情</button></a><a href="vehicle-new.html?id=GAN-C11234&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft"><span class="text-sm text-muted">共 6 辆 · 在途 2 · 围栏内 1 · 空闲 1 · 告警 1</span><div class="pager"><div class="pg-btn active">1</div></div></div>
+      </div>
+    </div>
+
+    <!-- ══ 价格基准 ══ -->
+    <div id="t-price" style="display:none">
+      <div class="alert alert-info mb-4"><span>ℹ</span><div>价格基准为合同定价参考，实际交易价格以合同约定为准。变更价格基准需填写变更原因，历史价格全程留档可追溯。</div></div>
+      <div class="filter-bar">
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" placeholder="搜索物料名称…"></div>
+        <select class="filter-select"><option>全部状态</option><option>生效中</option><option>已失效</option></select>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead><tr><th>物料</th><th>采购基准价</th><th>较上期</th><th>销售基准价</th><th>较上期</th><th>价格来源</th><th>生效日期</th><th>失效日期</th><th>维护人</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td>萤石粉 CaF₂≥97%</td><td class="fw-700">¥1,450/吨</td><td><span style="color:var(--success)">↑ +50</span></td><td class="fw-700">¥1,550/吨</td><td><span style="color:var(--success)">↑ +50</span></td><td>手工维护</td><td>2026-06-01</td><td>2026-06-30</td><td>运营管理员</td><td><span class="badge b-success">生效中</span></td><td class="flex-c gap-2"><button class="btn btn-default btn-xs" onclick="editPrice('MAT-001')">编辑</button><a href="price-history.html?material=MAT-001"><button class="btn btn-default btn-xs">历史</button></a></td></tr>
+              <tr><td>萤石粉 CaF₂≥95%</td><td class="fw-700">¥1,280/吨</td><td><span style="color:var(--success)">↑ +30</span></td><td class="fw-700">¥1,380/吨</td><td><span style="color:var(--success)">↑ +30</span></td><td>手工维护</td><td>2026-06-01</td><td>2026-06-30</td><td>运营管理员</td><td><span class="badge b-success">生效中</span></td><td class="flex-c gap-2"><button class="btn btn-default btn-xs" onclick="editPrice('MAT-002')">编辑</button><a href="price-history.html?material=MAT-002"><button class="btn btn-default btn-xs">历史</button></a></td></tr>
+              <tr><td>萤石粉 CaF₂≥90%</td><td class="fw-700">¥980/吨</td><td><span style="color:var(--text-3)">— 持平</span></td><td class="fw-700">¥1,060/吨</td><td><span style="color:var(--text-3)">— 持平</span></td><td>手工维护</td><td>2026-06-01</td><td>2026-06-30</td><td>运营管理员</td><td><span class="badge b-success">生效中</span></td><td class="flex-c gap-2"><button class="btn btn-default btn-xs" onclick="editPrice('MAT-003')">编辑</button><a href="price-history.html?material=MAT-003"><button class="btn btn-default btn-xs">历史</button></a></td></tr>
+              <tr><td>萤石块 CaF₂≥85%</td><td class="fw-700">¥780/吨</td><td><span style="color:var(--danger)">↓ -20</span></td><td class="fw-700">¥850/吨</td><td><span style="color:var(--danger)">↓ -20</span></td><td>手工维护</td><td>2026-06-01</td><td>2026-06-30</td><td>运营管理员</td><td><span class="badge b-success">生效中</span></td><td class="flex-c gap-2"><button class="btn btn-default btn-xs" onclick="editPrice('MAT-004')">编辑</button><a href="price-history.html?material=MAT-004"><button class="btn btn-default btn-xs">历史</button></a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft"><span class="text-sm text-muted">共 4 条生效价格</span></div>
+      </div>
+    </div>
+
+    <!-- ══ 用户与权限 ══ -->
+    <div id="t-user" style="display:none">
+      <div class="filter-bar">
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" placeholder="搜索用户名 / 姓名…"></div>
+        <select class="filter-select"><option>全部角色</option><option>超级管理员</option><option>采购专员</option><option>销售专员</option><option>质检专员</option><option>仓储管理员</option><option>财务审核</option></select>
+        <select class="filter-select"><option>全部状态</option><option>正常</option><option>已停用</option></select>
+        <select class="filter-select"><option>全部部门组</option><option>玉门运营组</option><option>嘉峪关组</option></select>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead><tr><th>用户名</th><th>姓名</th><th>角色</th><th>所属部门</th><th>数据权限范围</th><th>手机号</th><th>最后登录</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td>admin</td><td>运营管理员</td><td><span class="badge b-danger">超级管理员</span></td><td>综合管理部</td><td>全部</td><td>138-xxxx-0000</td><td>今日 09:30</td><td><span class="badge b-success">正常</span></td><td class="flex-c gap-2"><a href="user-new.html?id=admin&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a><button class="btn btn-default btn-xs" onclick="resetPwd('admin')">重置密码</button></td></tr>
+              <tr><td>buyer01</td><td>王明</td><td><span class="badge b-primary">采购专员</span></td><td>采购部</td><td>玉门运营组</td><td>138-xxxx-1111</td><td>今日 08:15</td><td><span class="badge b-success">正常</span></td><td class="flex-c gap-2"><a href="user-new.html?id=buyer01&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a><button class="btn btn-default btn-xs" onclick="resetPwd('buyer01')">重置密码</button></td></tr>
+              <tr><td>sales01</td><td>张丽</td><td><span class="badge b-primary">销售专员</span></td><td>销售部</td><td>玉门运营组</td><td>139-xxxx-2222</td><td>昨日 17:30</td><td><span class="badge b-success">正常</span></td><td class="flex-c gap-2"><a href="user-new.html?id=sales01&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a><button class="btn btn-default btn-xs" onclick="resetPwd('sales01')">重置密码</button></td></tr>
+              <tr><td>qc01</td><td>李华</td><td><span class="badge b-info">质检专员</span></td><td>质检部</td><td>玉门运营组</td><td>137-xxxx-3333</td><td>今日 07:00</td><td><span class="badge b-success">正常</span></td><td class="flex-c gap-2"><a href="user-new.html?id=qc01&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a><button class="btn btn-default btn-xs" onclick="resetPwd('qc01')">重置密码</button></td></tr>
+              <tr><td>wh01</td><td>陈仓</td><td><span class="badge b-warning">仓储管理员</span></td><td>仓储部</td><td>玉门运营组</td><td>136-xxxx-4444</td><td>今日 06:45</td><td><span class="badge b-success">正常</span></td><td class="flex-c gap-2"><a href="user-new.html?id=wh01&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a><button class="btn btn-default btn-xs" onclick="resetPwd('wh01')">重置密码</button></td></tr>
+              <tr><td>fin01</td><td>赵雪</td><td><span class="badge b-warning">财务审核</span></td><td>财务部</td><td>全部（只读）</td><td>135-xxxx-5555</td><td>昨日 17:45</td><td><span class="badge b-success">正常</span></td><td class="flex-c gap-2"><a href="user-new.html?id=fin01&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a><button class="btn btn-default btn-xs" onclick="resetPwd('fin01')">重置密码</button></td></tr>
+              <tr><td>driver01</td><td>外部司机账号</td><td><span class="badge b-default">只读</span></td><td>—</td><td>无（仅API）</td><td>—</td><td>从未登录</td><td><span class="badge b-default">已停用</span></td><td class="flex-c gap-2"><a href="user-new.html?id=driver01&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft">
+          <span class="text-sm text-muted">共 7 人 · 正常 6 · 停用 1</span>
+          <div class="alert alert-info" style="margin:0;padding:6px 12px;font-size:12px;border-radius:var(--radius)"><span>ℹ</span> 数据权限按部门组维度隔离，各角色仅能访问其所属部门组的业务数据</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 审批流程配置 ══ -->
+    <div id="t-approval" style="display:none">
+      <div class="alert alert-info mb-4"><span>ℹ</span><div>审批流程变更后对新提交的单据生效，已在审批中的单据不受影响。各流程支持按金额段、部门维度设置差异化审批链。</div></div>
+      <div id="af-container"></div>
+    </div>
+
+  </main>
+</div><!-- /main -->
+</div><!-- /app-layout -->
+
+<!-- 价格编辑弹窗 -->
+<div class="modal-overlay" id="price-modal">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-hd"><div class="modal-title" id="price-modal-title">编辑价格基准</div><div class="modal-close" onclick="closePriceModal()">×</div></div>
+    <div class="form-grid fg2" style="gap:14px">
+      <div class="form-item"><label class="form-label">物料</label><input class="form-ctrl" id="pm-material" readonly style="background:var(--surface-2)"></div>
+      <div class="form-item"><label class="form-label">价格来源</label><select class="form-ctrl"><option>手工维护</option></select></div>
+      <div class="form-item"><label class="form-label req">采购基准价（元/吨）</label><input class="form-ctrl" id="pm-buy" type="number" placeholder="请输入采购基准价"></div>
+      <div class="form-item"><label class="form-label req">销售基准价（元/吨）</label><input class="form-ctrl" id="pm-sell" type="number" placeholder="请输入销售基准价"></div>
+      <div class="form-item"><label class="form-label req">生效日期</label><input class="form-ctrl" type="date" value="2026-07-01"></div>
+      <div class="form-item"><label class="form-label req">失效日期</label><input class="form-ctrl" type="date" value="2026-07-31"></div>
+      <div class="form-item" style="grid-column:span 2"><label class="form-label req">变更原因</label><textarea class="form-ctrl" rows="2" placeholder="请填写本次价格调整原因"></textarea></div>
+    </div>
+    <div class="flex-c gap-3" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-default" onclick="closePriceModal()">取消</button>
+      <button class="btn btn-primary" onclick="savePriceModal()">保存并生效</button>
+    </div>
+  </div>
+</div>
+
+<!-- 审批流程配置弹窗 -->
+<div class="modal-overlay" id="af-modal">
+  <div class="modal-box">
+    <div class="modal-hd"><div class="modal-title" id="af-modal-title">配置审批流程</div><div class="modal-close" onclick="closeAFModal()">×</div></div>
+    <div id="af-modal-body"></div>
+    <div class="flex-c gap-3" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-default" onclick="closeAFModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveAFModal()">保存配置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══ 路由 ══════════════════════════════════════════════════════
+const TABS = ['partner','material','warehouse','vehicle','price','user','approval'];
+const TAB_META = {
+  partner:  { label:'往来单位',     desc:'管理供应商、客户、承运商等外部往来企业档案，支持多主体绑定',        action:'<a href="partner-new.html"><button class="btn btn-primary">+ 新增合作伙伴</button></a>' },
+  material: { label:'物料品类',     desc:'管理所有业务单据中引用的物料品种、质检指标模板与商品编码映射',       action:'<a href="material-new.html"><button class="btn btn-primary">+ 新增物料</button></a>' },
+  warehouse:{ label:'仓库库位',     desc:'管理仓库→库区→库位三级层级结构，配置库容上限和地磅点位关联',       action:'<a href="warehouse-new.html"><button class="btn btn-primary">+ 新增仓库/库位</button></a>' },
+  vehicle:  { label:'车辆管理',     desc:'管理参与运输的车辆档案、司机信息及北斗/GPS设备绑定与状态',         action:'<a href="vehicle-new.html"><button class="btn btn-primary">+ 新增车辆</button></a>' },
+  price:    { label:'价格基准',     desc:'维护各物料采购与销售参考基准价格，记录历史价格变化轨迹',            action:'<button class="btn btn-default" onclick="location.href=\'price-history.html\'">查看价格历史</button>&nbsp;<button class="btn btn-primary" onclick="editPrice(\'new\')">+ 新增价格</button>' },
+  user:     { label:'用户与权限',   desc:'管理系统用户账号、角色权限配置及部门组数据访问范围',               action:'<a href="user-new.html"><button class="btn btn-primary">+ 新增用户</button></a>' },
+  approval: { label:'审批流程配置', desc:'按单据类型配置审批节点、审批人（固定/岗位动态）及抄送规则',         action:'<button class="btn btn-primary" onclick="newApproval()">+ 新增审批流程</button>' },
+};
+
+function activateTab(tab) {
+  if (!TABS.includes(tab)) tab = 'partner';
+  TABS.forEach(id => {
+    document.querySelector(`.tab[data-tab="${id}"]`)?.classList.toggle('active', id === tab);
+    const panel = document.getElementById('t-' + id);
+    if (panel) panel.style.display = id === tab ? 'block' : 'none';
+  });
+  const meta = TAB_META[tab];
+  document.getElementById('page-desc').textContent = meta.desc;
+  document.getElementById('page-actions').innerHTML = meta.action;
+  // update nav active
+  document.querySelectorAll('.sidebar-nav .nav-item[data-nav]').forEach(a => {
+    a.classList.toggle('active', a.dataset.nav === tab);
+  });
+}
+
+window.addEventListener('DOMContentLoaded', () => activateTab((location.hash.replace('#','')) || 'partner'));
+window.addEventListener('hashchange', () => activateTab(location.hash.replace('#','')));
+
+// ══ 仓库层级数据 ════════════════════════════════════════════
+const whData = [
+  { id:'WH-001', name:'玉门堆场', type:'自有仓', address:'玉门市工业园区',
+    zones: [
+      { id:'WH-001-A', name:'A区',
+        locs: [
+          { id:'A-01', cap:150, cur:145, mat:'萤石粉97%', weigh:'地磅A' },
+          { id:'A-02', cap:150, cur:120, mat:'萤石粉97%', weigh:'地磅A' },
+          { id:'A-03', cap:150, cur:68,  mat:'萤石粉97%', weigh:'地磅A' },
+        ]},
+      { id:'WH-001-B', name:'B区',
+        locs: [
+          { id:'B-01', cap:300, cur:180, mat:'萤石粉90%', weigh:'地磅B' },
+          { id:'B-02', cap:300, cur:110, mat:'萤石块85%', weigh:'地磅B' },
+        ]},
+    ]},
+  { id:'WH-002', name:'嘉峪关中转站', type:'第三方仓', address:'嘉峪关市物流园区',
+    zones: [
+      { id:'WH-002-A', name:'A区',
+        locs: [
+          { id:'A-01', cap:200, cur:0, mat:'通用', weigh:'—' },
+        ]},
+    ]},
+];
+
+function capClass(pct) { return pct >= 90 ? 'cap-hi' : pct >= 70 ? 'cap-mid' : 'cap-lo'; }
+function capColor(pct) { return pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warning)' : 'var(--text)'; }
+
+function renderWH(expanded) {
+  const tbody = document.getElementById('wh-tbody');
+  let html = '';
+  whData.forEach(wh => {
+    const whExp = expanded || !expanded;
+    const totalCap = wh.zones.reduce((s,z)=>s+z.locs.reduce((ss,l)=>ss+l.cap,0),0);
+    const totalCur = wh.zones.reduce((s,z)=>s+z.locs.reduce((ss,l)=>ss+l.cur,0),0);
+    const wpct = totalCap>0 ? Math.round(totalCur/totalCap*100) : 0;
+    html += `<tr class="wh-hd-row" onclick="toggleSection('wh-${wh.id}')">
+      <td colspan="9">
+        <span class="toggle-arrow" id="arr-wh-${wh.id}">▼</span>
+        <a href="warehouse-detail.html?id=${wh.id}" class="tbl-link fw-700" onclick="event.stopPropagation()">${wh.name}</a>
+        <span class="badge b-default" style="margin-left:8px">${wh.type}</span>
+        <span class="text-muted text-sm" style="margin-left:8px">${wh.address}</span>
+        <span class="text-sm text-muted" style="margin-left:16px">${wh.zones.length}库区 · ${wh.zones.reduce((s,z)=>s+z.locs.length,0)}库位 · 容量${totalCap}吨 · 在库${totalCur}吨 (${wpct}%)</span>
+      </td>
+    </tr>`;
+    wh.zones.forEach(zone => {
+      const zCap = zone.locs.reduce((s,l)=>s+l.cap,0);
+      const zCur = zone.locs.reduce((s,l)=>s+l.cur,0);
+      html += `<tr class="zone-hd-row" data-group="wh-${wh.id}" onclick="toggleSection('zone-${zone.id}')">
+        <td colspan="9" style="padding-left:32px">
+          <span class="toggle-arrow" id="arr-zone-${zone.id}">▼</span>
+          <strong>${zone.name}</strong>
+          <span class="text-muted text-sm" style="margin-left:8px">${zone.locs.length}库位 · ${zCur}/${zCap}吨</span>
+        </td>
+      </tr>`;
+      zone.locs.forEach(loc => {
+        const pct = loc.cap>0 ? Math.round(loc.cur/loc.cap*100) : 0;
+        html += `<tr data-group="zone-${zone.id}">
+          <td style="padding-left:60px"><span class="fw-700">${loc.id}</span></td>
+          <td>${wh.type}</td>
+          <td>${loc.cap}吨</td>
+          <td>${loc.cur}吨</td>
+          <td>
+            <div class="cap-bar"><div class="cap-fill ${capClass(pct)}" style="width:${pct}%"></div></div>
+            <span style="color:${capColor(pct)}">${pct}%</span>
+          </td>
+          <td>${loc.mat}</td>
+          <td>${loc.weigh}</td>
+          <td><span class="badge ${pct>=95?'b-warning':'b-success'}">${pct>=95?'接近满仓':'正常'}</span></td>
+          <td><a href="warehouse-new.html?id=${wh.id}-${loc.id}&mode=edit"><button class="btn btn-default btn-xs">编辑</button></a></td>
+        </tr>`;
+      });
+    });
+  });
+  tbody.innerHTML = html;
+}
+
+const sectionState = {};
+function toggleSection(key) {
+  sectionState[key] = !sectionState[key];
+  const rows = document.querySelectorAll(`[data-group="${key}"]`);
+  const arrow = document.getElementById('arr-' + key);
+  const collapsed = sectionState[key];
+  rows.forEach(r => r.style.display = collapsed ? 'none' : '');
+  if (arrow) arrow.style.transform = collapsed ? 'rotate(-90deg)' : '';
+}
+function expandAll() {
+  Object.keys(sectionState).forEach(k => { sectionState[k] = false; });
+  document.querySelectorAll('[data-group]').forEach(r => r.style.display = '');
+  document.querySelectorAll('.toggle-arrow').forEach(a => a.style.transform = '');
+}
+
+// ══ 审批流程数据 ════════════════════════════════════════════
+const afFlows = [
+  { id:'AF-001', name:'采购合同审批', docType:'采购合同', amtRange:'不限', dept:'全部', cc:['财务部'],
+    nodes:[{name:'申请人',role:'业务员',type:'init'},{name:'采购经理',role:'采购经理',type:'appr'},{name:'总经理',role:'总经理',type:'cond',cond:'金额>50万'},{name:'财务',role:'财务主管',type:'appr'}] },
+  { id:'AF-002', name:'销售合同审批', docType:'销售合同', amtRange:'不限', dept:'全部', cc:['财务部'],
+    nodes:[{name:'申请人',role:'业务员',type:'init'},{name:'销售经理',role:'销售经理',type:'appr'},{name:'总经理',role:'总经理',type:'appr'}] },
+  { id:'AF-003', name:'双边合同审批', docType:'双边合同', amtRange:'不限', dept:'全部', cc:[],
+    nodes:[{name:'申请人',role:'业务员',type:'init'},{name:'经理',role:'部门经理',type:'appr'},{name:'总经理',role:'总经理',type:'appr'},{name:'财务',role:'财务主管',type:'appr'}] },
+  { id:'AF-004', name:'付款申请（≤10万）', docType:'付款申请', amtRange:'≤10万', dept:'全部', cc:[],
+    nodes:[{name:'财务',role:'财务专员',type:'init'},{name:'财务主管',role:'财务主管',type:'appr'}] },
+  { id:'AF-005', name:'付款申请（>10万）', docType:'付款申请', amtRange:'>10万', dept:'全部', cc:['总经办'],
+    nodes:[{name:'财务',role:'财务专员',type:'init'},{name:'财务主管',role:'财务主管',type:'appr'},{name:'总经理',role:'总经理',type:'appr'}] },
+  { id:'AF-006', name:'入库单审批', docType:'业务入库单', amtRange:'不限', dept:'全部', cc:[],
+    nodes:[{name:'仓管员',role:'仓储管理员',type:'init'},{name:'仓库主管',role:'仓储主管',type:'appr'}] },
+  { id:'AF-007', name:'库存盘点审批', docType:'库存盘点', amtRange:'不限', dept:'全部', cc:['财务部'],
+    nodes:[{name:'仓管员',role:'仓储管理员',type:'init'},{name:'仓库主管',role:'仓储主管',type:'appr'},{name:'总经理',role:'总经理',type:'appr'}] },
+  { id:'AF-008', name:'合作伙伴新增审批', docType:'合作伙伴档案', amtRange:'不限', dept:'全部', cc:['财务部','法务'],
+    nodes:[{name:'申请人',role:'业务员',type:'init'},{name:'业务负责人',role:'业务负责人',type:'appr'},{name:'总经理',role:'总经理',type:'appr'}] },
+];
+
+const afGroups = {
+  '合同类': ['AF-001','AF-002','AF-003'],
+  '付款类': ['AF-004','AF-005'],
+  '仓储类': ['AF-006','AF-007'],
+  '档案类': ['AF-008'],
+};
+
+function nodeHtml(n) {
+  const cls = n.type==='init' ? 'fn-init' : n.type==='cond' ? 'fn-cond' : 'fn-appr';
+  const condLabel = n.cond ? `<span style="font-size:9px;color:var(--warning)">${n.cond}</span>` : '';
+  return `<div class="flow-node">
+    <div class="fn-circle ${cls}">${n.name.slice(0,2)}</div>
+    <div class="fn-label">${n.role}</div>
+    ${condLabel}
+  </div>`;
+}
+
+function renderAF() {
+  let html = '';
+  Object.entries(afGroups).forEach(([grp, ids]) => {
+    html += `<div class="af-section">${grp}</div>`;
+    ids.forEach(id => {
+      const af = afFlows.find(f=>f.id===id);
+      if (!af) return;
+      const ccHtml = af.cc.length ? `<span class="text-muted text-sm" style="margin-left:12px">抄送：${af.cc.join('、')}</span>` : '';
+      let chainHtml = '<div class="flow-chain">';
+      af.nodes.forEach((n,i) => {
+        chainHtml += nodeHtml(n);
+        if (i < af.nodes.length-1) chainHtml += '<div class="fn-arrow">→</div>';
+      });
+      chainHtml += '</div>';
+      html += `<div class="card mb-3">
+        <div class="card-body" style="padding:14px 20px">
+          <div class="flex-between">
+            <div>
+              <span class="fw-700">${af.name}</span>
+              <span class="badge b-default" style="margin-left:8px">${af.docType}</span>
+              <span class="tag" style="margin-left:6px">金额 ${af.amtRange}</span>
+              ${ccHtml}
+            </div>
+            <div class="flex-c gap-2">
+              <span class="badge b-success">启用中</span>
+              <button class="btn btn-default btn-xs" onclick="configAF('${af.id}')">配置</button>
+              <button class="btn btn-default btn-xs" onclick="alert('已停用审批流程 ${af.name}')">停用</button>
+            </div>
+          </div>
+          ${chainHtml}
+        </div>
+      </div>`;
+    });
+  });
+  document.getElementById('af-container').innerHTML = html;
+}
+
+// ══ 价格弹窗 ════════════════════════════════════════════════
+const priceNames = {'MAT-001':'萤石粉 CaF₂≥97%','MAT-002':'萤石粉 CaF₂≥95%','MAT-003':'萤石粉 CaF₂≥90%','MAT-004':'萤石块 CaF₂≥85%'};
+const priceBuy  = {'MAT-001':1450,'MAT-002':1280,'MAT-003':980,'MAT-004':780};
+const priceSell = {'MAT-001':1550,'MAT-002':1380,'MAT-003':1060,'MAT-004':850};
+
+function editPrice(id) {
+  document.getElementById('price-modal-title').textContent = id==='new' ? '新增价格基准' : '编辑价格基准 · ' + (priceNames[id]||'');
+  document.getElementById('pm-material').value = id==='new' ? '' : (priceNames[id]||'');
+  document.getElementById('pm-buy').value = id==='new' ? '' : (priceBuy[id]||'');
+  document.getElementById('pm-sell').value = id==='new' ? '' : (priceSell[id]||'');
+  document.getElementById('price-modal').classList.add('open');
+}
+function closePriceModal() { document.getElementById('price-modal').classList.remove('open'); }
+function savePriceModal() { alert('价格基准已保存，新价格下月1日生效'); closePriceModal(); }
+
+// ══ 审批流程弹窗 ════════════════════════════════════════════
+function configAF(id) {
+  const af = afFlows.find(f=>f.id===id);
+  if (!af) return;
+  document.getElementById('af-modal-title').textContent = '配置审批流程 · ' + af.name;
+  let body = `<div class="form-grid fg2" style="gap:14px;margin-bottom:16px">
+    <div class="form-item"><label class="form-label">单据类型</label><input class="form-ctrl" value="${af.docType}" readonly style="background:var(--surface-2)"></div>
+    <div class="form-item"><label class="form-label">适用金额范围</label><input class="form-ctrl" value="${af.amtRange}"></div>
+    <div class="form-item"><label class="form-label">适用部门</label><input class="form-ctrl" value="${af.dept}"></div>
+    <div class="form-item"><label class="form-label">抄送部门</label><input class="form-ctrl" value="${af.cc.join('、')}"></div>
+  </div>
+  <div class="af-section">审批节点配置</div>`;
+  af.nodes.forEach((n,i) => {
+    body += `<div class="card mb-2"><div class="card-body" style="padding:12px 16px"><div class="flex-between">
+      <div class="flex-c gap-3">
+        <span class="text-muted text-sm">第${i+1}步</span>
+        <input class="form-ctrl" value="${n.role}" style="width:140px">
+        <select class="form-ctrl" style="width:120px"><option ${n.type==='init'?'selected':''}>发起人</option><option ${n.type==='appr'?'selected':''}>审批人（固定）</option><option ${n.type==='cond'?'selected':''}>审批人（条件）</option></select>
+        ${n.cond?`<input class="form-ctrl" value="${n.cond}" style="width:160px" placeholder="触发条件">` : ''}
+      </div>
+      <button class="btn btn-default btn-xs" onclick="alert('删除节点')">删除</button>
+    </div></div></div>`;
+  });
+  body += `<button class="btn btn-default btn-sm mt-3" onclick="alert('添加审批节点')">+ 添加节点</button>`;
+  document.getElementById('af-modal-body').innerHTML = body;
+  document.getElementById('af-modal').classList.add('open');
+}
+function closeAFModal() { document.getElementById('af-modal').classList.remove('open'); }
+function saveAFModal() { alert('审批流程配置已保存，新提交的单据将按新流程执行'); closeAFModal(); }
+function newApproval() { alert('新增审批流程（演示：请选择单据类型后配置节点）'); }
+
+// ══ 用户操作 ════════════════════════════════════════════════
+function resetPwd(user) { if(confirm(`确认重置用户 ${user} 的密码？重置后将发送短信通知用户。`)) alert('密码已重置，初始密码已发送至用户手机。'); }
+
+// ══ 初始化 ══════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  renderWH(true);
+  renderAF();
+});
+</script>
+</body>
+</html>

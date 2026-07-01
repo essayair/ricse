@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新增车辆 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:20px 0 12px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.device-card{border:1.5px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;cursor:pointer;transition:border-color .15s}
+.device-card:hover{border-color:var(--primary)}
+.device-card.selected{border-color:var(--primary);background:var(--primary-bg)}
+.driver-row{display:grid;grid-template-columns:1fr 1fr 1fr 140px 32px;gap:10px;align-items:end;padding:10px 12px;background:var(--surface-2);border-radius:var(--radius);margin-bottom:8px}
+.driver-row label{font-size:11.5px;font-weight:600;color:var(--text-2);margin-bottom:3px;display:block}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item active">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#vehicle" class="link">车辆管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="page-bc">新增车辆</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">新增车辆</div>
+        <div class="page-desc">登记运输车辆档案及北斗设备绑定，车辆信息用于运单生成和过磅记录关联</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" onclick="history.back()">取消</button>
+        <button class="btn btn-primary" onclick="saveVehicle()">保存车辆</button>
+      </div>
+    </div>
+
+    <div style="max-width:900px">
+      <!-- 车辆基本信息 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">车辆基本信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">车牌号码</label>
+              <input class="form-ctrl" id="f-plate" type="text" placeholder="如：甘F 12345" style="font-size:15px;font-weight:700;letter-spacing:.1em">
+              <span class="form-hint">请输入完整车牌，含省份简称</span>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">车辆类型</label>
+              <select class="form-ctrl" id="f-vtype">
+                <option value="">请选择车型</option>
+                <option>半挂车（标准型）</option>
+                <option>半挂车（超重型）</option>
+                <option>箱式货车</option>
+                <option>自卸车</option>
+                <option>槽罐车</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">车辆状态</label>
+              <select class="form-ctrl" id="f-vstatus">
+                <option value="active">可用</option>
+                <option value="maintenance">维修中</option>
+                <option value="inactive">停用</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">整备质量（皮重，吨）</label>
+              <input class="form-ctrl" id="f-tare" type="number" step="0.01" placeholder="车辆空载重量">
+              <span class="form-hint">从地磅记录获取的皮重以实际磅单为准</span>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">核定载重（吨）</label>
+              <input class="form-ctrl" id="f-maxload" type="number" step="0.01" placeholder="行驶证核定载重">
+            </div>
+            <div class="form-item">
+              <label class="form-label">车牌颜色</label>
+              <select class="form-ctrl" id="f-platecolor">
+                <option>黄牌</option>
+                <option>绿牌（新能源）</option>
+                <option>蓝牌</option>
+                <option>黑牌（港澳）</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-divider">证件与年检</div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">行驶证号</label>
+              <input class="form-ctrl" type="text" placeholder="行驶证档案号">
+            </div>
+            <div class="form-item">
+              <label class="form-label">年检到期日</label>
+              <input class="form-ctrl" type="date" id="f-annual-exp">
+              <span class="form-hint">到期前30天系统自动提醒</span>
+            </div>
+            <div class="form-item">
+              <label class="form-label">交强险到期日</label>
+              <input class="form-ctrl" type="date">
+            </div>
+            <div class="form-item">
+              <label class="form-label">商业险到期日</label>
+              <input class="form-ctrl" type="date">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 承运商 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">承运商 / 车主信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">归属承运商</label>
+              <select class="form-ctrl" id="f-carrier">
+                <option value="">请选择承运商</option>
+                <option>玉门良运物流有限公司</option>
+                <option>酒泉通达货运</option>
+                <option>个体司机（直签）</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">车主姓名</label>
+              <input class="form-ctrl" type="text" placeholder="实际车主（可与司机不同）">
+            </div>
+            <div class="form-item">
+              <label class="form-label">车主手机</label>
+              <input class="form-ctrl" type="tel" placeholder="车主联系方式">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 司机信息 -->
+      <div class="card mb-4">
+        <div class="card-hd">
+          <span class="card-title">关联司机</span>
+          <button class="btn btn-default btn-sm" onclick="addDriver()">+ 关联司机</button>
+        </div>
+        <div class="card-body">
+          <div class="text-sm text-muted mb-3">一辆车可关联多名司机（主副驾换班场景），调度时可从中选择当次司机</div>
+          <div id="driver-list">
+            <div class="driver-row">
+              <div><label>司机姓名</label><input class="form-ctrl" type="text" placeholder="姓名"></div>
+              <div><label>身份证号</label><input class="form-ctrl" type="text" placeholder="18位身份证号"></div>
+              <div><label>手机号码</label><input class="form-ctrl" type="tel" placeholder="11位手机号"></div>
+              <div><label>角色</label><select class="form-ctrl"><option>主驾</option><option>副驾</option></select></div>
+              <div style="display:flex;align-items:flex-end"><span onclick="delDriverRow(this)" style="color:var(--danger);cursor:pointer;font-size:18px;padding:6px">×</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 北斗/GPS设备 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">北斗 / GPS 设备绑定</span></div>
+        <div class="card-body">
+          <div class="alert alert-info mb-3"><span>ℹ</span><div class="text-sm">绑定设备后，系统将实时获取车辆位置，自动识别到达仓库或地磅的触发事件</div></div>
+          <div class="g3 mb-4" style="gap:12px">
+            <div class="device-card selected" onclick="selectDevice(this,'beidou')" id="dev-beidou">
+              <div class="flex-between mb-2">
+                <span class="fw-700">北斗 OBD 终端</span>
+                <span class="badge b-primary">已选</span>
+              </div>
+              <div class="text-sm text-muted">国家重点监控货运车辆需安装，接入北斗平台，数据有强制保存要求</div>
+            </div>
+            <div class="device-card" onclick="selectDevice(this,'gps')" id="dev-gps">
+              <div class="flex-between mb-2">
+                <span class="fw-700">GPS 移动设备</span>
+                <span class="badge b-default">未选</span>
+              </div>
+              <div class="text-sm text-muted">手机APP或独立GPS设备，安装灵活，精度稍低</div>
+            </div>
+            <div class="device-card" onclick="selectDevice(this,'none')" id="dev-none">
+              <div class="flex-between mb-2">
+                <span class="fw-700">暂不绑定</span>
+                <span class="badge b-default">未选</span>
+              </div>
+              <div class="text-sm text-muted">手动记录位置，无自动触发功能</div>
+            </div>
+          </div>
+          <div id="device-fields">
+            <div class="form-grid fg2">
+              <div class="form-item">
+                <label class="form-label req">设备编号 / 终端号</label>
+                <input class="form-ctrl" id="f-device-id" type="text" placeholder="设备SIM卡号或终端编号">
+              </div>
+              <div class="form-item">
+                <label class="form-label">设备安装日期</label>
+                <input class="form-ctrl" type="date">
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="f-device-type" value="beidou">
+        </div>
+      </div>
+
+      <!-- 底部 -->
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html#vehicle"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="saveVehicle()">保存车辆</button>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+// 设备选择
+function selectDevice(card, type) {
+  document.querySelectorAll('.device-card').forEach(c => {
+    c.classList.remove('selected');
+    const b = c.querySelector('.badge');
+    if(b){b.className='badge b-default';b.textContent='未选';}
+  });
+  card.classList.add('selected');
+  const b = card.querySelector('.badge');
+  if(b){b.className='badge b-primary';b.textContent='已选';}
+  document.getElementById('f-device-type').value = type;
+  document.getElementById('device-fields').style.display = type==='none' ? 'none' : 'block';
+}
+
+// 司机行
+function addDriver() {
+  const div = document.createElement('div');
+  div.className = 'driver-row';
+  div.innerHTML = `<div><label>司机姓名</label><input class="form-ctrl" type="text" placeholder="姓名"></div><div><label>身份证号</label><input class="form-ctrl" type="text" placeholder="18位身份证号"></div><div><label>手机号码</label><input class="form-ctrl" type="tel" placeholder="11位手机号"></div><div><label>角色</label><select class="form-ctrl"><option>主驾</option><option>副驾</option></select></div><div style="display:flex;align-items:flex-end"><span onclick="delDriverRow(this)" style="color:var(--danger);cursor:pointer;font-size:18px;padding:6px">×</span></div>`;
+  document.getElementById('driver-list').appendChild(div);
+}
+function delDriverRow(btn) {
+  const rows = document.querySelectorAll('.driver-row');
+  if(rows.length <= 1){alert('至少保留一名司机记录');return;}
+  btn.closest('.driver-row').remove();
+}
+
+// 编辑模式
+const VEHICLE_DATA = {
+  'V-001':{plate:'甘F·A1234',type:'半挂车（标准型）',status:'active',tare:10.5,maxload:30,platecolor:'黄牌',carrier:'玉门良运物流有限公司',deviceType:'beidou',deviceId:'BD-123456'},
+  'V-002':{plate:'甘F·B5678',type:'半挂车（标准型）',status:'active',tare:11.2,maxload:30,platecolor:'黄牌',carrier:'玉门良运物流有限公司',deviceType:'beidou',deviceId:'BD-789012'},
+  'V-003':{plate:'甘G·C9012',type:'半挂车（超重型）',status:'active',tare:12.8,maxload:40,platecolor:'黄牌',carrier:'酒泉通达货运',deviceType:'gps',deviceId:'GPS-456789'},
+};
+const urlParams = new URLSearchParams(location.search);
+const editId = urlParams.get('id');
+const isEdit = urlParams.get('mode')==='edit' && editId && VEHICLE_DATA[editId];
+if(isEdit){
+  const v = VEHICLE_DATA[editId];
+  document.title='编辑车辆 · 萤石产业链平台';
+  document.getElementById('page-title').textContent='编辑车辆';
+  document.getElementById('page-bc').textContent='编辑车辆';
+  document.getElementById('f-plate').value=v.plate;
+  document.getElementById('f-vtype').value=v.type;
+  document.getElementById('f-vstatus').value=v.status;
+  document.getElementById('f-tare').value=v.tare;
+  document.getElementById('f-maxload').value=v.maxload;
+  document.getElementById('f-carrier').value=v.carrier;
+  document.getElementById('f-device-id').value=v.deviceId;
+  selectDevice(document.getElementById('dev-'+v.deviceType), v.deviceType);
+}
+
+function saveVehicle() {
+  const plate = document.getElementById('f-plate').value;
+  if(!plate){alert('请填写必填项：车牌号码');return;}
+  if(confirm(isEdit?`确认保存车辆 ${editId} 的修改？`:`确认新增车辆"${plate}"？`)){
+    window.location.href = isEdit?`vehicle-detail.html?id=${editId}`:'index.html#vehicle';
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新增仓库/库位 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:20px 0 12px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.loc-row{display:grid;grid-template-columns:140px 1fr 1fr 1fr 1fr 32px;gap:8px;align-items:end;padding:10px 12px;background:var(--surface-2);border-radius:var(--radius);margin-bottom:8px}
+.loc-row label{font-size:11.5px;font-weight:600;color:var(--text-2);margin-bottom:3px;display:block}
+.tab-switch{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;width:fit-content;margin-bottom:20px}
+.tab-sw-item{padding:7px 20px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text-2);transition:background .12s,color .12s}
+.tab-sw-item.active{background:var(--primary);color:#fff}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item active">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#warehouse" class="link">仓库库位</a><span class="bc-sep">›</span>
+      <span class="bc-cur">新增仓库/库位</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">新增仓库 / 库区 / 库位</div>
+        <div class="page-desc">按三级层级配置：先建仓库档案，再在仓库下建库区，最后在库区下建具体库位</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" onclick="history.back()">取消</button>
+        <button class="btn btn-primary" onclick="saveWarehouse()">保存</button>
+      </div>
+    </div>
+
+    <div style="max-width:900px">
+      <!-- 模式切换 -->
+      <div class="tab-switch mb-4">
+        <div class="tab-sw-item active" onclick="switchMode(this,'wh')">新增仓库</div>
+        <div class="tab-sw-item" onclick="switchMode(this,'zone')">新增库区</div>
+        <div class="tab-sw-item" onclick="switchMode(this,'loc')">新增库位</div>
+      </div>
+
+      <!-- 新增仓库 -->
+      <div id="mode-wh">
+        <div class="card mb-4">
+          <div class="card-hd"><span class="card-title">仓库基本信息</span></div>
+          <div class="card-body">
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label">仓库编码</label>
+                <input class="form-ctrl" readonly value="自动生成" style="background:var(--surface-2);color:var(--text-3);font-style:italic">
+              </div>
+              <div class="form-item">
+                <label class="form-label req">仓库名称</label>
+                <input class="form-ctrl" id="wh-name" type="text" placeholder="如：玉门堆场、嘉峪关中转站">
+              </div>
+              <div class="form-item">
+                <label class="form-label req">仓库类型</label>
+                <select class="form-ctrl" id="wh-type">
+                  <option value="">请选择类型</option>
+                  <option>自有仓</option>
+                  <option>第三方仓</option>
+                  <option>监管仓</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">归属公司</label>
+                <select class="form-ctrl">
+                  <option>玉门萤石运营管理有限公司</option>
+                  <option>酒泉供应链管理有限公司</option>
+                  <option>巨化萤石（玉门）有限公司</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">仓库管理员</label>
+                <select class="form-ctrl">
+                  <option>陈仓（wh01）</option>
+                  <option>运营管理员</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">状态</label>
+                <select class="form-ctrl">
+                  <option value="active">启用</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </div>
+              <div class="form-item" style="grid-column:span 3">
+                <label class="form-label req">仓库地址</label>
+                <input class="form-ctrl" id="wh-addr" type="text" placeholder="请输入仓库详细地址">
+              </div>
+              <div class="form-item">
+                <label class="form-label">经度</label>
+                <input class="form-ctrl" type="text" placeholder="用于电子围栏（可选）">
+              </div>
+              <div class="form-item">
+                <label class="form-label">纬度</label>
+                <input class="form-ctrl" type="text" placeholder="用于电子围栏（可选）">
+              </div>
+              <div class="form-item">
+                <label class="form-label">围栏半径（米）</label>
+                <input class="form-ctrl" type="number" placeholder="车辆到达触发距离" value="500">
+              </div>
+              <div class="form-item" style="grid-column:span 3">
+                <label class="form-label">关联地磅点位</label>
+                <div class="form-hint mb-2">选择该仓库入场时使用的地磅，车辆到达后系统自动关联过磅记录</div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" checked> 地磅A（主磅，额定100吨）</label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox"> 地磅B（副磅，额定80吨）</label>
+                </div>
+              </div>
+              <div class="form-item" style="grid-column:span 3">
+                <label class="form-label">备注</label>
+                <textarea class="form-ctrl" rows="2" placeholder="仓库说明（可选）"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 同时添加库区和库位 -->
+        <div class="card mb-4">
+          <div class="card-hd">
+            <span class="card-title">库区配置</span>
+            <button class="btn btn-default btn-sm" onclick="addZone()">+ 添加库区</button>
+          </div>
+          <div class="card-body" id="zone-container">
+            <div class="zone-block mb-4" id="zone-0">
+              <div class="form-grid fg3 mb-3">
+                <div class="form-item">
+                  <label class="form-label req">库区编码</label>
+                  <input class="form-ctrl" type="text" placeholder="如：A区、B区" value="A区">
+                </div>
+                <div class="form-item">
+                  <label class="form-label">库区描述</label>
+                  <input class="form-ctrl" type="text" placeholder="用途说明（可选）">
+                </div>
+                <div class="form-item" style="display:flex;align-items:flex-end">
+                  <button class="btn btn-default btn-sm" onclick="addLoc('zone-0')">+ 添加库位</button>
+                </div>
+              </div>
+              <div id="locs-zone-0">
+                <div class="loc-row">
+                  <div><label>库位编码</label><input class="form-ctrl" type="text" value="A-01" placeholder="如A-01"></div>
+                  <div><label>设计容量（吨）</label><input class="form-ctrl" type="number" value="150" placeholder="吨"></div>
+                  <div><label>适用物料</label><select class="form-ctrl"><option>萤石粉97%</option><option>萤石粉95%</option><option>萤石粉90%</option><option>萤石块</option><option>通用</option></select></div>
+                  <div><label>关联地磅</label><select class="form-ctrl"><option>地磅A</option><option>地磅B</option><option>不关联</option></select></div>
+                  <div><label>库位类型</label><select class="form-ctrl"><option>露天堆场</option><option>封闭仓库</option><option>罐区</option></select></div>
+                  <div style="display:flex;align-items:flex-end"><span onclick="this.closest('.loc-row').remove()" style="color:var(--danger);cursor:pointer;font-size:18px;padding:6px">×</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 新增库区（独立） -->
+      <div id="mode-zone" style="display:none">
+        <div class="card mb-4">
+          <div class="card-hd"><span class="card-title">新增库区</span></div>
+          <div class="card-body">
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">所属仓库</label>
+                <select class="form-ctrl">
+                  <option>玉门堆场（WH-001）</option>
+                  <option>嘉峪关中转站（WH-002）</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">库区编码</label>
+                <input class="form-ctrl" type="text" placeholder="如：C区、D区">
+              </div>
+              <div class="form-item">
+                <label class="form-label">库区描述</label>
+                <input class="form-ctrl" type="text" placeholder="用途说明（可选）">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 新增库位（独立） -->
+      <div id="mode-loc" style="display:none">
+        <div class="card mb-4">
+          <div class="card-hd"><span class="card-title">新增库位</span></div>
+          <div class="card-body">
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">所属仓库</label>
+                <select class="form-ctrl" id="loc-wh">
+                  <option value="WH-001">玉门堆场</option>
+                  <option value="WH-002">嘉峪关中转站</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">所属库区</label>
+                <select class="form-ctrl" id="loc-zone">
+                  <option>A区</option>
+                  <option>B区</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">库位编码</label>
+                <input class="form-ctrl" type="text" placeholder="如：A-04">
+              </div>
+              <div class="form-item">
+                <label class="form-label req">设计容量（吨）</label>
+                <input class="form-ctrl" type="number" placeholder="额定最大库容">
+              </div>
+              <div class="form-item">
+                <label class="form-label">适用物料</label>
+                <select class="form-ctrl">
+                  <option>萤石粉97%</option>
+                  <option>萤石粉95%</option>
+                  <option>萤石粉90%</option>
+                  <option>萤石块</option>
+                  <option>通用</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">关联地磅</label>
+                <select class="form-ctrl">
+                  <option>地磅A</option>
+                  <option>地磅B</option>
+                  <option>不关联</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">库位类型</label>
+                <select class="form-ctrl">
+                  <option>露天堆场</option>
+                  <option>封闭仓库</option>
+                  <option>罐区</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">库容预警阈值（%）</label>
+                <input class="form-ctrl" type="number" value="90" min="0" max="100">
+                <span class="form-hint">超过此比例时触发库容预警</span>
+              </div>
+              <div class="form-item" style="grid-column:span 3">
+                <label class="form-label">备注</label>
+                <input class="form-ctrl" type="text" placeholder="库位说明（可选）">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html#warehouse"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="saveWarehouse()">保存</button>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+<script>
+let currentMode = 'wh';
+function switchMode(el, mode) {
+  document.querySelectorAll('.tab-sw-item').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['wh','zone','loc'].forEach(m => {
+    const el = document.getElementById('mode-' + m);
+    if (el) el.style.display = m === mode ? 'block' : 'none';
+  });
+  currentMode = mode;
+}
+
+let zoneCount = 0;
+function addZone() {
+  zoneCount++;
+  const div = document.createElement('div');
+  div.className = 'zone-block mb-4';
+  div.id = 'zone-' + zoneCount;
+  div.innerHTML = `<div class="form-grid fg3 mb-3">
+    <div class="form-item"><label class="form-label req">库区编码</label><input class="form-ctrl" type="text" placeholder="如：C区"></div>
+    <div class="form-item"><label class="form-label">库区描述</label><input class="form-ctrl" type="text"></div>
+    <div class="form-item" style="display:flex;align-items:flex-end;gap:8px">
+      <button class="btn btn-default btn-sm" onclick="addLoc('zone-${zoneCount}')">+ 添加库位</button>
+      <button class="btn btn-default btn-sm" onclick="this.closest('.zone-block').remove()">删除库区</button>
+    </div>
+  </div>
+  <div id="locs-zone-${zoneCount}"></div>`;
+  document.getElementById('zone-container').appendChild(div);
+}
+
+function addLoc(zoneId) {
+  const container = document.getElementById('locs-' + zoneId);
+  const div = document.createElement('div');
+  div.className = 'loc-row';
+  div.innerHTML = `<div><label>库位编码</label><input class="form-ctrl" type="text" placeholder="如A-02"></div><div><label>容量（吨）</label><input class="form-ctrl" type="number"></div><div><label>适用物料</label><select class="form-ctrl"><option>萤石粉97%</option><option>萤石粉95%</option><option>萤石粉90%</option><option>萤石块</option><option>通用</option></select></div><div><label>关联地磅</label><select class="form-ctrl"><option>地磅A</option><option>地磅B</option><option>不关联</option></select></div><div><label>库位类型</label><select class="form-ctrl"><option>露天堆场</option><option>封闭仓库</option></select></div><div style="display:flex;align-items:flex-end"><span onclick="this.closest('.loc-row').remove()" style="color:var(--danger);cursor:pointer;font-size:18px;padding:6px">×</span></div>`;
+  container.appendChild(div);
+}
+
+function saveWarehouse() {
+  const modeLabels = {wh:'仓库',zone:'库区',loc:'库位'};
+  if(confirm(`确认保存新增${modeLabels[currentMode]}？`)) {
+    window.location.href = 'index.html#warehouse';
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>组织数据 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+/* tabs */
+.tabs .tab{cursor:pointer}
+
+/* 树形部门 */
+.tree-node{padding:0}
+.tree-row{display:flex;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:0}
+.tree-row:hover{background:var(--primary-bg)}
+.tree-indent{display:inline-block;flex-shrink:0}
+.tree-toggle{width:20px;text-align:center;color:var(--text-3);cursor:pointer;font-size:12px;transition:transform .15s;flex-shrink:0}
+.tree-toggle.collapsed{transform:rotate(-90deg)}
+.tree-toggle.leaf{color:transparent;cursor:default}
+.tree-icon{margin-right:6px;font-size:14px}
+.tree-label{font-size:13.5px;font-weight:600;flex:1}
+.tree-meta{font-size:12px;color:var(--text-3);margin-right:16px}
+.tree-actions{display:flex;gap:6px;opacity:0;transition:opacity .15s}
+.tree-row:hover .tree-actions{opacity:1}
+
+/* 部门组卡片 */
+.group-card{border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px;margin-bottom:14px}
+.group-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.group-name{font-size:14px;font-weight:700}
+.group-scope{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.scope-tag{background:var(--primary-bg);color:var(--primary);border-radius:var(--radius);padding:3px 10px;font-size:12px;font-weight:600}
+.group-member-list{display:flex;gap:8px;flex-wrap:wrap}
+.member-chip{display:flex;align-items:center;gap:6px;background:var(--surface-2);border-radius:20px;padding:4px 12px;font-size:12.5px}
+.member-avatar{width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+/* 公司卡片 */
+.company-card{border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:16px}
+.company-hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.company-name{font-size:15px;font-weight:700;margin-bottom:4px}
+.company-code{font-size:12px;color:var(--text-3)}
+.company-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.ci-label{font-size:11.5px;color:var(--text-3);margin-bottom:3px}
+.ci-val{font-size:13px;font-weight:600}
+
+/* 岗位表 */
+.pos-section{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;padding:16px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px;text-transform:uppercase}
+
+/* modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--surface);border-radius:var(--radius-lg);padding:28px 32px;max-width:560px;width:94%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.modal-title{font-size:15px;font-weight:700}
+.modal-close{font-size:20px;cursor:pointer;color:var(--text-3);line-height:1}
+.modal-close:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="index.html" class="nav-item" data-nav="company">公司维护</a>
+      <a href="index.html#dept" class="nav-item" data-nav="dept">部门管理</a>
+      <a href="index.html#group" class="nav-item" data-nav="group">部门组</a>
+      <a href="index.html#position" class="nav-item" data-nav="position">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="bc-cur">组织数据</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">组织数据</div>
+        <div class="page-desc" id="page-desc">维护公司主体、部门层级、部门组及岗位，是权限控制与统计口径的基础</div>
+      </div>
+      <div class="page-actions" id="page-actions"></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="tab-bar">
+      <div class="tab" data-tab="company"  onclick="location.hash='company'">公司维护</div>
+      <div class="tab" data-tab="dept"     onclick="location.hash='dept'">部门管理</div>
+      <div class="tab" data-tab="group"    onclick="location.hash='group'">部门组</div>
+      <div class="tab" data-tab="position" onclick="location.hash='position'">岗位管理</div>
+    </div>
+
+    <!-- ══ 公司维护 ══ -->
+    <div id="t-company">
+      <div class="alert alert-info mb-4">
+        <span>ℹ</span>
+        <div>公司主体是合同签约、资金核算、权限隔离的核心维度。一个往来企业可与多个我方主体签约；权限控制和财务核算均基于公司主体维度进行隔离。</div>
+      </div>
+
+      <div class="company-card">
+        <div class="company-hd">
+          <div>
+            <div class="company-name">玉门萤石运营管理有限公司</div>
+            <div class="company-code">CO-001 · 统一社会信用代码：91620981MA73XXXXXX</div>
+          </div>
+          <div class="flex-c gap-2">
+            <span class="badge b-primary">主体公司</span>
+            <span class="badge b-success">正常</span>
+            <button class="btn btn-default btn-xs" onclick="editCompany('CO-001')">编辑</button>
+          </div>
+        </div>
+        <div class="company-grid">
+          <div><div class="ci-label">法定代表人</div><div class="ci-val">张建平</div></div>
+          <div><div class="ci-label">注册资本</div><div class="ci-val">5,000 万元</div></div>
+          <div><div class="ci-label">注册地址</div><div class="ci-val">甘肃省酒泉市玉门市工业园区</div></div>
+          <div><div class="ci-label">开户银行</div><div class="ci-val">中国农业银行玉门支行</div></div>
+          <div><div class="ci-label">银行账号</div><div class="ci-val">621xxxxxxxxxx7890</div></div>
+          <div><div class="ci-label">纳税人类型</div><div class="ci-val">一般纳税人</div></div>
+          <div><div class="ci-label">联系电话</div><div class="ci-val">0937-6xxx5678</div></div>
+          <div><div class="ci-label">归属部门组</div><div class="ci-val">玉门运营组</div></div>
+        </div>
+      </div>
+
+      <div class="company-card">
+        <div class="company-hd">
+          <div>
+            <div class="company-name">酒泉供应链管理有限公司</div>
+            <div class="company-code">CO-002 · 统一社会信用代码：91620900MA73XXXXXX</div>
+          </div>
+          <div class="flex-c gap-2">
+            <span class="badge b-default">子公司</span>
+            <span class="badge b-success">正常</span>
+            <button class="btn btn-default btn-xs" onclick="editCompany('CO-002')">编辑</button>
+          </div>
+        </div>
+        <div class="company-grid">
+          <div><div class="ci-label">法定代表人</div><div class="ci-val">王志强</div></div>
+          <div><div class="ci-label">注册资本</div><div class="ci-val">1,000 万元</div></div>
+          <div><div class="ci-label">注册地址</div><div class="ci-val">甘肃省酒泉市肃州区物流园区</div></div>
+          <div><div class="ci-label">开户银行</div><div class="ci-val">建设银行酒泉分行</div></div>
+          <div><div class="ci-label">银行账号</div><div class="ci-val">621xxxxxxxxxx3456</div></div>
+          <div><div class="ci-label">纳税人类型</div><div class="ci-val">一般纳税人</div></div>
+          <div><div class="ci-label">联系电话</div><div class="ci-val">0937-8xxx2345</div></div>
+          <div><div class="ci-label">归属部门组</div><div class="ci-val">嘉峪关组</div></div>
+        </div>
+      </div>
+
+      <div class="company-card">
+        <div class="company-hd">
+          <div>
+            <div class="company-name">巨化萤石（玉门）有限公司</div>
+            <div class="company-code">CO-003 · 统一社会信用代码：91620981MA74XXXXXX</div>
+          </div>
+          <div class="flex-c gap-2">
+            <span class="badge b-default">合营公司</span>
+            <span class="badge b-success">正常</span>
+            <button class="btn btn-default btn-xs" onclick="editCompany('CO-003')">编辑</button>
+          </div>
+        </div>
+        <div class="company-grid">
+          <div><div class="ci-label">法定代表人</div><div class="ci-val">孙晓峰</div></div>
+          <div><div class="ci-label">注册资本</div><div class="ci-val">2,000 万元</div></div>
+          <div><div class="ci-label">注册地址</div><div class="ci-val">甘肃省酒泉市玉门市花海镇</div></div>
+          <div><div class="ci-label">开户银行</div><div class="ci-val">工商银行玉门支行</div></div>
+          <div><div class="ci-label">银行账号</div><div class="ci-val">621xxxxxxxxxx8901</div></div>
+          <div><div class="ci-label">纳税人类型</div><div class="ci-val">一般纳税人</div></div>
+          <div><div class="ci-label">联系电话</div><div class="ci-val">0937-7xxx8901</div></div>
+          <div><div class="ci-label">归属部门组</div><div class="ci-val">玉门运营组</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 部门管理 ══ -->
+    <div id="t-dept" style="display:none">
+      <div class="alert alert-info mb-4">
+        <span>ℹ</span>
+        <div>部门层级用于报表统计和数据归属。调整部门归属不影响在途业务单据，但会影响后续新建单据的统计归属。利润中心可用于内部移库核算场景。</div>
+      </div>
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">组织架构树</span>
+          <div class="flex-c gap-2">
+            <button class="btn btn-default btn-sm" onclick="expandAllTree()">全部展开</button>
+            <button class="btn btn-default btn-sm" onclick="collapseAllTree()">全部收起</button>
+            <button class="btn btn-primary btn-sm" onclick="openDeptModal(null)">+ 新增部门</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding-top:0">
+          <div class="tree-node" id="org-tree"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 部门组 ══ -->
+    <div id="t-group" style="display:none">
+      <div class="alert alert-info mb-4">
+        <span>ℹ</span>
+        <div>部门组是数据权限隔离和资金计息的核心维度，独立于部门树存在。一个部门可属于多个部门组；用户的数据权限范围等于其所属部门组覆盖的全部数据。</div>
+      </div>
+      <div id="group-list"></div>
+    </div>
+
+    <!-- ══ 岗位管理 ══ -->
+    <div id="t-position" style="display:none">
+      <div class="alert alert-info mb-4">
+        <span>ℹ</span>
+        <div>岗位是审批流程中"按岗位动态指派"的基础。每个用户可绑定一个主岗位，审批节点选择岗位时，系统自动查找当前在岗人员作为审批人。</div>
+      </div>
+      <div id="position-list"></div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<!-- 公司编辑弹窗 -->
+<div class="modal-overlay" id="company-modal">
+  <div class="modal-box">
+    <div class="modal-hd"><div class="modal-title" id="company-modal-title">编辑公司信息</div><div class="modal-close" onclick="closeCompanyModal()">×</div></div>
+    <div class="form-grid fg2" style="gap:14px">
+      <div class="form-item" style="grid-column:span 2"><label class="form-label req">公司名称</label><input class="form-ctrl" id="cm-name"></div>
+      <div class="form-item"><label class="form-label req">公司类型</label><select class="form-ctrl"><option>主体公司</option><option>子公司</option><option>合营公司</option></select></div>
+      <div class="form-item"><label class="form-label req">统一社会信用代码</label><input class="form-ctrl" id="cm-usc"></div>
+      <div class="form-item"><label class="form-label">法定代表人</label><input class="form-ctrl" id="cm-legal"></div>
+      <div class="form-item"><label class="form-label">注册资本（万元）</label><input class="form-ctrl" type="number" id="cm-capital"></div>
+      <div class="form-item" style="grid-column:span 2"><label class="form-label">注册地址</label><input class="form-ctrl" id="cm-address"></div>
+      <div class="form-item"><label class="form-label">开户银行</label><input class="form-ctrl" id="cm-bank"></div>
+      <div class="form-item"><label class="form-label">银行账号</label><input class="form-ctrl" id="cm-bankno"></div>
+      <div class="form-item"><label class="form-label">纳税人类型</label><select class="form-ctrl"><option>一般纳税人</option><option>小规模纳税人</option></select></div>
+      <div class="form-item"><label class="form-label">联系电话</label><input class="form-ctrl" id="cm-tel"></div>
+      <div class="form-item"><label class="form-label">归属部门组</label><select class="form-ctrl"><option>玉门运营组</option><option>嘉峪关组</option></select></div>
+      <div class="form-item"><label class="form-label">状态</label><select class="form-ctrl"><option>正常</option><option>注销</option></select></div>
+    </div>
+    <div class="flex-c gap-3" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-default" onclick="closeCompanyModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveCompanyModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 部门编辑弹窗 -->
+<div class="modal-overlay" id="dept-modal">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-hd"><div class="modal-title" id="dept-modal-title">新增部门</div><div class="modal-close" onclick="closeDeptModal()">×</div></div>
+    <div class="form-grid fg2" style="gap:14px">
+      <div class="form-item"><label class="form-label req">部门名称</label><input class="form-ctrl" id="dm-name" placeholder="如：采购部"></div>
+      <div class="form-item"><label class="form-label">部门编码</label><input class="form-ctrl" placeholder="自动生成" readonly style="background:var(--surface-2);color:var(--text-3)"></div>
+      <div class="form-item"><label class="form-label">上级部门</label><select class="form-ctrl" id="dm-parent"><option value="">（顶层部门）</option></select></div>
+      <div class="form-item"><label class="form-label">所属公司</label><select class="form-ctrl"><option>玉门萤石运营管理有限公司</option><option>酒泉供应链管理有限公司</option><option>巨化萤石（玉门）有限公司</option></select></div>
+      <div class="form-item"><label class="form-label">部门负责人</label><select class="form-ctrl"><option>—</option><option>张建平</option><option>王志强</option><option>王明</option><option>张丽</option></select></div>
+      <div class="form-item"><label class="form-label">是否利润中心</label><select class="form-ctrl"><option>否</option><option>是</option></select></div>
+      <div class="form-item" style="grid-column:span 2"><label class="form-label">备注</label><input class="form-ctrl" id="dm-remark" placeholder="（可选）"></div>
+    </div>
+    <div class="flex-c gap-3" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-default" onclick="closeDeptModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveDeptModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══ 路由 ══════════════════════════════════════════════════════
+const TABS = ['company','dept','group','position'];
+const TAB_META = {
+  company:  { label:'公司维护',   desc:'维护我方参与合同签约的法人主体信息，支持多公司主体管理',       action:'<button class="btn btn-primary" onclick="editCompany(\'new\')">+ 新增公司</button>' },
+  dept:     { label:'部门管理',   desc:'维护组织架构树（公司→部门→业务组），支持无限层级，用于报表统计与数据归属', action:'<button class="btn btn-primary" onclick="openDeptModal(null)">+ 新增部门</button>' },
+  group:    { label:'部门组',     desc:'独立于部门树的数据权限维度，控制各用户可访问的业务数据范围',   action:'<button class="btn btn-primary" onclick="newGroup()">+ 新增部门组</button>' },
+  position: { label:'岗位管理',   desc:'定义系统内岗位，与审批流程"按岗位指派"和用户角色关联',         action:'<button class="btn btn-primary" onclick="newPosition()">+ 新增岗位</button>' },
+};
+
+function activateTab(tab) {
+  if (!TABS.includes(tab)) tab = 'company';
+  TABS.forEach(id => {
+    document.querySelector(`.tab[data-tab="${id}"]`)?.classList.toggle('active', id === tab);
+    const panel = document.getElementById('t-' + id);
+    if (panel) panel.style.display = id === tab ? 'block' : 'none';
+  });
+  const meta = TAB_META[tab];
+  document.getElementById('page-desc').textContent = meta.desc;
+  document.getElementById('page-actions').innerHTML = meta.action;
+  document.querySelectorAll('.sidebar-nav .nav-item[data-nav]').forEach(a => {
+    a.classList.toggle('active', a.dataset.nav === tab);
+  });
+}
+
+window.addEventListener('DOMContentLoaded', () => activateTab((location.hash.replace('#','')) || 'company'));
+window.addEventListener('hashchange', () => activateTab(location.hash.replace('#','')));
+
+// ══ 部门树数据 ════════════════════════════════════════════════
+const DEPT_TREE = [
+  {
+    id:'D-001', name:'玉门萤石运营管理有限公司', type:'company', head:'张建平', profit:false,
+    children:[
+      {
+        id:'D-011', name:'综合管理部', type:'dept', head:'张建平', profit:false,
+        children:[]
+      },
+      {
+        id:'D-012', name:'采购部', type:'dept', head:'王明', profit:true,
+        children:[
+          {id:'D-012-1', name:'矿石采购组', type:'group', head:'王明', profit:false, children:[]},
+          {id:'D-012-2', name:'辅材采购组', type:'group', head:'—', profit:false, children:[]},
+        ]
+      },
+      {
+        id:'D-013', name:'销售部', type:'dept', head:'张丽', profit:true,
+        children:[
+          {id:'D-013-1', name:'华东销售组', type:'group', head:'张丽', profit:false, children:[]},
+          {id:'D-013-2', name:'西北销售组', type:'group', head:'—', profit:false, children:[]},
+        ]
+      },
+      {
+        id:'D-014', name:'仓储部', type:'dept', head:'陈仓', profit:false,
+        children:[
+          {id:'D-014-1', name:'玉门堆场', type:'group', head:'陈仓', profit:true, children:[]},
+        ]
+      },
+      {
+        id:'D-015', name:'质检部', type:'dept', head:'李华', profit:false,
+        children:[]
+      },
+      {
+        id:'D-016', name:'财务部', type:'dept', head:'赵雪', profit:false,
+        children:[]
+      },
+      {
+        id:'D-017', name:'物流部', type:'dept', head:'—', profit:false,
+        children:[]
+      },
+    ]
+  },
+  {
+    id:'D-002', name:'酒泉供应链管理有限公司', type:'company', head:'王志强', profit:false,
+    children:[
+      {id:'D-021', name:'运营管理部', type:'dept', head:'王志强', profit:false, children:[]},
+      {id:'D-022', name:'嘉峪关仓储组', type:'dept', head:'—', profit:true, children:[]},
+    ]
+  },
+];
+
+const treeState = {};
+
+function typeIcon(type) {
+  return type === 'company' ? '🏢' : type === 'dept' ? '📁' : '👥';
+}
+
+function renderTreeNode(node, depth) {
+  const hasChildren = node.children && node.children.length > 0;
+  const isCollapsed = treeState[node.id];
+  const indent = depth * 24;
+
+  let html = `<div class="tree-row" data-id="${node.id}">
+    <span class="tree-indent" style="width:${indent}px"></span>
+    <span class="tree-toggle ${hasChildren?'':'leaf'} ${isCollapsed?'collapsed':''}" onclick="toggleDept('${node.id}')">▼</span>
+    <span class="tree-icon">${typeIcon(node.type)}</span>
+    <span class="tree-label">${node.name}</span>
+    ${node.profit ? '<span class="badge b-warning" style="font-size:10px;margin-right:6px">利润中心</span>' : ''}
+    <span class="tree-meta">负责人：${node.head || '—'}</span>
+    <span class="tree-actions">
+      <button class="btn btn-default btn-xs" onclick="openDeptModal('${node.id}')">+ 子部门</button>
+      <button class="btn btn-default btn-xs" onclick="editDept('${node.id}')">编辑</button>
+      ${depth > 0 ? `<button class="btn btn-default btn-xs" style="color:var(--danger)" onclick="deleteDept('${node.id}','${node.name}')">删除</button>` : ''}
+    </span>
+  </div>`;
+
+  if (hasChildren && !isCollapsed) {
+    html += node.children.map(c => renderTreeNode(c, depth + 1)).join('');
+  }
+  return html;
+}
+
+function renderTree() {
+  document.getElementById('org-tree').innerHTML = DEPT_TREE.map(n => renderTreeNode(n, 0)).join('');
+}
+
+function toggleDept(id) {
+  treeState[id] = !treeState[id];
+  renderTree();
+}
+
+function expandAllTree() {
+  Object.keys(treeState).forEach(k => { treeState[k] = false; });
+  renderTree();
+}
+
+function collapseAllTree() {
+  function collectIds(nodes) {
+    nodes.forEach(n => { if (n.children && n.children.length) { treeState[n.id] = true; collectIds(n.children); } });
+  }
+  collectIds(DEPT_TREE);
+  renderTree();
+}
+
+function editDept(id) { alert('编辑部门：' + id + '（演示）'); }
+function deleteDept(id, name) {
+  if (confirm(`确认删除部门"${name}"？该操作不可恢复，删除前请确认该部门下无在职人员。`)) alert('已删除');
+}
+
+// 部门弹窗
+function openDeptModal(parentId) {
+  document.getElementById('dept-modal-title').textContent = parentId ? '新增子部门' : '新增顶层部门';
+  document.getElementById('dept-modal').classList.add('open');
+}
+function closeDeptModal() { document.getElementById('dept-modal').classList.remove('open'); }
+function saveDeptModal() { alert('部门已保存（演示：实际保存后刷新树形结构）'); closeDeptModal(); }
+
+// ══ 部门组数据 ════════════════════════════════════════════════
+const GROUPS = [
+  {
+    id:'GRP-001', name:'玉门运营组', desc:'玉门基地所有业务数据权限集合',
+    scopeDepts:['采购部','销售部','仓储部（玉门堆场）','质检部'],
+    scopeCompanies:['玉门萤石运营管理有限公司','巨化萤石（玉门）有限公司'],
+    members:[
+      {name:'王明',   role:'采购专员'},
+      {name:'张丽',   role:'销售专员'},
+      {name:'陈仓',   role:'仓储管理员'},
+      {name:'李华',   role:'质检专员'},
+      {name:'运营管理员', role:'超级管理员'},
+    ],
+    interestRule:'按月计息，利率 0.6%/月，基准账期 30 天',
+    status:'active',
+  },
+  {
+    id:'GRP-002', name:'嘉峪关组', desc:'嘉峪关中转站及酒泉区域业务数据',
+    scopeDepts:['运营管理部','嘉峪关仓储组'],
+    scopeCompanies:['酒泉供应链管理有限公司'],
+    members:[
+      {name:'运营管理员', role:'超级管理员'},
+    ],
+    interestRule:'按月计息，利率 0.6%/月，基准账期 30 天',
+    status:'active',
+  },
+  {
+    id:'GRP-003', name:'财务全局组', desc:'财务审核角色的只读跨组视图，用于结算统计',
+    scopeDepts:['财务部'],
+    scopeCompanies:['（全部公司，只读）'],
+    members:[
+      {name:'赵雪', role:'财务审核'},
+    ],
+    interestRule:'—',
+    status:'active',
+  },
+];
+
+function renderGroups() {
+  document.getElementById('group-list').innerHTML = GROUPS.map(g => `
+    <div class="group-card">
+      <div class="group-card-hd">
+        <div>
+          <span class="fw-700" style="font-size:14px">${g.name}</span>
+          <span class="text-muted text-sm" style="margin-left:10px">${g.id} · ${g.desc}</span>
+        </div>
+        <div class="flex-c gap-2">
+          <span class="badge b-success">启用</span>
+          <button class="btn btn-default btn-xs" onclick="editGroup('${g.id}')">编辑</button>
+          <button class="btn btn-default btn-xs" onclick="alert('停用部门组：${g.name}')">停用</button>
+        </div>
+      </div>
+
+      <div style="font-size:11.5px;font-weight:700;color:var(--text-3);margin-bottom:6px">覆盖部门</div>
+      <div class="group-scope mb-3">
+        ${g.scopeDepts.map(d=>`<span class="scope-tag">${d}</span>`).join('')}
+      </div>
+
+      <div style="font-size:11.5px;font-weight:700;color:var(--text-3);margin-bottom:6px">覆盖公司</div>
+      <div class="group-scope mb-3">
+        ${g.scopeCompanies.map(c=>`<span class="scope-tag" style="background:var(--surface-2);color:var(--text-2)">${c}</span>`).join('')}
+      </div>
+
+      <div style="display:flex;align-items:center;gap:16px">
+        <div>
+          <div style="font-size:11.5px;font-weight:700;color:var(--text-3);margin-bottom:6px">计息规则</div>
+          <div style="font-size:12.5px">${g.interestRule}</div>
+        </div>
+        <div style="margin-left:auto">
+          <div style="font-size:11.5px;font-weight:700;color:var(--text-3);margin-bottom:6px">关联用户（${g.members.length}人）</div>
+          <div class="group-member-list">
+            ${g.members.map(m=>`<div class="member-chip"><div class="member-avatar">${m.name.slice(-1)}</div><span>${m.name}</span><span class="text-muted" style="font-size:11px">${m.role}</span></div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function editGroup(id) { alert('编辑部门组：' + id + '（演示）'); }
+function newGroup() { alert('新增部门组（演示：请配置覆盖部门和计息规则）'); }
+
+// ══ 岗位数据 ══════════════════════════════════════════════════
+const POSITIONS = {
+  '业务类': [
+    { id:'POS-001', name:'采购专员',   dept:'采购部',     level:'专员', users:['王明'],       approvalUsage:'采购合同审批-发起人', status:'active' },
+    { id:'POS-002', name:'采购经理',   dept:'采购部',     level:'经理', users:[],             approvalUsage:'采购合同审批-审批节点1', status:'active' },
+    { id:'POS-003', name:'销售专员',   dept:'销售部',     level:'专员', users:['张丽'],        approvalUsage:'销售合同审批-发起人', status:'active' },
+    { id:'POS-004', name:'销售经理',   dept:'销售部',     level:'经理', users:[],             approvalUsage:'销售合同审批-审批节点1', status:'active' },
+  ],
+  '运营类': [
+    { id:'POS-011', name:'仓储管理员', dept:'仓储部',     level:'专员', users:['陈仓'],        approvalUsage:'入库单审批-发起人；库存盘点-发起人', status:'active' },
+    { id:'POS-012', name:'仓储主管',   dept:'仓储部',     level:'主管', users:[],             approvalUsage:'入库单审批-审批节点1；库存盘点-审批节点1', status:'active' },
+    { id:'POS-013', name:'质检专员',   dept:'质检部',     level:'专员', users:['李华'],        approvalUsage:'—', status:'active' },
+  ],
+  '管理类': [
+    { id:'POS-021', name:'总经理',     dept:'综合管理部', level:'高管', users:[],             approvalUsage:'采购合同≥50万-审批节点2；销售合同-审批节点2；付款>10万-审批节点2', status:'active' },
+    { id:'POS-022', name:'部门经理',   dept:'综合管理部', level:'经理', users:[],             approvalUsage:'双边合同审批-审批节点1', status:'active' },
+    { id:'POS-023', name:'业务负责人', dept:'综合管理部', level:'经理', users:[],             approvalUsage:'合作伙伴新增审批-审批节点1', status:'active' },
+  ],
+  '财务类': [
+    { id:'POS-031', name:'财务专员',   dept:'财务部',     level:'专员', users:['赵雪'],        approvalUsage:'付款申请审批-发起人', status:'active' },
+    { id:'POS-032', name:'财务主管',   dept:'财务部',     level:'主管', users:[],             approvalUsage:'付款申请审批-审批节点1', status:'active' },
+  ],
+};
+
+function renderPositions() {
+  document.getElementById('position-list').innerHTML = Object.entries(POSITIONS).map(([grp, positions]) => `
+    <div class="pos-section">${grp}</div>
+    <div class="card mb-4">
+      <div class="tbl-wrap">
+        <table class="data-tbl">
+          <thead><tr><th>岗位编码</th><th>岗位名称</th><th>归属部门</th><th>岗位级别</th><th>在岗人员</th><th>审批流程引用</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            ${positions.map(p => `<tr>
+              <td class="text-muted" style="font-size:12px">${p.id}</td>
+              <td class="fw-700">${p.name}</td>
+              <td>${p.dept}</td>
+              <td><span class="badge b-default">${p.level}</span></td>
+              <td>${p.users.length > 0 ? p.users.map(u=>`<span class="tag">${u}</span>`).join('') : '<span class="text-muted">（空缺）</span>'}</td>
+              <td class="text-sm text-muted">${p.approvalUsage}</td>
+              <td><span class="badge ${p.status==='active'?'b-success':'b-default'}">${p.status==='active'?'启用':'停用'}</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-default btn-xs" onclick="editPosition('${p.id}')">编辑</button>
+                <button class="btn btn-default btn-xs" onclick="assignUser('${p.id}','${p.name}')">配置人员</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `).join('');
+}
+
+function editPosition(id) { alert('编辑岗位：' + id + '（演示）'); }
+function assignUser(id, name) { alert('为岗位"' + name + '"配置在岗人员（演示：从用户列表中选择）'); }
+function newPosition() { alert('新增岗位（演示：请填写岗位信息后保存）'); }
+
+// ══ 公司弹窗 ══════════════════════════════════════════════════
+function editCompany(id) {
+  document.getElementById('company-modal-title').textContent = id === 'new' ? '新增公司' : '编辑公司信息';
+  document.getElementById('company-modal').classList.add('open');
+}
+function closeCompanyModal() { document.getElementById('company-modal').classList.remove('open'); }
+function saveCompanyModal() { alert('公司信息已保存'); closeCompanyModal(); }
+
+// ══ 初始化 ════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  renderTree();
+  renderGroups();
+  renderPositions();
+});
+</script>
+</body>
+</html>

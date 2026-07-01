@@ -1,0 +1,564 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>监控录像 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center }
+.modal-box { background:var(--surface);border-radius:var(--radius-lg);width:600px;max-height:88vh;overflow-y:auto;padding:28px;position:relative }
+.img-viewer { background:#0f172a;border-radius:var(--radius-lg);padding:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0 }
+.img-frame { aspect-ratio:4/3;background:#1e293b;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:.15s }
+.img-frame:hover { background:#334155 }
+.img-frame .fi { font-size:36px }
+.img-frame .fl { font-size:11px;color:#94a3b8 }
+.hash-line { font-family:monospace;font-size:11px;color:var(--success);background:var(--surface-2);padding:6px 10px;border-radius:4px;word-break:break-all }
+.ev-row { display:flex;align-items:center;gap:12px;padding:10px;background:var(--surface-2);border-radius:var(--radius);margin-bottom:8px }
+.ev-icon { width:56px;height:36px;background:#1f2937;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0 }
+.ev-row.danger { background:var(--danger-bg);border:1px solid var(--danger-border) }
+.search-result-badge { display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--primary-bg,#eff6ff);color:var(--primary) }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="index.html" class="nav-item active">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>监控录像</span><span class="bc-sep">›</span>
+      <span class="bc-cur">实时监控</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">监控录像</div>
+        <div class="page-desc">实时监控 · 存证查询 · 影像关联 · SHA256 哈希存证 · 争议追溯</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" onclick="switchMainTab(document.querySelectorAll('.tab')[1],'archive')">🗄 存证查询</button>
+        <button class="btn btn-default">⚙ 设备管理</button>
+      </div>
+    </div>
+
+    <!-- 设备状态 -->
+    <div class="alert alert-success mb-4">
+      <span>✅</span>
+      <div>全部 6 路摄像头在线正常 · 存储剩余空间 78% · 录像保留策略：30天循环覆盖（存证关键片段永久保留）</div>
+    </div>
+
+    <!-- 主标签 -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchMainTab(this,'live')">实时监控</div>
+      <div class="tab" onclick="switchMainTab(this,'archive')">存证查询</div>
+      <div class="tab" onclick="switchMainTab(this,'related')">影像关联</div>
+    </div>
+
+    <!-- ===== 实时监控 ===== -->
+    <div id="view-live">
+      <div class="card mb-5">
+        <div class="card-hd">
+          <span class="card-title">实时画面（6路）</span>
+          <div class="flex-c gap-2">
+            <span class="badge b-success">全部在线</span>
+            <button class="btn btn-default btn-sm">⛶ 全屏</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="cam-grid">
+            <div class="cam-card" onclick="openCam('1# 地磅入口（全景）','CAM-01')">
+              <div class="cam-feed"><div style="text-align:center"><div style="font-size:40px">📹</div><div style="font-size:12px;margin-top:8px">实时画面区域</div><div style="font-size:11px;color:#6b7280">点击放大</div></div></div>
+              <div class="cam-label"><span>1# 地磅入口（全景）</span><span class="cam-live">LIVE</span></div>
+            </div>
+            <div class="cam-card" onclick="openCam('1# 地磅车头抓拍','CAM-02')">
+              <div class="cam-feed"><div style="text-align:center"><div style="font-size:40px">📹</div><div style="font-size:12px;margin-top:8px">实时画面区域</div><div style="font-size:11px;color:#6b7280">点击放大</div></div></div>
+              <div class="cam-label"><span>1# 地磅车头抓拍</span><span class="cam-live">LIVE</span></div>
+            </div>
+            <div class="cam-card" onclick="openCam('2# 地磅入口（全景）','CAM-03')">
+              <div class="cam-feed"><div style="text-align:center"><div style="font-size:40px">📹</div><div style="font-size:12px;margin-top:8px">实时画面区域</div><div style="font-size:11px;color:#6b7280">点击放大</div></div></div>
+              <div class="cam-label"><span>2# 地磅入口（全景）</span><span class="cam-live">LIVE</span></div>
+            </div>
+            <div class="cam-card" onclick="openCam('卸货区 A（萤石粉97%）','CAM-04')">
+              <div class="cam-feed"><div style="text-align:center"><div style="font-size:40px">📹</div><div style="font-size:12px;margin-top:8px">实时画面区域</div><div style="font-size:11px;color:#6b7280">点击放大</div></div></div>
+              <div class="cam-label"><span>卸货区 A（萤石粉97%）</span><span class="cam-live">LIVE</span></div>
+            </div>
+            <div class="cam-card" onclick="openCam('卸货区 B（综合）','CAM-05')">
+              <div class="cam-feed"><div style="text-align:center"><div style="font-size:40px">📹</div><div style="font-size:12px;margin-top:8px">实时画面区域</div><div style="font-size:11px;color:#6b7280">点击放大</div></div></div>
+              <div class="cam-label"><span>卸货区 B（综合）</span><span class="cam-live">LIVE</span></div>
+            </div>
+            <div class="cam-card" onclick="openCam('堆场全景（广角）','CAM-06')">
+              <div class="cam-feed"><div style="text-align:center"><div style="font-size:40px">📹</div><div style="font-size:12px;margin-top:8px">实时画面区域</div><div style="font-size:11px;color:#6b7280">点击放大</div></div></div>
+              <div class="cam-label"><span>堆场全景（广角）</span><span class="cam-live">LIVE</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 今日存证 -->
+      <div class="g2">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">今日存证关键帧</span>
+            <span class="text-sm text-muted">时间戳 + SHA256 哈希</span>
+          </div>
+          <div class="card-body">
+            <div class="ev-row" onclick="openEvidence('WS-20260610-006','甘B·88890 进场空车','06-10 08:05','a3f8b2…e109','normal')">
+              <div class="ev-icon">🚛</div>
+              <div style="flex:1">
+                <div class="text-sm fw-700">甘B·88890 进场空车（1#地磅）</div>
+                <div class="text-xs text-muted">06-10 08:05 · 磅单 WS-20260610-006</div>
+                <div class="hash-line mt-1">SHA256: a3f8b2…e109</div>
+              </div>
+              <button class="btn btn-default btn-xs">查看</button>
+            </div>
+            <div class="ev-row" onclick="openEvidence('WS-20260610-007','甘A·55678 进场满载称重','06-10 08:50','7d2c91…b340','normal')">
+              <div class="ev-icon">⚖</div>
+              <div style="flex:1">
+                <div class="text-sm fw-700">甘A·55678 进场满载称重（1#地磅）</div>
+                <div class="text-xs text-muted">06-10 08:50 · 磅单 WS-20260610-007</div>
+                <div class="hash-line mt-1">SHA256: 7d2c91…b340</div>
+              </div>
+              <button class="btn btn-default btn-xs">查看</button>
+            </div>
+            <div class="ev-row danger" onclick="openEvidence('WS-20260610-008','甘A·12345 磅差异常存证','06-10 09:12','f91ab3…4d88','danger')">
+              <div class="ev-icon">⚠</div>
+              <div style="flex:1">
+                <div class="text-sm fw-700 text-danger">甘A·12345 磅差异常存证（1#地磅）</div>
+                <div class="text-xs text-muted">06-10 09:12 · 磅单 WS-20260610-008 · 差 0.8%</div>
+                <div class="hash-line mt-1" style="color:var(--danger)">SHA256: f91ab3…4d88 · 已标记异常</div>
+              </div>
+              <button class="btn btn-danger btn-xs">查看</button>
+            </div>
+            <div class="ev-row" onclick="openEvidence('PC-0610-03','批次卸货完成空厢确认','06-10 09:45','2e80f1…cc02','normal')">
+              <div class="ev-icon">📦</div>
+              <div style="flex:1">
+                <div class="text-sm fw-700">批次 PC-0610-03 卸货完成（空厢确认）</div>
+                <div class="text-xs text-muted">06-10 09:45 · 入库单 RK-20260610-03</div>
+                <div class="hash-line mt-1">SHA256: 2e80f1…cc02</div>
+              </div>
+              <button class="btn btn-default btn-xs">查看</button>
+            </div>
+          </div>
+          <div class="card-ft">
+            <span class="text-sm text-muted">今日共存证 12 个关键节点</span>
+            <span class="link text-sm" onclick="switchMainTab(document.querySelectorAll('.tab')[1],'archive')">查看全部 →</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><span class="card-title">摄像头设备列表</span></div>
+          <div class="card-body">
+            <table class="data-tbl">
+              <thead><tr><th>摄像头</th><th>位置</th><th>用途</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td>CAM-01</td><td>1#地磅入口</td><td>全景·磅单关联</td><td><span class="badge b-success">在线</span></td></tr>
+                <tr><td>CAM-02</td><td>1#地磅车头位</td><td>车牌抓拍</td><td><span class="badge b-success">在线</span></td></tr>
+                <tr><td>CAM-03</td><td>2#地磅入口</td><td>全景·磅单关联</td><td><span class="badge b-success">在线</span></td></tr>
+                <tr><td>CAM-04</td><td>卸货区 A</td><td>卸货·空厢确认</td><td><span class="badge b-success">在线</span></td></tr>
+                <tr><td>CAM-05</td><td>卸货区 B</td><td>卸货·空厢确认</td><td><span class="badge b-success">在线</span></td></tr>
+                <tr><td>CAM-06</td><td>堆场广角</td><td>全景监控</td><td><span class="badge b-success">在线</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 存证查询 ===== -->
+    <div id="view-archive" style="display:none">
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">存证检索</span></div>
+        <div class="card-body">
+          <div class="form-grid fg4 mb-3">
+            <div class="form-item">
+              <label class="form-label">磅单号</label>
+              <input class="form-ctrl" type="text" id="q-ws" placeholder="WS-20260610-…">
+            </div>
+            <div class="form-item">
+              <label class="form-label">运单号</label>
+              <input class="form-ctrl" type="text" id="q-wb" placeholder="WB-20260610-…">
+            </div>
+            <div class="form-item">
+              <label class="form-label">批次号</label>
+              <input class="form-ctrl" type="text" id="q-batch" placeholder="PC-0610-…">
+            </div>
+            <div class="form-item">
+              <label class="form-label">车牌号</label>
+              <input class="form-ctrl" type="text" id="q-plate" placeholder="甘A·…">
+            </div>
+          </div>
+          <div class="flex-c gap-3">
+            <input class="form-ctrl" type="date" value="2026-06-01" style="width:auto">
+            <span class="text-muted">至</span>
+            <input class="form-ctrl" type="date" value="2026-06-10" style="width:auto">
+            <button class="btn btn-primary" onclick="searchArchive()">🔍 检索</button>
+            <button class="btn btn-default" onclick="resetSearch()">重置</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="archive-result">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">存证记录</span>
+            <span id="archive-count" class="text-sm text-muted">共 12 条（本日）</span>
+          </div>
+          <div class="tbl-wrap">
+            <table class="data-tbl">
+              <thead>
+                <tr><th>存证时间</th><th>类型</th><th>关联磅单</th><th>关联运单</th><th>批次</th><th>车牌</th><th>摄像头</th><th>哈希</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody id="archive-tbody">
+                <tr data-ws="WS-20260610-009" data-wb="WB-20260610-02" data-plate="甘B·88890" data-batch="">
+                  <td>06-10 10:28</td><td>进场满载</td>
+                  <td><span class="tbl-link" onclick="window.location.href='../weighbridge/index.html'">WS-20260610-009</span></td>
+                  <td>WB-20260610-02</td><td>—</td><td>甘B·88890</td><td>CAM-01,02</td>
+                  <td><span class="hash-line">b2e9f4…3c12</span></td>
+                  <td><span class="badge b-info">进行中</span></td>
+                  <td><button class="btn btn-default btn-xs" onclick="openEvidence('WS-20260610-009','甘B·88890 进场满载（进行中）','06-10 10:28','b2e9f4…3c12','normal')">查看</button></td>
+                </tr>
+                <tr data-ws="WS-20260610-008" data-wb="WB-20260610-06" data-plate="甘A·12345" data-batch="PC-0610-02" style="background:var(--danger-bg)">
+                  <td>06-10 09:12</td><td>进场满载</td>
+                  <td><span class="tbl-link text-danger" onclick="window.location.href='../weighbridge/index.html'">WS-20260610-008</span></td>
+                  <td>WB-20260610-06</td><td>PC-0610-02</td><td>甘A·12345</td><td>CAM-01,02</td>
+                  <td><span class="hash-line" style="color:var(--danger)">f91ab3…4d88</span></td>
+                  <td><span class="badge b-danger">磅差异常</span></td>
+                  <td><button class="btn btn-danger btn-xs" onclick="openEvidence('WS-20260610-008','甘A·12345 磅差异常','06-10 09:12','f91ab3…4d88','danger')">查看</button></td>
+                </tr>
+                <tr data-ws="WS-20260610-007" data-wb="WB-20260610-07" data-plate="甘A·55678" data-batch="PC-0610-03">
+                  <td>06-10 08:50</td><td>进场满载</td>
+                  <td><span class="tbl-link" onclick="window.location.href='../weighbridge/index.html'">WS-20260610-007</span></td>
+                  <td>WB-20260610-07</td><td>PC-0610-03</td><td>甘A·55678</td><td>CAM-01,02</td>
+                  <td><span class="hash-line">7d2c91…b340</span></td>
+                  <td><span class="badge b-success">已存证</span></td>
+                  <td><button class="btn btn-default btn-xs" onclick="openEvidence('WS-20260610-007','甘A·55678 进场满载','06-10 08:50','7d2c91…b340','normal')">查看</button></td>
+                </tr>
+                <tr data-ws="WS-20260610-006" data-wb="WB-20260610-02" data-plate="甘B·88890" data-batch="">
+                  <td>06-10 08:05</td><td>进场空车（皮重）</td>
+                  <td><span class="tbl-link" onclick="window.location.href='../weighbridge/index.html'">WS-20260610-006</span></td>
+                  <td>WB-20260610-02</td><td>—</td><td>甘B·88890</td><td>CAM-01</td>
+                  <td><span class="hash-line">a3f8b2…e109</span></td>
+                  <td><span class="badge b-success">已存证</span></td>
+                  <td><button class="btn btn-default btn-xs" onclick="openEvidence('WS-20260610-006','甘B·88890 进场空车','06-10 08:05','a3f8b2…e109','normal')">查看</button></td>
+                </tr>
+                <tr data-ws="WS-20260609-012" data-wb="WB-20260609-008" data-plate="甘C·77890" data-batch="PC-0609-05">
+                  <td>昨 17:55</td><td>进场满载</td>
+                  <td><span class="tbl-link" onclick="window.location.href='../weighbridge/index.html'">WS-20260609-012</span></td>
+                  <td>WB-20260609-008</td><td>PC-0609-05</td><td>甘C·77890</td><td>CAM-01,02</td>
+                  <td><span class="hash-line">a8e3f2…cc91</span></td>
+                  <td><span class="badge b-success">已存证</span></td>
+                  <td><button class="btn btn-default btn-xs" onclick="openEvidence('WS-20260609-012','甘C·77890 进场满载','昨 17:55','a8e3f2…cc91','normal')">查看</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card-ft">
+            <span class="text-sm text-muted">共 12 条</span>
+            <div class="pager"><div class="pg-btn active">1</div><div class="pg-btn">2</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 影像关联 ===== -->
+    <div id="view-related" style="display:none">
+      <div class="filter-bar mb-4">
+        <select class="filter-select" id="rel-type" onchange="filterRelated()">
+          <option value="all">全部关联类型</option>
+          <option value="weigh">磅单影像</option>
+          <option value="qc">质检取样影像</option>
+          <option value="unload">卸货空厢影像</option>
+        </select>
+        <select class="filter-select">
+          <option>全部时间</option>
+          <option>今日</option>
+          <option>昨日</option>
+          <option>本周</option>
+        </select>
+      </div>
+
+      <div id="related-list">
+        <div class="card mb-3" data-rtype="weigh">
+          <div class="card-hd">
+            <div>
+              <span class="card-title">磅单影像 · WS-20260610-007</span>
+              <div class="text-xs text-muted">甘A·55678 · 06-10 08:50 · 净重 67.90吨</div>
+            </div>
+            <div class="flex-c gap-2">
+              <span class="badge b-success">已存证</span>
+              <button class="btn btn-default btn-sm" onclick="openEvidence('WS-20260610-007','甘A·55678 进场满载','06-10 08:50','7d2c91…b340','normal')">查看影像</button>
+              <button class="btn btn-default btn-sm" onclick="window.location.href='../weighbridge/index.html'">查看磅单</button>
+            </div>
+          </div>
+          <div class="card-body pt-0">
+            <div style="display:flex;gap:10px">
+              <div style="background:#0f172a;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer" onclick="openEvidence('WS-20260610-007','甘A·55678 进场满载','06-10 08:50','7d2c91…b340','normal')">
+                <div style="font-size:24px">🚛</div><div style="font-size:10px;color:#94a3b8">进场抓拍</div>
+              </div>
+              <div style="background:#0f172a;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer" onclick="openEvidence('WS-20260610-007','甘A·55678 进场满载','06-10 08:50','7d2c91…b340','normal')">
+                <div style="font-size:24px">⚖</div><div style="font-size:10px;color:#94a3b8">称重记录</div>
+              </div>
+              <div style="background:#0f172a;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer" onclick="openEvidence('WS-20260610-007','甘A·55678 出场空车','06-10 09:30','7d2c91…b340','normal')">
+                <div style="font-size:24px">✅</div><div style="font-size:10px;color:#94a3b8">出场确认</div>
+              </div>
+            </div>
+            <div class="hash-line mt-2">SHA256: 7d2c91…b340 · 3帧影像均已哈希存证</div>
+          </div>
+        </div>
+
+        <div class="card mb-3" data-rtype="weigh" style="background:var(--danger-bg)">
+          <div class="card-hd">
+            <div>
+              <span class="card-title text-danger">磅差异常影像 · WS-20260610-008</span>
+              <div class="text-xs text-muted">甘A·12345 · 06-10 09:12 · 磅差 0.8% ⚠</div>
+            </div>
+            <div class="flex-c gap-2">
+              <span class="badge b-danger">磅差异常</span>
+              <button class="btn btn-danger btn-sm" onclick="openEvidence('WS-20260610-008','甘A·12345 磅差异常','06-10 09:12','f91ab3…4d88','danger')">查看影像</button>
+              <button class="btn btn-default btn-sm" onclick="window.location.href='../weighbridge/index.html'">前往复核</button>
+            </div>
+          </div>
+          <div class="card-body pt-0">
+            <div style="display:flex;gap:10px">
+              <div style="background:#1e293b;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;border:1px solid var(--danger-border)" onclick="openEvidence('WS-20260610-008','甘A·12345 磅差异常','06-10 09:12','f91ab3…4d88','danger')">
+                <div style="font-size:24px">⚠</div><div style="font-size:10px;color:#f87171">异常帧</div>
+              </div>
+              <div style="background:#1e293b;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer" onclick="openEvidence('WS-20260610-008','甘A·12345 磅差异常','06-10 09:12','f91ab3…4d88','danger')">
+                <div style="font-size:24px">📋</div><div style="font-size:10px;color:#94a3b8">仪表盘</div>
+              </div>
+            </div>
+            <div class="hash-line mt-2" style="color:var(--danger)">SHA256: f91ab3…4d88 · 已标记为争议证据</div>
+          </div>
+        </div>
+
+        <div class="card mb-3" data-rtype="qc">
+          <div class="card-hd">
+            <div>
+              <span class="card-title">质检取样影像 · QC-20260610-001</span>
+              <div class="text-xs text-muted">批次 PC-0610-03 · 06-10 07:00 · 取样 3 份</div>
+            </div>
+            <div class="flex-c gap-2">
+              <span class="badge b-success">已存证</span>
+              <button class="btn btn-default btn-sm" onclick="openEvidence('QC-20260610-001','质检取样影像','06-10 07:00','3a9c12…de45','normal')">查看影像</button>
+              <button class="btn btn-default btn-sm" onclick="window.location.href='../quality/index.html'">查看质检单</button>
+            </div>
+          </div>
+          <div class="card-body pt-0">
+            <div style="display:flex;gap:10px">
+              <div style="background:#0f172a;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer">
+                <div style="font-size:24px">🧪</div><div style="font-size:10px;color:#94a3b8">取样过程</div>
+              </div>
+              <div style="background:#0f172a;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer">
+                <div style="font-size:24px">📝</div><div style="font-size:10px;color:#94a3b8">三方签字</div>
+              </div>
+            </div>
+            <div class="hash-line mt-2">SHA256: 3a9c12…de45 · 取样影像已存证</div>
+          </div>
+        </div>
+
+        <div class="card mb-3" data-rtype="unload">
+          <div class="card-hd">
+            <div>
+              <span class="card-title">卸货空厢影像 · PC-0610-03</span>
+              <div class="text-xs text-muted">06-10 09:45 · 甘A·55678 · 卸货完成确认</div>
+            </div>
+            <div class="flex-c gap-2">
+              <span class="badge b-success">已存证</span>
+              <button class="btn btn-default btn-sm" onclick="openEvidence('PC-0610-03','空厢确认影像','06-10 09:45','2e80f1…cc02','normal')">查看影像</button>
+            </div>
+          </div>
+          <div class="card-body pt-0">
+            <div style="display:flex;gap:10px">
+              <div style="background:#0f172a;border-radius:6px;width:120px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">
+                <div style="font-size:24px">📦</div><div style="font-size:10px;color:#94a3b8">空厢确认</div>
+              </div>
+            </div>
+            <div class="hash-line mt-2">SHA256: 2e80f1…cc02</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<!-- 影像弹窗 -->
+<div class="modal-overlay" id="ev-modal" onclick="closeEvModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <button onclick="document.getElementById('ev-modal').style.display='none'" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-3)">✕</button>
+    <div class="card-title mb-1" id="ev-title">影像存证查看</div>
+    <div class="text-xs text-muted mb-2" id="ev-sub"></div>
+    <div class="img-viewer" id="ev-frames"></div>
+    <div class="hash-line mb-3" id="ev-hash"></div>
+    <div class="alert alert-info" style="font-size:12px">
+      <span>🔐</span>
+      <div>影像已打时间戳哈希存证（SHA256），与磅单/质检单强关联，可作为争议追溯依据。存证数据不可篡改。</div>
+    </div>
+    <div class="flex-c gap-2 mt-3" style="justify-content:flex-end">
+      <button class="btn btn-default" onclick="document.getElementById('ev-modal').style.display='none'">关闭</button>
+      <button class="btn btn-default" onclick="alert('下载功能对接 NAS/OSS 后可用')">⬇ 下载存证</button>
+    </div>
+  </div>
+</div>
+
+<!-- 实时画面放大弹窗 -->
+<div class="modal-overlay" id="cam-modal" onclick="closeCamModal(event)">
+  <div class="modal-box" style="width:640px" onclick="event.stopPropagation()">
+    <button onclick="document.getElementById('cam-modal').style.display='none'" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-3)">✕</button>
+    <div class="card-title mb-1" id="cam-title">实时画面</div>
+    <div class="text-xs text-muted mb-3" id="cam-sub"></div>
+    <div style="background:#0f172a;border-radius:var(--radius);aspect-ratio:16/9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px">
+      <div style="font-size:60px">📹</div>
+      <div style="color:#94a3b8;font-size:14px">实时画面区域（接入 RTSP 流后显示）</div>
+      <div style="color:#475569;font-size:12px" id="cam-id"></div>
+    </div>
+    <div class="flex-c gap-2 mt-3" style="justify-content:flex-end">
+      <button class="btn btn-default" onclick="document.getElementById('cam-modal').style.display='none'">关闭</button>
+      <button class="btn btn-default" onclick="alert('截图功能对接后可用')">📷 截图存证</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchMainTab(el, key) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['live','archive','related'].forEach(k => {
+    document.getElementById('view-' + k).style.display = k === key ? 'block' : 'none';
+  });
+}
+
+const evidenceFrames = {
+  normal: [
+    { icon: '🚛', label: '进场抓拍' },
+    { icon: '⚖', label: '称重记录' },
+    { icon: '✅', label: '出场确认' },
+  ],
+  danger: [
+    { icon: '⚠', label: '异常帧', danger: true },
+    { icon: '📋', label: '仪表盘记录' },
+    { icon: '🔒', label: '锁定存证' },
+  ],
+  qc: [
+    { icon: '🧪', label: '取样过程' },
+    { icon: '📝', label: '三方签字' },
+    { icon: '🔬', label: '化验室存证' },
+  ],
+};
+
+function openEvidence(id, desc, time, hash, type) {
+  document.getElementById('ev-title').textContent = id + ' · 影像存证';
+  document.getElementById('ev-sub').textContent = desc + ' · ' + time;
+  document.getElementById('ev-hash').textContent = 'SHA256: ' + hash;
+  const frames = evidenceFrames[type] || evidenceFrames.normal;
+  document.getElementById('ev-frames').innerHTML = frames.map(f =>
+    `<div class="img-frame" style="${f.danger ? 'background:#1e293b;border:1px solid var(--danger-border)' : ''}">
+      <div class="fi">${f.icon}</div>
+      <div class="fl" style="${f.danger ? 'color:#f87171' : ''}">${f.label}</div>
+    </div>`
+  ).join('');
+  document.getElementById('ev-modal').style.display = 'flex';
+}
+
+function openCam(name, camId) {
+  document.getElementById('cam-title').textContent = name;
+  document.getElementById('cam-sub').textContent = camId + ' · 实时直播流';
+  document.getElementById('cam-id').textContent = camId;
+  document.getElementById('cam-modal').style.display = 'flex';
+}
+
+function searchArchive() {
+  const ws = document.getElementById('q-ws').value.trim().toLowerCase();
+  const wb = document.getElementById('q-wb').value.trim().toLowerCase();
+  const batch = document.getElementById('q-batch').value.trim().toLowerCase();
+  const plate = document.getElementById('q-plate').value.trim().toLowerCase();
+  let count = 0;
+  document.querySelectorAll('#archive-tbody tr').forEach(r => {
+    const match = (!ws || r.dataset.ws.toLowerCase().includes(ws))
+      && (!wb || r.dataset.wb.toLowerCase().includes(wb))
+      && (!batch || r.dataset.batch.toLowerCase().includes(batch))
+      && (!plate || r.dataset.plate.toLowerCase().includes(plate));
+    r.style.display = match ? '' : 'none';
+    if (match) count++;
+  });
+  document.getElementById('archive-count').textContent = `检索到 ${count} 条`;
+}
+
+function resetSearch() {
+  ['q-ws','q-wb','q-batch','q-plate'].forEach(id => document.getElementById(id).value = '');
+  document.querySelectorAll('#archive-tbody tr').forEach(r => r.style.display = '');
+  document.getElementById('archive-count').textContent = '共 12 条（本日）';
+}
+
+function filterRelated() {
+  const type = document.getElementById('rel-type').value;
+  document.querySelectorAll('#related-list .card').forEach(c => {
+    c.style.display = (type === 'all' || c.dataset.rtype === type) ? '' : 'none';
+  });
+}
+
+function closeEvModal(e) { if (e.target.id === 'ev-modal') document.getElementById('ev-modal').style.display = 'none'; }
+function closeCamModal(e) { if (e.target.id === 'cam-modal') document.getElementById('cam-modal').style.display = 'none'; }
+</script>
+</body>
+</html>

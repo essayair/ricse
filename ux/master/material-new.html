@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新增物料 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:20px 0 12px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.spec-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface-2);border-radius:var(--radius);margin-bottom:8px}
+.spec-row input,.spec-row select{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;outline:none;background:var(--surface)}
+.spec-row input:focus,.spec-row select:focus{border-color:var(--primary)}
+.spec-name{min-width:120px;font-size:13px;font-weight:600}
+.spec-del{color:var(--danger);cursor:pointer;font-size:16px;padding:2px 6px}
+.spec-del:hover{background:var(--danger-bg);border-radius:var(--radius)}
+.qc-tpl-card{border:1.5px solid var(--border);border-radius:var(--radius-lg);padding:16px 20px;cursor:pointer;transition:border-color .15s}
+.qc-tpl-card:hover{border-color:var(--primary)}
+.qc-tpl-card.selected{border-color:var(--primary);background:var(--primary-bg)}
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item active">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#material" class="link">物料品类</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="page-bc">新增物料</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">新增物料</div>
+        <div class="page-desc">填写物料基本信息和质检指标模板关联，保存后可在业务单据中引用</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" onclick="history.back()">取消</button>
+        <button class="btn btn-default" onclick="alert('草稿已保存')">保存草稿</button>
+        <button class="btn btn-primary" onclick="saveMaterial()">保存物料</button>
+      </div>
+    </div>
+
+    <div style="max-width:900px">
+
+      <!-- 基本信息 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">基本信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">物料编码</label>
+              <input class="form-ctrl" id="f-code" readonly style="background:var(--surface-2);color:var(--text-3);font-style:italic" value="自动生成">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">物料品名</label>
+              <input class="form-ctrl" id="f-name" type="text" placeholder="如：萤石粉、萤石块">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">物料大类</label>
+              <select class="form-ctrl" id="f-category">
+                <option value="">请选择大类</option>
+                <option>萤石粉</option>
+                <option>萤石块</option>
+                <option>萤石精矿</option>
+                <option>虚拟物料（委托加工）</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">计量单位</label>
+              <select class="form-ctrl" id="f-unit">
+                <option>吨</option>
+                <option>千克</option>
+                <option>立方米</option>
+                <option>件</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">状态</label>
+              <select class="form-ctrl" id="f-status">
+                <option value="active">启用</option>
+                <option value="inactive">停用</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">是否虚拟物料</label>
+              <select class="form-ctrl" id="f-virtual">
+                <option value="no">否（实物）</option>
+                <option value="yes">是（委托加工成品/中间品）</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-divider">规格标准定义</div>
+          <div class="alert alert-info mb-3"><span>ℹ</span><div class="text-sm">规格参数将显示在合同、入库单、质检报告等单据中，建议按行业标准格式填写（如：CaF₂≥97%，水分≤0.5%）</div></div>
+          <div id="spec-list">
+            <div class="spec-row">
+              <span class="spec-name">主要成分</span>
+              <input type="text" placeholder="指标名称（如：CaF₂）" value="CaF₂">
+              <select><option>≥</option><option>≤</option><option>=</option><option>范围</option></select>
+              <input type="text" placeholder="数值" value="97">
+              <input type="text" placeholder="单位" value="%">
+              <span class="spec-del" onclick="delSpec(this)">×</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-name">水分</span>
+              <input type="text" placeholder="指标名称" value="水分">
+              <select><option>≥</option><option selected>≤</option><option>=</option><option>范围</option></select>
+              <input type="text" placeholder="数值" value="0.5">
+              <input type="text" placeholder="单位" value="%">
+              <span class="spec-del" onclick="delSpec(this)">×</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-name">粒度</span>
+              <input type="text" placeholder="指标名称" value="粒度-200目">
+              <select><option selected>≥</option><option>≤</option><option>=</option><option>范围</option></select>
+              <input type="text" placeholder="数值" value="90">
+              <input type="text" placeholder="单位" value="%">
+              <span class="spec-del" onclick="delSpec(this)">×</span>
+            </div>
+          </div>
+          <button class="btn btn-default btn-sm mt-2" onclick="addSpec()">+ 添加规格参数</button>
+
+          <div class="section-divider" style="margin-top:20px">备注</div>
+          <textarea class="form-ctrl" id="f-remark" rows="2" placeholder="物料说明、使用注意事项等（可选）"></textarea>
+        </div>
+      </div>
+
+      <!-- 商品编码映射 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">商品编码映射</span><span class="text-sm text-muted">用于税务申报和海关报关</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">内部编码</label>
+              <input class="form-ctrl" id="f-internal-code" type="text" placeholder="内部编码（可选）">
+            </div>
+            <div class="form-item">
+              <label class="form-label">HS编码（海关）</label>
+              <input class="form-ctrl" id="f-hs-code" type="text" placeholder="如：25291100">
+              <span class="form-hint">萤石粉→25291100，萤石块→25291900</span>
+            </div>
+            <div class="form-item">
+              <label class="form-label">税务商品编码</label>
+              <input class="form-ctrl" id="f-tax-code" type="text" placeholder="增值税发票商品编码">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 质检指标模板 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">质检指标模板关联</span><span class="text-sm text-muted">入库时将自动触发对应质检项目</span></div>
+        <div class="card-body">
+          <div class="alert alert-info mb-3"><span>ℹ</span><div class="text-sm">选择质检模板后，每次该物料入库时系统将自动生成质检任务，并要求填写以下指标数据</div></div>
+          <div class="g3" style="gap:12px">
+            <div class="qc-tpl-card selected" onclick="selectTpl(this,'QC-v3.1')" id="tpl-QC-v3.1">
+              <div class="flex-between mb-3">
+                <span class="fw-700">QC-v3.1 · 萤石粉标准模板</span>
+                <span class="badge b-primary">当前选中</span>
+              </div>
+              <div class="text-sm text-muted mb-2">适用：萤石粉（所有品位）</div>
+              <div style="font-size:12.5px;line-height:2">
+                ① CaF₂含量（主指标）<br>
+                ② 水分含量<br>
+                ③ 粒度分布（-200目过筛率）<br>
+                ④ SiO₂含量<br>
+                ⑤ CaCO₃含量
+              </div>
+            </div>
+            <div class="qc-tpl-card" onclick="selectTpl(this,'QC-v2.0')" id="tpl-QC-v2.0">
+              <div class="flex-between mb-3">
+                <span class="fw-700">QC-v2.0 · 萤石块模板</span>
+                <span class="badge b-default">未选中</span>
+              </div>
+              <div class="text-sm text-muted mb-2">适用：萤石块矿</div>
+              <div style="font-size:12.5px;line-height:2">
+                ① CaF₂含量（主指标）<br>
+                ② 块度（粒径范围）<br>
+                ③ 水分含量
+              </div>
+            </div>
+            <div class="qc-tpl-card" onclick="selectTpl(this,'QC-v3.2')" id="tpl-QC-v3.2">
+              <div class="flex-between mb-3">
+                <span class="fw-700">QC-v3.2 · 精制萤石粉模板</span>
+                <span class="badge b-default">未选中</span>
+              </div>
+              <div class="text-sm text-muted mb-2">适用：高品位精制粉（99%+）</div>
+              <div style="font-size:12.5px;line-height:2">
+                ① CaF₂含量<br>
+                ② 水分含量<br>
+                ③ 粒度（-325目过筛率）<br>
+                ④ SiO₂含量<br>
+                ⑤ Fe含量<br>
+                ⑥ 白度
+              </div>
+            </div>
+          </div>
+          <div class="mt-3">
+            <button class="btn btn-default btn-sm">+ 新建质检模板</button>
+          </div>
+          <input type="hidden" id="f-qc-tpl" value="QC-v3.1">
+        </div>
+      </div>
+
+      <!-- 底部按钮 -->
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html#material"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-default" onclick="alert('草稿已保存')">保存草稿</button>
+        <button class="btn btn-primary" onclick="saveMaterial()">保存物料</button>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+// ── 规格指标动态列表 ──
+let specCount = 3;
+function addSpec() {
+  specCount++;
+  const div = document.createElement('div');
+  div.className = 'spec-row';
+  div.innerHTML = `<span class="spec-name"><input type="text" placeholder="指标名称" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:100px"></span><input type="text" placeholder="指标描述"><select><option>≥</option><option>≤</option><option>=</option><option>范围</option></select><input type="text" placeholder="数值"><input type="text" placeholder="单位"><span class="spec-del" onclick="delSpec(this)">×</span>`;
+  document.getElementById('spec-list').appendChild(div);
+}
+function delSpec(btn) {
+  const rows = document.querySelectorAll('.spec-row');
+  if (rows.length <= 1) { alert('至少保留一个规格参数'); return; }
+  btn.closest('.spec-row').remove();
+}
+
+// ── 质检模板选择 ──
+function selectTpl(card, tplId) {
+  document.querySelectorAll('.qc-tpl-card').forEach(c => {
+    c.classList.remove('selected');
+    const badge = c.querySelector('.badge');
+    if (badge) { badge.className='badge b-default'; badge.textContent='未选中'; }
+  });
+  card.classList.add('selected');
+  const badge = card.querySelector('.badge');
+  if (badge) { badge.className='badge b-primary'; badge.textContent='当前选中'; }
+  document.getElementById('f-qc-tpl').value = tplId;
+}
+
+// ── 编辑模式 ──
+const MATERIAL_DATA = {
+  'MAT-001': { name:'萤石粉', category:'萤石粉', unit:'吨', status:'active', virtual:'no', qcTpl:'QC-v3.1', hsCode:'25291100', remark:'主要采购品种，用于销往巨化等化工企业' },
+  'MAT-002': { name:'萤石粉', category:'萤石粉', unit:'吨', status:'active', virtual:'no', qcTpl:'QC-v3.1', hsCode:'25291100', remark:'' },
+  'MAT-003': { name:'萤石粉', category:'萤石粉', unit:'吨', status:'active', virtual:'no', qcTpl:'QC-v3.1', hsCode:'25291100', remark:'' },
+  'MAT-004': { name:'萤石块', category:'萤石块', unit:'吨', status:'active', virtual:'no', qcTpl:'QC-v2.0', hsCode:'25291900', remark:'' },
+  'MAT-005': { name:'精制萤石粉（委托加工）', category:'虚拟物料（委托加工）', unit:'吨', status:'inactive', virtual:'yes', qcTpl:'QC-v3.2', hsCode:'25291100', remark:'委托加工成品，不直接采购' },
+};
+const urlParams = new URLSearchParams(location.search);
+const editId = urlParams.get('id');
+const isEdit = urlParams.get('mode') === 'edit' && editId && MATERIAL_DATA[editId];
+if (isEdit) {
+  const m = MATERIAL_DATA[editId];
+  document.title = '编辑物料 · 萤石产业链平台';
+  document.getElementById('page-title').textContent = '编辑物料';
+  document.getElementById('page-bc').textContent = '编辑物料';
+  document.getElementById('f-code').value = editId;
+  document.getElementById('f-name').value = m.name;
+  document.getElementById('f-category').value = m.category;
+  document.getElementById('f-unit').value = m.unit;
+  document.getElementById('f-status').value = m.status;
+  document.getElementById('f-virtual').value = m.virtual;
+  document.getElementById('f-hs-code').value = m.hsCode;
+  document.getElementById('f-remark').value = m.remark;
+  selectTpl(document.getElementById('tpl-' + m.qcTpl), m.qcTpl);
+}
+
+function saveMaterial() {
+  const name = document.getElementById('f-name').value;
+  const category = document.getElementById('f-category').value;
+  if (!name || !category) { alert('请填写必填项：物料品名、物料大类'); return; }
+  if (confirm(isEdit ? `确认保存物料 ${editId} 的修改？` : `确认新增物料"${name}"？`)) {
+    window.location.href = isEdit ? `material-detail.html?id=${editId}` : 'index.html#material';
+  }
+}
+</script>
+</body>
+</html>

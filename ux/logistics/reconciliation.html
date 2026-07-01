@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>物流对账 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="dispatch.html" class="nav-item">调度看板</a>
+      <a href="index.html" class="nav-item">运单管理</a>
+      <a href="reconciliation.html" class="nav-item active">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="inbound.html" class="nav-item">入库单管理</a>
+      <a href="outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>物流管理</span><span class="bc-sep">›</span>
+      <span class="bc-cur">物流对账</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">物流对账</div>
+        <div class="page-desc">磅单核重 · 亏吨核算 · 承运商运费结算</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" onclick="exportData()">⬇ 导出对账表</button>
+        <button class="btn btn-primary" onclick="alert('已批量生成结算单，通知财务审核')">批量生成结算单</button>
+      </div>
+    </div>
+
+    <!-- 统计卡 -->
+    <div class="stat-grid mb-5">
+      <div class="stat-card">
+        <div class="stat-icon ic-amber">🚛</div>
+        <div class="stat-body">
+          <div class="stat-label">本月运费合计</div>
+          <div class="stat-val">¥118,230</div>
+          <div class="stat-note note-neutral">44车次 · 4家承运商</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-green">✅</div>
+        <div class="stat-body">
+          <div class="stat-label">已结算金额</div>
+          <div class="stat-val">¥52,692</div>
+          <div class="stat-note note-up">覆盖率 44.6%</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-red">📉</div>
+        <div class="stat-body">
+          <div class="stat-label">累计亏吨扣款</div>
+          <div class="stat-val">¥40.00</div>
+          <div class="stat-note note-warn">亏吨 1.6 吨</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon ic-blue">⏳</div>
+        <div class="stat-body">
+          <div class="stat-label">待核算金额</div>
+          <div class="stat-val">¥65,538</div>
+          <div class="stat-note note-warn">2家承运商待处理</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs mb-4">
+      <div class="tab active" onclick="switchRcTab(this,'carrier')">承运商汇总</div>
+      <div class="tab" onclick="switchRcTab(this,'waybill')">运单明细</div>
+    </div>
+
+    <!-- 承运商汇总视图 -->
+    <div id="carrier-view">
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">承运商运费核算</span>
+          <div class="flex-c gap-2">
+            <select class="filter-select">
+              <option>2026年06月</option>
+              <option>2026年05月</option>
+            </select>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead>
+              <tr>
+                <th>承运商</th>
+                <th>当期车次</th>
+                <th>合计吨数</th>
+                <th>总里程(km)</th>
+                <th>应付运费</th>
+                <th>已结算</th>
+                <th>亏吨扣款</th>
+                <th>实付金额</th>
+                <th>结算状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>玉门良运物流</strong></td>
+                <td>18 车次</td>
+                <td>1,440 吨</td>
+                <td>9,200</td>
+                <td>¥36,000</td>
+                <td class="text-success">¥28,500</td>
+                <td class="text-danger">¥17.50</td>
+                <td class="fw-700">¥28,482.50</td>
+                <td><span class="badge b-warning">部分结算</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-primary btn-xs" onclick="switchRcTab(document.querySelectorAll('.tab')[1],'waybill');filterByCarrier('玉门良运物流')">发起对账</button>
+                  <button class="btn btn-default btn-xs" onclick="alert('结算单 JS-20260610-001')">结算单</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>金昌运通</strong></td>
+                <td>12 车次</td>
+                <td>864 吨</td>
+                <td>8,640</td>
+                <td>¥24,192</td>
+                <td class="text-success">¥24,192</td>
+                <td>—</td>
+                <td class="fw-700">¥24,192</td>
+                <td><span class="badge b-success">已结算</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="alert('结算单 JS-20260610-002 已生成')">结算单</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>安泰货运</strong></td>
+                <td>9 车次</td>
+                <td>631.5 吨</td>
+                <td>3,780</td>
+                <td>¥15,788</td>
+                <td>¥0</td>
+                <td>—</td>
+                <td class="text-muted">待核算</td>
+                <td><span class="badge b-neutral">待核算</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="switchRcTab(document.querySelectorAll('.tab')[1],'waybill');filterByCarrier('安泰货运')">查看明细</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>西北货运联盟</strong></td>
+                <td>5 车次</td>
+                <td>325 吨</td>
+                <td>15,000</td>
+                <td>¥42,250</td>
+                <td>¥0</td>
+                <td>—</td>
+                <td class="text-muted">待核算</td>
+                <td><span class="badge b-neutral">待核算</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="switchRcTab(document.querySelectorAll('.tab')[1],'waybill');filterByCarrier('西北货运联盟')">查看明细</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft">
+          <span class="text-sm text-muted">合计：44车次 · 3,260.5吨 · 应付 ¥118,230 · 亏吨扣款 ¥17.50 · 实付 ¥52,674.50</span>
+        </div>
+      </div>
+      <div class="alert alert-info mt-4">
+        <span>ℹ</span>
+        <div class="text-sm">运费结算与货款结算完全分离：此处处理<strong>运费（结给承运商）</strong>；采购货款和销售货款在采销系统的结算管理中处理。</div>
+      </div>
+    </div>
+
+    <!-- 运单明细视图 -->
+    <div id="waybill-detail-view" style="display:none">
+      <div class="filter-bar mb-4">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="rc-search" placeholder="运单号 / 供应商 / 司机…" oninput="applyFilter()">
+        </div>
+        <select class="filter-select" id="rc-carrier" onchange="applyFilter()">
+          <option value="">全部承运商</option>
+          <option>玉门良运物流</option>
+          <option>金昌运通</option>
+          <option>安泰货运</option>
+          <option>西北货运联盟</option>
+        </select>
+        <select class="filter-select" id="rc-status" onchange="applyFilter()">
+          <option value="">全部结算状态</option>
+          <option value="settled">已结算</option>
+          <option value="pending">待结算</option>
+          <option value="no-wb">缺磅单</option>
+        </select>
+        <select class="filter-select" id="rc-payer" onchange="applyFilter()">
+          <option value="">全部承担方</option>
+          <option value="self">我方承担</option>
+          <option value="supplier">供应商承担</option>
+        </select>
+        <div class="filter-date-range">
+          <input type="date" value="2026-06-01" onchange="applyFilter()">
+          <span class="text-muted">至</span>
+          <input type="date" value="2026-06-10" onchange="applyFilter()">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead>
+              <tr>
+                <th>运单号</th>
+                <th>方向</th>
+                <th>承运商 / 司机</th>
+                <th>吨单价</th>
+                <th>结算依据</th>
+                <th>我方磅单(吨)</th>
+                <th>发货磅单(吨)</th>
+                <th>结算重量(吨)</th>
+                <th>亏吨(吨)</th>
+                <th>亏吨扣款</th>
+                <th>总运费</th>
+                <th>承担方</th>
+                <th>结算状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="rc-tbody">
+              <tr data-status="settled" data-carrier="安泰货运" data-payer="self">
+                <td><a href="index.html" class="tbl-link">WB-20260609-008</a></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>安泰货运<br><span class="text-muted" style="font-size:11px">刘海龙 · 甘C·77890</span></td>
+                <td>¥25.00/吨</td>
+                <td>按最小值</td>
+                <td class="text-center">67.8</td>
+                <td class="text-center">68.5</td>
+                <td class="text-center fw-700">67.8</td>
+                <td class="text-center text-danger fw-700">0.7</td>
+                <td class="text-danger">¥17.50</td>
+                <td class="fw-700">¥1,695.00</td>
+                <td><span class="tag">我方承担</span></td>
+                <td><span class="badge b-success">已结算</span></td>
+                <td><button class="btn btn-default btn-xs" onclick="alert('结算单 JS-WB-008')">结算单</button></td>
+              </tr>
+              <tr data-status="settled" data-carrier="金昌运通" data-payer="supplier">
+                <td><a href="index.html" class="tbl-link">WB-20260609-007</a></td>
+                <td><span class="tag tag-warn">销售发货</span></td>
+                <td>金昌运通<br><span class="text-muted" style="font-size:11px">陈志明 · 甘A·24680</span></td>
+                <td class="text-muted">—</td>
+                <td>按最小值</td>
+                <td class="text-center">71.6</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center fw-700">71.6</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td class="text-muted">供应商承担</td>
+                <td><span class="tag" style="background:#f0fdf4;color:#16a34a">供应商承担</span></td>
+                <td><span class="badge b-success">已结算</span></td>
+                <td><button class="btn btn-default btn-xs" onclick="alert('结算单 JS-WB-007')">结算单</button></td>
+              </tr>
+              <tr data-status="pending" data-carrier="安泰货运" data-payer="self">
+                <td><a href="index.html" class="tbl-link">WB-20260610-06</a></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>安泰货运<br><span class="text-muted" style="font-size:11px">李明强 · 甘A·12345</span></td>
+                <td>¥25.00/吨</td>
+                <td>按最小值</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">运输中</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td class="text-muted">待磅单</td>
+                <td><span class="tag">我方承担</span></td>
+                <td><span class="badge b-primary">运输中</span></td>
+                <td><a href="index.html" class="btn btn-default btn-xs">关联磅单</a></td>
+              </tr>
+              <tr data-status="pending" data-carrier="玉门良运物流" data-payer="self">
+                <td><a href="index.html" class="tbl-link">WB-20260610-03</a></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>玉门良运物流<br><span class="text-muted" style="font-size:11px">张志远 · 甘B·66789</span></td>
+                <td>¥25.00/吨</td>
+                <td>按最小值</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">超时告警</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td class="text-muted">待磅单</td>
+                <td><span class="tag">我方承担</span></td>
+                <td><span class="badge b-danger">超时告警</span></td>
+                <td><a href="index.html" class="btn btn-default btn-xs">关联磅单</a></td>
+              </tr>
+              <tr data-status="pending" data-carrier="玉门良运物流" data-payer="self">
+                <td><a href="index.html" class="tbl-link">WB-20260610-02</a></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>玉门良运物流<br><span class="text-muted" style="font-size:11px">孙大伟 · 甘B·88890</span></td>
+                <td>¥20.00/吨</td>
+                <td>按最小值</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">运输中</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td class="text-muted">待磅单</td>
+                <td><span class="tag">我方承担</span></td>
+                <td><span class="badge b-primary">运输中</span></td>
+                <td><a href="index.html" class="btn btn-default btn-xs">关联磅单</a></td>
+              </tr>
+              <tr data-status="no-wb" data-carrier="金昌运通" data-payer="supplier">
+                <td><a href="index.html" class="tbl-link">WB-20260610-07</a></td>
+                <td><span class="tag tag-warn">销售发货</span></td>
+                <td>金昌运通<br><span class="text-muted" style="font-size:11px">王建明 · 甘A·55678</span></td>
+                <td class="text-muted">—</td>
+                <td>按最小值</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td><span class="tag" style="background:#f0fdf4;color:#16a34a">供应商承担</span></td>
+                <td><span class="badge" style="background:#fef3c7;color:#92400e">缺磅单</span></td>
+                <td><a href="index.html" class="btn btn-default btn-xs">关联磅单</a></td>
+              </tr>
+              <tr data-status="no-wb" data-carrier="西北货运联盟" data-payer="supplier">
+                <td><a href="index.html" class="tbl-link">WB-20260610-04</a></td>
+                <td><span class="tag tag-warn">销售发货</span></td>
+                <td>西北货运联盟<br><span class="text-muted" style="font-size:11px">赵宏伟 · 陇A·33456</span></td>
+                <td class="text-muted">—</td>
+                <td>按最小值</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-center text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td class="text-muted">—</td>
+                <td><span class="tag" style="background:#f0fdf4;color:#16a34a">供应商承担</span></td>
+                <td><span class="badge" style="background:#fef3c7;color:#92400e">缺磅单</span></td>
+                <td><a href="index.html" class="btn btn-default btn-xs">关联磅单</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft">
+          <span class="text-sm text-muted">共 <span id="rc-count">7</span> 条 · 结算重量合计 139.4 吨 · 我方应付 ¥1,695.00 · 亏吨扣款 ¥17.50</span>
+          <button class="btn btn-default btn-sm" onclick="exportData()">⬇ 导出</button>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt-4">
+        <span>ℹ</span>
+        <div class="text-sm"><strong>结算校验：</strong>提交结算必须已关联「我方入库磅单」；缺供应商/客户磅单弹窗提醒可跳过。结算重量根据运单「结算依据」字段自动取值。</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<script>
+function switchRcTab(el, type) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('carrier-view').style.display        = type === 'carrier' ? 'block' : 'none';
+  document.getElementById('waybill-detail-view').style.display = type === 'waybill' ? 'block' : 'none';
+}
+
+function filterByCarrier(name) {
+  const sel = document.getElementById('rc-carrier');
+  if (sel) { sel.value = name; applyFilter(); }
+}
+
+function applyFilter() {
+  const q      = (document.getElementById('rc-search')?.value || '').toLowerCase();
+  const carrier= document.getElementById('rc-carrier')?.value  || '';
+  const status = document.getElementById('rc-status')?.value   || '';
+  const payer  = document.getElementById('rc-payer')?.value    || '';
+  const rows   = document.querySelectorAll('#rc-tbody tr');
+  let visible  = 0;
+  rows.forEach(r => {
+    const show =
+      (!q      || r.textContent.toLowerCase().includes(q)) &&
+      (!carrier|| (r.dataset.carrier || '').includes(carrier)) &&
+      (!status || r.dataset.status === status) &&
+      (!payer  || r.dataset.payer  === payer);
+    r.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  const cnt = document.getElementById('rc-count');
+  if (cnt) cnt.textContent = visible;
+}
+
+function exportData() {
+  alert('已生成对账导出文件 logistics-reconcile-2026-06.xlsx\n（原型演示，实际将触发文件下载）');
+}
+</script>
+</body>
+</html>

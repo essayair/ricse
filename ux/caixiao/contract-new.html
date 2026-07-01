@@ -1,0 +1,776 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新建合同 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.split-preview {
+  background: var(--primary-bg);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-top: 12px;
+}
+.split-preview-title { font-size: 12.5px; font-weight: 700; color: var(--primary); margin-bottom: 10px; }
+.split-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.split-item { display: flex; flex-direction: column; gap: 3px; }
+.split-label { font-size: 11.5px; color: var(--text-3); }
+.split-val { font-size: 13px; font-weight: 700; color: var(--text); }
+
+.type-cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 4px; }
+.type-card {
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  cursor: pointer;
+  transition: all .15s;
+  text-align: center;
+}
+.type-card:hover { border-color: var(--primary); background: var(--primary-bg); }
+.type-card.selected { border-color: var(--primary); background: var(--primary-bg); }
+.type-card .tc-icon { font-size: 24px; margin-bottom: 6px; }
+.type-card .tc-name { font-size: 13px; font-weight: 700; color: var(--text); }
+.type-card .tc-desc { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+.type-card.selected .tc-name { color: var(--primary); }
+
+.form-calc {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.calc-result { font-size: 16px; font-weight: 800; color: var(--primary); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="index.html" class="nav-item active">合同管理</a>
+      <a href="order.html" class="nav-item">订单管理</a>
+      <a href="settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检化验</div>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">⚖</span>地磅管理</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📹</span>监控录像</div>
+      <a href="../monitor/index.html" class="nav-item">实时监控</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html" class="link">合同管理</a><span class="bc-sep">›</span>
+      <span class="bc-cur">新建合同</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">新建合同</div>
+        <div class="page-desc">填写完成后可保存草稿或直接提交审核</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-default" onclick="alert('已保存草稿')">保存草稿</button>
+        <button class="btn btn-primary" onclick="submitContract()">提交审核</button>
+      </div>
+    </div>
+
+    <div style="max-width:900px">
+
+      <!-- Step 1: 合同类型 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">第一步：选择合同类型</span></div>
+        <div class="card-body">
+          <div class="type-cards">
+            <div class="type-card selected" onclick="selectType(this,'purchase')">
+              <div class="tc-icon">📥</div>
+              <div class="tc-name">采购合同</div>
+              <div class="tc-desc">从供应商买入货物<br>生成采购订单</div>
+            </div>
+            <div class="type-card" onclick="selectType(this,'sales')">
+              <div class="tc-icon">📤</div>
+              <div class="tc-name">销售合同</div>
+              <div class="tc-desc">向客户销售货物<br>生成销售订单</div>
+            </div>
+            <div class="type-card" onclick="selectType(this,'bilateral')">
+              <div class="tc-icon">⚡</div>
+              <div class="tc-name">双边合同</div>
+              <div class="tc-desc">买卖同步，系统自动<br>拆分采购单与销售单</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: 基本信息 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">第二步：合同基本信息</span></div>
+        <div class="card-body">
+
+          <!-- 合同方向提示 -->
+          <div id="direction-banner" class="alert alert-info mb-4">
+            <span>📥</span>
+            <div class="text-sm" id="direction-text">采购合同：我方向供应商<strong>付款买入</strong>货物，货物进入我方仓库，预付款由我方支出。</div>
+          </div>
+
+          <!-- 我方信息 -->
+          <div class="form-section">
+            <div class="form-section-title">我方信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">我方签约主体</label>
+                <select class="form-ctrl">
+                  <option value="">请选择签约主体…</option>
+                  <option selected>玉门萤石运营管理有限公司</option>
+                  <option>酒泉供应链管理有限公司</option>
+                  <option>巨化萤石（玉门）有限公司</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">业务部门</label>
+                <select class="form-ctrl">
+                  <option value="">请选择…</option>
+                  <option>采购部</option>
+                  <option>销售部</option>
+                  <option>运营部</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">业务员</label>
+                <select class="form-ctrl">
+                  <option value="">请选择…</option>
+                  <option selected>运营管理员</option>
+                  <option>采购员 · 王明</option>
+                  <option>财务 · 赵雪</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">外部合同号</label>
+                <input class="form-ctrl" type="text" placeholder="对手方合同编号，用于对账（可选）">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title" id="cp-section-title">供应商信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req" id="cp-label">供应商</label>
+                <select class="form-ctrl" id="counterparty" onchange="checkQuota()">
+                  <option value="">请选择往来单位…</option>
+                  <option value="xw" data-role="supplier">玉门兴旺矿业有限公司</option>
+                  <option value="zx" data-role="supplier">玉门众鑫萤石矿业</option>
+                  <option value="sy" data-role="supplier">酒泉盛源矿业</option>
+                  <option value="jg" data-role="supplier">嘉峪关矿冶有限公司</option>
+                  <option value="jh" data-role="customer">巨化集团有限公司</option>
+                  <option value="zj" data-role="customer">浙江萤石化工有限公司</option>
+                  <option value="jxf" data-role="customer">江西氟化工集团</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">联系人</label>
+                <input class="form-ctrl" type="text" placeholder="自动带出，可修改" id="contact">
+              </div>
+              <div class="form-item">
+                <label class="form-label">联系电话</label>
+                <input class="form-ctrl" type="text" placeholder="自动带出，可修改" id="phone">
+              </div>
+            </div>
+            <!-- 额度提示 -->
+            <div id="quota-info" style="display:none" class="alert alert-info mt-3">
+              <span>ℹ</span>
+              <div class="text-sm" id="quota-text"></div>
+            </div>
+            <div id="quota-warn" style="display:none" class="alert alert-warn mt-3">
+              <span>⚠</span>
+              <div class="text-sm" id="quota-warn-text"></div>
+            </div>
+          </div>
+
+          <!-- 采购合同专属字段 -->
+          <div id="purchase-fields" class="form-section">
+            <div class="form-section-title">采购收货信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">收货地 / 仓库</label>
+                <select class="form-ctrl">
+                  <option>玉门堆场 A区</option>
+                  <option>玉门堆场 B区</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">交货方式</label>
+                <select class="form-ctrl">
+                  <option>供应商配送（送到仓）</option>
+                  <option>我方自提（到厂提货）</option>
+                  <option>库转（仓库间划转）</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">质检权归属</label>
+                <select class="form-ctrl">
+                  <option>买方质检（我方验收）</option>
+                  <option>第三方质检机构</option>
+                  <option>双方共同质检</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">供应商开票类型</label>
+                <select class="form-ctrl">
+                  <option>增值税专用发票（13%）</option>
+                  <option>增值税专用发票（9%）</option>
+                  <option>增值税普通发票</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 销售合同专属字段 -->
+          <div id="sales-fields" class="form-section" style="display:none">
+            <div class="form-section-title">销售发货信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">发货地点</label>
+                <select class="form-ctrl">
+                  <option>玉门堆场 A区</option>
+                  <option>玉门堆场 B区</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">客户收货地</label>
+                <input class="form-ctrl" type="text" placeholder="如：浙江衢州巨化厂区">
+              </div>
+              <div class="form-item">
+                <label class="form-label">我方开票类型</label>
+                <select class="form-ctrl">
+                  <option>增值税专用发票（13%）</option>
+                  <option>增值税普通发票</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">运费承担方</label>
+                <select class="form-ctrl">
+                  <option>我方承担（含税到站）</option>
+                  <option>客户承担（出厂价）</option>
+                  <option>双方各半</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label">客户授信等级</label>
+                <select class="form-ctrl">
+                  <option>A级（最高额度）</option>
+                  <option>B级（普通额度）</option>
+                  <option>C级（严格管控）</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">货物信息</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">物料品种</label>
+                <select class="form-ctrl" id="material" onchange="updatePrice()">
+                  <option value="">请选择物料…</option>
+                  <option value="97" data-price="1450">萤石粉 CaF₂≥97%</option>
+                  <option value="95" data-price="1280">萤石粉 CaF₂≥95%</option>
+                  <option value="90" data-price="980">萤石粉 CaF₂≥90%</option>
+                  <option value="85" data-price="780">萤石块 CaF₂≥85%</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">合同数量</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="请输入" id="qty" oninput="calcAmount()" min="1">
+                  <span class="text-muted" style="white-space:nowrap">吨</span>
+                </div>
+              </div>
+              <div class="form-item">
+                <label class="form-label req">定价类型</label>
+                <select class="form-ctrl" id="price-type" onchange="togglePriceType()">
+                  <option value="fixed">一口价</option>
+                  <option value="basis">基差定价</option>
+                  <option value="open">不定价（后续定价单确认）</option>
+                </select>
+              </div>
+              <div class="form-item" id="price-field">
+                <label class="form-label req">合同单价</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="参考价格" id="price" oninput="calcAmount()">
+                  <span class="text-muted" style="white-space:nowrap">元/吨</span>
+                </div>
+                <div class="form-hint" id="price-hint"></div>
+              </div>
+              <div class="form-item" id="basis-field" style="display:none">
+                <label class="form-label req">基差（相对基准价）</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="如：+50 或 -30">
+                  <span class="text-muted" style="white-space:nowrap">元/吨</span>
+                </div>
+                <div class="form-hint">最终价 = 市场基准价 ± 基差，定价后生成定价单</div>
+              </div>
+              <div class="form-item">
+                <label class="form-label">溢装比例上限</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="5" value="5" min="0" max="20">
+                  <span class="text-muted" style="white-space:nowrap">%</span>
+                </div>
+                <div class="form-hint">实际交货量可超出合同量的比例上限</div>
+              </div>
+              <div class="form-item">
+                <label class="form-label">短装比例下限</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input class="form-ctrl" type="number" placeholder="5" value="5" min="0" max="20">
+                  <span class="text-muted" style="white-space:nowrap">%</span>
+                </div>
+                <div class="form-hint">实际交货量可低于合同量的比例下限，超出则合同不可关闭</div>
+              </div>
+            </div>
+            <!-- 金额预览 -->
+            <div class="form-calc" id="amount-calc" style="display:none">
+              合同总额预览：<span class="calc-result" id="amount-result">—</span>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">履约周期</div>
+            <div class="form-grid fg3">
+              <div class="form-item">
+                <label class="form-label req">签订日期</label>
+                <input class="form-ctrl" type="date" value="2026-06-11">
+              </div>
+              <div class="form-item">
+                <label class="form-label req">履约开始日</label>
+                <input class="form-ctrl" type="date" value="2026-06-11">
+              </div>
+              <div class="form-item">
+                <label class="form-label req">履约截止日</label>
+                <input class="form-ctrl" type="date" value="2026-07-31">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section" style="margin-bottom:0">
+            <div class="form-section-title">备注</div>
+            <textarea class="form-ctrl" placeholder="合同特殊条款、注意事项（可选）…" rows="3"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: 结算条款 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">第三步：结算条款</span></div>
+        <div class="card-body">
+          <div id="payment-direction-alert" class="alert alert-info mb-4">
+            <span id="payment-direction-icon">📤</span>
+            <div class="text-sm" id="payment-direction-text">采购合同：<strong>我方预付款给供应商</strong>，质检合格后触发预付，收货确认后付清尾款。资金流向：我方 → 供应商。</div>
+          </div>
+          <div class="alert alert-warn mb-4">
+            <span>ℹ</span>
+            <div class="text-sm">以下为平台默认结算规则，可按合同实际条款修改。<strong>【待现状确认】</strong>预付比例、尾款周期、抹零规则最终由业务/玉门核实后确定。</div>
+          </div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">结算数量依据</label>
+              <select class="form-ctrl">
+                <option>地磅净重（推荐）</option>
+                <option>合同约定数量</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req" id="prepay-label">我方预付比例</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="85" min="0" max="100">
+                <span class="text-muted">%</span>
+              </div>
+              <div class="form-hint" id="prepay-hint">质检合格后触发付款给供应商</div>
+            </div>
+            <div class="form-item">
+              <label class="form-label req" id="tail-label">尾款支付周期</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="7">
+                <span class="text-muted" style="white-space:nowrap">个工作日</span>
+              </div>
+              <div class="form-hint" id="tail-hint">收货确认后付清给供应商</div>
+            </div>
+            <div class="form-item">
+              <label class="form-label">账期</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="30">
+                <span class="text-muted" style="white-space:nowrap">天</span>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">付款方式</label>
+              <select class="form-ctrl">
+                <option>电汇（T/T）</option>
+                <option>银行承兑汇票</option>
+                <option>商业承兑汇票</option>
+                <option>信用证（L/C）</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">扣水规则（每超0.1%）</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="10">
+                <span class="text-muted" style="white-space:nowrap">元/吨</span>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label">扣杂规则（每超0.1%）</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" value="8">
+                <span class="text-muted" style="white-space:nowrap">元/吨</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 双边拆单预览（仅双边合同显示） -->
+      <div class="card mb-4" id="bilateral-panel" style="display:none">
+        <div class="card-hd">
+          <span class="card-title">双边拆单预览</span>
+          <span style="font-size:12px;color:var(--text-3)">系统将自动生成以下两张订单</span>
+        </div>
+        <div class="card-body">
+          <div class="form-grid fg2 mb-4">
+            <div class="form-item">
+              <label class="form-label req">采购对手方（买入）</label>
+              <select class="form-ctrl">
+                <option value="">请选择供应商…</option>
+                <option>玉门兴旺矿业有限公司</option>
+                <option>玉门众鑫萤石矿业</option>
+                <option>酒泉盛源矿业</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">采购单价</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" placeholder="买入价格" id="buy-price" oninput="calcProfit()">
+                <span class="text-muted">元/吨</span>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">销售对手方（卖出）</label>
+              <select class="form-ctrl">
+                <option value="">请选择客户…</option>
+                <option>巨化集团有限公司</option>
+                <option>浙江萤石化工有限公司</option>
+                <option>江西氟化工集团</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">销售单价</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input class="form-ctrl" type="number" placeholder="卖出价格" id="sell-price" oninput="calcProfit()">
+                <span class="text-muted">元/吨</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="split-preview" id="split-preview" style="display:none">
+            <div class="split-preview-title">⚡ 拆单预览（系统自动生成）</div>
+            <div class="split-row">
+              <div class="split-item">
+                <div class="split-label">采购订单金额</div>
+                <div class="split-val" id="buy-amount">—</div>
+              </div>
+              <div class="split-item">
+                <div class="split-label">销售订单金额</div>
+                <div class="split-val" id="sell-amount">—</div>
+              </div>
+              <div class="split-item">
+                <div class="split-label">价差</div>
+                <div class="split-val" id="price-diff">—</div>
+              </div>
+              <div class="split-item">
+                <div class="split-label">预计毛利（价差×数量）</div>
+                <div class="split-val" style="color:var(--success)" id="profit">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 附件 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">合同附件（可选）</span></div>
+        <div class="card-body">
+          <div style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:32px;text-align:center;color:var(--text-3);cursor:pointer" onclick="alert('文件上传功能接入后可用')">
+            <div style="font-size:28px;margin-bottom:8px">📎</div>
+            <div class="text-sm">点击上传合同扫描件 / PDF</div>
+            <div class="text-xs mt-2">支持 PDF、JPG、PNG，单文件不超过 20MB</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部操作 -->
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-default" onclick="alert('已保存草稿，合同编号 HT-2026-009')">保存草稿</button>
+        <button class="btn btn-primary" onclick="submitContract()">提交审核 →</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+const contacts = {
+  xw: ['张建国','139-xxxx-1234'],
+  zx: ['李明辉','135-xxxx-5678'],
+  sy: ['王富贵','138-xxxx-9012'],
+  jg: ['赵俊峰','187-xxxx-3456'],
+  jh: ['孙晓峰','571-xxxx-7890'],
+  zj: ['陈卫国','579-xxxx-4321'],
+  jxf: ['江正平','791-xxxx-8801'],
+};
+const quotas = {
+  xw: {limit:500000, used:145000, role:'supplier'},
+  zx: {limit:150000, used:138000, role:'supplier'},
+  sy: {limit:300000, used:196000, role:'supplier'},
+  jg: {limit:200000, used:0, role:'supplier'},
+  jh: {limit:2000000, used:465000, role:'customer'},
+  zj: {limit:500000, used:207000, role:'customer'},
+  jxf: {limit:800000, used:120000, role:'customer'},
+};
+
+function togglePriceType() {
+  const t = document.getElementById('price-type').value;
+  const pf = document.getElementById('price-field');
+  const bf = document.getElementById('basis-field');
+  if (t === 'open') {
+    pf.style.display = 'none';
+    bf.style.display = 'none';
+    document.getElementById('amount-calc').style.display = 'none';
+  } else if (t === 'basis') {
+    pf.style.display = 'none';
+    bf.style.display = 'block';
+    document.getElementById('amount-calc').style.display = 'none';
+  } else {
+    pf.style.display = 'block';
+    bf.style.display = 'none';
+  }
+}
+
+function selectType(el, type) {
+  document.querySelectorAll('.type-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+
+  const pf = document.getElementById('purchase-fields');
+  const sf = document.getElementById('sales-fields');
+  const cpLabel = document.getElementById('cp-label');
+  const cpSection = document.getElementById('cp-section-title');
+  const dirBanner = document.getElementById('direction-text');
+  const payDir = document.getElementById('payment-direction-text');
+  const prepayLabel = document.getElementById('prepay-label');
+  const prepayHint = document.getElementById('prepay-hint');
+  const tailHint = document.getElementById('tail-hint');
+
+  if (type === 'purchase') {
+    pf.style.display = 'block';
+    sf.style.display = 'none';
+    cpLabel.textContent = '供应商';
+    cpSection.textContent = '供应商信息';
+    dirBanner.innerHTML = '采购合同：我方向供应商<strong>付款买入</strong>货物，货物进入我方仓库，预付款由我方支出。';
+    payDir.innerHTML = '采购合同：<strong>我方预付款给供应商</strong>，质检合格后触发预付，收货确认后付清尾款。资金流向：我方 → 供应商。';
+    prepayLabel.textContent = '我方预付比例';
+    prepayHint.textContent = '质检合格后触发付款给供应商';
+    tailHint.textContent = '收货确认后付清给供应商';
+    document.getElementById('bilateral-panel').style.display = 'none';
+    filterCounterparty('supplier');
+  } else if (type === 'sales') {
+    pf.style.display = 'none';
+    sf.style.display = 'block';
+    cpLabel.textContent = '客户';
+    cpSection.textContent = '客户信息';
+    dirBanner.innerHTML = '销售合同：我方向客户<strong>发货收款</strong>，货物从仓库发出，预付款由客户支付给我方。';
+    payDir.innerHTML = '销售合同：<strong>客户预付款给我方</strong>，我方安排发货，客户签收后付清尾款。资金流向：客户 → 我方。';
+    prepayLabel.textContent = '客户预付比例';
+    prepayHint.textContent = '发货前收取客户预付款';
+    tailHint.textContent = '客户签收后收清尾款';
+    document.getElementById('bilateral-panel').style.display = 'none';
+    filterCounterparty('customer');
+  } else {
+    pf.style.display = 'none';
+    sf.style.display = 'none';
+    cpLabel.textContent = '主要对手方（可选）';
+    cpSection.textContent = '对手方信息';
+    dirBanner.innerHTML = '双边合同：我方<strong>居中撮合</strong>，同时签订采购与销售，赚取买卖价差。收付款均涉及。';
+    payDir.innerHTML = '双边合同：<strong>双向资金流</strong>，采购端我方付款给供应商，销售端客户付款给我方，价差为平台毛利。';
+    prepayLabel.textContent = '预付比例（双向）';
+    prepayHint.textContent = '采购端付款给供应商；销售端收取客户预付';
+    tailHint.textContent = '双向结算，分别对应供应商与客户';
+    document.getElementById('bilateral-panel').style.display = 'block';
+    filterCounterparty('all');
+  }
+}
+
+function filterCounterparty(role) {
+  const sel = document.getElementById('counterparty');
+  const all = [
+    {val:'xw', label:'玉门兴旺矿业有限公司', role:'supplier'},
+    {val:'zx', label:'玉门众鑫萤石矿业', role:'supplier'},
+    {val:'sy', label:'酒泉盛源矿业', role:'supplier'},
+    {val:'jg', label:'嘉峪关矿冶有限公司', role:'supplier'},
+    {val:'jh', label:'巨化集团有限公司', role:'customer'},
+    {val:'zj', label:'浙江萤石化工有限公司', role:'customer'},
+    {val:'jxf', label:'江西氟化工集团', role:'customer'},
+  ];
+  sel.innerHTML = '<option value="">请选择往来单位…</option>';
+  all.forEach(o => {
+    if (role === 'all' || o.role === role) {
+      const opt = document.createElement('option');
+      opt.value = o.val;
+      opt.textContent = o.label;
+      sel.appendChild(opt);
+    }
+  });
+  sel.value = '';
+  document.getElementById('quota-info').style.display = 'none';
+  document.getElementById('quota-warn').style.display = 'none';
+}
+
+function checkQuota() {
+  const val = document.getElementById('counterparty').value;
+  const infoEl = document.getElementById('quota-info');
+  const warnEl = document.getElementById('quota-warn');
+  if (!val) { infoEl.style.display = 'none'; warnEl.style.display = 'none'; return; }
+  const c = contacts[val];
+  if (c) {
+    document.getElementById('contact').value = c[0];
+    document.getElementById('phone').value = c[1];
+  }
+  const q = quotas[val];
+  if (!q) return;
+  const avail = q.limit - q.used;
+  const pct = Math.round(q.used / q.limit * 100);
+  if (pct >= 90) {
+    warnEl.style.display = 'flex';
+    document.getElementById('quota-warn-text').innerHTML =
+      `<strong>额度预警：</strong>该单位授信额度 ¥${q.limit.toLocaleString()}，已用 ${pct}%，可用余额仅 ¥${avail.toLocaleString()}。超额下单将被拦截，请联系管理员调整额度。`;
+    infoEl.style.display = 'none';
+  } else {
+    infoEl.style.display = 'flex';
+    document.getElementById('quota-text').innerHTML =
+      `授信额度 ¥${q.limit.toLocaleString()}，已用 ${pct}%，<strong>可用余额 ¥${avail.toLocaleString()}</strong>。`;
+    warnEl.style.display = 'none';
+  }
+}
+
+function updatePrice() {
+  const sel = document.getElementById('material');
+  const opt = sel.options[sel.selectedIndex];
+  const ref = opt.dataset.price;
+  if (ref) {
+    document.getElementById('price').value = ref;
+    document.getElementById('price-hint').textContent = `参考基准价 ¥${Number(ref).toLocaleString()}/吨`;
+  }
+  calcAmount();
+}
+
+function calcAmount() {
+  const qty = parseFloat(document.getElementById('qty').value) || 0;
+  const price = parseFloat(document.getElementById('price').value) || 0;
+  const el = document.getElementById('amount-calc');
+  const res = document.getElementById('amount-result');
+  if (qty > 0 && price > 0) {
+    el.style.display = 'block';
+    res.textContent = '¥' + (qty * price).toLocaleString('zh-CN', {minimumFractionDigits:0});
+  } else {
+    el.style.display = 'none';
+  }
+  calcProfit();
+}
+
+function calcProfit() {
+  const qty = parseFloat(document.getElementById('qty').value) || 0;
+  const buy = parseFloat(document.getElementById('buy-price').value) || 0;
+  const sell = parseFloat(document.getElementById('sell-price').value) || 0;
+  const preview = document.getElementById('split-preview');
+  if (buy > 0 && sell > 0 && qty > 0) {
+    preview.style.display = 'block';
+    document.getElementById('buy-amount').textContent = '¥' + (buy * qty).toLocaleString();
+    document.getElementById('sell-amount').textContent = '¥' + (sell * qty).toLocaleString();
+    document.getElementById('price-diff').textContent = '¥' + (sell - buy).toLocaleString() + '/吨';
+    document.getElementById('profit').textContent = '¥' + ((sell - buy) * qty).toLocaleString();
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+function submitContract() {
+  const cp = document.getElementById('counterparty').value;
+  const mat = document.getElementById('material').value;
+  const qty = document.getElementById('qty').value;
+  if (!cp || !mat || !qty) {
+    alert('请填写必填项：对手方、物料、数量');
+    return;
+  }
+  if (confirm('确认提交审核？提交后将进入审核流程，审核通过后自动生成订单。')) {
+    window.location.href = 'index.html';
+  }
+}
+</script>
+</body>
+</html>

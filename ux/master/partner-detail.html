@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>合作伙伴详情 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.partner-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 24px;
+}
+.partner-tab {
+  padding: 10px 24px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color .15s, border-color .15s;
+}
+.partner-tab:hover { color: var(--primary); }
+.partner-tab.active { color: var(--primary); border-color: var(--primary); }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px 32px;
+}
+.detail-grid.fg2 { grid-template-columns: repeat(2, 1fr); }
+.detail-item { display: flex; flex-direction: column; gap: 5px; }
+.detail-item.span2 { grid-column: span 2; }
+.detail-item.span3 { grid-column: span 3; }
+.detail-label {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.detail-val {
+  font-size: 13.5px;
+  color: var(--text);
+  font-weight: 500;
+  min-height: 20px;
+}
+.detail-val.empty { color: var(--text-3); font-style: italic; font-weight: 400; }
+
+.section-divider {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-3);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 20px 0 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.meta-bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 20px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.meta-bar strong { color: var(--text-2); }
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.stat-mini {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-mini .sm-label { font-size: 11.5px; color: var(--text-3); }
+.stat-mini .sm-val { font-size: 18px; font-weight: 800; color: var(--text); }
+.stat-mini .sm-sub { font-size: 11.5px; color: var(--text-3); }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  color: var(--text-3);
+  gap: 10px;
+}
+.empty-state .es-icon { font-size: 36px; }
+.empty-state .es-text { font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item active">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#partner" class="link">往来单位</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="bc-name">合作伙伴详情</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">巨化集团有限公司</div>
+        <div class="page-desc">
+          <span id="partner-code" class="text-muted">BP-2022-001</span>
+          &nbsp;·&nbsp;
+          <span id="partner-type"></span>
+          &nbsp;·&nbsp;
+          <span id="partner-status"></span>
+        </div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">返回列表</button></a>
+        <button class="btn btn-default" onclick="window.location.href='partner-new.html?id='+currentId+'&mode=edit'">编辑</button>
+      </div>
+    </div>
+
+    <div style="max-width:960px">
+
+      <!-- 申请信息概览 -->
+      <div class="meta-bar">
+        <span><strong>所属公司：</strong><span id="m-company">—</span></span>
+        <span><strong>业务部门：</strong><span id="m-dept">—</span></span>
+        <span><strong>申请人：</strong><span id="m-applicant">—</span></span>
+        <span><strong>业务负责人：</strong><span id="m-manager">—</span></span>
+        <span><strong>申请日期：</strong><span id="m-date">—</span></span>
+      </div>
+
+      <!-- 运营统计 -->
+      <div class="stat-row" id="stat-row"></div>
+
+      <!-- 数据 Tabs -->
+      <div class="card">
+        <div class="card-body" style="padding-bottom:0">
+          <div class="partner-tabs">
+            <div class="partner-tab active" onclick="switchTab(this,'tab-basic')">基本数据</div>
+            <div class="partner-tab" onclick="switchTab(this,'tab-sales')">销售数据</div>
+            <div class="partner-tab" onclick="switchTab(this,'tab-purchase')">采购数据</div>
+          </div>
+        </div>
+
+        <!-- 基本数据 -->
+        <div id="tab-basic" class="card-body" style="padding-top:8px">
+          <div class="section-divider">企业基本信息</div>
+          <div class="detail-grid">
+            <div class="detail-item span2">
+              <div class="detail-label">统一社会信用代码</div>
+              <div class="detail-val" id="d-creditCode">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">国家 / 地区</div>
+              <div class="detail-val" id="d-country">—</div>
+            </div>
+            <div class="detail-item span2">
+              <div class="detail-label">企业名称</div>
+              <div class="detail-val" id="d-name">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">企业名称备注</div>
+              <div class="detail-val" id="d-nameRemark">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">组织性质</div>
+              <div class="detail-val" id="d-orgType">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">合作伙伴类型</div>
+              <div class="detail-val" id="d-partnerType">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">合作伙伴类别</div>
+              <div class="detail-val" id="d-partnerCate">—</div>
+            </div>
+          </div>
+
+          <div class="section-divider">法人 / 实控人信息</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <div class="detail-label">法人</div>
+              <div class="detail-val" id="d-legal">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">法人类型</div>
+              <div class="detail-val" id="d-legalType">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">法人身份证号</div>
+              <div class="detail-val" id="d-idCard">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">实际控制人</div>
+              <div class="detail-val" id="d-controller">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">实际控制人职务</div>
+              <div class="detail-val" id="d-controllerTitle">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">实控人联系方式</div>
+              <div class="detail-val" id="d-controllerPhone">—</div>
+            </div>
+          </div>
+
+          <div class="section-divider">工商登记信息</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <div class="detail-label">注册登记号</div>
+              <div class="detail-val" id="d-regNo">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">成立日期</div>
+              <div class="detail-val" id="d-estDate">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">注册资本（万）</div>
+              <div class="detail-val" id="d-capital">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">企业类型</div>
+              <div class="detail-val" id="d-corpType">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">营业收入规模</div>
+              <div class="detail-val" id="d-revenue">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">所属集团</div>
+              <div class="detail-val" id="d-group">—</div>
+            </div>
+          </div>
+
+          <div class="section-divider">税务 / 发票信息</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <div class="detail-label">纳税人分类</div>
+              <div class="detail-val" id="d-taxType">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">纳税评级</div>
+              <div class="detail-val" id="d-taxRating">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">发票类型</div>
+              <div class="detail-val" id="d-invoiceType">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">交易币种</div>
+              <div class="detail-val" id="d-currency">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">行业</div>
+              <div class="detail-val" id="d-industry">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">是否为关联方</div>
+              <div class="detail-val" id="d-related">—</div>
+            </div>
+          </div>
+
+          <div class="section-divider">特殊资质</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <div class="detail-label">特殊证照</div>
+              <div class="detail-val" id="d-license">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">资质到期日</div>
+              <div class="detail-val" id="d-licenseExpiry">—</div>
+            </div>
+          </div>
+
+          <div class="section-divider">业务信息</div>
+          <div class="detail-grid">
+            <div class="detail-item span3">
+              <div class="detail-label">经营范围</div>
+              <div class="detail-val" id="d-bizScope">—</div>
+            </div>
+            <div class="detail-item span3">
+              <div class="detail-label">主营业务及品种</div>
+              <div class="detail-val" id="d-mainBiz">—</div>
+            </div>
+            <div class="detail-item span3">
+              <div class="detail-label">拟交易品种</div>
+              <div class="detail-val" id="d-tradingGoods">—</div>
+            </div>
+            <div class="detail-item span3">
+              <div class="detail-label">股权结构</div>
+              <div class="detail-val" id="d-equity">—</div>
+            </div>
+            <div class="detail-item span3">
+              <div class="detail-label">企业介绍</div>
+              <div class="detail-val" id="d-intro">—</div>
+            </div>
+          </div>
+
+          <div class="section-divider">联系 / 地址信息</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <div class="detail-label">搜索简码</div>
+              <div class="detail-val" id="d-shortCode">—</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">省份 / 城市</div>
+              <div class="detail-val" id="d-city">—</div>
+            </div>
+            <div class="detail-item"></div>
+            <div class="detail-item span3">
+              <div class="detail-label">注册地址</div>
+              <div class="detail-val" id="d-regAddr">—</div>
+            </div>
+            <div class="detail-item span3">
+              <div class="detail-label">办公地址</div>
+              <div class="detail-val" id="d-officeAddr">—</div>
+            </div>
+          </div>
+
+          <div class="section-divider">其他</div>
+          <div class="detail-grid">
+            <div class="detail-item span3">
+              <div class="detail-label">备注</div>
+              <div class="detail-val" id="d-remark">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 销售数据 -->
+        <div id="tab-sales" class="card-body" style="display:none">
+          <div id="sales-content"></div>
+        </div>
+
+        <!-- 采购数据 -->
+        <div id="tab-purchase" class="card-body" style="display:none">
+          <div id="purchase-content"></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+// ── 数据源 ──────────────────────────────────────────────
+const partners = {
+  'BP-2022-001': {
+    name: '巨化集团有限公司', nameRemark: '巨化', creditCode: '91330800100012345X',
+    country: '中国大陆', orgType: '国有企业', partnerType: '客户', partnerCate: '核心合作伙伴',
+    legal: '孙晓峰', legalType: '自然人', idCard: '330802****1234', controller: '孙晓峰',
+    controllerTitle: '董事长', controllerPhone: '571-xxxx-7890',
+    regNo: '330800000012345', estDate: '1958-09-01', capital: '50,000 万元（人民币）',
+    corpType: '生产型企业', revenue: '20亿以上', group: '巨化集团（本身为母公司）',
+    taxType: '一般纳税人', taxRating: 'A级', invoiceType: '增值税专用发票（13%）',
+    currency: '人民币', industry: '化工原料制造', related: '否',
+    license: '无', licenseExpiry: '—',
+    bizScope: '氟化工产品、氯碱化工产品、合成材料及其制品的生产、销售；工业气体的生产与销售；化工设备的制造与销售。',
+    mainBiz: '氟化工、氯碱化工；主要产品：氢氟酸、氟利昂、PTFE、PVC等',
+    tradingGoods: '萤石粉 CaF₂≥97%、萤石粉 CaF₂≥95%',
+    equity: '国资委持股100%',
+    intro: '巨化集团有限公司是以氟化工、氯碱化工为主业的国有大型化工集团，是全国最大的氟化工生产基地之一。',
+    shortCode: 'JH', city: '浙江省 / 衢州市',
+    regAddr: '浙江省衢州市巨化工业区',
+    officeAddr: '浙江省衢州市巨化工业区行政楼',
+    remark: '核心销售客户，优先保障供货',
+    // 申请信息
+    company: ['玉门萤石运营管理有限公司','巨化萤石（玉门）有限公司'], dept: '销售部', applicant: '运营管理员',
+    manager: '运营管理员', applyDate: '2022-03-15',
+    // 运营数据
+    creditLimit: 2000000, creditUsed: 465000,
+    totalTonnage: '12,500 吨', contractCount: 8,
+    hasSales: true, hasPurchase: false,
+  },
+  'BP-2022-002': {
+    name: '浙江萤石化工有限公司', nameRemark: '浙萤化工', creditCode: '91330700200056789A',
+    country: '中国大陆', orgType: '有限责任公司', partnerType: '客户', partnerCate: '核心合作伙伴',
+    legal: '陈卫国', legalType: '自然人', idCard: '330702****5678', controller: '陈卫国',
+    controllerTitle: '总经理', controllerPhone: '579-xxxx-4321',
+    regNo: '330700000056789', estDate: '2005-06-12', capital: '8,000 万元（人民币）',
+    corpType: '生产 + 贸易', revenue: '5亿–20亿', group: '—',
+    taxType: '一般纳税人', taxRating: 'A级', invoiceType: '增值税专用发票（13%）',
+    currency: '人民币', industry: '化工原料制造', related: '否',
+    license: '无', licenseExpiry: '—',
+    bizScope: '萤石化工产品的生产与销售；化工原料的进出口贸易；化工技术研发与服务。',
+    mainBiz: '萤石精加工、氟化工中间体；主要产品：氟化铝、冰晶石',
+    tradingGoods: '萤石粉 CaF₂≥97%、萤石粉 CaF₂≥95%',
+    equity: '陈卫国持股60%，浙江化工投资集团持股40%',
+    intro: '浙江萤石化工有限公司专注于萤石深加工，是浙江省内重要的氟化工原料供应商。',
+    shortCode: 'ZYHG', city: '浙江省 / 金华市',
+    regAddr: '浙江省金华市金东区经济开发区',
+    officeAddr: '浙江省金华市金东区经济开发区化工园区B栋',
+    remark: '长期合作客户，账期30天',
+    company: '玉门萤石运营管理有限公司', dept: '销售部', applicant: '运营管理员',
+    manager: '运营管理员', applyDate: '2022-05-20',
+    creditLimit: 500000, creditUsed: 207000,
+    totalTonnage: '4,200 吨', contractCount: 5,
+    hasSales: true, hasPurchase: false,
+  },
+  'BP-2023-001': {
+    name: '玉门兴旺矿业有限公司', nameRemark: '兴旺矿业', creditCode: '91620982300078901B',
+    country: '中国大陆', orgType: '有限责任公司', partnerType: '供应商', partnerCate: '核心合作伙伴',
+    legal: '张建国', legalType: '自然人', idCard: '620982****7890', controller: '张建国',
+    controllerTitle: '董事长兼总经理', controllerPhone: '139-xxxx-1234',
+    regNo: '620982000078901', estDate: '2008-04-15', capital: '2,000 万元（人民币）',
+    corpType: '生产型企业', revenue: '1亿–5亿', group: '—',
+    taxType: '一般纳税人', taxRating: 'A级', invoiceType: '增值税专用发票（13%）',
+    currency: '人民币', industry: '非金属矿采选', related: '否',
+    license: '采矿许可证', licenseExpiry: '2028-12-31',
+    bizScope: '萤石矿的开采、选矿、加工及销售；矿山工程施工；矿产品贸易。',
+    mainBiz: '萤石粉生产；主要品种：CaF₂≥97%粉、CaF₂≥95%粉',
+    tradingGoods: '萤石粉 CaF₂≥97%、萤石粉 CaF₂≥95%',
+    equity: '张建国持股70%，张氏家族信托持股30%',
+    intro: '玉门兴旺矿业是玉门地区规模最大的萤石开采与加工企业，年产能约6万吨。',
+    shortCode: 'YMXW', city: '甘肃省 / 酒泉市',
+    regAddr: '甘肃省酒泉市玉门市工业园区矿业路8号',
+    officeAddr: '甘肃省酒泉市玉门市工业园区矿业路8号综合楼',
+    remark: '主力供应商，优先采购',
+    company: '玉门萤石运营管理有限公司', dept: '采购部', applicant: '采购员 · 王明',
+    manager: '运营管理员', applyDate: '2023-01-10',
+    creditLimit: 500000, creditUsed: 145000,
+    totalTonnage: '3,200 吨', contractCount: 6,
+    hasSales: false, hasPurchase: true,
+  },
+  'BP-2023-002': {
+    name: '玉门众鑫萤石矿业', nameRemark: '众鑫矿业', creditCode: '91620982400089012C',
+    country: '中国大陆', orgType: '有限责任公司', partnerType: '供应商', partnerCate: '普通合作伙伴',
+    legal: '李明辉', legalType: '自然人', idCard: '620982****8901', controller: '李明辉',
+    controllerTitle: '总经理', controllerPhone: '135-xxxx-5678',
+    regNo: '620982000089012', estDate: '2015-08-20', capital: '500 万元（人民币）',
+    corpType: '生产型企业', revenue: '1亿以下', group: '—',
+    taxType: '一般纳税人', taxRating: 'B级', invoiceType: '增值税专用发票（9%）',
+    currency: '人民币', industry: '非金属矿采选', related: '否',
+    license: '采矿许可证', licenseExpiry: '2026-09-30',
+    bizScope: '萤石矿的开采与销售；矿产品初加工。',
+    mainBiz: '萤石粉生产；主要品种：CaF₂≥95%粉',
+    tradingGoods: '萤石粉 CaF₂≥95%',
+    equity: '李明辉持股51%，王建平持股49%',
+    intro: '玉门众鑫萤石矿业为中小型矿企，采矿许可证即将到期，需关注续期情况。',
+    shortCode: 'YMZX', city: '甘肃省 / 酒泉市',
+    regAddr: '甘肃省酒泉市玉门市花海镇工业路3号',
+    officeAddr: '甘肃省酒泉市玉门市花海镇工业路3号',
+    remark: '授信额度已用92%，需关注额度预警',
+    company: '玉门萤石运营管理有限公司', dept: '采购部', applicant: '采购员 · 王明',
+    manager: '运营管理员', applyDate: '2023-03-05',
+    creditLimit: 150000, creditUsed: 138000,
+    totalTonnage: '890 吨', contractCount: 3,
+    hasSales: false, hasPurchase: true,
+  },
+  'BP-2023-003': {
+    name: '酒泉盛源矿业', nameRemark: '盛源矿业', creditCode: '91620900500090123D',
+    country: '中国大陆', orgType: '有限责任公司', partnerType: '供应商', partnerCate: '核心合作伙伴',
+    legal: '王富贵', legalType: '自然人', idCard: '620900****9012', controller: '王富贵',
+    controllerTitle: '董事长', controllerPhone: '138-xxxx-9012',
+    regNo: '620900000090123', estDate: '2011-03-18', capital: '3,000 万元（人民币）',
+    corpType: '生产型企业', revenue: '1亿–5亿', group: '—',
+    taxType: '一般纳税人', taxRating: 'A级', invoiceType: '增值税专用发票（13%）',
+    currency: '人民币', industry: '非金属矿采选', related: '否',
+    license: '采矿许可证', licenseExpiry: '2029-06-30',
+    bizScope: '萤石矿的开采、选矿及销售；矿产品贸易。',
+    mainBiz: '萤石块矿、萤石粉生产；主要品种：CaF₂≥90%、CaF₂≥95%',
+    tradingGoods: '萤石粉 CaF₂≥90%、萤石粉 CaF₂≥95%',
+    equity: '王富贵持股80%，盛源集团持股20%',
+    intro: '酒泉盛源矿业专注于萤石采选，资源储量充足，是区域重要供应商。',
+    shortCode: 'JQSY', city: '甘肃省 / 酒泉市',
+    regAddr: '甘肃省酒泉市肃州区工业园矿产路12号',
+    officeAddr: '甘肃省酒泉市肃州区工业园矿产路12号',
+    remark: '稳定供应商，品质稳定',
+    company: '玉门萤石运营管理有限公司', dept: '采购部', applicant: '采购员 · 王明',
+    manager: '运营管理员', applyDate: '2023-02-28',
+    creditLimit: 300000, creditUsed: 196000,
+    totalTonnage: '1,540 吨', contractCount: 4,
+    hasSales: false, hasPurchase: true,
+  },
+  'BP-2023-004': {
+    name: '玉门良运物流有限公司', nameRemark: '良运物流', creditCode: '91620982600012345E',
+    country: '中国大陆', orgType: '有限责任公司', partnerType: '承运商', partnerCate: '核心合作伙伴',
+    legal: '周良', legalType: '自然人', idCard: '620982****1111', controller: '周良',
+    controllerTitle: '总经理', controllerPhone: '138-xxxx-1111',
+    regNo: '620982000012345', estDate: '2016-07-01', capital: '1,000 万元（人民币）',
+    corpType: '服务型企业', revenue: '1亿以下', group: '—',
+    taxType: '一般纳税人', taxRating: '—', invoiceType: '增值税专用发票（9%）',
+    currency: '人民币', industry: '货物运输', related: '否',
+    license: '道路运输许可证', licenseExpiry: '2027-07-01',
+    bizScope: '道路货物运输；物流仓储；运输代理服务。',
+    mainBiz: '大宗散货公路运输；主要服务：玉门至浙江干线运输',
+    tradingGoods: '—',
+    equity: '周良持股100%',
+    intro: '玉门良运物流专注于西北至华东大宗散货运输，拥有重型卡车50余辆，是平台主力承运商。',
+    shortCode: 'YMLY', city: '甘肃省 / 酒泉市',
+    regAddr: '甘肃省酒泉市玉门市物流园区运达路5号',
+    officeAddr: '甘肃省酒泉市玉门市物流园区运达路5号调度楼',
+    remark: '核心承运商，无授信管理',
+    company: '玉门萤石运营管理有限公司', dept: '运营部', applicant: '运营管理员',
+    manager: '运营管理员', applyDate: '2023-05-16',
+    creditLimit: 0, creditUsed: 0,
+    totalTonnage: '650 车次', contractCount: 12,
+    hasSales: false, hasPurchase: false,
+  },
+  'BP-2024-001': {
+    name: '嘉峪关矿冶有限公司', nameRemark: '嘉峪关矿冶', creditCode: '91620200700023456F',
+    country: '中国大陆', orgType: '有限责任公司', partnerType: '供应商', partnerCate: '普通合作伙伴',
+    legal: '赵俊峰', legalType: '自然人', idCard: '620200****3456', controller: '赵俊峰',
+    controllerTitle: '总经理', controllerPhone: '187-xxxx-3456',
+    regNo: '620200000023456', estDate: '2019-11-05', capital: '1,200 万元（人民币）',
+    corpType: '生产型企业', revenue: '1亿以下', group: '—',
+    taxType: '一般纳税人', taxRating: 'A级', invoiceType: '增值税专用发票（13%）',
+    currency: '人民币', industry: '非金属矿采选', related: '否',
+    license: '采矿许可证', licenseExpiry: '2030-11-05',
+    bizScope: '萤石矿及金属矿的采选、加工与销售；矿产品贸易。',
+    mainBiz: '萤石块矿、萤石粉；兼营铁矿石初加工',
+    tradingGoods: '萤石粉 CaF₂≥90%',
+    equity: '赵俊峰持股55%，嘉峪关工业投资持股45%',
+    intro: '嘉峪关矿冶有限公司为新开发供应商，矿山储量较大，尚处于产能爬坡阶段。',
+    shortCode: 'JYGJY', city: '甘肃省 / 嘉峪关市',
+    regAddr: '甘肃省嘉峪关市新城区矿冶工业路16号',
+    officeAddr: '甘肃省嘉峪关市新城区矿冶工业路16号',
+    remark: '新增供应商，处于合作考察期',
+    company: '玉门萤石运营管理有限公司', dept: '采购部', applicant: '采购员 · 王明',
+    manager: '运营管理员', applyDate: '2024-01-08',
+    creditLimit: 200000, creditUsed: 0,
+    totalTonnage: '600 吨', contractCount: 2,
+    hasSales: false, hasPurchase: true,
+  },
+};
+
+// ── 获取当前 ID ──────────────────────────────────────────
+const params = new URLSearchParams(location.search);
+const currentId = params.get('id') || 'BP-2022-001';
+const p = partners[currentId] || partners['BP-2022-001'];
+
+// ── 渲染页面标题 & 面包屑 ──────────────────────────────
+document.getElementById('bc-name').textContent = p.name;
+document.getElementById('page-title').textContent = p.name;
+document.getElementById('partner-code').textContent = currentId;
+
+const typeMap = { '客户':'<span class="badge b-success">客户</span>', '供应商':'<span class="badge b-info">供应商</span>', '承运商':'<span class="badge b-default">承运商</span>', '供应商兼客户':'<span class="badge b-primary">供应商兼客户</span>' };
+document.getElementById('partner-type').innerHTML = typeMap[p.partnerType] || p.partnerType;
+
+const usedPct = p.creditLimit > 0 ? Math.round(p.creditUsed / p.creditLimit * 100) : 0;
+const statusHtml = usedPct >= 90
+  ? '<span class="badge b-warning">额度预警</span>'
+  : '<span class="badge b-success">合作中</span>';
+document.getElementById('partner-status').innerHTML = statusHtml;
+
+// ── 申请信息 ─────────────────────────────────────────────
+document.getElementById('m-company').textContent = Array.isArray(p.company) ? p.company.join(' / ') : p.company;
+document.getElementById('m-dept').textContent = p.dept;
+document.getElementById('m-applicant').textContent = p.applicant;
+document.getElementById('m-manager').textContent = p.manager;
+document.getElementById('m-date').textContent = p.applyDate;
+
+// ── 运营统计 ─────────────────────────────────────────────
+const creditDisplay = p.creditLimit > 0
+  ? `¥${p.creditLimit.toLocaleString()}`
+  : '—';
+const usedDisplay = p.creditLimit > 0
+  ? `¥${p.creditUsed.toLocaleString()} (${usedPct}%)`
+  : '—';
+const usedColor = usedPct >= 90 ? 'var(--danger)' : usedPct >= 65 ? 'var(--warning)' : 'var(--success)';
+
+document.getElementById('stat-row').innerHTML = `
+  <div class="stat-mini">
+    <div class="sm-label">合作伙伴编码</div>
+    <div class="sm-val" style="font-size:14px">${currentId}</div>
+    <div class="sm-sub">${p.partnerCate}</div>
+  </div>
+  <div class="stat-mini">
+    <div class="sm-label">授信额度</div>
+    <div class="sm-val" style="font-size:14px">${creditDisplay}</div>
+    <div class="sm-sub" style="color:${usedColor}">${usedDisplay} 已用</div>
+  </div>
+  <div class="stat-mini">
+    <div class="sm-label">累计合作量</div>
+    <div class="sm-val" style="font-size:14px">${p.totalTonnage}</div>
+    <div class="sm-sub">合同 ${p.contractCount} 份</div>
+  </div>
+  <div class="stat-mini">
+    <div class="sm-label">纳税评级</div>
+    <div class="sm-val" style="font-size:14px">${p.taxRating}</div>
+    <div class="sm-sub">${p.taxType}</div>
+  </div>
+`;
+
+// ── 填充基本数据字段 ──────────────────────────────────────
+function fill(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!val || val === '—') { el.textContent = '—'; el.classList.add('empty'); }
+  else { el.textContent = val; el.classList.remove('empty'); }
+}
+fill('d-creditCode', p.creditCode);
+fill('d-country', p.country);
+fill('d-name', p.name);
+fill('d-nameRemark', p.nameRemark);
+fill('d-orgType', p.orgType);
+fill('d-partnerType', p.partnerType);
+fill('d-partnerCate', p.partnerCate);
+fill('d-legal', p.legal);
+fill('d-legalType', p.legalType);
+fill('d-idCard', p.idCard);
+fill('d-controller', p.controller);
+fill('d-controllerTitle', p.controllerTitle);
+fill('d-controllerPhone', p.controllerPhone);
+fill('d-regNo', p.regNo);
+fill('d-estDate', p.estDate);
+fill('d-capital', p.capital);
+fill('d-corpType', p.corpType);
+fill('d-revenue', p.revenue);
+fill('d-group', p.group);
+fill('d-taxType', p.taxType);
+fill('d-taxRating', p.taxRating);
+fill('d-invoiceType', p.invoiceType);
+fill('d-currency', p.currency);
+fill('d-industry', p.industry);
+fill('d-related', p.related);
+fill('d-license', p.license);
+fill('d-licenseExpiry', p.licenseExpiry);
+fill('d-bizScope', p.bizScope);
+fill('d-mainBiz', p.mainBiz);
+fill('d-tradingGoods', p.tradingGoods);
+fill('d-equity', p.equity);
+fill('d-intro', p.intro);
+fill('d-shortCode', p.shortCode);
+fill('d-city', p.city);
+fill('d-regAddr', p.regAddr);
+fill('d-officeAddr', p.officeAddr);
+fill('d-remark', p.remark);
+
+// ── 销售 / 采购数据 Tab ───────────────────────────────────
+function renderSales() {
+  if (!p.hasSales) {
+    return '<div class="empty-state"><div class="es-icon">📊</div><div class="es-text">暂无销售数据</div><div class="es-text" style="font-size:12px">该合作伙伴无销售业务数据</div></div>';
+  }
+  const pct = Math.round(p.creditUsed / p.creditLimit * 100);
+  const barColor = pct >= 90 ? 'var(--danger)' : pct >= 65 ? 'var(--warning)' : 'var(--success)';
+  return `
+    <div class="section-divider">销售授信信息</div>
+    <div class="detail-grid">
+      <div class="detail-item"><div class="detail-label">授信额度</div><div class="detail-val">¥${p.creditLimit.toLocaleString()}</div></div>
+      <div class="detail-item"><div class="detail-label">已用额度</div><div class="detail-val" style="color:${barColor}">¥${p.creditUsed.toLocaleString()} (${pct}%)</div></div>
+      <div class="detail-item"><div class="detail-label">可用额度</div><div class="detail-val" style="color:var(--success)">¥${(p.creditLimit - p.creditUsed).toLocaleString()}</div></div>
+      <div class="detail-item"><div class="detail-label">账期</div><div class="detail-val">30 天</div></div>
+      <div class="detail-item"><div class="detail-label">客户预付比例</div><div class="detail-val">85%</div></div>
+      <div class="detail-item"><div class="detail-label">开票类型</div><div class="detail-val">${p.invoiceType}</div></div>
+    </div>
+    <div class="section-divider">累计销售统计</div>
+    <div class="detail-grid">
+      <div class="detail-item"><div class="detail-label">累计销售量</div><div class="detail-val">${p.totalTonnage}</div></div>
+      <div class="detail-item"><div class="detail-label">关联合同数</div><div class="detail-val">${p.contractCount} 份</div></div>
+      <div class="detail-item"><div class="detail-label">最近交易</div><div class="detail-val">2026-06-10</div></div>
+    </div>`;
+}
+
+function renderPurchase() {
+  if (!p.hasPurchase) {
+    return '<div class="empty-state"><div class="es-icon">📦</div><div class="es-text">暂无采购数据</div><div class="es-text" style="font-size:12px">该合作伙伴无采购业务数据</div></div>';
+  }
+  const pct = Math.round(p.creditUsed / p.creditLimit * 100);
+  const barColor = pct >= 90 ? 'var(--danger)' : pct >= 65 ? 'var(--warning)' : 'var(--success)';
+  return `
+    <div class="section-divider">采购授信信息</div>
+    <div class="detail-grid">
+      <div class="detail-item"><div class="detail-label">采购授信额度</div><div class="detail-val">¥${p.creditLimit.toLocaleString()}</div></div>
+      <div class="detail-item"><div class="detail-label">已用额度</div><div class="detail-val" style="color:${barColor}">¥${p.creditUsed.toLocaleString()} (${pct}%)</div></div>
+      <div class="detail-item"><div class="detail-label">可用额度</div><div class="detail-val" style="color:var(--success)">¥${(p.creditLimit - p.creditUsed).toLocaleString()}</div></div>
+      <div class="detail-item"><div class="detail-label">我方预付比例</div><div class="detail-val">85%</div></div>
+      <div class="detail-item"><div class="detail-label">尾款周期</div><div class="detail-val">7 个工作日</div></div>
+      <div class="detail-item"><div class="detail-label">供应商开票类型</div><div class="detail-val">${p.invoiceType}</div></div>
+    </div>
+    <div class="section-divider">累计采购统计</div>
+    <div class="detail-grid">
+      <div class="detail-item"><div class="detail-label">累计采购量</div><div class="detail-val">${p.totalTonnage}</div></div>
+      <div class="detail-item"><div class="detail-label">关联合同数</div><div class="detail-val">${p.contractCount} 份</div></div>
+      <div class="detail-item"><div class="detail-label">最近交易</div><div class="detail-val">2026-06-18</div></div>
+    </div>`;
+}
+
+document.getElementById('sales-content').innerHTML = renderSales();
+document.getElementById('purchase-content').innerHTML = renderPurchase();
+
+// ── Tab 切换 ─────────────────────────────────────────────
+function switchTab(el, tabId) {
+  document.querySelectorAll('.partner-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['tab-basic','tab-sales','tab-purchase'].forEach(id => {
+    document.getElementById(id).style.display = id === tabId ? 'block' : 'none';
+  });
+}
+</script>
+</body>
+</html>

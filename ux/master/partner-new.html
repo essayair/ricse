@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新增合作伙伴 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.apply-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px 24px;
+}
+.apply-item { display: flex; flex-direction: column; gap: 4px; }
+.apply-label { font-size: 12px; color: var(--text-3); }
+.apply-val { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.apply-val.auto { color: var(--text-3); font-style: italic; font-weight: 400; }
+
+.partner-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 24px;
+}
+.partner-tab {
+  padding: 10px 24px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color .15s, border-color .15s;
+}
+.partner-tab:hover { color: var(--primary); }
+.partner-tab.active { color: var(--primary); border-color: var(--primary); }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  color: var(--text-3);
+  gap: 10px;
+}
+.empty-state .es-icon { font-size: 36px; }
+.empty-state .es-text { font-size: 13px; }
+
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.upload-zone:hover { border-color: var(--primary); background: var(--primary-bg); }
+.upload-zone .uz-icon { font-size: 32px; margin-bottom: 10px; }
+.upload-zone .uz-title { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.upload-zone .uz-hint { font-size: 12px; color: var(--text-3); }
+
+.img-notice {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+.img-notice strong { color: var(--text-2); }
+
+.capital-row { display: flex; gap: 12px; align-items: center; }
+.capital-row .form-ctrl:first-child { flex: 2; }
+.capital-row .form-ctrl:last-child { flex: 1; }
+
+.form-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 24px; }
+.form-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 24px; }
+
+.section-divider {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 20px 0 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.check-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0 2px;
+}
+.check-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+  user-select: none;
+}
+.check-chip input[type="checkbox"] { display: none; }
+.check-chip:hover { border-color: var(--primary); color: var(--primary); }
+.check-chip.checked {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item active">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#partner" class="link">往来单位</a><span class="bc-sep">›</span>
+      <span class="bc-cur">新增合作伙伴</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">新增合作伙伴</div>
+        <div class="page-desc" id="page-desc">填写基本信息后提交审批，审批通过后合作伙伴档案正式生效</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" id="btn-cancel" onclick="history.back()">取消</button>
+        <button class="btn btn-default" id="btn-draft" onclick="alert('草稿已保存')">保存草稿</button>
+        <button class="btn btn-primary" id="btn-submit" onclick="submitPartner()">提交审批 →</button>
+      </div>
+    </div>
+
+    <div style="max-width:960px">
+
+      <!-- 申请信息 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">申请信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label req">所属公司<span style="font-size:11px;font-weight:400;color:var(--text-3);margin-left:6px">（可多选，支持一个合作伙伴对应多个我方主体）</span></label>
+              <div class="check-group" id="company-group">
+                <label class="check-chip checked" onclick="toggleChip(this)">
+                  <input type="checkbox" name="company" value="玉门萤石运营管理有限公司" checked>玉门萤石运营管理有限公司
+                </label>
+                <label class="check-chip" onclick="toggleChip(this)">
+                  <input type="checkbox" name="company" value="酒泉供应链管理有限公司">酒泉供应链管理有限公司
+                </label>
+                <label class="check-chip" onclick="toggleChip(this)">
+                  <input type="checkbox" name="company" value="巨化萤石（玉门）有限公司">巨化萤石（玉门）有限公司
+                </label>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">业务部门</label>
+              <select class="form-ctrl">
+                <option value="">请选择</option>
+                <option>采购部</option>
+                <option>销售部</option>
+                <option>运营部</option>
+                <option>物流部</option>
+                <option>财务部</option>
+                <option>综合管理部</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">申请日期</label>
+              <input class="form-ctrl" type="date" value="2026-06-23">
+            </div>
+            <div class="form-item">
+              <label class="form-label">创建人</label>
+              <input class="form-ctrl" type="text" value="运营管理员" readonly style="background:var(--surface-2);color:var(--text-3)">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">申请人</label>
+              <select class="form-ctrl">
+                <option value="">请选择</option>
+                <option selected>运营管理员</option>
+                <option>采购员 · 王明</option>
+                <option>质检员 · 李华</option>
+                <option>财务 · 赵雪</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">业务负责人</label>
+              <select class="form-ctrl">
+                <option value="">请选择</option>
+                <option>运营管理员</option>
+                <option>采购员 · 王明</option>
+                <option>质检员 · 李华</option>
+                <option>财务 · 赵雪</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">合作伙伴编码</label>
+              <input class="form-ctrl" type="text" value="自动生成" readonly style="background:var(--surface-2);color:var(--text-3);font-style:italic">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 数据 Tabs -->
+      <div class="card mb-4">
+        <div class="card-body" style="padding-bottom:0">
+          <div class="partner-tabs">
+            <div class="partner-tab active" onclick="switchPartnerTab(this,'tab-basic')">基本数据</div>
+            <div class="partner-tab" onclick="switchPartnerTab(this,'tab-sales')">销售数据</div>
+            <div class="partner-tab" onclick="switchPartnerTab(this,'tab-purchase')">采购数据</div>
+          </div>
+        </div>
+
+        <!-- 基本数据 -->
+        <div id="tab-basic" class="card-body" style="padding-top:8px">
+
+          <div class="section-divider">企业基本信息</div>
+          <div class="form-grid fg3">
+            <div class="form-item" style="grid-column:span 2">
+              <label class="form-label req">统一社会信用代码</label>
+              <input class="form-ctrl" type="text" placeholder="请输入18位统一社会信用代码" maxlength="18">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">国家 / 地区</label>
+              <select class="form-ctrl">
+                <option value="">请选择</option>
+                <option selected>中国大陆</option>
+                <option>香港</option>
+                <option>澳门</option>
+                <option>台湾</option>
+                <option>其他</option>
+              </select>
+            </div>
+            <div class="form-item" style="grid-column:span 2">
+              <label class="form-label req">企业名称</label>
+              <input class="form-ctrl" type="text" placeholder="请输入企业全称（与营业执照一致）">
+            </div>
+            <div class="form-item">
+              <label class="form-label">企业名称备注</label>
+              <input class="form-ctrl" type="text" placeholder="简称或别名（可选）">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">组织性质</label>
+              <select class="form-ctrl">
+                <option value="">请选择组织性质</option>
+                <option>有限责任公司</option>
+                <option>股份有限公司</option>
+                <option>国有企业</option>
+                <option>外资企业</option>
+                <option>个体工商户</option>
+                <option>合伙企业</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">合作伙伴类型</label>
+              <select class="form-ctrl">
+                <option value="">请选择</option>
+                <option>供应商</option>
+                <option>客户</option>
+                <option>承运商</option>
+                <option>供应商兼客户</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">合作伙伴类别</label>
+              <select class="form-ctrl">
+                <option value="">请选择合作伙伴类别</option>
+                <option>核心合作伙伴</option>
+                <option>普通合作伙伴</option>
+                <option>临时合作伙伴</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-divider">法人 / 实控人信息</div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">法人</label>
+              <input class="form-ctrl" type="text" placeholder="请输入法人姓名">
+            </div>
+            <div class="form-item">
+              <label class="form-label">法人类型</label>
+              <select class="form-ctrl">
+                <option value="">请选择法人类型</option>
+                <option>自然人</option>
+                <option>法人</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">法人身份证号</label>
+              <input class="form-ctrl" type="text" placeholder="请输入18位身份证号码" maxlength="18">
+            </div>
+            <div class="form-item">
+              <label class="form-label">实际控制人</label>
+              <input class="form-ctrl" type="text" placeholder="请填写实际控制人">
+            </div>
+            <div class="form-item">
+              <label class="form-label">实际控制人职务</label>
+              <input class="form-ctrl" type="text" placeholder="请填写职务">
+            </div>
+            <div class="form-item">
+              <label class="form-label">实控人联系方式</label>
+              <input class="form-ctrl" type="text" placeholder="请填写联系方式">
+            </div>
+          </div>
+
+          <div class="section-divider">工商登记信息</div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">注册登记号</label>
+              <input class="form-ctrl" type="text" placeholder="请填写注册登记号">
+            </div>
+            <div class="form-item">
+              <label class="form-label">成立日期</label>
+              <input class="form-ctrl" type="date">
+            </div>
+            <div class="form-item">
+              <label class="form-label">注册资本（万）</label>
+              <div class="capital-row">
+                <input class="form-ctrl" type="number" placeholder="金额" min="0">
+                <select class="form-ctrl">
+                  <option>人民币</option>
+                  <option>美元</option>
+                  <option>欧元</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-item">
+              <label class="form-label">企业类型</label>
+              <select class="form-ctrl">
+                <option value="">请选择企业类型</option>
+                <option>生产型企业</option>
+                <option>贸易型企业</option>
+                <option>生产 + 贸易</option>
+                <option>服务型企业</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">营业收入规模</label>
+              <select class="form-ctrl">
+                <option value="">请选择营业收入</option>
+                <option>1亿以下</option>
+                <option>1亿–5亿</option>
+                <option>5亿–20亿</option>
+                <option>20亿以上</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">所属集团</label>
+              <div style="display:flex;align-items:center;gap:10px;padding-top:8px">
+                <input class="form-ctrl" type="text" placeholder="集团名称（可选）" style="flex:1">
+                <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;white-space:nowrap;cursor:pointer">
+                  <input type="checkbox"> 本身为母公司
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-divider">税务 / 发票信息</div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">纳税人分类</label>
+              <select class="form-ctrl">
+                <option value="">请选择纳税人分类</option>
+                <option>一般纳税人</option>
+                <option>小规模纳税人</option>
+                <option>免税单位</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">纳税评级</label>
+              <select class="form-ctrl">
+                <option value="">请选择纳税评级</option>
+                <option>A级</option>
+                <option>B级</option>
+                <option>C级</option>
+                <option>D级</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">发票类型</label>
+              <select class="form-ctrl">
+                <option value="">请选择发票类型</option>
+                <option>增值税专用发票（13%）</option>
+                <option>增值税专用发票（9%）</option>
+                <option>增值税普通发票</option>
+                <option>电子普通发票</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">交易币种</label>
+              <select class="form-ctrl">
+                <option value="">请选择交易币种</option>
+                <option selected>人民币</option>
+                <option>美元</option>
+                <option>欧元</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">行业</label>
+              <select class="form-ctrl">
+                <option value="">请选择行业</option>
+                <option>非金属矿采选</option>
+                <option>化工原料制造</option>
+                <option>货物运输</option>
+                <option>供应链 / 贸易</option>
+                <option>其他</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">是否为关联方</label>
+              <select class="form-ctrl">
+                <option value="">请选择</option>
+                <option>否</option>
+                <option>是 · 全资子公司</option>
+                <option>是 · 参股公司</option>
+                <option>是 · 控股股东</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-divider">特殊资质</div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">特殊证照</label>
+              <select class="form-ctrl">
+                <option value="">请选择特殊证照</option>
+                <option>采矿许可证</option>
+                <option>危化品经营许可证</option>
+                <option>道路运输许可证</option>
+                <option>无</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">资质到期日</label>
+              <input class="form-ctrl" type="date">
+            </div>
+          </div>
+
+          <div class="section-divider">业务信息</div>
+          <div class="form-grid fg3">
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">经营范围</label>
+              <textarea class="form-ctrl" rows="3" placeholder="请填写经营范围（可从营业执照复制）"></textarea>
+            </div>
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">主营业务及品种</label>
+              <textarea class="form-ctrl" rows="2" placeholder="请填写主营业务及主要交易品种"></textarea>
+            </div>
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">拟交易品种</label>
+              <textarea class="form-ctrl" rows="2" placeholder="请填写与我方拟开展交易的品种（如：萤石粉 CaF₂≥97%）"></textarea>
+            </div>
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">股权结构</label>
+              <textarea class="form-ctrl" rows="2" placeholder="请填写主要股东及持股比例"></textarea>
+            </div>
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">企业介绍</label>
+              <textarea class="form-ctrl" rows="3" placeholder="请填写企业简介"></textarea>
+            </div>
+          </div>
+
+          <div class="section-divider">联系 / 地址信息</div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label">搜索简码</label>
+              <input class="form-ctrl" type="text" placeholder="请输入拼音首字母简码">
+            </div>
+            <div class="form-item">
+              <label class="form-label">省份</label>
+              <select class="form-ctrl" onchange="updateCity(this)">
+                <option value="">请选择省份</option>
+                <option>浙江省</option>
+                <option>甘肃省</option>
+                <option>江苏省</option>
+                <option>广东省</option>
+                <option>山东省</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">城市</label>
+              <select class="form-ctrl" id="city-select">
+                <option value="">请先选择省份</option>
+              </select>
+            </div>
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">注册地址</label>
+              <input class="form-ctrl" type="text" placeholder="请输入注册地址（与营业执照一致）">
+            </div>
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">办公地址</label>
+              <input class="form-ctrl" type="text" placeholder="请填写实际办公地址">
+            </div>
+          </div>
+
+          <div class="section-divider">其他</div>
+          <div class="form-grid fg3">
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">备注</label>
+              <textarea class="form-ctrl" rows="2" placeholder="请输入备注信息（可选）"></textarea>
+            </div>
+            <div class="form-item" style="grid-column:span 3">
+              <label class="form-label">修改原因</label>
+              <textarea class="form-ctrl" rows="2" placeholder="如为变更申请，请填写修改原因（初次新增可留空）"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 销售数据 -->
+        <div id="tab-sales" class="card-body" style="display:none">
+          <div class="empty-state">
+            <div class="es-icon">📊</div>
+            <div class="es-text">暂无销售数据</div>
+            <div class="es-text" style="font-size:12px">合作伙伴档案审批通过后，可在此配置销售信用额度、账期、开票信息等</div>
+          </div>
+        </div>
+
+        <!-- 采购数据 -->
+        <div id="tab-purchase" class="card-body" style="display:none">
+          <div class="empty-state">
+            <div class="es-icon">📦</div>
+            <div class="es-text">暂无采购数据</div>
+            <div class="es-text" style="font-size:12px">合作伙伴档案审批通过后，可在此配置采购限额、预付比例、质检要求等</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 共享影像系统 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">影像附件上传</span></div>
+        <div class="card-body">
+          <div class="img-notice">
+            <strong>上传要求：</strong>附件名称不可含特殊符号：<code>#、%、@、&amp;、~、+、--、*</code>；
+            如名称含特殊符号，系统将自动替换为 <code>_</code>（下划线）。<br>
+            <strong>格式要求：</strong>pdf、jpg、png、doc、docx、xls、xlsx
+          </div>
+          <div class="upload-zone" onclick="alert('文件上传功能接入后可用')">
+            <div class="uz-icon">📎</div>
+            <div class="uz-title">点击或拖拽上传附件</div>
+            <div class="uz-hint">营业执照副本、法人身份证、资质证书等</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部操作 -->
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-default" onclick="alert('草稿已保存')">保存草稿</button>
+        <button class="btn btn-primary" onclick="submitPartner()">提交审批 →</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+// ── 城市联动 ─────────────────────────────────────────────
+const cityMap = {
+  '浙江省': ['杭州市','宁波市','温州市','嘉兴市','湖州市','绍兴市','金华市','衢州市','舟山市','台州市','丽水市'],
+  '甘肃省': ['兰州市','嘉峪关市','金昌市','白银市','天水市','武威市','张掖市','平凉市','酒泉市','庆阳市','定西市','陇南市'],
+  '江苏省': ['南京市','无锡市','徐州市','常州市','苏州市','南通市','连云港市','淮安市','盐城市','扬州市','镇江市','泰州市','宿迁市'],
+  '广东省': ['广州市','深圳市','珠海市','汕头市','佛山市','东莞市','中山市','湛江市','惠州市'],
+  '山东省': ['济南市','青岛市','淄博市','枣庄市','东营市','烟台市','潍坊市','济宁市','泰安市','威海市'],
+};
+function toggleChip(label) {
+  const cb = label.querySelector('input[type="checkbox"]');
+  cb.checked = !cb.checked;
+  label.classList.toggle('checked', cb.checked);
+}
+
+function updateCity(sel) {
+  const city = document.getElementById('city-select');
+  const cities = cityMap[sel.value] || [];
+  city.innerHTML = '<option value="">请选择城市</option>';
+  cities.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; city.appendChild(o); });
+}
+
+// ── Tab 切换 ─────────────────────────────────────────────
+function switchPartnerTab(el, tabId) {
+  document.querySelectorAll('.partner-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['tab-basic','tab-sales','tab-purchase'].forEach(id => {
+    const panel = document.getElementById(id);
+    if (panel) panel.style.display = id === tabId ? 'block' : 'none';
+  });
+}
+
+// ── 编辑模式数据 ──────────────────────────────────────────
+const partners = {
+  'BP-2022-001': { name:'巨化集团有限公司', creditCode:'91330800100012345X', country:'中国大陆', orgType:'国有企业', partnerType:'客户', partnerCate:'核心合作伙伴', legal:'孙晓峰', legalType:'自然人', idCard:'330802****1234', controller:'孙晓峰', controllerTitle:'董事长', controllerPhone:'571-xxxx-7890', regNo:'330800000012345', estDate:'1958-09-01', capital:'50000', corpType:'生产型企业', revenue:'20亿以上', taxType:'一般纳税人', taxRating:'A级', invoiceType:'增值税专用发票（13%）', currency:'人民币', industry:'化工原料制造', related:'否', license:'无', bizScope:'氟化工产品、氯碱化工产品、合成材料及其制品的生产、销售。', mainBiz:'氟化工、氯碱化工', tradingGoods:'萤石粉 CaF₂≥97%、萤石粉 CaF₂≥95%', equity:'国资委持股100%', intro:'巨化集团是以氟化工为主业的国有大型化工集团。', shortCode:'JH', province:'浙江省', city:'衢州市', regAddr:'浙江省衢州市巨化工业区', officeAddr:'浙江省衢州市巨化工业区行政楼', remark:'核心销售客户，优先保障供货', company:'玉门萤石运营管理有限公司', dept:'销售部', applicant:'运营管理员', manager:'运营管理员', applyDate:'2022-03-15' },
+  'BP-2022-002': { name:'浙江萤石化工有限公司', creditCode:'91330700200056789A', country:'中国大陆', orgType:'有限责任公司', partnerType:'客户', partnerCate:'核心合作伙伴', legal:'陈卫国', legalType:'自然人', idCard:'330702****5678', controller:'陈卫国', controllerTitle:'总经理', controllerPhone:'579-xxxx-4321', regNo:'330700000056789', estDate:'2005-06-12', capital:'8000', corpType:'生产 + 贸易', revenue:'5亿–20亿', taxType:'一般纳税人', taxRating:'A级', invoiceType:'增值税专用发票（13%）', currency:'人民币', industry:'化工原料制造', related:'否', license:'无', bizScope:'萤石化工产品的生产与销售；化工原料进出口贸易。', mainBiz:'萤石精加工、氟化工中间体', tradingGoods:'萤石粉 CaF₂≥97%、萤石粉 CaF₂≥95%', equity:'陈卫国持股60%，浙江化工投资集团持股40%', intro:'专注于萤石深加工，浙江省重要氟化工原料供应商。', shortCode:'ZYHG', province:'浙江省', city:'金华市', regAddr:'浙江省金华市金东区经济开发区', officeAddr:'浙江省金华市金东区经济开发区化工园区B栋', remark:'长期合作客户，账期30天', company:'玉门萤石运营管理有限公司', dept:'销售部', applicant:'运营管理员', manager:'运营管理员', applyDate:'2022-05-20' },
+  'BP-2023-001': { name:'玉门兴旺矿业有限公司', creditCode:'91620982300078901B', country:'中国大陆', orgType:'有限责任公司', partnerType:'供应商', partnerCate:'核心合作伙伴', legal:'张建国', legalType:'自然人', idCard:'620982****7890', controller:'张建国', controllerTitle:'董事长兼总经理', controllerPhone:'139-xxxx-1234', regNo:'620982000078901', estDate:'2008-04-15', capital:'2000', corpType:'生产型企业', revenue:'1亿–5亿', taxType:'一般纳税人', taxRating:'A级', invoiceType:'增值税专用发票（13%）', currency:'人民币', industry:'非金属矿采选', related:'否', license:'采矿许可证', licenseExpiry:'2028-12-31', bizScope:'萤石矿的开采、选矿、加工及销售；矿产品贸易。', mainBiz:'萤石粉生产；CaF₂≥97%粉、CaF₂≥95%粉', tradingGoods:'萤石粉 CaF₂≥97%、萤石粉 CaF₂≥95%', equity:'张建国持股70%，张氏家族信托持股30%', intro:'玉门地区规模最大的萤石开采与加工企业，年产能约6万吨。', shortCode:'YMXW', province:'甘肃省', city:'酒泉市', regAddr:'甘肃省酒泉市玉门市工业园区矿业路8号', officeAddr:'甘肃省酒泉市玉门市工业园区矿业路8号综合楼', remark:'主力供应商，优先采购', company:'玉门萤石运营管理有限公司', dept:'采购部', applicant:'采购员 · 王明', manager:'运营管理员', applyDate:'2023-01-10' },
+  'BP-2023-002': { name:'玉门众鑫萤石矿业', creditCode:'91620982400089012C', country:'中国大陆', orgType:'有限责任公司', partnerType:'供应商', partnerCate:'普通合作伙伴', legal:'李明辉', legalType:'自然人', idCard:'620982****8901', controller:'李明辉', controllerTitle:'总经理', controllerPhone:'135-xxxx-5678', regNo:'620982000089012', estDate:'2015-08-20', capital:'500', corpType:'生产型企业', revenue:'1亿以下', taxType:'一般纳税人', taxRating:'B级', invoiceType:'增值税专用发票（9%）', currency:'人民币', industry:'非金属矿采选', related:'否', license:'采矿许可证', licenseExpiry:'2026-09-30', bizScope:'萤石矿的开采与销售；矿产品初加工。', mainBiz:'萤石粉生产；CaF₂≥95%粉', tradingGoods:'萤石粉 CaF₂≥95%', equity:'李明辉持股51%，王建平持股49%', intro:'中小型矿企，采矿许可证即将到期，需关注续期。', shortCode:'YMZX', province:'甘肃省', city:'酒泉市', regAddr:'甘肃省酒泉市玉门市花海镇工业路3号', officeAddr:'甘肃省酒泉市玉门市花海镇工业路3号', remark:'授信额度已用92%，需关注额度预警', company:'玉门萤石运营管理有限公司', dept:'采购部', applicant:'采购员 · 王明', manager:'运营管理员', applyDate:'2023-03-05' },
+  'BP-2023-003': { name:'酒泉盛源矿业', creditCode:'91620900500090123D', country:'中国大陆', orgType:'有限责任公司', partnerType:'供应商', partnerCate:'核心合作伙伴', legal:'王富贵', legalType:'自然人', idCard:'620900****9012', controller:'王富贵', controllerTitle:'董事长', controllerPhone:'138-xxxx-9012', regNo:'620900000090123', estDate:'2011-03-18', capital:'3000', corpType:'生产型企业', revenue:'1亿–5亿', taxType:'一般纳税人', taxRating:'A级', invoiceType:'增值税专用发票（13%）', currency:'人民币', industry:'非金属矿采选', related:'否', license:'采矿许可证', licenseExpiry:'2029-06-30', bizScope:'萤石矿的开采、选矿及销售；矿产品贸易。', mainBiz:'萤石块矿、萤石粉；CaF₂≥90%、CaF₂≥95%', tradingGoods:'萤石粉 CaF₂≥90%、萤石粉 CaF₂≥95%', equity:'王富贵持股80%，盛源集团持股20%', intro:'资源储量充足，是区域重要供应商。', shortCode:'JQSY', province:'甘肃省', city:'酒泉市', regAddr:'甘肃省酒泉市肃州区工业园矿产路12号', officeAddr:'甘肃省酒泉市肃州区工业园矿产路12号', remark:'稳定供应商，品质稳定', company:'玉门萤石运营管理有限公司', dept:'采购部', applicant:'采购员 · 王明', manager:'运营管理员', applyDate:'2023-02-28' },
+  'BP-2023-004': { name:'玉门良运物流有限公司', creditCode:'91620982600012345E', country:'中国大陆', orgType:'有限责任公司', partnerType:'承运商', partnerCate:'核心合作伙伴', legal:'周良', legalType:'自然人', idCard:'620982****1111', controller:'周良', controllerTitle:'总经理', controllerPhone:'138-xxxx-1111', regNo:'620982000012345', estDate:'2016-07-01', capital:'1000', corpType:'服务型企业', revenue:'1亿以下', taxType:'一般纳税人', taxRating:'', invoiceType:'增值税专用发票（9%）', currency:'人民币', industry:'货物运输', related:'否', license:'道路运输许可证', licenseExpiry:'2027-07-01', bizScope:'道路货物运输；物流仓储；运输代理服务。', mainBiz:'大宗散货公路运输', tradingGoods:'', equity:'周良持股100%', intro:'西北至华东大宗散货运输，拥有重型卡车50余辆。', shortCode:'YMLY', province:'甘肃省', city:'酒泉市', regAddr:'甘肃省酒泉市玉门市物流园区运达路5号', officeAddr:'甘肃省酒泉市玉门市物流园区运达路5号调度楼', remark:'核心承运商', company:'玉门萤石运营管理有限公司', dept:'运营部', applicant:'运营管理员', manager:'运营管理员', applyDate:'2023-05-16' },
+  'BP-2024-001': { name:'嘉峪关矿冶有限公司', creditCode:'91620200700023456F', country:'中国大陆', orgType:'有限责任公司', partnerType:'供应商', partnerCate:'普通合作伙伴', legal:'赵俊峰', legalType:'自然人', idCard:'620200****3456', controller:'赵俊峰', controllerTitle:'总经理', controllerPhone:'187-xxxx-3456', regNo:'620200000023456', estDate:'2019-11-05', capital:'1200', corpType:'生产型企业', revenue:'1亿以下', taxType:'一般纳税人', taxRating:'A级', invoiceType:'增值税专用发票（13%）', currency:'人民币', industry:'非金属矿采选', related:'否', license:'采矿许可证', licenseExpiry:'2030-11-05', bizScope:'萤石矿及金属矿的采选、加工与销售。', mainBiz:'萤石块矿、萤石粉', tradingGoods:'萤石粉 CaF₂≥90%', equity:'赵俊峰持股55%，嘉峪关工业投资持股45%', intro:'新开发供应商，矿山储量较大，处于产能爬坡阶段。', shortCode:'JYGJY', province:'甘肃省', city:'嘉峪关市', regAddr:'甘肃省嘉峪关市新城区矿冶工业路16号', officeAddr:'甘肃省嘉峪关市新城区矿冶工业路16号', remark:'新增供应商，处于合作考察期', company:'玉门萤石运营管理有限公司', dept:'采购部', applicant:'采购员 · 王明', manager:'运营管理员', applyDate:'2024-01-08' },
+};
+
+// ── 编辑模式初始化 ────────────────────────────────────────
+const urlParams = new URLSearchParams(location.search);
+const editId = urlParams.get('id');
+const isEdit = urlParams.get('mode') === 'edit' && editId && partners[editId];
+
+if (isEdit) {
+  const p = partners[editId];
+  document.title = '编辑合作伙伴 · 萤石产业链平台';
+  document.getElementById('page-title').textContent = '编辑合作伙伴';
+  document.getElementById('page-desc').textContent = `${editId} · ${p.name} · 修改后提交审批`;
+  document.getElementById('btn-draft').textContent = '保存修改';
+  document.getElementById('btn-submit').textContent = '提交审批 →';
+
+  // 辅助：按 label 文字设置 select 值
+  function setSelect(labelText, value) {
+    document.querySelectorAll('.form-label').forEach(lbl => {
+      if (lbl.textContent.trim().replace(/[*\s]/g,'') === labelText.replace(/[*\s]/g,'')) {
+        const ctrl = lbl.closest('.form-item')?.querySelector('select.form-ctrl');
+        if (ctrl) {
+          for (let o of ctrl.options) { if (o.value === value || o.textContent === value) { ctrl.value = o.value; break; } }
+        }
+      }
+    });
+  }
+  // 辅助：按 placeholder 关键词设置 input 值
+  function setInput(placeholderKeyword, value) {
+    const el = document.querySelector(`input[placeholder*="${placeholderKeyword}"]`);
+    if (el) el.value = value;
+  }
+  // 辅助：按 placeholder 关键词设置 textarea 值
+  function setTextarea(placeholderKeyword, value) {
+    const el = document.querySelector(`textarea[placeholder*="${placeholderKeyword}"]`);
+    if (el) el.value = value;
+  }
+
+  // 申请信息 — 所属公司多选预填
+  const companyValues = Array.isArray(p.company) ? p.company : [p.company];
+  document.querySelectorAll('#company-group .check-chip').forEach(chip => {
+    const cb = chip.querySelector('input[type="checkbox"]');
+    const match = companyValues.includes(cb.value);
+    cb.checked = match;
+    chip.classList.toggle('checked', match);
+  });
+  setSelect('业务部门', p.dept);
+  const dateEl = document.querySelector('input[type="date"]');
+  if (dateEl) dateEl.value = p.applyDate;
+  setSelect('申请人', p.applicant);
+  setSelect('业务负责人', p.manager);
+  // 合作伙伴编码只读显示
+  const codeInput = document.querySelector('input[value="自动生成"]');
+  if (codeInput) codeInput.value = editId;
+
+  // 基本数据
+  setInput('18位统一社会信用代码', p.creditCode);
+  setSelect('国家', p.country);
+  setInput('企业全称', p.name);
+  setInput('简称或别名', p.nameRemark || '');
+  setSelect('组织性质', p.orgType);
+  setSelect('合作伙伴类型', p.partnerType);
+  setSelect('合作伙伴类别', p.partnerCate);
+  setInput('法人姓名', p.legal);
+  setSelect('法人类型', p.legalType);
+  setInput('18位身份证', p.idCard);
+  setInput('实际控制人', p.controller);
+  setInput('职务', p.controllerTitle);
+  setInput('实控人联系', p.controllerPhone);
+  setInput('注册登记号', p.regNo);
+  setInput('金额', p.capital);
+  setSelect('企业类型', p.corpType);
+  setSelect('营业收入', p.revenue);
+  setSelect('纳税人分类', p.taxType);
+  setSelect('纳税评级', p.taxRating);
+  setSelect('发票类型', p.invoiceType);
+  setSelect('交易币种', p.currency);
+  setSelect('行业', p.industry);
+  setSelect('是否为关联方', p.related);
+  if (p.license) setSelect('特殊证照', p.license);
+  if (p.licenseExpiry) {
+    const expEl = document.querySelector('input[type="date"]:last-of-type') || document.querySelectorAll('input[type="date"]')[1];
+    if (expEl) expEl.value = p.licenseExpiry;
+  }
+  setTextarea('经营范围', p.bizScope);
+  setTextarea('主营业务', p.mainBiz);
+  setTextarea('拟交易品种', p.tradingGoods);
+  setTextarea('股权结构', p.equity);
+  setTextarea('企业简介', p.intro);
+  setInput('拼音首字母简码', p.shortCode);
+
+  // 省市联动
+  const provSel = document.querySelector('select[onchange*="updateCity"]');
+  if (provSel && p.province) {
+    provSel.value = p.province;
+    updateCity(provSel);
+    setTimeout(() => {
+      const citySel = document.getElementById('city-select');
+      if (citySel) citySel.value = p.city;
+    }, 0);
+  }
+
+  setInput('注册地址', p.regAddr);
+  setInput('办公地址', p.officeAddr);
+  setTextarea('备注信息', p.remark);
+}
+
+// ── 提交 ─────────────────────────────────────────────────
+function submitPartner() {
+  const creditCode = document.querySelector('input[placeholder*="18位统一社会信用代码"]').value;
+  const name = document.querySelector('input[placeholder*="企业全称"]').value;
+  if (!creditCode || !name) {
+    alert('请填写必填项：统一社会信用代码、企业名称');
+    return;
+  }
+  const msg = isEdit ? '确认提交变更审批？' : '确认提交审批？提交后将进入业务负责人审批流程。';
+  if (confirm(msg)) {
+    window.location.href = isEdit ? 'partner-detail.html?id=' + editId : 'index.html';
+  }
+}
+</script>
+</body>
+</html>

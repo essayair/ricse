@@ -1,0 +1,967 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新建质检单 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.indicator-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:12px }
+.indicator-item {
+  background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:12px;transition:.2s;
+}
+.indicator-item.over-limit { background:var(--danger-bg);border-color:var(--danger-border) }
+.indicator-item.passed { background:var(--success-bg);border-color:var(--success-border) }
+.ind-name { font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px }
+.ind-limit { font-size:11px;color:var(--text-3);margin-bottom:8px }
+.ind-input { display:flex;align-items:center;gap:6px }
+.ind-hint { font-size:11px;margin-top:5px }
+
+/* 上传区 */
+.upload-zone {
+  border:2px dashed var(--border);border-radius:var(--radius-lg);
+  padding:32px;text-align:center;cursor:pointer;transition:.2s;
+  background:var(--surface-2);
+}
+.upload-zone:hover,.upload-zone.drag-over {
+  border-color:var(--primary);background:var(--primary-bg,#eff6ff);
+}
+.upload-zone-sm {
+  border:2px dashed var(--border);border-radius:var(--radius);
+  padding:16px;text-align:center;cursor:pointer;transition:.2s;background:var(--surface-2);
+}
+.upload-zone-sm:hover,.upload-zone-sm.drag-over { border-color:var(--primary);background:var(--primary-bg,#eff6ff) }
+
+/* 文件预览网格 */
+.file-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:16px }
+.file-card {
+  border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;
+  background:var(--surface);transition:.2s;position:relative;
+}
+.file-card.recognized { border-color:var(--success);box-shadow:0 0 0 2px var(--success-border) }
+.file-card.recognizing { border-color:var(--primary);animation:pulse-border 1s infinite }
+@keyframes pulse-border { 0%,100%{opacity:1}50%{opacity:.5} }
+.file-thumb {
+  width:100%;height:90px;object-fit:cover;display:block;
+  background:#0f172a;
+}
+.file-thumb-placeholder {
+  width:100%;height:90px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;background:#0f172a;
+}
+.file-info { padding:8px;font-size:11px }
+.file-name { font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px }
+.file-size { color:var(--text-3);margin-bottom:6px }
+.file-actions { display:flex;gap:4px }
+.file-del { position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.55);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff }
+.file-del:hover { background:var(--danger) }
+
+/* 识别结果 */
+.recog-result {
+  border:1px solid var(--success-border);border-radius:var(--radius);
+  background:var(--success-bg);padding:12px;margin-top:12px;
+}
+.recog-field { display:flex;align-items:center;gap:6px;margin-bottom:6px }
+.recog-field:last-child { margin-bottom:0 }
+.recog-tag { font-size:11px;background:var(--success);color:#fff;padding:1px 6px;border-radius:99px }
+
+/* 三方标签页 */
+.party-tabs { display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px }
+.party-tab { padding:8px 16px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-3);transition:.15s }
+.party-tab.active { border-bottom-color:var(--primary);color:var(--primary);font-weight:700 }
+.party-panel { display:none }
+.party-panel.active { display:block }
+
+/* 扣款计算 */
+.deduction-row { display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border) }
+
+/* 提交弹窗 */
+.modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center }
+.modal-box { background:var(--surface);border-radius:var(--radius-lg);width:480px;padding:28px;position:relative }
+
+/* spinner */
+@keyframes spin { to{transform:rotate(360deg)} }
+.spinner { display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="index.html" class="nav-item active">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html" class="link">质检化验</a><span class="bc-sep">›</span>
+      <span class="bc-cur">新建质检单</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">检</div><span>李化验员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">新建质检单</div>
+        <div class="page-desc">上传化验报告 → 自动识别填值 → 三方比对 → 系统判定合格 / 不合格 / 熔断</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-default" onclick="saveOnly()">仅保存草稿</button>
+        <button class="btn btn-primary" onclick="submitInspection()">提交出具结论 →</button>
+      </div>
+    </div>
+
+    <div style="max-width:880px">
+
+      <!-- ① 取样基本信息 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">取样基本信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">关联批次</label>
+              <select class="form-ctrl" id="batch" onchange="loadBatchInfo()">
+                <option value="">请选择批次…</option>
+                <option value="PC-0610-02">PC-0610-02 · 萤石粉97% · 玉门兴旺 · 42吨</option>
+                <option value="PC-0609-05">PC-0609-05 · 萤石粉90% · 酒泉盛源 · 30吨</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">关联运单</label>
+              <input class="form-ctrl" type="text" id="waybill-ref" placeholder="自动带出" readonly style="background:var(--surface-2)">
+            </div>
+            <div class="form-item">
+              <label class="form-label">关联磅单</label>
+              <input class="form-ctrl" type="text" id="weigh-ref" placeholder="自动带出" readonly style="background:var(--surface-2)">
+            </div>
+            <div class="form-item">
+              <label class="form-label">物料品种</label>
+              <input class="form-ctrl" type="text" id="material-ref" placeholder="自动带出" readonly style="background:var(--surface-2)">
+            </div>
+            <div class="form-item">
+              <label class="form-label">供应商</label>
+              <input class="form-ctrl" type="text" id="supplier-ref" placeholder="自动带出" readonly style="background:var(--surface-2)">
+            </div>
+            <div class="form-item">
+              <label class="form-label">磅单净重（吨）</label>
+              <input class="form-ctrl" type="number" step="0.01" id="net-weight" placeholder="自动带出" readonly style="background:var(--surface-2)">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">取样时间</label>
+              <input class="form-ctrl" type="datetime-local" value="2026-06-11T09:00">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">化验员（我方）</label>
+              <select class="form-ctrl">
+                <option>李化验员</option>
+                <option>王化验员</option>
+                <option>张化验员</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">数据来源</label>
+              <select class="form-ctrl" id="data-source">
+                <option value="device">设备直连（水分仪/快检仪）</option>
+                <option value="manual">人工录入</option>
+                <option value="ocr">附件识别（OCR）</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-item mt-3">
+            <label class="form-label">留样记录</label>
+            <div class="flex-c gap-3">
+              <input class="form-ctrl" type="text" placeholder="留样编号 #1（我方存留）" style="flex:1">
+              <input class="form-ctrl" type="text" placeholder="留样编号 #2（供方认可）" style="flex:1">
+              <input class="form-ctrl" type="text" placeholder="留样编号 #3（第三方备用）" style="flex:1">
+            </div>
+            <div class="form-hint">三份留样须在场双方签字确认，作为争议复检依据</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② 附件上传 + 自动识别（我方） -->
+      <div class="card mb-4">
+        <div class="card-hd">
+          <span class="card-title">附件上传 · 我方化验报告</span>
+          <div class="flex-c gap-2">
+            <span class="badge b-default text-xs">支持 JPG / PNG / PDF</span>
+            <span class="badge b-primary text-xs">✨ 自动识别</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="form-grid fg3 mb-4">
+            <div class="form-item">
+              <label class="form-label req">化验单编号</label>
+              <input class="form-ctrl" type="text" id="main-doc-no" placeholder="如：HY-2026-06-0089">
+              <div class="form-hint">纸质化验单上的编号，与附件对应</div>
+            </div>
+            <div class="form-item">
+              <label class="form-label">化验室名称</label>
+              <input class="form-ctrl" type="text" placeholder="如：玉门堆场化验室">
+            </div>
+            <div class="form-item">
+              <label class="form-label">化验单日期</label>
+              <input class="form-ctrl" type="date" value="2026-06-11">
+            </div>
+          </div>
+          <!-- 拖拽上传区 -->
+          <div class="upload-zone" id="upload-zone-main"
+            ondragover="handleDragOver(event,'main')"
+            ondragleave="handleDragLeave(event,'main')"
+            ondrop="handleDrop(event,'main')"
+            onclick="document.getElementById('file-input-main').click()">
+            <div style="font-size:36px;margin-bottom:8px">📎</div>
+            <div class="fw-700 mb-1">点击选择文件或拖拽到此处</div>
+            <div class="text-sm text-muted">支持化验单图片（JPG/PNG）和检测报告（PDF）</div>
+            <div class="text-xs text-muted mt-1">单文件 ≤ 20MB · 可同时上传多个文件</div>
+            <input type="file" id="file-input-main" multiple accept="image/jpeg,image/png,application/pdf" style="display:none" onchange="handleFileInput(this,'main')">
+          </div>
+
+          <!-- 文件预览网格 -->
+          <div class="file-grid" id="file-grid-main"></div>
+
+          <!-- 批量识别按钮 -->
+          <div id="batch-recog-main" style="display:none;margin-top:12px">
+            <button class="btn btn-primary btn-sm" onclick="recognizeAll('main')">✨ 一键识别全部文件</button>
+            <span class="text-xs text-muted ml-2">识别结果将自动填入下方化验指标</span>
+          </div>
+
+          <!-- 识别结果汇总 -->
+          <div id="recog-summary-main" class="recog-result" style="display:none;margin-top:12px">
+            <div class="flex-between mb-2">
+              <div class="fw-700 text-sm">📋 识别结果（我方化验报告）</div>
+              <div class="flex-c gap-2">
+                <button class="btn btn-success btn-sm" onclick="applyRecognition('main')">应用到化验指标 ✓</button>
+                <button class="btn btn-default btn-xs" onclick="dismissRecog('main')">忽略</button>
+              </div>
+            </div>
+            <div id="recog-fields-main"></div>
+            <div class="text-xs text-muted mt-2" id="recog-source-main"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ③ 化验指标录入 -->
+      <div class="card mb-4">
+        <div class="card-hd">
+          <span class="card-title">化验指标录入</span>
+          <span class="text-sm text-muted">超限实时标红 · 达到拒收红线触发熔断</span>
+        </div>
+        <div class="card-body">
+          <div id="spec-hint" class="alert alert-info mb-4" style="display:none">
+            <span>📋</span>
+            <div class="text-sm" id="spec-text"></div>
+          </div>
+          <div class="indicator-grid">
+            <div class="indicator-item" id="ind-grade">
+              <div class="ind-name">品位 CaF₂ (%)</div>
+              <div class="ind-limit" id="limit-grade">标准：≥ —</div>
+              <div class="ind-input">
+                <input class="form-ctrl" type="number" step="0.1" placeholder="实测值" id="val-grade" oninput="checkIndicators()">
+                <span class="text-muted">%</span>
+              </div>
+              <div class="ind-hint" id="hint-grade"></div>
+            </div>
+            <div class="indicator-item" id="ind-moisture">
+              <div class="ind-name">水分 (%)</div>
+              <div class="ind-limit" id="limit-moisture">标准：≤ — &nbsp;红线：≤1.5%</div>
+              <div class="ind-input">
+                <input class="form-ctrl" type="number" step="0.01" placeholder="实测值" id="val-moisture" oninput="checkIndicators()">
+                <span class="text-muted">%</span>
+              </div>
+              <div class="ind-hint" id="hint-moisture"></div>
+            </div>
+            <div class="indicator-item" id="ind-impurity">
+              <div class="ind-name">杂质 (%)</div>
+              <div class="ind-limit" id="limit-impurity">标准：≤ — &nbsp;红线：≤1.0%</div>
+              <div class="ind-input">
+                <input class="form-ctrl" type="number" step="0.01" placeholder="实测值" id="val-impurity" oninput="checkIndicators()">
+                <span class="text-muted">%</span>
+              </div>
+              <div class="ind-hint" id="hint-impurity"></div>
+            </div>
+          </div>
+          <div id="conclusion-preview" class="mt-4" style="display:none">
+            <div class="divider"></div>
+            <div class="flex-c gap-3">
+              <span class="text-sm fw-700">系统判定结论：</span>
+              <span id="conclusion-badge"></span>
+              <span id="conclusion-detail" class="text-sm text-muted"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ④ 三方化验数据 -->
+      <div class="card mb-4">
+        <div class="card-hd">
+          <span class="card-title">三方化验数据对比</span>
+          <span class="text-sm text-muted">偏差 &gt; 0.3% 触发预警 · 第三方结论为最终仲裁依据</span>
+        </div>
+        <div class="card-body">
+          <div class="party-tabs">
+            <div class="party-tab active" onclick="switchParty(this,'mine')">我方化验</div>
+            <div class="party-tab" onclick="switchParty(this,'buyer')">合作方检测</div>
+            <div class="party-tab" onclick="switchParty(this,'third')">第三方检测</div>
+          </div>
+
+          <!-- 我方面板 -->
+          <div class="party-panel active" id="panel-mine">
+            <div class="alert alert-info mb-3">
+              <span>ℹ</span>
+              <div class="text-sm">我方化验数据来自上方「化验指标录入」，实时同步。</div>
+            </div>
+            <div class="g3">
+              <div style="text-align:center;padding:16px;background:var(--surface-2);border-radius:var(--radius)">
+                <div class="text-xs text-muted mb-1">品位 CaF₂</div>
+                <div style="font-size:22px;font-weight:800;color:var(--primary)" id="mine-grade">—</div>
+                <div class="text-xs text-muted">%</div>
+              </div>
+              <div style="text-align:center;padding:16px;background:var(--surface-2);border-radius:var(--radius)">
+                <div class="text-xs text-muted mb-1">水分</div>
+                <div style="font-size:22px;font-weight:800;color:var(--primary)" id="mine-moisture">—</div>
+                <div class="text-xs text-muted">%</div>
+              </div>
+              <div style="text-align:center;padding:16px;background:var(--surface-2);border-radius:var(--radius)">
+                <div class="text-xs text-muted mb-1">杂质</div>
+                <div style="font-size:22px;font-weight:800;color:var(--primary)" id="mine-impurity">—</div>
+                <div class="text-xs text-muted">%</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 合作方面板 -->
+          <div class="party-panel" id="panel-buyer">
+            <div class="alert alert-warn mb-3">
+              <span>⚠</span>
+              <div class="text-sm">合作方检测数据可手动录入，也可上传验收单图片自动识别。偏差 &gt;0.3% 将触发预警。</div>
+            </div>
+            <div class="form-grid fg3 mb-3">
+              <div class="form-item">
+                <label class="form-label req">合作方检测单编号</label>
+                <input class="form-ctrl" type="text" id="buyer-doc-no" placeholder="如：JH-QC-20260611-042">
+                <div class="form-hint">合作方出具的纸质合作方检测单编号</div>
+              </div>
+              <div class="form-item">
+                <label class="form-label">合作方化验员</label>
+                <input class="form-ctrl" type="text" placeholder="姓名">
+              </div>
+              <div class="form-item">
+                <label class="form-label">合作方检测时间</label>
+                <input class="form-ctrl" type="datetime-local">
+              </div>
+              <div class="form-item">
+                <label class="form-label">合作方品位 (%)</label>
+                <input class="form-ctrl" type="number" step="0.1" id="buyer-grade" placeholder="验收单值" oninput="calcDeviation()">
+              </div>
+              <div class="form-item">
+                <label class="form-label">合作方水分 (%)</label>
+                <input class="form-ctrl" type="number" step="0.01" id="buyer-moisture" placeholder="验收单值" oninput="calcDeviation()">
+              </div>
+              <div class="form-item">
+                <label class="form-label">合作方杂质 (%)</label>
+                <input class="form-ctrl" type="number" step="0.01" id="buyer-impurity" placeholder="验收单值" oninput="calcDeviation()">
+              </div>
+            </div>
+            <!-- 合作方附件上传 -->
+            <div class="upload-zone-sm" id="upload-zone-buyer"
+              ondragover="handleDragOver(event,'buyer')"
+              ondragleave="handleDragLeave(event,'buyer')"
+              ondrop="handleDrop(event,'buyer')"
+              onclick="document.getElementById('file-input-buyer').click()">
+              <span style="font-size:20px">📎</span>
+              <span class="text-sm fw-700 ml-2">上传合作方检测单</span>
+              <span class="text-xs text-muted ml-2">JPG / PNG / PDF · 自动识别填值</span>
+              <input type="file" id="file-input-buyer" multiple accept="image/jpeg,image/png,application/pdf" style="display:none" onchange="handleFileInput(this,'buyer')">
+            </div>
+            <div class="file-grid" id="file-grid-buyer" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))"></div>
+            <div id="recog-summary-buyer" class="recog-result" style="display:none;margin-top:12px">
+              <div class="flex-between mb-2">
+                <div class="fw-700 text-sm">📋 识别结果（合作方检测单）</div>
+                <div class="flex-c gap-2">
+                  <button class="btn btn-success btn-sm" onclick="applyRecognition('buyer')">填入合作方数值 ✓</button>
+                  <button class="btn btn-default btn-xs" onclick="dismissRecog('buyer')">忽略</button>
+                </div>
+              </div>
+              <div id="recog-fields-buyer"></div>
+            </div>
+            <!-- 偏差显示 -->
+            <div id="deviation-result" style="display:none;margin-top:12px">
+              <div class="divider mb-3"></div>
+              <div class="fw-700 text-sm mb-2">与我方数据偏差：</div>
+              <div class="flex-c gap-3" id="deviation-items"></div>
+            </div>
+          </div>
+
+          <!-- 第三方面板 -->
+          <div class="party-panel" id="panel-third">
+            <div class="alert alert-info mb-3">
+              <span>ℹ</span>
+              <div class="text-sm">第三方检测结论为最终仲裁依据。上传正式报告后可自动识别数值。</div>
+            </div>
+            <div class="form-grid fg3 mb-3">
+              <div class="form-item">
+                <label class="form-label">检测机构</label>
+                <input class="form-ctrl" type="text" id="third-org" placeholder="如：甘肃省矿产品检测中心">
+              </div>
+              <div class="form-item">
+                <label class="form-label req">检测报告编号</label>
+                <input class="form-ctrl" type="text" id="third-no" placeholder="如：GSMP-2026-06-1183">
+                <div class="form-hint">第三方机构出具的纸质报告编号</div>
+              </div>
+              <div class="form-item">
+                <label class="form-label">出具日期</label>
+                <input class="form-ctrl" type="date">
+              </div>
+              <div class="form-item">
+                <label class="form-label">第三方品位 (%)</label>
+                <input class="form-ctrl" type="number" step="0.1" id="third-grade" placeholder="报告值">
+              </div>
+              <div class="form-item">
+                <label class="form-label">第三方水分 (%)</label>
+                <input class="form-ctrl" type="number" step="0.01" id="third-moisture" placeholder="报告值">
+              </div>
+              <div class="form-item">
+                <label class="form-label">第三方杂质 (%)</label>
+                <input class="form-ctrl" type="number" step="0.01" id="third-impurity" placeholder="报告值">
+              </div>
+            </div>
+            <!-- 第三方附件上传 -->
+            <div class="upload-zone-sm" id="upload-zone-third"
+              ondragover="handleDragOver(event,'third')"
+              ondragleave="handleDragLeave(event,'third')"
+              ondrop="handleDrop(event,'third')"
+              onclick="document.getElementById('file-input-third').click()">
+              <span style="font-size:20px">📄</span>
+              <span class="text-sm fw-700 ml-2">上传第三方检测报告</span>
+              <span class="text-xs text-muted ml-2">JPG / PNG / PDF · 自动识别报告数值</span>
+              <input type="file" id="file-input-third" multiple accept="image/jpeg,image/png,application/pdf" style="display:none" onchange="handleFileInput(this,'third')">
+            </div>
+            <div class="file-grid" id="file-grid-third" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))"></div>
+            <div id="recog-summary-third" class="recog-result" style="display:none;margin-top:12px">
+              <div class="flex-between mb-2">
+                <div class="fw-700 text-sm">📋 识别结果（第三方报告）</div>
+                <div class="flex-c gap-2">
+                  <button class="btn btn-success btn-sm" onclick="applyRecognition('third')">填入第三方数值 ✓</button>
+                  <button class="btn btn-default btn-xs" onclick="dismissRecog('third')">忽略</button>
+                </div>
+              </div>
+              <div id="recog-fields-third"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⑤ 扣水扣杂计算 -->
+      <div class="card mb-4" id="deduction-card" style="display:none">
+        <div class="card-hd"><span class="card-title">扣水扣杂 · 结算扣款预算</span></div>
+        <div class="card-body">
+          <div class="deduction-row"><div><div class="text-sm fw-700">磅单净重</div><div class="text-xs text-muted">结算基准</div></div><div class="text-sm fw-700" id="ded-net">— 吨</div></div>
+          <div class="deduction-row"><div><div class="text-sm fw-700">扣水数量</div><div class="text-xs text-muted" id="ded-moisture-detail">水分合格，无扣水</div></div><div class="text-sm" id="ded-moisture-qty" style="color:var(--warning)">0 吨</div></div>
+          <div class="deduction-row"><div><div class="text-sm fw-700">扣杂数量</div><div class="text-xs text-muted" id="ded-impurity-detail">杂质合格，无扣杂</div></div><div class="text-sm" id="ded-impurity-qty" style="color:var(--warning)">0 吨</div></div>
+          <div class="deduction-row" style="border-bottom:none"><div><div class="text-sm fw-700 text-success">结算净重</div><div class="text-xs text-muted">= 净重 - 扣水 - 扣杂</div></div><div style="font-size:18px;font-weight:800;color:var(--success)" id="ded-settle-net">— 吨</div></div>
+          <div class="divider mt-3 mb-3"></div>
+          <div class="deduction-row" style="border-bottom:none"><div><div class="text-sm fw-700">结算扣款</div><div class="text-xs text-muted" id="ded-deduct-detail">扣水 + 扣杂</div></div><div style="font-size:16px;font-weight:800;color:var(--danger)" id="ded-total">¥ —</div></div>
+          <div class="alert alert-info mt-3"><span>ℹ</span><div class="text-sm">扣水：水分每超0.1%扣¥10/吨；扣杂：杂质每超0.1%扣¥8/吨</div></div>
+        </div>
+      </div>
+
+      <!-- ⑥ 备注 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">备注</span></div>
+        <div class="card-body">
+          <textarea class="form-ctrl" placeholder="化验特殊情况、复检说明、留样位置…" rows="3"></textarea>
+        </div>
+      </div>
+
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-default" onclick="saveOnly()">保存草稿</button>
+        <button class="btn btn-primary" onclick="submitInspection()">提交出具结论 →</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+</div>
+
+<!-- 提交后弹窗 -->
+<div class="modal-overlay" id="submit-modal">
+  <div class="modal-box">
+    <div class="card-title mb-2" id="submit-title">质检结论已出具</div>
+    <div class="mb-4" id="submit-body"></div>
+    <div class="flex-c gap-2" style="justify-content:flex-end" id="submit-actions"></div>
+  </div>
+</div>
+
+<script>
+/* ─── 基础数据 ─────────────────────────────── */
+const specs = {
+  '97': { grade: 97.0, moisture: 0.5, impurity: 0.3 },
+  '95': { grade: 95.0, moisture: 1.0, impurity: 0.5 },
+  '90': { grade: 90.0, moisture: 1.5, impurity: 0.8 },
+};
+const batchMap = {
+  'PC-0610-02': { material: '萤石粉 CaF₂≥97%', grade: '97', supplier: '玉门兴旺矿业', waybill: 'WB-20260610-06', weigh: 'WS-20260610-008', net: 42 },
+  'PC-0609-05': { material: '萤石粉 CaF₂≥90%', grade: '90', supplier: '酒泉盛源矿业', waybill: 'WB-20260609-008', weigh: 'WS-20260609-012', net: 30 },
+};
+
+// 模拟 OCR 识别结果库（按批次等级）
+const mockOcrResults = {
+  main: {
+    '97': { grade: 97.3, moisture: 0.28, impurity: 0.11, confidence: 96, docNo: 'HY-2026-06-0089' },
+    '95': { grade: 95.1, moisture: 0.87, impurity: 0.42, confidence: 94, docNo: 'HY-2026-06-0091' },
+    '90': { grade: 90.4, moisture: 1.32, impurity: 0.71, confidence: 93, docNo: 'HY-2026-06-0090' },
+    default: { grade: 97.2, moisture: 0.31, impurity: 0.14, confidence: 95, docNo: 'HY-2026-06-0088' },
+  },
+  buyer: {
+    '97': { grade: 97.0, moisture: 0.35, impurity: 0.15, confidence: 91, docNo: 'JH-QC-20260611-042' },
+    '95': { grade: 94.8, moisture: 0.92, impurity: 0.45, confidence: 89, docNo: 'JH-QC-20260611-039' },
+    '90': { grade: 90.1, moisture: 1.38, impurity: 0.73, confidence: 88, docNo: 'JH-QC-20260611-041' },
+    default: { grade: 96.9, moisture: 0.37, impurity: 0.16, confidence: 90, docNo: 'JH-QC-20260611-040' },
+  },
+  third: {
+    '97': { grade: 97.15, moisture: 0.30, impurity: 0.12, confidence: 98, docNo: 'GSMP-2026-06-1183' },
+    '90': { grade: 90.2, moisture: 1.35, impurity: 0.72, confidence: 97, docNo: 'GSMP-2026-06-1182' },
+    default: { grade: 97.1, moisture: 0.32, impurity: 0.13, confidence: 97, docNo: 'GSMP-2026-06-1184' },
+  },
+};
+
+let currentGrade = null;
+let lastConclusion = '';
+let fileStore = { main: [], buyer: [], third: [] };
+let pendingRecog = { main: null, buyer: null, third: null };
+let fileIdCounter = 0;
+
+/* ─── URL 参数预填 ─────────────────────────── */
+window.onload = function () {
+  const urlBatch = new URLSearchParams(location.search).get('batch');
+  if (urlBatch && document.querySelector('#batch option[value="' + urlBatch + '"]')) {
+    document.getElementById('batch').value = urlBatch;
+    loadBatchInfo();
+  }
+};
+
+/* ─── 批次信息带出 ──────────────────────────── */
+function loadBatchInfo() {
+  const b = batchMap[document.getElementById('batch').value];
+  if (!b) return;
+  document.getElementById('material-ref').value = b.material;
+  document.getElementById('supplier-ref').value = b.supplier;
+  document.getElementById('waybill-ref').value = b.waybill;
+  document.getElementById('weigh-ref').value = b.weigh;
+  document.getElementById('net-weight').value = b.net;
+  currentGrade = b.grade;
+  const sp = specs[b.grade];
+  if (sp) {
+    document.getElementById('spec-hint').style.display = 'flex';
+    document.getElementById('spec-text').innerHTML =
+      `<strong>适用规范（${b.material}）：</strong>品位 ≥${sp.grade}%，水分 ≤${sp.moisture}%，杂质 ≤${sp.impurity}%`;
+    document.getElementById('limit-grade').textContent = `标准：≥ ${sp.grade}%`;
+    document.getElementById('limit-moisture').textContent = `标准：≤ ${sp.moisture}%  红线：≤1.5%`;
+    document.getElementById('limit-impurity').textContent = `标准：≤ ${sp.impurity}%  红线：≤1.0%`;
+  }
+  updateDeductionCard();
+}
+
+/* ─── 文件上传处理 ──────────────────────────── */
+function handleDragOver(e, ctx) {
+  e.preventDefault();
+  document.getElementById('upload-zone-' + ctx).classList.add('drag-over');
+}
+function handleDragLeave(e, ctx) {
+  document.getElementById('upload-zone-' + ctx).classList.remove('drag-over');
+}
+function handleDrop(e, ctx) {
+  e.preventDefault();
+  document.getElementById('upload-zone-' + ctx).classList.remove('drag-over');
+  addFiles(Array.from(e.dataTransfer.files), ctx);
+}
+function handleFileInput(input, ctx) {
+  addFiles(Array.from(input.files), ctx);
+  input.value = '';
+}
+
+function addFiles(files, ctx) {
+  const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+  files.forEach(f => {
+    if (!allowed.includes(f.type)) {
+      alert(`「${f.name}」格式不支持，仅支持 JPG / PNG / PDF`);
+      return;
+    }
+    if (f.size > 20 * 1024 * 1024) {
+      alert(`「${f.name}」超过 20MB 限制`);
+      return;
+    }
+    const id = 'f' + (++fileIdCounter);
+    const entry = { id, file: f, name: f.name, size: f.size, type: f.type, status: 'ready', url: null };
+    if (f.type.startsWith('image/')) entry.url = URL.createObjectURL(f);
+    fileStore[ctx].push(entry);
+  });
+  renderFileGrid(ctx);
+  const batchBtn = document.getElementById('batch-recog-' + ctx);
+  if (batchBtn) batchBtn.style.display = fileStore[ctx].length ? 'flex' : 'none';
+}
+
+function renderFileGrid(ctx) {
+  const grid = document.getElementById('file-grid-' + ctx);
+  if (!grid) return;
+  grid.innerHTML = fileStore[ctx].map(entry => {
+    const isPdf = entry.type === 'application/pdf';
+    const kb = (entry.size / 1024).toFixed(0);
+    const statusBadge = entry.status === 'recognized'
+      ? `<span style="color:var(--success);font-size:10px">✓ 已识别</span>`
+      : entry.status === 'recognizing'
+      ? `<span class="spinner"></span>`
+      : `<span style="color:var(--text-3);font-size:10px">待识别</span>`;
+    const thumb = isPdf
+      ? `<div class="file-thumb-placeholder"><div style="font-size:28px">📄</div><div style="font-size:10px;color:#94a3b8">PDF</div></div>`
+      : `<img class="file-thumb" src="${entry.url}" alt="${entry.name}">`;
+    const recogBtn = entry.status !== 'recognized'
+      ? `<button class="btn btn-primary btn-xs" style="flex:1" onclick="recognizeFile('${entry.id}','${ctx}')">✨识别</button>`
+      : `<button class="btn btn-success btn-xs" style="flex:1" disabled>✓ 完成</button>`;
+    return `<div class="file-card ${entry.status === 'recognized' ? 'recognized' : entry.status === 'recognizing' ? 'recognizing' : ''}" id="card-${entry.id}">
+      <button class="file-del" onclick="removeFile('${entry.id}','${ctx}')">✕</button>
+      ${thumb}
+      <div class="file-info">
+        <div class="file-name" title="${entry.name}">${entry.name}</div>
+        <div class="file-size">${kb} KB &nbsp; ${statusBadge}</div>
+        <div class="file-actions">${recogBtn}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function removeFile(id, ctx) {
+  fileStore[ctx] = fileStore[ctx].filter(f => f.id !== id);
+  renderFileGrid(ctx);
+  const batchBtn = document.getElementById('batch-recog-' + ctx);
+  if (batchBtn) batchBtn.style.display = fileStore[ctx].length ? 'flex' : 'none';
+}
+
+/* ─── 自动识别（模拟 OCR）───────────────────── */
+function recognizeFile(id, ctx) {
+  const entry = fileStore[ctx].find(f => f.id === id);
+  if (!entry) return;
+  entry.status = 'recognizing';
+  renderFileGrid(ctx);
+
+  // 模拟识别延迟：1.2~2s
+  const delay = 1200 + Math.random() * 800;
+  setTimeout(() => {
+    entry.status = 'recognized';
+    renderFileGrid(ctx);
+    showRecogResult(ctx, entry);
+  }, delay);
+}
+
+function recognizeAll(ctx) {
+  const pending = fileStore[ctx].filter(f => f.status === 'ready');
+  if (!pending.length) { showRecogResult(ctx, fileStore[ctx][0]); return; }
+  pending.forEach((entry, i) => {
+    entry.status = 'recognizing';
+    renderFileGrid(ctx);
+    setTimeout(() => {
+      entry.status = 'recognized';
+      renderFileGrid(ctx);
+      if (i === pending.length - 1) showRecogResult(ctx, entry);
+    }, 1200 + i * 400 + Math.random() * 500);
+  });
+}
+
+function showRecogResult(ctx, entry) {
+  const grade = currentGrade || '97';
+  const pool = mockOcrResults[ctx] || mockOcrResults.main;
+  const result = pool[grade] || pool.default;
+
+  // 给不同文件加轻微随机抖动，使识别更真实
+  const jitter = v => +(v + (Math.random() - 0.5) * 0.04).toFixed(2);
+  const r = { grade: jitter(result.grade), moisture: jitter(result.moisture), impurity: jitter(result.impurity), confidence: result.confidence };
+
+  pendingRecog[ctx] = r;
+
+  const fieldsEl = document.getElementById('recog-fields-' + ctx);
+  if (!fieldsEl) return;
+  fieldsEl.innerHTML = `
+    <div class="recog-field"><span class="recog-tag">单据编号</span><span class="fw-700 ml-2">${r.docNo}</span></div>
+    <div class="recog-field"><span class="recog-tag">品位 CaF₂</span><span class="fw-700 ml-2">${r.grade.toFixed(2)} %</span></div>
+    <div class="recog-field"><span class="recog-tag">水分</span><span class="fw-700 ml-2">${r.moisture.toFixed(2)} %</span></div>
+    <div class="recog-field"><span class="recog-tag">杂质</span><span class="fw-700 ml-2">${r.impurity.toFixed(2)} %</span></div>
+    <div class="text-xs text-muted mt-1">识别置信度 ${r.confidence}% · 文件：${entry.name}</div>
+  `;
+  const sourceEl = document.getElementById('recog-source-' + ctx);
+  if (sourceEl) sourceEl.textContent = `识别来自：${entry.name}（${(entry.size/1024).toFixed(0)} KB）`;
+
+  document.getElementById('recog-summary-' + ctx).style.display = 'block';
+}
+
+function applyRecognition(ctx) {
+  const r = pendingRecog[ctx];
+  if (!r) return;
+
+  if (ctx === 'main') {
+    if (r.docNo && !document.getElementById('main-doc-no').value)
+      document.getElementById('main-doc-no').value = r.docNo;
+    document.getElementById('val-grade').value = r.grade.toFixed(2);
+    document.getElementById('val-moisture').value = r.moisture.toFixed(2);
+    document.getElementById('val-impurity').value = r.impurity.toFixed(2);
+    document.getElementById('data-source').value = 'ocr';
+    checkIndicators();
+    document.getElementById('recog-summary-main').style.display = 'none';
+    document.getElementById('ind-grade').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else if (ctx === 'buyer') {
+    if (r.docNo && !document.getElementById('buyer-doc-no').value)
+      document.getElementById('buyer-doc-no').value = r.docNo;
+    document.getElementById('buyer-grade').value = r.grade.toFixed(2);
+    document.getElementById('buyer-moisture').value = r.moisture.toFixed(2);
+    document.getElementById('buyer-impurity').value = r.impurity.toFixed(2);
+    calcDeviation();
+    document.getElementById('recog-summary-buyer').style.display = 'none';
+    document.querySelectorAll('.party-tab')[1].click();
+  } else if (ctx === 'third') {
+    if (r.docNo && !document.getElementById('third-no').value)
+      document.getElementById('third-no').value = r.docNo;
+    document.getElementById('third-grade').value = r.grade.toFixed(2);
+    document.getElementById('third-moisture').value = r.moisture.toFixed(2);
+    document.getElementById('third-impurity').value = r.impurity.toFixed(2);
+    document.getElementById('recog-summary-third').style.display = 'none';
+  }
+}
+
+function dismissRecog(ctx) {
+  document.getElementById('recog-summary-' + ctx).style.display = 'none';
+  pendingRecog[ctx] = null;
+}
+
+/* ─── 化验指标实时校验 ──────────────────────── */
+function checkIndicators() {
+  if (!currentGrade) return;
+  const sp = specs[currentGrade];
+  const grade = parseFloat(document.getElementById('val-grade').value);
+  const moisture = parseFloat(document.getElementById('val-moisture').value);
+  const impurity = parseFloat(document.getElementById('val-impurity').value);
+
+  // 同步到我方面板
+  document.getElementById('mine-grade').textContent = isNaN(grade) ? '—' : grade.toFixed(2);
+  document.getElementById('mine-moisture').textContent = isNaN(moisture) ? '—' : moisture.toFixed(2);
+  document.getElementById('mine-impurity').textContent = isNaN(impurity) ? '—' : impurity.toFixed(2);
+
+  let isFuse = false, isPass = true;
+
+  function checkField(elId, hintId, val, limit, fuseLine, unit, deductRate) {
+    const el = document.getElementById(elId), hint = document.getElementById(hintId);
+    if (isNaN(val)) { el.className = 'indicator-item'; hint.innerHTML = ''; return; }
+    if (fuseLine && val > fuseLine) {
+      el.className = 'indicator-item over-limit';
+      hint.innerHTML = `<span style="color:var(--danger)">🔴 超过拒收红线（${fuseLine}%）→ 触发熔断</span>`;
+      isFuse = true; isPass = false;
+    } else if (unit === 'ge' ? val < limit : val > limit) {
+      el.className = 'indicator-item over-limit';
+      if (unit === 'ge') {
+        if (val < limit - 2) { isFuse = true; isPass = false; hint.innerHTML = `<span style="color:var(--danger)">🔴 品位偏低超 2%，触发熔断</span>`; }
+        else { isPass = false; hint.innerHTML = `<span style="color:var(--warning)">⚠ 低于标准，需协商处理</span>`; }
+      } else {
+        isPass = false;
+        const excess = ((val - limit) / 0.1);
+        hint.innerHTML = `<span style="color:var(--warning)">⚠ 超标 ${(val - limit).toFixed(2)}%，扣款 ¥${(excess * deductRate).toFixed(0)}/吨</span>`;
+      }
+    } else {
+      el.className = 'indicator-item passed';
+      hint.innerHTML = `<span style="color:var(--success)">✓ 合格</span>`;
+    }
+  }
+
+  checkField('ind-grade', 'hint-grade', grade, sp.grade, null, 'ge', 0);
+  checkField('ind-moisture', 'hint-moisture', moisture, sp.moisture, 1.5, 'le', 10);
+  checkField('ind-impurity', 'hint-impurity', impurity, sp.impurity, 1.0, 'le', 8);
+
+  const hasAll = !isNaN(grade) && !isNaN(moisture) && !isNaN(impurity);
+  if (hasAll) {
+    document.getElementById('conclusion-preview').style.display = 'flex';
+    const badge = document.getElementById('conclusion-badge');
+    const detail = document.getElementById('conclusion-detail');
+    if (isFuse) {
+      badge.innerHTML = '<span class="badge b-danger">熔断</span>';
+      detail.textContent = '批次将被锁定，需协商折价或退货';
+      lastConclusion = 'fuse';
+    } else if (isPass) {
+      badge.innerHTML = '<span class="badge b-success">合格</span>';
+      detail.textContent = '批次可入库，自动触发结算流程';
+      lastConclusion = 'pass';
+    } else {
+      badge.innerHTML = '<span class="badge b-warning">不合格（扣款处理）</span>';
+      detail.textContent = '按扣水扣杂规则结算折扣';
+      lastConclusion = 'deduct';
+    }
+  } else {
+    document.getElementById('conclusion-preview').style.display = 'none';
+  }
+  updateDeductionCard();
+  calcDeviation();
+}
+
+/* ─── 扣水扣杂计算 ──────────────────────────── */
+function updateDeductionCard() {
+  const sp = currentGrade ? specs[currentGrade] : null;
+  const b = batchMap[document.getElementById('batch').value];
+  if (!sp || !b) return;
+  const moisture = parseFloat(document.getElementById('val-moisture').value);
+  const impurity = parseFloat(document.getElementById('val-impurity').value);
+  const net = b.net;
+
+  document.getElementById('ded-net').textContent = net + ' 吨';
+  document.getElementById('deduction-card').style.display = 'block';
+
+  const mOver = (!isNaN(moisture) && moisture > sp.moisture && moisture <= 1.5) ? moisture - sp.moisture : 0;
+  const iOver = (!isNaN(impurity) && impurity > sp.impurity && impurity <= 1.0) ? impurity - sp.impurity : 0;
+
+  const mMoney = +(net * (mOver / 0.1) * 10).toFixed(0);
+  const iMoney = +(net * (iOver / 0.1) * 8).toFixed(0);
+
+  document.getElementById('ded-moisture-detail').textContent = mOver > 0
+    ? `水分超标 ${mOver.toFixed(2)}%，扣¥${(mOver/0.1*10).toFixed(0)}/吨`
+    : '水分合格，无扣水';
+  document.getElementById('ded-impurity-detail').textContent = iOver > 0
+    ? `杂质超标 ${iOver.toFixed(2)}%，扣¥${(iOver/0.1*8).toFixed(0)}/吨`
+    : '杂质合格，无扣杂';
+  document.getElementById('ded-moisture-qty').textContent = (mOver > 0 ? (net * mOver / 100).toFixed(3) : 0) + ' 吨';
+  document.getElementById('ded-impurity-qty').textContent = (iOver > 0 ? (net * iOver / 100).toFixed(3) : 0) + ' 吨';
+
+  const settleNet = +(net - net * mOver / 100 - net * iOver / 100).toFixed(3);
+  document.getElementById('ded-settle-net').textContent = settleNet + ' 吨';
+  document.getElementById('ded-deduct-detail').textContent = `扣水 ¥${mMoney} + 扣杂 ¥${iMoney}`;
+  document.getElementById('ded-total').textContent = '¥ ' + (mMoney + iMoney).toLocaleString();
+}
+
+/* ─── 三方偏差计算 ──────────────────────────── */
+function calcDeviation() {
+  const mineGrade = parseFloat(document.getElementById('val-grade').value);
+  const mineMoisture = parseFloat(document.getElementById('val-moisture').value);
+  const mineImpurity = parseFloat(document.getElementById('val-impurity').value);
+  const buyGrade = parseFloat(document.getElementById('buyer-grade').value);
+  const buyMoisture = parseFloat(document.getElementById('buyer-moisture').value);
+  const buyImpurity = parseFloat(document.getElementById('buyer-impurity').value);
+
+  const hasBuyer = !isNaN(buyGrade) || !isNaN(buyMoisture) || !isNaN(buyImpurity);
+  const resultEl = document.getElementById('deviation-result');
+  if (!hasBuyer) { if (resultEl) resultEl.style.display = 'none'; return; }
+  if (resultEl) resultEl.style.display = 'block';
+
+  const items = [];
+  const checkDev = (name, mine, buyer) => {
+    if (isNaN(mine) || isNaN(buyer)) return;
+    const diff = Math.abs(mine - buyer);
+    const warn = diff > 0.3;
+    items.push(`<div style="flex:1;padding:10px;background:${warn ? 'var(--danger-bg)' : 'var(--surface-2)'};border-radius:var(--radius);text-align:center;border:1px solid ${warn ? 'var(--danger-border)' : 'var(--border)'}">
+      <div class="text-xs text-muted mb-1">${name}</div>
+      <div style="font-size:16px;font-weight:800;color:${warn ? 'var(--danger)' : 'var(--success)'}">±${diff.toFixed(2)}%</div>
+      <div class="text-xs">${warn ? '⚠ 偏差预警' : '✓ 正常'}</div>
+    </div>`);
+  };
+  checkDev('品位偏差', mineGrade, buyGrade);
+  checkDev('水分偏差', mineMoisture, buyMoisture);
+  checkDev('杂质偏差', mineImpurity, buyImpurity);
+  if (resultEl) document.getElementById('deviation-items').innerHTML = items.join('');
+}
+
+/* ─── 三方标签切换 ──────────────────────────── */
+function switchParty(el, key) {
+  document.querySelectorAll('.party-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.party-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + key).classList.add('active');
+}
+
+/* ─── 保存 / 提交 ───────────────────────────── */
+function saveOnly() { alert('草稿已保存（含上传附件 ' + (fileStore.main.length + fileStore.buyer.length + fileStore.third.length) + ' 个）'); }
+
+function submitInspection() {
+  if (!currentGrade) { alert('请先选择关联批次'); return; }
+  const grade = parseFloat(document.getElementById('val-grade').value);
+  const moisture = parseFloat(document.getElementById('val-moisture').value);
+  const impurity = parseFloat(document.getElementById('val-impurity').value);
+  if (isNaN(grade) || isNaN(moisture) || isNaN(impurity)) {
+    if (!confirm('化验指标尚未全部录入，是否仍提交为草稿？')) return;
+    saveOnly(); return;
+  }
+  if (!confirm('确认提交质检结论？提交后将更新批次状态并触发相关流程。')) return;
+
+  const totalFiles = fileStore.main.length + fileStore.buyer.length + fileStore.third.length;
+  const modal = document.getElementById('submit-modal');
+  const titleEl = document.getElementById('submit-title');
+  const bodyEl = document.getElementById('submit-body');
+  const actEl = document.getElementById('submit-actions');
+  const fileNote = totalFiles ? `<div class="text-xs text-muted mt-2">共上传附件 ${totalFiles} 个，已关联存证。</div>` : '';
+
+  if (lastConclusion === 'fuse') {
+    titleEl.textContent = '⚠ 质检结论：熔断';
+    bodyEl.innerHTML = `<div class="alert alert-danger"><span>🔴</span><div class="text-sm">批次已锁定，不可入库。请在质检单管理中处理熔断（折价 / 退货 / 申请第三方复检）。</div></div>${fileNote}`;
+    actEl.innerHTML = `<button class="btn btn-default" onclick="window.location.href='index.html'">返回列表</button>
+      <button class="btn btn-danger" onclick="window.location.href='index.html'">前往处理熔断 →</button>`;
+  } else {
+    const label = lastConclusion === 'pass' ? '✅ 合格' : '⚠ 合格（含扣款）';
+    titleEl.textContent = '质检结论：' + label;
+    bodyEl.innerHTML = `<div class="alert alert-success"><span>✅</span><div class="text-sm">质检通过${lastConclusion === 'deduct' ? '，扣水扣杂金额已计入结算单' : ''}。可通知仓储库管建立正式入库单。</div></div>${fileNote}`;
+    actEl.innerHTML = `<button class="btn btn-default" onclick="window.location.href='index.html'">返回列表</button>
+      <button class="btn btn-primary" onclick="window.location.href='../logistics/inbound.html'">通知库管建入库单 →</button>`;
+  }
+  modal.style.display = 'flex';
+}
+</script>
+</body>
+</html>

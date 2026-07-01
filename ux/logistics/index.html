@@ -1,0 +1,635 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>运单管理 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="dispatch.html" class="nav-item">调度看板</a>
+      <a href="index.html" class="nav-item active">运单管理</a>
+      <a href="reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="inbound.html" class="nav-item">入库单管理</a>
+      <a href="outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>物流管理</span><span class="bc-sep">›</span>
+      <span class="bc-cur">运单管理</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">运单管理</div>
+        <div class="page-desc">运单台账 · 签收回单 · 运费核算与对账结算</div>
+      </div>
+      <div class="page-actions">
+        <a href="dispatch.html"><button class="btn btn-default">🗺 调度看板</button></a>
+        <a href="waybill-new.html"><button class="btn btn-primary">+ 新建运单</button></a>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(this,'all')">全部运单</div>
+      <div class="tab" onclick="switchTab(this,'in')">采购入库运输</div>
+      <div class="tab" onclick="switchTab(this,'out')">销售发货运输</div>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="filter-bar" id="filter-bar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="运单号 / 车牌 / 承运商…">
+      </div>
+      <select class="filter-select">
+        <option>全部状态</option>
+        <option>待发车</option>
+        <option>运输中</option>
+        <option>已到达</option>
+        <option>已签收</option>
+        <option>异常</option>
+      </select>
+      <select class="filter-select">
+        <option>全部承运商</option>
+        <option>玉门良运物流</option>
+        <option>金昌运通</option>
+        <option>安泰货运</option>
+        <option>西北货运联盟</option>
+      </select>
+      <div class="filter-date-range">
+        <input type="date" value="2026-06-01">
+        <span class="text-muted">至</span>
+        <input type="date" value="2026-06-10">
+      </div>
+    </div>
+
+    <!-- 运单列表 -->
+    <div id="waybill-view">
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="data-tbl">
+            <thead>
+              <tr>
+                <th>运单号</th>
+                <th>方向</th>
+                <th>承运商</th>
+                <th>车牌号</th>
+                <th>发货地</th>
+                <th>目的地</th>
+                <th>物料</th>
+                <th>计划载量</th>
+                <th>发车时间</th>
+                <th>预计到达</th>
+                <th>运费(元)</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="waybill-tbody">
+              <tr data-dir="out">
+                <td><span class="tbl-link" onclick="openDetail('WB-20260610-07')">WB-20260610-07</span></td>
+                <td><span class="tag tag-warn">销售发货</span></td>
+                <td>金昌运通</td>
+                <td>甘A·55678</td>
+                <td>玉门堆场A</td>
+                <td>巨化厂区</td>
+                <td>萤石粉97%</td>
+                <td>68 吨</td>
+                <td>06-10 06:20</td>
+                <td>06-10 12:00</td>
+                <td>¥3,060</td>
+                <td><span class="badge b-warning">接近围栏</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="window.location.href='dispatch.html'">跟踪</button>
+                  <button class="btn btn-default btn-xs" onclick="openDetail('WB-20260610-07')">详情</button>
+                </td>
+              </tr>
+              <tr data-dir="in">
+                <td><span class="tbl-link" onclick="openDetail('WB-20260610-06')">WB-20260610-06</span></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>安泰货运</td>
+                <td>甘A·12345</td>
+                <td>玉门兴旺矿区</td>
+                <td>玉门堆场A</td>
+                <td>萤石粉97%</td>
+                <td>75 吨</td>
+                <td>06-10 07:00</td>
+                <td>06-10 14:00</td>
+                <td>¥1,875</td>
+                <td><span class="badge b-primary">运输中</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="window.location.href='dispatch.html'">跟踪</button>
+                  <button class="btn btn-default btn-xs" onclick="openDetail('WB-20260610-06')">详情</button>
+                </td>
+              </tr>
+              <tr data-dir="in">
+                <td><span class="tbl-link" onclick="openDetail('WB-20260610-03')">WB-20260610-03</span></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>玉门良运物流</td>
+                <td>甘B·66789</td>
+                <td>玉门兴旺矿区</td>
+                <td>巨化厂区</td>
+                <td>萤石粉97%</td>
+                <td>72 吨</td>
+                <td>06-10 05:30</td>
+                <td>06-10 08:00</td>
+                <td>¥3,240</td>
+                <td><span class="badge b-danger">超时告警</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-danger btn-xs" onclick="alert('已通知司机，请核实当前位置')">处理异常</button>
+                  <button class="btn btn-default btn-xs" onclick="openDetail('WB-20260610-03')">详情</button>
+                </td>
+              </tr>
+              <tr data-dir="out">
+                <td><span class="tbl-link" onclick="openDetail('WB-20260610-04')">WB-20260610-04</span></td>
+                <td><span class="tag tag-warn">销售发货</span></td>
+                <td>西北货运联盟</td>
+                <td>陇A·33456</td>
+                <td>玉门堆场A</td>
+                <td>浙江萤石化工</td>
+                <td>萤石粉95%</td>
+                <td>65 吨</td>
+                <td>06-10 06:00</td>
+                <td>06-11 10:00</td>
+                <td>¥8,450</td>
+                <td><span class="badge b-info">已进围栏</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-primary btn-xs" onclick="window.location.href='outbound.html'">创建出库单</button>
+                  <button class="btn btn-default btn-xs" onclick="openDetail('WB-20260610-04')">详情</button>
+                </td>
+              </tr>
+              <tr data-dir="in">
+                <td><span class="tbl-link" onclick="openDetail('WB-20260610-02')">WB-20260610-02</span></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>玉门良运物流</td>
+                <td>甘B·88890</td>
+                <td>玉门矿区</td>
+                <td>玉门堆场B</td>
+                <td>萤石块85%</td>
+                <td>80 吨</td>
+                <td>06-10 07:30</td>
+                <td>06-10 16:00</td>
+                <td>¥1,600</td>
+                <td><span class="badge b-primary">运输中</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="window.location.href='dispatch.html'">跟踪</button>
+                  <button class="btn btn-default btn-xs" onclick="openDetail('WB-20260610-02')">详情</button>
+                </td>
+              </tr>
+              <tr data-dir="in">
+                <td><span class="tbl-link" onclick="openDetail('WB-20260609-008')">WB-20260609-008</span></td>
+                <td><span class="tag">采购入库</span></td>
+                <td>安泰货运</td>
+                <td>甘C·77890</td>
+                <td>酒泉盛源矿区</td>
+                <td>玉门堆场A</td>
+                <td>萤石粉90%</td>
+                <td>68.5 吨</td>
+                <td>06-09 14:00</td>
+                <td>06-09 18:00</td>
+                <td>¥1,713</td>
+                <td><span class="badge b-success">已签收</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="window.location.href='../weighbridge/index.html'">查看磅单</button>
+                  <button class="btn btn-primary btn-xs" onclick="window.location.href='inbound.html'">确认入库</button>
+                </td>
+              </tr>
+              <tr data-dir="out">
+                <td><span class="tbl-link" onclick="openDetail('WB-20260609-007')">WB-20260609-007</span></td>
+                <td><span class="tag tag-warn">销售发货</span></td>
+                <td>金昌运通</td>
+                <td>甘A·24680</td>
+                <td>玉门堆场A</td>
+                <td>巨化厂区</td>
+                <td>萤石粉97%</td>
+                <td>72.0 吨</td>
+                <td>06-09 08:00</td>
+                <td>06-09 14:00</td>
+                <td>¥3,240</td>
+                <td><span class="badge b-success">已签收</span></td>
+                <td class="flex-c gap-2">
+                  <button class="btn btn-default btn-xs" onclick="window.location.href='../weighbridge/index.html'">查看磅单</button>
+                  <button class="btn btn-default btn-xs" onclick="openDetail('WB-20260609-007')">详情</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-ft">
+          <span class="text-sm text-muted">共 42 条，第 1 / 5 页</span>
+          <div class="pager">
+            <div class="pg-btn">«</div>
+            <div class="pg-btn active">1</div>
+            <div class="pg-btn">2</div>
+            <div class="pg-btn">3</div>
+            <div class="pg-btn">»</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 运单详情弹窗 -->
+    <div id="detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 20px">
+      <div style="background:var(--surface);border-radius:var(--radius-lg);width:720px;padding:28px;position:relative;margin:auto">
+        <button onclick="closeDetail()" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-3)">✕</button>
+        <div class="card-title mb-4" id="modal-title">运单详情</div>
+        <div id="modal-body"></div>
+        <div class="flex-c gap-2 mt-5" style="justify-content:flex-end">
+          <button class="btn btn-default" onclick="closeDetail()">关闭</button>
+          <button class="btn btn-default" id="modal-inbound-btn">创建入库单 →</button>
+          <button class="btn btn-primary" id="modal-settle-btn" onclick="doSettle()">提交结算</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 关联磅单选择弹窗 -->
+    <div id="wb-select-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1100;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:var(--radius-lg);width:560px;max-height:70vh;overflow-y:auto;padding:24px;position:relative">
+        <button onclick="closeWbModal()" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-3)">✕</button>
+        <div class="card-title mb-1">关联磅单</div>
+        <div class="text-sm text-muted mb-4">选择磅单类型后勾选对应磅单进行关联</div>
+        <div class="form-item mb-4">
+          <label class="form-label">磅单类型</label>
+          <select class="form-ctrl" id="wb-type-sel" onchange="renderWbList()">
+            <option value="own">我方入库磅单</option>
+            <option value="supplier">供应商发货磅单</option>
+            <option value="customer">客户收货磅单</option>
+          </select>
+        </div>
+        <div id="wb-list"></div>
+        <div class="flex-c gap-2 mt-4" style="justify-content:flex-end">
+          <button class="btn btn-default" onclick="closeWbModal()">取消</button>
+          <button class="btn btn-primary" onclick="confirmWbLink()">确认关联</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<script>
+/* ── 运单数据（含新字段） ─────────────────────────────── */
+const waybills = {
+  'WB-20260610-07': {
+    dir:'销售发货', carrier:'金昌运通', plate:'甘A·55678', driver:'王建明',
+    from:'玉门堆场A', to:'巨化厂区', material:'萤石粉97%', qty:68,
+    depart:'06-10 06:20', eta:'06-10 12:00', status:'接近围栏',
+    ref:'SO-20260601-001', transport:'汽运',
+    freightPayer:'supplier', unitPrice:null, settlementBasis:'min',
+    weighbridges: []
+  },
+  'WB-20260610-06': {
+    dir:'采购入库', carrier:'安泰货运', plate:'甘A·12345', driver:'李明强',
+    from:'玉门兴旺矿区', to:'玉门堆场A', material:'萤石粉97%', qty:75,
+    depart:'06-10 07:00', eta:'06-10 14:00', status:'运输中',
+    ref:'PO-20260601-001', transport:'汽运',
+    freightPayer:'self', unitPrice:25, settlementBasis:'min',
+    weighbridges: []
+  },
+  'WB-20260610-03': {
+    dir:'采购入库', carrier:'玉门良运物流', plate:'甘B·66789', driver:'张志远',
+    from:'玉门兴旺矿区', to:'巨化厂区', material:'萤石粉97%', qty:72,
+    depart:'06-10 05:30', eta:'06-10 08:00', status:'超时告警',
+    ref:'PO-20260601-001', transport:'汽运',
+    freightPayer:'self', unitPrice:25, settlementBasis:'min',
+    weighbridges: []
+  },
+  'WB-20260610-04': {
+    dir:'销售发货', carrier:'西北货运联盟', plate:'陇A·33456', driver:'赵宏伟',
+    from:'玉门堆场A', to:'浙江萤石化工', material:'萤石粉95%', qty:65,
+    depart:'06-10 06:00', eta:'06-11 10:00', status:'已进围栏',
+    ref:'SO-20260605-001', transport:'汽运',
+    freightPayer:'supplier', unitPrice:null, settlementBasis:'min',
+    weighbridges: []
+  },
+  'WB-20260610-02': {
+    dir:'采购入库', carrier:'玉门良运物流', plate:'甘B·88890', driver:'孙大伟',
+    from:'玉门矿区', to:'玉门堆场B', material:'萤石块85%', qty:80,
+    depart:'06-10 07:30', eta:'06-10 16:00', status:'运输中',
+    ref:'PO-20260605-002', transport:'汽运',
+    freightPayer:'self', unitPrice:20, settlementBasis:'min',
+    weighbridges: []
+  },
+  'WB-20260609-008': {
+    dir:'采购入库', carrier:'安泰货运', plate:'甘C·77890', driver:'刘海龙',
+    from:'酒泉盛源矿区', to:'玉门堆场A', material:'萤石粉90%', qty:68.5,
+    depart:'06-09 14:00', eta:'06-09 18:00', status:'已签收',
+    ref:'PO-20260601-002', transport:'汽运',
+    freightPayer:'self', unitPrice:25, settlementBasis:'min',
+    weighbridges: [
+      { id:'BP-20260609-012', type:'own',      label:'我方入库磅单', weight:67.8, time:'06-09 18:32' },
+      { id:'BP-20260609-SUP-003', type:'supplier', label:'供应商发货磅单', weight:68.5, time:'06-09 13:45' }
+    ]
+  },
+  'WB-20260609-007': {
+    dir:'销售发货', carrier:'金昌运通', plate:'甘A·24680', driver:'陈志明',
+    from:'玉门堆场A', to:'巨化厂区', material:'萤石粉97%', qty:72,
+    depart:'06-09 08:00', eta:'06-09 14:00', status:'已签收',
+    ref:'SO-20260601-001', transport:'汽运',
+    freightPayer:'supplier', unitPrice:null, settlementBasis:'min',
+    weighbridges: [
+      { id:'BP-20260609-011', type:'own',      label:'我方入库磅单', weight:71.6, time:'06-09 07:55' },
+      { id:'BP-20260609-CUS-001', type:'customer', label:'客户收货磅单', weight:71.2, time:'06-09 14:20' }
+    ]
+  },
+};
+
+/* 可关联的磅单候选池 */
+const wbPool = {
+  own: [
+    { id:'BP-20260610-015', weight:74.2, time:'06-10 14:35', plate:'甘A·12345' },
+    { id:'BP-20260610-014', weight:71.8, time:'06-10 12:10', plate:'甘B·66789' },
+    { id:'BP-20260610-013', weight:79.1, time:'06-10 17:00', plate:'甘B·88890' },
+  ],
+  supplier: [
+    { id:'BP-20260610-SUP-005', weight:75.0, time:'06-10 07:00', plate:'甘A·12345' },
+    { id:'BP-20260610-SUP-004', weight:72.5, time:'06-10 05:28', plate:'甘B·66789' },
+  ],
+  customer: [
+    { id:'BP-20260610-CUS-002', weight:73.8, time:'06-10 19:30', plate:'甘A·55678' },
+  ]
+};
+
+let currentWbId = null;
+
+/* ── Tab 切换 ─────────────────────────────────────── */
+function switchTab(el, type) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  const wv = document.getElementById('waybill-view');
+  const fb = document.getElementById('filter-bar');
+  wv.style.display = 'block';
+  fb.style.display = 'flex';
+  document.querySelectorAll('#waybill-tbody tr').forEach(r => {
+    r.style.display = (type === 'all' || r.dataset.dir === type) ? '' : 'none';
+  });
+}
+
+/* ── 结算重量计算 ─────────────────────────────────── */
+function calcSettlementWeight(w) {
+  const own  = w.weighbridges.find(b => b.type === 'own');
+  const sup  = w.weighbridges.find(b => b.type === 'supplier');
+  switch (w.settlementBasis) {
+    case 'own':      return own  ? own.weight  : null;
+    case 'supplier': return sup  ? sup.weight  : null;
+    case 'fixed':    return w.fixedWeight || null;
+    case 'min':
+    default:
+      if (own && sup)  return Math.min(own.weight, sup.weight);
+      if (own)         return own.weight;
+      if (sup)         return sup.weight;
+      return null;
+  }
+}
+
+/* ── 详情弹窗 ─────────────────────────────────────── */
+function openDetail(id) {
+  const w = waybills[id];
+  if (!w) return;
+  currentWbId = id;
+  document.getElementById('modal-title').textContent = id + ' · 运单详情';
+
+  const own  = w.weighbridges.find(b => b.type === 'own');
+  const sup  = w.weighbridges.find(b => b.type === 'supplier');
+  const cust = w.weighbridges.find(b => b.type === 'customer');
+  const settlWt = calcSettlementWeight(w);
+  const maxWt   = (own && sup) ? Math.max(own.weight, sup.weight) : (own?.weight || sup?.weight || null);
+  const shortfall = (maxWt != null && settlWt != null) ? +(maxWt - settlWt).toFixed(2) : null;
+  const totalFreight = (w.freightPayer === 'self' && w.unitPrice && settlWt)
+    ? '¥' + (w.unitPrice * settlWt).toFixed(2) : (w.freightPayer === 'supplier' ? '供应商承担' : '—');
+  const shortfallAmt = (shortfall > 0 && w.unitPrice && w.freightPayer === 'self')
+    ? '¥' + (shortfall * w.unitPrice).toFixed(2) : '—';
+
+  const basisLabel = { min:'按最小值', own:'按我方磅单', supplier:'按发货磅单', fixed:'按协议固定值' };
+
+  /* 磅单列表 HTML */
+  const wbRows = w.weighbridges.length === 0
+    ? '<tr><td colspan="5" style="color:var(--text-3);text-align:center;padding:12px">暂未关联磅单</td></tr>'
+    : w.weighbridges.map(b => `
+      <tr>
+        <td><span class="tbl-link">${b.id}</span></td>
+        <td><span class="tag ${b.type==='own'?'':'tag-warn'}">${b.label}</span></td>
+        <td><strong>${b.weight} 吨</strong></td>
+        <td>${b.time}</td>
+        <td><button class="btn btn-default btn-xs" onclick="unlinkWb('${id}','${b.id}')">移除</button></td>
+      </tr>`).join('');
+
+  /* 重量对比格 */
+  const wCell = (wb, label) => wb
+    ? `<div style="text-align:center"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${label}</div>
+       <div style="font-size:22px;font-weight:700;color:var(--text-1)">${wb.weight}</div>
+       <div style="font-size:11px;color:var(--text-3)">吨</div>
+       <div style="font-size:11px;margin-top:4px;color:var(--text-2)">${wb.id}</div></div>`
+    : `<div style="text-align:center"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${label}</div>
+       <div style="font-size:14px;color:var(--text-3);padding:10px 0">—</div></div>`;
+
+  document.getElementById('modal-body').innerHTML = `
+    <!-- 基本信息 -->
+    <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">基本信息</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px;margin-bottom:20px">
+      <div><span style="color:var(--text-3)">运输方向</span><br><strong>${w.dir}</strong></div>
+      <div><span style="color:var(--text-3)">关联单据</span><br><strong>${w.ref}</strong></div>
+      <div><span style="color:var(--text-3)">运输方式</span><br>${w.transport}</div>
+      <div><span style="color:var(--text-3)">发货地</span><br>${w.from}</div>
+      <div><span style="color:var(--text-3)">目的地</span><br>${w.to}</div>
+      <div><span style="color:var(--text-3)">物料 · 计划量</span><br>${w.material} · ${w.qty}吨</div>
+      <div><span style="color:var(--text-3)">承运商</span><br>${w.carrier}</div>
+      <div><span style="color:var(--text-3)">车牌 · 司机</span><br>${w.plate} · ${w.driver}</div>
+      <div><span style="color:var(--text-3)">发车 / 预计到达</span><br>${w.depart} → ${w.eta}</div>
+    </div>
+
+    <!-- 运费信息 -->
+    <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">运费信息</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;font-size:13px;margin-bottom:20px;padding:14px;background:var(--surface-2);border-radius:var(--radius)">
+      <div><span style="color:var(--text-3)">运费承担方</span><br>
+        <span style="color:${w.freightPayer==='self'?'var(--primary)':'var(--text-2)'};font-weight:600">
+          ${w.freightPayer === 'self' ? '我方承担' : '供应商承担'}</span></div>
+      <div><span style="color:var(--text-3)">吨单价</span><br>
+        <strong>${w.unitPrice != null ? '¥' + w.unitPrice.toFixed(2) + '/吨' : '—'}</strong></div>
+      <div><span style="color:var(--text-3)">结算依据</span><br>${basisLabel[w.settlementBasis]}</div>
+      <div><span style="color:var(--text-3)">总运费</span><br><strong>${totalFreight}</strong></div>
+    </div>
+
+    <!-- 关联磅单 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em">关联磅单</div>
+      <button class="btn btn-default btn-sm" onclick="openWbModal()">+ 关联磅单</button>
+    </div>
+    <div style="margin-bottom:20px">
+      <table class="data-tbl" style="font-size:12px">
+        <thead><tr><th>磅单号</th><th>类型</th><th>净重</th><th>时间</th><th>操作</th></tr></thead>
+        <tbody id="linked-wb-tbody">${wbRows}</tbody>
+      </table>
+    </div>
+
+    <!-- 重量对比 -->
+    <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">重量对比与亏吨</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:12px">
+      <div style="background:var(--surface-2);padding:14px">${wCell(own,  '我方入库磅单')}</div>
+      <div style="background:var(--surface-2);padding:14px">${wCell(sup,  '供应商发货磅单')}</div>
+      <div style="background:var(--surface-2);padding:14px">${wCell(cust, '客户收货磅单')}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px;padding:12px 14px;background:${shortfall>0?'#fef3c7':'var(--surface-2)'};border-radius:var(--radius)">
+      <div><span style="color:var(--text-3)">结算重量</span><br>
+        <strong>${settlWt != null ? settlWt + ' 吨' : '<span style="color:var(--danger)">待关联磅单</span>'}</strong></div>
+      <div><span style="color:var(--text-3)">亏吨数</span><br>
+        <strong style="color:${shortfall>0?'var(--danger)':'inherit'}">${shortfall != null ? shortfall + ' 吨' : '—'}</strong></div>
+      <div><span style="color:var(--text-3)">亏吨扣款额</span><br>
+        <strong style="color:${shortfallAmt!=='—'?'var(--danger)':'inherit'}">${shortfallAmt}</strong></div>
+    </div>`;
+
+  /* 底部按钮 */
+  const inboundBtn = document.getElementById('modal-inbound-btn');
+  if (w.dir === '采购入库') {
+    inboundBtn.style.display = '';
+    inboundBtn.onclick = () => window.location.href = 'inbound-new.html?wb=' + id;
+  } else {
+    inboundBtn.style.display = 'none';
+  }
+
+  document.getElementById('detail-modal').style.display = 'flex';
+}
+
+function closeDetail() {
+  document.getElementById('detail-modal').style.display = 'none';
+  currentWbId = null;
+}
+
+/* ── 移除磅单关联 ──────────────────────────────────── */
+function unlinkWb(wbId, bpId) {
+  const w = waybills[wbId];
+  w.weighbridges = w.weighbridges.filter(b => b.id !== bpId);
+  openDetail(wbId);
+}
+
+/* ── 关联磅单弹窗 ──────────────────────────────────── */
+function openWbModal() {
+  document.getElementById('wb-type-sel').value = 'own';
+  renderWbList();
+  document.getElementById('wb-select-modal').style.display = 'flex';
+}
+
+function closeWbModal() {
+  document.getElementById('wb-select-modal').style.display = 'none';
+}
+
+function renderWbList() {
+  const type = document.getElementById('wb-type-sel').value;
+  const w    = waybills[currentWbId];
+  const pool = wbPool[type] || [];
+  const linked = new Set(w.weighbridges.map(b => b.id));
+  const typeLabel = { own:'我方入库磅单', supplier:'供应商发货磅单', customer:'客户收货磅单' };
+
+  const rows = pool.map(p => `
+    <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;cursor:pointer;font-size:13px">
+      <input type="checkbox" value="${p.id}" ${linked.has(p.id)?'checked disabled':''}>
+      <div style="flex:1">
+        <div><strong>${p.id}</strong> · ${p.plate}</div>
+        <div style="color:var(--text-3);font-size:12px">${typeLabel[type]} · 净重 ${p.weight} 吨 · ${p.time}</div>
+      </div>
+      ${linked.has(p.id) ? '<span style="font-size:11px;color:var(--success)">已关联</span>' : ''}
+    </label>`).join('');
+
+  document.getElementById('wb-list').innerHTML = rows || '<div style="color:var(--text-3);padding:12px 0">暂无可关联的磅单</div>';
+}
+
+function confirmWbLink() {
+  const type = document.getElementById('wb-type-sel').value;
+  const typeLabel = { own:'我方入库磅单', supplier:'供应商发货磅单', customer:'客户收货磅单' };
+  const pool  = wbPool[type] || [];
+  const w     = waybills[currentWbId];
+  const linked = new Set(w.weighbridges.map(b => b.id));
+  const checks = document.querySelectorAll('#wb-list input[type=checkbox]:checked:not(:disabled)');
+  checks.forEach(cb => {
+    if (!linked.has(cb.value)) {
+      const p = pool.find(x => x.id === cb.value);
+      if (p) w.weighbridges.push({ id: p.id, type, label: typeLabel[type], weight: p.weight, time: p.time });
+    }
+  });
+  closeWbModal();
+  openDetail(currentWbId);
+}
+
+/* ── 提交结算校验 ──────────────────────────────────── */
+function doSettle() {
+  const w = waybills[currentWbId];
+  if (!w) return;
+  const hasOwn = w.weighbridges.some(b => b.type === 'own');
+  if (!hasOwn) {
+    alert('❌ 结算失败：必须关联至少一条"我方入库磅单"才能提交结算。');
+    return;
+  }
+  const hasSup  = w.weighbridges.some(b => b.type === 'supplier');
+  const hasCust = w.weighbridges.some(b => b.type === 'customer');
+  if (!hasSup && !confirm('⚠ 未关联供应商发货磅单，磅单对比数据不完整，是否继续结算？')) return;
+  if (!hasCust && !confirm('⚠ 未关联客户收货磅单，是否继续结算？')) return;
+  const settlWt = calcSettlementWeight(w);
+  if (settlWt == null) {
+    alert('❌ 结算失败：根据当前结算依据（' + w.settlementBasis + '）无法计算结算重量，请检查关联磅单。');
+    return;
+  }
+  alert(`✅ 结算提交成功！\n运单：${currentWbId}\n结算重量：${settlWt} 吨\n${w.unitPrice?'总运费：¥'+(w.unitPrice*settlWt).toFixed(2):'运费供应商承担'}\n\n物流单状态已变更为「已结算」。`);
+  closeDetail();
+}
+</script>
+</body>
+</html>

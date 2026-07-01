@@ -1,0 +1,261 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>结算管理 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="index.html" class="nav-item">合同管理</a>
+      <a href="order.html" class="nav-item">订单管理</a>
+      <a href="settlement.html" class="nav-item active">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>采销系统</span><span class="bc-sep">›</span>
+      <span class="bc-cur">结算管理</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">结算管理</div>
+        <div class="page-desc">按收货确认后自动触发；扣水扣杂 → 计算预付款与尾款 → 生成结算单待财务审核</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default">📤 导出</button>
+      </div>
+    </div>
+
+    <!-- 结算规则说明 -->
+    <div class="alert alert-info mb-4">
+      <span>ℹ</span>
+      <div>
+        <strong>结算规则（当前配置）：</strong>预付比例 85%，扣水扣杂按质检报告折算，尾款于收货确认后 7 个工作日内支付，结算数量以地磅净重为准。
+        <span class="link" style="margin-left:8px">查看规则详情 →</span>
+      </div>
+    </div>
+
+    <!-- 统计条 -->
+    <div class="summary-row mb-4">
+      <div class="summary-item"><div class="si-label">本月结算总额</div><div class="si-val">¥ 156.8<span class="u">万</span></div></div>
+      <div class="summary-item"><div class="si-label">待财务审核</div><div class="si-val" style="color:var(--warning)">2<span class="u">单</span></div></div>
+      <div class="summary-item"><div class="si-label">已付预付款</div><div class="si-val">¥ 89.4<span class="u">万</span></div></div>
+      <div class="summary-item"><div class="si-label">待付尾款</div><div class="si-val" style="color:var(--danger)">¥ 28.6<span class="u">万</span></div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active">采购结算单</div>
+      <div class="tab">销售结算单</div>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="filter-bar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="结算单号 / 对手方…">
+      </div>
+      <select class="filter-select">
+        <option>全部状态</option>
+        <option>待生成</option>
+        <option>待审核</option>
+        <option>预付已付</option>
+        <option>尾款待付</option>
+        <option>已结清</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <div class="tbl-wrap">
+        <table class="data-tbl">
+          <thead>
+            <tr>
+              <th>结算单号</th>
+              <th>关联订单</th>
+              <th>供应商</th>
+              <th>物料</th>
+              <th>磅重净量</th>
+              <th>扣水(%)</th>
+              <th>扣杂(%)</th>
+              <th>结算净量</th>
+              <th>结算单价</th>
+              <th>结算总额</th>
+              <th>预付款(85%)</th>
+              <th>尾款</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="settlement-detail.html" class="tbl-link fw-700">STL-2026-022</a></td>
+              <td><a href="order.html" class="tbl-link">PO-20260601-003</a></td>
+              <td>玉门兴旺矿业</td>
+              <td>萤石粉 97%</td>
+              <td>100.2 吨</td>
+              <td>0.3%</td>
+              <td>0.1%</td>
+              <td>99.6 吨</td>
+              <td>¥1,450</td>
+              <td>¥144,420</td>
+              <td>¥122,757</td>
+              <td>¥21,663</td>
+              <td><span class="badge b-warning">待审核</span></td>
+              <td class="flex-c gap-2">
+                <a href="settlement-detail.html"><button class="btn btn-primary btn-xs">财务审核</button></a>
+                <a href="settlement-detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td><a href="settlement-detail.html" class="tbl-link fw-700">STL-2026-021</a></td>
+              <td><a href="order.html" class="tbl-link">PO-20260530-002</a></td>
+              <td>玉门众鑫矿业</td>
+              <td>萤石粉 95%</td>
+              <td>80.5 吨</td>
+              <td>0.5%</td>
+              <td>0.2%</td>
+              <td>79.9 吨</td>
+              <td>¥1,280</td>
+              <td>¥102,272</td>
+              <td>¥86,931</td>
+              <td>¥15,341</td>
+              <td><span class="badge b-warning">待审核</span></td>
+              <td class="flex-c gap-2">
+                <a href="settlement-detail.html"><button class="btn btn-primary btn-xs">财务审核</button></a>
+                <a href="settlement-detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td><a href="settlement-detail.html" class="tbl-link fw-700">STL-2026-020</a></td>
+              <td><a href="order.html" class="tbl-link">PO-20260528-001</a></td>
+              <td>酒泉盛源矿业</td>
+              <td>萤石粉 90%</td>
+              <td>150.1 吨</td>
+              <td>0.4%</td>
+              <td>0.3%</td>
+              <td>149.0 吨</td>
+              <td>¥980</td>
+              <td>¥146,020</td>
+              <td>¥124,117</td>
+              <td>¥21,903</td>
+              <td><span class="badge b-info">尾款待付</span></td>
+              <td class="flex-c gap-2">
+                <a href="settlement-detail.html"><button class="btn btn-primary btn-xs">支付尾款</button></a>
+                <a href="settlement-detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td><a href="settlement-detail.html" class="tbl-link fw-700">STL-2026-019</a></td>
+              <td><a href="order.html" class="tbl-link">PO-20260520-001</a></td>
+              <td>嘉峪关矿冶</td>
+              <td>萤石粉 97%</td>
+              <td>120.3 吨</td>
+              <td>0.2%</td>
+              <td>0.1%</td>
+              <td>120.0 吨</td>
+              <td>¥1,420</td>
+              <td>¥170,400</td>
+              <td>¥144,840</td>
+              <td>¥25,560</td>
+              <td><span class="badge b-success">已结清</span></td>
+              <td class="flex-c gap-2">
+                <a href="settlement-detail.html"><button class="btn btn-default btn-xs">查看凭证</button></a>
+                <a href="settlement-detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td><a href="settlement-detail.html" class="tbl-link fw-700">STL-2026-018</a></td>
+              <td><a href="order.html" class="tbl-link">PO-20260515-001</a></td>
+              <td>玉门兴旺矿业</td>
+              <td>萤石粉 97%</td>
+              <td>98.8 吨</td>
+              <td>0.3%</td>
+              <td>0.1%</td>
+              <td>98.4 吨</td>
+              <td>¥1,450</td>
+              <td>¥142,680</td>
+              <td>¥121,278</td>
+              <td>¥21,402</td>
+              <td><span class="badge b-success">已结清</span></td>
+              <td class="flex-c gap-2">
+                <a href="settlement-detail.html"><button class="btn btn-default btn-xs">查看凭证</button></a>
+                <a href="settlement-detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-ft">
+        <span class="text-sm text-muted">共 19 条</span>
+        <div class="pager">
+          <div class="pg-btn active">1</div>
+          <div class="pg-btn">2</div>
+          <div class="pg-btn">»</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+</body>
+</html>

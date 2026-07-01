@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新增用户 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:20px 0 12px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.role-card{border:1.5px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;cursor:pointer;transition:border-color .15s;position:relative}
+.role-card:hover{border-color:var(--primary)}
+.role-card.selected{border-color:var(--primary);background:var(--primary-bg)}
+.role-check{position:absolute;top:12px;right:12px;width:20px;height:20px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px}
+.role-card.selected .role-check{background:var(--primary);border-color:var(--primary);color:#fff}
+.perm-scope-item{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface-2);border-radius:var(--radius);margin-bottom:8px}
+.perm-scope-item label{font-size:13px;font-weight:500;flex:1}
+.perm-scope-item select,.perm-scope-item input{width:200px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;outline:none}
+.perm-scope-item select:focus,.perm-scope-item input:focus{border-color:var(--primary)}
+.perm-toggle{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;width:fit-content}
+.perm-toggle-item{padding:4px 14px;font-size:12.5px;cursor:pointer;color:var(--text-2);transition:background .12s}
+.perm-toggle-item.on{background:var(--primary);color:#fff}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item active">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#user" class="link">用户与权限</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="page-bc">新增用户</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">新增用户</div>
+        <div class="page-desc">创建系统账号，配置角色和数据权限范围</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default" onclick="history.back()">取消</button>
+        <button class="btn btn-primary" onclick="saveUser()">保存用户</button>
+      </div>
+    </div>
+
+    <div style="max-width:900px">
+      <!-- 基本信息 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">账号基本信息</span></div>
+        <div class="card-body">
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">姓名</label>
+              <input class="form-ctrl" id="f-name" type="text" placeholder="真实姓名">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">登录账号</label>
+              <input class="form-ctrl" id="f-username" type="text" placeholder="英文+数字，建议使用拼音">
+              <span class="form-hint">登录时使用此账号名</span>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">手机号码</label>
+              <input class="form-ctrl" id="f-phone" type="tel" placeholder="11位手机号，也可用于登录">
+            </div>
+            <div class="form-item">
+              <label class="form-label">邮箱地址</label>
+              <input class="form-ctrl" id="f-email" type="email" placeholder="接收系统通知（可选）">
+            </div>
+            <div class="form-item">
+              <label class="form-label req">所属部门</label>
+              <select class="form-ctrl" id="f-dept">
+                <option value="">请选择部门</option>
+                <option>运营管理部</option>
+                <option>采购部</option>
+                <option>销售部</option>
+                <option>物流调度部</option>
+                <option>财务部</option>
+                <option>质检部</option>
+                <option>行政部</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label">岗位</label>
+              <select class="form-ctrl" id="f-position">
+                <option value="">请选择岗位</option>
+                <option>业务员</option>
+                <option>采购经理</option>
+                <option>销售经理</option>
+                <option>物流调度员</option>
+                <option>财务主管</option>
+                <option>质检员</option>
+                <option>总经理</option>
+                <option>仓库管理员</option>
+                <option>系统管理员</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">账号状态</label>
+              <select class="form-ctrl" id="f-status">
+                <option value="active">启用</option>
+                <option value="inactive">禁用</option>
+              </select>
+            </div>
+          </div>
+          <div class="section-divider">初始密码</div>
+          <div class="form-grid fg3">
+            <div class="form-item">
+              <label class="form-label req">初始密码</label>
+              <input class="form-ctrl" id="f-pwd" type="password" placeholder="至少8位，含数字和字母" value="Icp@2026">
+              <span class="form-hint">用户首次登录后需强制修改</span>
+            </div>
+            <div class="form-item">
+              <label class="form-label req">确认密码</label>
+              <input class="form-ctrl" id="f-pwd2" type="password" placeholder="再次输入密码" value="Icp@2026">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 角色选择 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">角色分配</span><span class="text-sm text-muted">可多选</span></div>
+        <div class="card-body">
+          <div class="alert alert-info mb-4"><span>ℹ</span><div class="text-sm">角色决定用户可以访问哪些功能菜单。数据权限（能看到哪些数据）在下方单独配置</div></div>
+          <div class="g3" style="gap:12px" id="role-grid">
+            <!-- 动态渲染 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 数据权限 -->
+      <div class="card mb-4">
+        <div class="card-hd"><span class="card-title">数据权限范围</span><span class="text-sm text-muted">控制用户可以看到哪些数据</span></div>
+        <div class="card-body">
+          <div class="alert alert-info mb-4"><span>ℹ</span><div class="text-sm">数据权限与功能权限相互独立。例如：两名销售经理可能有相同的功能权限，但数据权限分别限定在不同的仓库或客户范围</div></div>
+
+          <div class="perm-scope-item">
+            <label>合同 / 订单数据范围</label>
+            <select>
+              <option>全公司</option>
+              <option>本部门</option>
+              <option>仅本人</option>
+            </select>
+          </div>
+          <div class="perm-scope-item">
+            <label>仓库数据范围</label>
+            <select id="perm-wh">
+              <option>全部仓库</option>
+              <option>玉门堆场</option>
+              <option>嘉峪关中转站</option>
+              <option>自定义</option>
+            </select>
+          </div>
+          <div class="perm-scope-item">
+            <label>财务数据范围</label>
+            <select>
+              <option>无权限</option>
+              <option>仅查看</option>
+              <option>本部门</option>
+              <option>全公司</option>
+            </select>
+          </div>
+          <div class="perm-scope-item">
+            <label>价格数据范围</label>
+            <select>
+              <option>全部价格可见</option>
+              <option>仅采购价可见</option>
+              <option>仅销售价可见</option>
+              <option>价格不可见</option>
+            </select>
+          </div>
+          <div class="perm-scope-item">
+            <label>可代表签合同的公司</label>
+            <select>
+              <option>全部我方公司</option>
+              <option>玉门萤石运营管理有限公司</option>
+              <option>酒泉供应链管理有限公司</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-c gap-3" style="justify-content:flex-end;padding-bottom:40px">
+        <a href="index.html#user"><button class="btn btn-default">取消</button></a>
+        <button class="btn btn-primary" onclick="saveUser()">保存用户</button>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+const ROLES = [
+  {id:'admin',name:'系统管理员',desc:'主数据维护、用户管理、审批流程配置',color:'b-danger'},
+  {id:'purchase',name:'采购经理',desc:'采购合同起草/审批、供应商管理、付款申请',color:'b-primary'},
+  {id:'sales',name:'销售业务员',desc:'销售合同起草、客户管理、发货申请',color:'b-success'},
+  {id:'logistics',name:'物流调度员',desc:'运单创建/调度、车辆跟踪、磅单操作',color:'b-warning'},
+  {id:'warehouse',name:'仓库管理员',desc:'入库单/出库单操作、库存盘点',color:'b-primary'},
+  {id:'quality',name:'质检员',desc:'质检单录入、检验报告上传',color:'b-success'},
+  {id:'finance',name:'财务主管',desc:'结算单查看、付款单审批、财务报表',color:'b-warning'},
+  {id:'readonly',name:'只读访问',desc:'所有模块只读浏览，不可发起任何操作',color:'b-default'},
+];
+const selectedRoles = new Set(['sales']);
+
+function renderRoles() {
+  document.getElementById('role-grid').innerHTML = ROLES.map(r => `
+    <div class="role-card ${selectedRoles.has(r.id)?'selected':''}" onclick="toggleRole('${r.id}',this)">
+      <div class="role-check">${selectedRoles.has(r.id)?'✓':''}</div>
+      <div class="fw-700 mb-1">${r.name} <span class="badge ${r.color}" style="font-size:10px">${r.id}</span></div>
+      <div class="text-sm text-muted">${r.desc}</div>
+    </div>`).join('');
+}
+function toggleRole(id, card) {
+  if (selectedRoles.has(id)) selectedRoles.delete(id);
+  else selectedRoles.add(id);
+  renderRoles();
+}
+renderRoles();
+
+// 编辑模式
+const USERS = {
+  'usr-001':{name:'张明',username:'zhangming',phone:'138xxxx1234',email:'zhangming@company.com',dept:'采购部',position:'采购经理',status:'active',roles:['purchase']},
+  'usr-002':{name:'李华',username:'lihua',phone:'139xxxx5678',email:'lihua@company.com',dept:'销售部',position:'销售经理',status:'active',roles:['sales']},
+};
+const urlParams = new URLSearchParams(location.search);
+const editId = urlParams.get('id');
+const isEdit = urlParams.get('mode')==='edit' && editId && USERS[editId];
+if(isEdit){
+  const u = USERS[editId];
+  document.title='编辑用户 · 萤石产业链平台';
+  document.getElementById('page-title').textContent='编辑用户';
+  document.getElementById('page-bc').textContent='编辑用户';
+  document.getElementById('f-name').value=u.name;
+  document.getElementById('f-username').value=u.username;
+  document.getElementById('f-phone').value=u.phone;
+  document.getElementById('f-email').value=u.email;
+  document.getElementById('f-dept').value=u.dept;
+  document.getElementById('f-position').value=u.position;
+  document.getElementById('f-status').value=u.status;
+  selectedRoles.clear();
+  u.roles.forEach(r=>selectedRoles.add(r));
+  renderRoles();
+}
+
+function saveUser() {
+  const name = document.getElementById('f-name').value;
+  const username = document.getElementById('f-username').value;
+  const phone = document.getElementById('f-phone').value;
+  const pwd = document.getElementById('f-pwd').value;
+  const pwd2 = document.getElementById('f-pwd2').value;
+  if(!name||!username||!phone){alert('请填写必填项：姓名、登录账号、手机号码');return;}
+  if(!isEdit && pwd !== pwd2){alert('两次输入的密码不一致');return;}
+  if(selectedRoles.size===0){alert('请至少选择一个角色');return;}
+  if(confirm(isEdit?`确认保存用户 ${name} 的修改？`:`确认新增用户"${name}"（${username}）？`)){
+    window.location.href='index.html#user';
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,442 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>合同管理 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="index.html" class="nav-item active">合同管理</a>
+      <a href="order.html" class="nav-item">订单管理</a>
+      <a href="settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <span>采销系统</span><span class="bc-sep">›</span>
+      <span class="bc-cur">合同管理</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title">合同管理</div>
+        <div class="page-desc">管理采购与销售合同全流程；双边合同自动拆分采购单与销售单</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-default">📤 导出</button>
+        <a href="contract-new.html"><button class="btn btn-primary">+ 新建合同</button></a>
+      </div>
+    </div>
+
+    <!-- 统计条 -->
+    <div class="summary-row mb-4">
+      <div class="summary-item"><div class="si-label">全部合同</div><div class="si-val">32<span class="u">份</span></div></div>
+      <div class="summary-item"><div class="si-label">执行中</div><div class="si-val" style="color:var(--primary)">8<span class="u">份</span></div></div>
+      <div class="summary-item"><div class="si-label">待审核</div><div class="si-val" style="color:var(--warning)">3<span class="u">份</span></div></div>
+      <div class="summary-item"><div class="si-label">本月采购量</div><div class="si-val">2,450<span class="u">吨</span></div></div>
+      <div class="summary-item"><div class="si-label">本月采购额</div><div class="si-val">¥ 328.4<span class="u">万</span></div></div>
+      <div class="summary-item"><div class="si-label">本月销售额</div><div class="si-val">¥ 215.6<span class="u">万</span></div></div>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="filter-bar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="合同编号 / 对手方 / 外部合同号…">
+      </div>
+      <select class="filter-select">
+        <option>全部类型</option>
+        <option>采购合同</option>
+        <option>销售合同</option>
+        <option>双边合同</option>
+        <option>框架协议</option>
+      </select>
+      <select class="filter-select">
+        <option>全部状态</option>
+        <option>已保存</option>
+        <option>审批中</option>
+        <option>已驳回</option>
+        <option>已生效</option>
+        <option>执行中</option>
+        <option>已完成</option>
+        <option>已关闭</option>
+        <option>已作废</option>
+      </select>
+      <select class="filter-select">
+        <option>全部签约主体</option>
+        <option>玉门萤石运营管理有限公司</option>
+        <option>酒泉供应链管理有限公司</option>
+        <option>巨化萤石（玉门）有限公司</option>
+      </select>
+      <select class="filter-select">
+        <option>全部物料</option>
+        <option>萤石粉 CaF₂≥97%</option>
+        <option>萤石粉 CaF₂≥95%</option>
+        <option>萤石粉 CaF₂≥90%</option>
+        <option>萤石块 CaF₂≥85%</option>
+      </select>
+      <div class="filter-date-range">
+        <input type="date" value="2026-06-01">
+        <span class="text-muted">至</span>
+        <input type="date" value="2026-06-30">
+      </div>
+      <button class="btn btn-default btn-sm">重置</button>
+    </div>
+
+    <!-- 合同列表 -->
+    <div class="card">
+      <div class="tbl-wrap">
+        <table class="data-tbl">
+          <thead>
+            <tr>
+              <th>合同编号</th>
+              <th>类型 · 方向</th>
+              <th>我方签约主体</th>
+              <th>供应商 / 客户</th>
+              <th>物料</th>
+              <th>数量 / 定价类型</th>
+              <th>单价 / 金额</th>
+              <th>签订日期</th>
+              <th>已履约量</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-001</a>
+                <div class="text-xs text-muted" style="margin-top:2px">外部号：XW-2026-088</div>
+              </td>
+              <td>
+                <span class="tag">双边合同</span>
+                <div class="text-xs text-muted" style="margin-top:4px">↓入库 · ↑出库</div>
+              </td>
+              <td class="text-sm">玉门萤石运营管理有限公司</td>
+              <td>
+                <div class="text-xs text-muted">供应商</div>
+                <div>玉门兴旺矿业</div>
+                <div class="text-xs" style="color:var(--info);margin-top:4px">客户</div>
+                <div>巨化集团有限公司</div>
+              </td>
+              <td>萤石粉 CaF₂≥97%</td>
+              <td>
+                <div>500 吨</div>
+                <div class="text-xs text-muted mt-1">一口价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">买入 ¥1,450 · 卖出 ¥1,550</div>
+                <div class="text-xs" style="color:var(--success);margin-top:2px">价差 ¥100/吨 · 合计 ¥725,000</div>
+              </td>
+              <td>2026-06-01</td>
+              <td><span style="color:var(--success)">320 吨 (64%)</span></td>
+              <td><span class="badge b-primary">执行中</span></td>
+              <td class="flex-c gap-2">
+                <a href="detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+                <a href="dispatch-cmd.html"><button class="btn btn-default btn-xs">下达指令</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-002</a>
+                <div class="text-xs text-muted" style="margin-top:2px">外部号：JH-PO-2026-031</div>
+              </td>
+              <td>
+                <span class="tag">销售合同</span>
+                <div class="text-xs" style="color:var(--info);margin-top:4px">↑ 我方发货 · 收款</div>
+              </td>
+              <td class="text-sm">玉门萤石运营管理有限公司</td>
+              <td>
+                <div class="text-xs" style="color:var(--info)">客户</div>
+                <div>巨化集团有限公司</div>
+              </td>
+              <td>萤石粉 CaF₂≥97%</td>
+              <td>
+                <div>300 吨</div>
+                <div class="text-xs text-muted mt-1">一口价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">¥1,550/吨</div>
+                <div class="text-xs" style="margin-top:2px">合计 ¥465,000</div>
+              </td>
+              <td>2026-06-02</td>
+              <td><span style="color:var(--success)">180 吨 (60%)</span></td>
+              <td><span class="badge b-primary">执行中</span></td>
+              <td class="flex-c gap-2">
+                <a href="detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+                <button class="btn btn-default btn-xs">下达发货</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-003</a>
+                <div class="text-xs text-muted" style="margin-top:2px">外部号：ZX-HT-2026-09</div>
+              </td>
+              <td>
+                <span class="tag">采购合同</span>
+                <div class="text-xs text-muted" style="margin-top:4px">↓ 我方收货 · 付款</div>
+              </td>
+              <td class="text-sm">玉门萤石运营管理有限公司</td>
+              <td>
+                <div class="text-xs text-muted">供应商</div>
+                <div>玉门众鑫矿业</div>
+              </td>
+              <td>萤石粉 CaF₂≥95%</td>
+              <td>
+                <div>200 吨</div>
+                <div class="text-xs text-muted mt-1">一口价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">¥1,280/吨</div>
+                <div class="text-xs" style="margin-top:2px">合计 ¥256,000</div>
+              </td>
+              <td>2026-06-03</td>
+              <td>
+                <span style="color:var(--danger)">60 吨 (30%)</span>
+                <div class="text-xs" style="color:var(--danger);margin-top:2px">⚠ 质检熔断</div>
+              </td>
+              <td><span class="badge b-primary">执行中</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-danger btn-xs">处理熔断</button>
+                <a href="detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-004</a>
+              </td>
+              <td>
+                <span class="tag">采购合同</span>
+                <div class="text-xs text-muted" style="margin-top:4px">↓ 我方收货 · 付款</div>
+              </td>
+              <td class="text-sm">酒泉供应链管理有限公司</td>
+              <td>
+                <div class="text-xs text-muted">供应商</div>
+                <div>酒泉盛源矿业</div>
+              </td>
+              <td>萤石粉 CaF₂≥90%</td>
+              <td>
+                <div>400 吨</div>
+                <div class="text-xs text-muted mt-1">基差定价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">¥980/吨（暂定）</div>
+                <div class="text-xs" style="margin-top:2px">合计约 ¥392,000</div>
+              </td>
+              <td>2026-06-05</td>
+              <td><span class="text-muted">0 吨</span></td>
+              <td><span class="badge b-warning">审批中</span></td>
+              <td class="flex-c gap-2">
+                <button class="btn btn-primary btn-xs">审批</button>
+                <a href="detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-005</a>
+              </td>
+              <td>
+                <span class="tag">销售合同</span>
+                <div class="text-xs" style="color:var(--info);margin-top:4px">↑ 我方发货 · 收款</div>
+              </td>
+              <td class="text-sm">玉门萤石运营管理有限公司</td>
+              <td>
+                <div class="text-xs" style="color:var(--info)">客户</div>
+                <div>浙江萤石化工</div>
+              </td>
+              <td>萤石粉 CaF₂≥95%</td>
+              <td>
+                <div>150 吨</div>
+                <div class="text-xs text-muted mt-1">一口价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">¥1,380/吨</div>
+                <div class="text-xs" style="margin-top:2px">合计 ¥207,000</div>
+              </td>
+              <td>2026-06-06</td>
+              <td><span class="text-muted">0 吨</span></td>
+              <td><span class="badge b-danger">已驳回</span></td>
+              <td class="flex-c gap-2">
+                <a href="contract-new.html"><button class="btn btn-warning btn-xs">修改重提</button></a>
+                <a href="detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-006</a>
+                <div class="text-xs text-muted" style="margin-top:2px">外部号：JYG-2026-15</div>
+              </td>
+              <td>
+                <span class="tag">双边合同</span>
+                <div class="text-xs text-muted" style="margin-top:4px">↓入库 · ↑出库</div>
+              </td>
+              <td class="text-sm">巨化萤石（玉门）有限公司</td>
+              <td>
+                <div class="text-xs text-muted">供应商</div>
+                <div>嘉峪关矿冶有限公司</div>
+                <div class="text-xs" style="color:var(--info);margin-top:4px">客户</div>
+                <div>江西氟化工集团</div>
+              </td>
+              <td>萤石粉 CaF₂≥97%</td>
+              <td>
+                <div>600 吨</div>
+                <div class="text-xs text-muted mt-1">一口价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">买入 ¥1,420 · 卖出 ¥1,550</div>
+                <div class="text-xs" style="color:var(--success);margin-top:2px">价差 ¥130/吨 · 合计 ¥852,000</div>
+              </td>
+              <td>2026-05-20</td>
+              <td><span style="color:var(--success)">600 吨 (100%)</span></td>
+              <td><span class="badge b-success">已完成</span></td>
+              <td class="flex-c gap-2">
+                <a href="detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+                <a href="settlement.html"><button class="btn btn-default btn-xs">结算单</button></a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-007</a>
+              </td>
+              <td>
+                <span class="tag">采购合同</span>
+                <div class="text-xs text-muted" style="margin-top:4px">↓ 我方收货 · 付款</div>
+              </td>
+              <td class="text-sm">玉门萤石运营管理有限公司</td>
+              <td>
+                <div class="text-xs text-muted">供应商</div>
+                <div>玉门兴旺矿业</div>
+              </td>
+              <td>萤石块 CaF₂≥85%</td>
+              <td>
+                <div>300 吨</div>
+                <div class="text-xs text-muted mt-1">不定价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">待定价</div>
+                <div class="text-xs" style="color:var(--warning);margin-top:2px">参考 ¥780/吨</div>
+              </td>
+              <td>2026-06-08</td>
+              <td><span class="text-muted">—</span></td>
+              <td><span class="badge b-default">已保存</span></td>
+              <td class="flex-c gap-2">
+                <a href="contract-new.html"><button class="btn btn-default btn-xs">编辑</button></a>
+                <button class="btn btn-primary btn-xs">提交审批</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="detail.html" class="tbl-link">HT-2026-008</a>
+                <div class="text-xs text-muted" style="margin-top:2px">外部号：JYG-2026-08</div>
+              </td>
+              <td>
+                <span class="tag">采购合同</span>
+                <div class="text-xs text-muted" style="margin-top:4px">↓ 我方收货 · 付款</div>
+              </td>
+              <td class="text-sm">巨化萤石（玉门）有限公司</td>
+              <td>
+                <div class="text-xs text-muted">供应商</div>
+                <div>嘉峪关矿冶</div>
+              </td>
+              <td>萤石粉 CaF₂≥97%</td>
+              <td>
+                <div>250 吨</div>
+                <div class="text-xs text-muted mt-1">一口价</div>
+              </td>
+              <td>
+                <div class="text-xs text-muted">¥1,420/吨</div>
+                <div class="text-xs" style="margin-top:2px">合计 ¥355,000</div>
+              </td>
+              <td>2026-05-15</td>
+              <td><span style="color:var(--success)">250 吨 (100%)</span></td>
+              <td><span class="badge b-success">已完成</span></td>
+              <td class="flex-c gap-2">
+                <a href="detail.html"><button class="btn btn-default btn-xs">详情</button></a>
+                <a href="settlement.html"><button class="btn btn-default btn-xs">结算单</button></a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-ft">
+        <span class="text-sm text-muted">共 32 条，第 1 / 4 页</span>
+        <div class="flex-c gap-2">
+          <div class="pager">
+            <div class="pg-btn">«</div>
+            <div class="pg-btn active">1</div>
+            <div class="pg-btn">2</div>
+            <div class="pg-btn">3</div>
+            <div class="pg-btn">4</div>
+            <div class="pg-btn">»</div>
+          </div>
+          <select class="filter-select" style="padding:4px 8px;font-size:12px">
+            <option>10条/页</option>
+            <option>20条/页</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+</body>
+</html>

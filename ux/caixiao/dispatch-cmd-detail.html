@@ -1,0 +1,435 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>提货指令详情 CMD-003 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.status-bar {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.status-step {
+  flex: 1;
+  padding: 11px 12px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-3);
+  border-right: 1px solid var(--border);
+  position: relative;
+}
+.status-step:last-child { border-right: none; }
+.status-step.done { background: var(--success-bg); color: var(--success); }
+.status-step.active { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
+.ss-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--border); color: var(--text-3);
+  font-size: 10px; font-weight: 700; margin-bottom: 3px;
+}
+.status-step.done .ss-num { background: var(--success); color: #fff; }
+.status-step.active .ss-num { background: var(--primary); color: #fff; }
+
+/* 实时状态卡 */
+.realtime-card {
+  background: #0f172a;
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  color: #f1f5f9;
+}
+.rt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.rt-label { font-size: 11px; color: #94a3b8; }
+.rt-val { font-size: 13px; font-weight: 700; }
+.rt-val.green { color: #34d399; }
+.rt-val.amber { color: #fbbf24; }
+.rt-divider { height: 1px; background: #1e293b; margin: 10px 0; }
+
+/* 结果差异标注 */
+.diff-tag { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+.diff-tag.over { background: #fef3c7; color: #92400e; }
+.diff-tag.under { background: #fee2e2; color: #991b1b; }
+.diff-tag.ok { background: #d1fae5; color: #065f46; }
+
+/* 关联单据 */
+.doc-list { display: flex; flex-direction: column; gap: 8px; }
+.doc-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface-2); border-radius: var(--radius); padding: 10px 14px;
+  font-size: 13px;
+}
+.doc-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.doc-info { flex: 1; }
+.doc-no { font-weight: 700; }
+.doc-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+</style>
+</head>
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="index.html" class="nav-item active">合同管理</a>
+      <a href="order.html" class="nav-item">订单管理</a>
+      <a href="settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检化验</div>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">⚖</span>地磅管理</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📹</span>监控录像</div>
+      <a href="../monitor/index.html" class="nav-item">实时监控</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="../master/index.html#partner" class="nav-item">往来单位</a>
+      <a href="../master/index.html#material" class="nav-item">物料品类</a>
+      <a href="../master/index.html#warehouse" class="nav-item">仓库库位</a>
+      <a href="../master/index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="../master/index.html#price" class="nav-item">价格基准</a>
+      <a href="../master/index.html#user" class="nav-item">用户与权限</a>
+      <a href="../master/index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html" class="link">合同管理</a><span class="bc-sep">›</span>
+      <a href="detail.html" class="link">HT-2026-001</a><span class="bc-sep">›</span>
+      <span class="bc-cur">提货指令 CMD-003</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <!-- 页头 -->
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="flex-c gap-3">
+          <div class="page-title">提货指令 CMD-003</div>
+          <span class="badge b-primary">运输中</span>
+          <span class="badge b-default" style="font-size:11px">普通优先级</span>
+        </div>
+        <div class="page-desc">HT-2026-001 · PO-20260601-001 · 玉门兴旺矿业 → 玉门堆场A区 · 下达于 2026-06-10 07:45</div>
+      </div>
+      <div class="page-actions">
+        <a href="detail.html"><button class="btn btn-default">← 返回合同</button></a>
+        <button class="btn btn-default" onclick="alert('查看实时位置功能接入GPS后可用')">📍 实时位置</button>
+        <button class="btn btn-warning" onclick="handleUrgent()">催促供应商</button>
+      </div>
+    </div>
+
+    <!-- 7步履行进度条 -->
+    <div class="status-bar">
+      <div class="status-step done">
+        <div class="ss-num">✓</div>
+        <div>指令下达</div>
+        <div class="text-xs" style="margin-top:2px">06-10 07:45</div>
+      </div>
+      <div class="status-step done">
+        <div class="ss-num">✓</div>
+        <div>供应商确认</div>
+        <div class="text-xs" style="margin-top:2px">06-10 07:52</div>
+      </div>
+      <div class="status-step done">
+        <div class="ss-num">✓</div>
+        <div>车辆发出</div>
+        <div class="text-xs" style="margin-top:2px">06-10 08:15</div>
+      </div>
+      <div class="status-step active">
+        <div class="ss-num">4</div>
+        <div>运输中</div>
+        <div class="text-xs" style="margin-top:2px">距目的地 18km</div>
+      </div>
+      <div class="status-step">
+        <div class="ss-num">5</div>
+        <div>到货过磅</div>
+        <div class="text-xs" style="margin-top:2px">待完成</div>
+      </div>
+      <div class="status-step">
+        <div class="ss-num">6</div>
+        <div>质检化验</div>
+        <div class="text-xs" style="margin-top:2px">待完成</div>
+      </div>
+      <div class="status-step">
+        <div class="ss-num">7</div>
+        <div>入库完成</div>
+        <div class="text-xs" style="margin-top:2px">待完成</div>
+      </div>
+    </div>
+
+    <!-- 主体双栏 -->
+    <div class="g2">
+
+      <!-- 左栏 -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- 指令基本信息 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">指令基本信息</span></div>
+          <div class="card-body">
+            <div class="kv-list">
+              <div class="kv-item"><div class="kv-key">指令编号</div><div class="kv-val fw-700">CMD-003</div></div>
+              <div class="kv-item"><div class="kv-key">指令类型</div><div class="kv-val">提货指令（通知供应商备货）</div></div>
+              <div class="kv-item"><div class="kv-key">关联合同</div><div class="kv-val"><a href="detail.html" class="tbl-link">HT-2026-001</a></div></div>
+              <div class="kv-item"><div class="kv-key">关联采购订单</div><div class="kv-val"><a href="order.html" class="tbl-link">PO-20260601-001</a></div></div>
+              <div class="kv-item"><div class="kv-key">计划提货量</div><div class="kv-val fw-700">100 吨</div></div>
+              <div class="kv-item"><div class="kv-key">实际装车量</div><div class="kv-val fw-700">98.4 吨<span class="diff-tag over">-1.6%</span></div></div>
+              <div class="kv-item"><div class="kv-key">计划提货日期</div><div class="kv-val">2026-06-10</div></div>
+              <div class="kv-item"><div class="kv-key">实际发车时间</div><div class="kv-val">2026-06-10 08:15</div></div>
+              <div class="kv-item"><div class="kv-key">预计到达时间</div><div class="kv-val">2026-06-10 14:00</div></div>
+              <div class="kv-item"><div class="kv-key">下达人</div><div class="kv-val">运营管理员</div></div>
+              <div class="kv-item"><div class="kv-key">当前状态</div><div class="kv-val"><span class="badge b-primary">运输中</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 提货地与收货地 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">地点与运输信息</span></div>
+          <div class="card-body">
+            <div class="kv-list">
+              <div class="kv-item"><div class="kv-key">提货地（供应商）</div><div class="kv-val">玉门兴旺矿区（甘肃玉门）</div></div>
+              <div class="kv-item"><div class="kv-key">收货地（我方）</div><div class="kv-val">玉门堆场 A区</div></div>
+              <div class="kv-item"><div class="kv-key">运距</div><div class="kv-val">35 km</div></div>
+            </div>
+            <div class="divider"></div>
+            <div class="kv-list">
+              <div class="kv-item"><div class="kv-key">承运商</div><div class="kv-val">安泰货运</div></div>
+              <div class="kv-item"><div class="kv-key">车牌号</div><div class="kv-val fw-700">甘A·12345</div></div>
+              <div class="kv-item"><div class="kv-key">司机</div><div class="kv-val">张永刚 · 139-xxxx-4567</div></div>
+              <div class="kv-item"><div class="kv-key">运价口径</div><div class="kv-val">¥25/吨</div></div>
+              <div class="kv-item"><div class="kv-key">预计运费</div><div class="kv-val">¥2,460（按实际净重结算）</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 质检要求 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">质检要求</span></div>
+          <div class="card-body">
+            <div class="kv-list">
+              <div class="kv-item"><div class="kv-key">是否触发质检</div><div class="kv-val"><span class="badge b-primary">是</span></div></div>
+              <div class="kv-item"><div class="kv-key">取样方式</div><div class="kv-val">到仓取样</div></div>
+              <div class="kv-item"><div class="kv-key">执行规范</div><div class="kv-val">萤石粉 97% · v3.1</div></div>
+              <div class="kv-item"><div class="kv-key">质检单</div><div class="kv-val">到货后自动创建</div></div>
+            </div>
+            <div class="alert alert-info mt-3">
+              <span>ℹ</span>
+              <div class="text-sm">品位 ≥97%、水分 ≤0.5%、杂质 ≤0.3%。超标扣款；水分 >1.5% 或品位 <95% 触发熔断。</div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /左栏 -->
+
+      <!-- 右栏 -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- 实时运输状态 -->
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">实时运输状态</span>
+            <span class="badge b-primary" style="font-size:11px">● 实时</span>
+          </div>
+          <div class="card-body" style="padding:0 16px 16px">
+            <div class="realtime-card">
+              <div class="rt-row">
+                <div>
+                  <div class="rt-label">当前位置（GPS）</div>
+                  <div class="rt-val green" style="margin-top:2px">玉门市区 → 堆场方向</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="rt-label">距目的地</div>
+                  <div class="rt-val green" style="font-size:22px">18 <span style="font-size:13px;font-weight:400">km</span></div>
+                </div>
+              </div>
+              <div class="rt-divider"></div>
+              <div class="rt-row">
+                <div><div class="rt-label">行驶速度</div><div class="rt-val" style="margin-top:2px">65 km/h</div></div>
+                <div><div class="rt-label">预计剩余</div><div class="rt-val amber" style="margin-top:2px">约 17 分钟</div></div>
+                <div><div class="rt-label">围栏状态</div><div class="rt-val" style="margin-top:2px;color:#94a3b8">未进入</div></div>
+              </div>
+              <div class="rt-divider"></div>
+              <div class="rt-row">
+                <div><div class="rt-label">超时告警</div><div class="rt-val green" style="margin-top:2px">未触发</div></div>
+                <div><div class="rt-label">轨迹偏移</div><div class="rt-val green" style="margin-top:2px">正常</div></div>
+                <div><div class="rt-label">数据更新</div><div class="rt-val" style="margin-top:2px;color:#94a3b8">30 秒前</div></div>
+              </div>
+            </div>
+            <div style="height:110px;background:var(--surface-2);border-radius:var(--radius);margin-top:12px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:var(--text-3);font-size:12px">
+              <div style="font-size:20px">🗺</div>
+              <div>地图轨迹组件集成区域</div>
+              <div class="text-xs">（实时路线 + 电子围栏 + 历史轨迹）</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关联单据 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">关联单据</span></div>
+          <div class="card-body">
+            <div class="doc-list">
+              <div class="doc-item">
+                <div class="doc-icon" style="background:#dbeafe">🚛</div>
+                <div class="doc-info">
+                  <div class="doc-no"><a href="../logistics/index.html" class="tbl-link">WB-20260610-06</a></div>
+                  <div class="doc-sub">运单 · 安泰货运 · 甘A·12345 · 运输中</div>
+                </div>
+                <span class="badge b-primary">运输中</span>
+              </div>
+              <div class="doc-item" style="border: 1px solid var(--danger-border)">
+                <div class="doc-icon" style="background:#fee2e2">⚖</div>
+                <div class="doc-info">
+                  <div class="doc-no"><a href="../weighbridge/index.html" class="tbl-link">WS-20260610-008</a></div>
+                  <div class="doc-sub">磅单 · 净重74.8吨（计划100吨）· 磅差0.8%⚠</div>
+                </div>
+                <span class="badge b-danger">磅差异常</span>
+              </div>
+              <div class="doc-item" style="opacity:.55">
+                <div class="doc-icon" style="background:#f3f4f6">🔬</div>
+                <div class="doc-info">
+                  <div class="doc-no">质检单</div>
+                  <div class="doc-sub">到货过磅后自动创建</div>
+                </div>
+                <span class="badge b-default">待生成</span>
+              </div>
+              <div class="doc-item" style="opacity:.55">
+                <div class="doc-icon" style="background:#f3f4f6">📦</div>
+                <div class="doc-info">
+                  <div class="doc-no">入库批次</div>
+                  <div class="doc-sub">质检合格后自动创建</div>
+                </div>
+                <span class="badge b-default">待生成</span>
+              </div>
+              <div class="doc-item" style="opacity:.55">
+                <div class="doc-icon" style="background:#f3f4f6">💰</div>
+                <div class="doc-info">
+                  <div class="doc-no">结算单</div>
+                  <div class="doc-sub">入库确认后自动生成</div>
+                </div>
+                <span class="badge b-default">待生成</span>
+              </div>
+            </div>
+
+            <!-- 磅差异常提示 -->
+            <div class="alert alert-danger mt-3">
+              <span>⚠</span>
+              <div class="text-sm">
+                <strong>磅差异常需处理：</strong>装车净重 98.4 吨，到货磅单净重 74.8 吨，差异 23.6 吨（0.8%）超过阈值 0.5%。
+                磅单已锁定，等待人工复核定责后方可流转。
+                <a href="../weighbridge/index.html" class="link" style="margin-left:6px">立即处理 →</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 操作历史 -->
+        <div class="card">
+          <div class="card-hd"><span class="card-title">操作历史</span></div>
+          <div class="card-body">
+            <div class="timeline">
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">06-10 09:12</div>
+                <div class="tl-text">进场过磅完成，磅单 WS-20260610-008，净重 74.8 吨</div>
+                <div class="tl-sub">磅差异常，已锁定等待复核</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">06-10 08:15</div>
+                <div class="tl-text">车辆 甘A·12345 从玉门兴旺矿区发出</div>
+                <div class="tl-sub">司机：张永刚 · 实际装车 98.4 吨</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">06-10 07:52</div>
+                <div class="tl-text">供应商张建国短信确认备货</div>
+                <div class="tl-sub">确认装车量 98.4 吨（计划 100 吨，差 1.6%）</div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot done"></div>
+                <div class="tl-time">06-10 07:45</div>
+                <div class="tl-text">提货指令 CMD-003 下达</div>
+                <div class="tl-sub">下达人：运营管理员 · 系统已发短信通知供应商</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /右栏 -->
+
+    </div><!-- /g2 -->
+
+    <!-- 底部操作区 -->
+    <div class="card mt-4">
+      <div class="card-body">
+        <div class="flex-c gap-3" style="flex-wrap:wrap">
+          <div class="text-sm text-muted" style="flex:1">
+            当前状态：<strong>运输中</strong>。磅单磅差异常需优先处理，处理完成后货物方可进入质检流程。
+          </div>
+          <button class="btn btn-danger" onclick="alert('磅差处理功能将跳转至地磅管理')">⚠ 处理磅差异常</button>
+          <button class="btn btn-default" onclick="alert('已催促，短信通知司机张永刚')">📲 催促到货</button>
+          <a href="../weighbridge/weigh-new.html"><button class="btn btn-default">手动录入磅单</button></a>
+          <button class="btn btn-default">📄 导出指令单</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<script>
+function handleUrgent() {
+  if (confirm('确认发送催促短信给供应商联系人张建国？')) {
+    alert('已发送催促短信：\n"您好，提货指令CMD-003货物请尽快安排到货，我方仓管已待岗。"');
+  }
+}
+</script>
+</body>
+</html>

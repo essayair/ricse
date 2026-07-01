@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>仓库详情 · 萤石产业链平台</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+<style>
+.v-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px}
+.v-tab{padding:10px 24px;font-size:13.5px;font-weight:600;color:var(--text-3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.v-tab:hover{color:var(--primary)}
+.v-tab.active{color:var(--primary);border-color:var(--primary)}
+.section-divider{font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;padding:18px 0 12px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.detail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 28px}
+.detail-item{display:flex;flex-direction:column;gap:4px}
+.detail-label{font-size:11.5px;color:var(--text-3);font-weight:500}
+.detail-val{font-size:13.5px;color:var(--text);font-weight:500}
+.cap-bar{display:inline-block;width:80px;height:7px;background:var(--border);border-radius:4px;vertical-align:middle;margin-right:6px;overflow:hidden}
+.cap-fill{height:100%;border-radius:4px}
+.cap-lo{background:var(--success)}.cap-mid{background:var(--warning)}.cap-hi{background:var(--danger)}
+.zone-block{border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:16px;overflow:hidden}
+.zone-hd{background:var(--surface-2);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.zone-hd-left{display:flex;align-items:center;gap:10px}
+.zone-title{font-size:13.5px;font-weight:700}
+.zone-toggle{color:var(--text-3);transition:transform .15s;font-size:13px}
+.zone-toggle.collapsed{transform:rotate(-90deg)}
+.loc-row-detail{display:grid;grid-template-columns:120px 80px 80px 80px 90px 100px 100px 1fr;gap:12px;align-items:center;padding:10px 18px;border-top:1px solid var(--border);font-size:13px}
+.loc-row-detail:hover{background:var(--primary-bg)}
+.loc-hd{display:grid;grid-template-columns:120px 80px 80px 80px 90px 100px 100px 1fr;gap:12px;padding:8px 18px;background:var(--surface-2);font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.04em}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-title"><a href="../index.html">萤石产业链平台</a></div>
+    <div class="sidebar-logo-sub">运营管理后台 · 内部版</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="../index.html" class="nav-group-label nav-group-label--link"><span class="ni">◻</span>系统总览</a>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📋</span>采销系统</div>
+      <a href="../caixiao/index.html" class="nav-item">合同管理</a>
+      <a href="../caixiao/order.html" class="nav-item">订单管理</a>
+      <a href="../caixiao/settlement.html" class="nav-item">结算管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🚛</span>物流管理</div>
+      <a href="../logistics/dispatch.html" class="nav-item">调度看板</a>
+      <a href="../logistics/index.html" class="nav-item">运单管理</a>
+      <a href="../logistics/reconciliation.html" class="nav-item">物流对账</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">📦</span>库存管理</div>
+      <a href="../inventory/index.html" class="nav-item">在库总览</a>
+      <a href="../logistics/inbound.html" class="nav-item">入库单管理</a>
+      <a href="../logistics/outbound.html" class="nav-item">出库单管理</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🔬</span>质检影像</div>
+      <a href="../weighbridge/index.html" class="nav-item">磅单管理</a>
+      <a href="../quality/index.html" class="nav-item">质检单管理</a>
+      <a href="../monitor/index.html" class="nav-item">监控录像</a>
+    </div>
+    <div class="sidebar-section">基础管理</div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🗂</span>主数据管理</div>
+      <a href="index.html#partner" class="nav-item">往来单位</a>
+      <a href="index.html#material" class="nav-item">物料品类</a>
+      <a href="index.html#warehouse" class="nav-item active">仓库库位</a>
+      <a href="index.html#vehicle" class="nav-item">车辆管理</a>
+      <a href="index.html#price" class="nav-item">价格基准</a>
+      <a href="index.html#user" class="nav-item">用户与权限</a>
+      <a href="index.html#approval" class="nav-item">审批流程</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="ni">🏢</span>组织数据</div>
+      <a href="../org/index.html" class="nav-item">公司维护</a>
+      <a href="../org/index.html#dept" class="nav-item">部门管理</a>
+      <a href="../org/index.html#group" class="nav-item">部门组</a>
+      <a href="../org/index.html#position" class="nav-item">岗位管理</a>
+    </div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb">
+      <a href="../index.html" class="link">首页</a><span class="bc-sep">›</span>
+      <a href="index.html#warehouse" class="link">仓库库位</a><span class="bc-sep">›</span>
+      <span class="bc-cur" id="bc-name">仓库详情</span>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn">🔔<span class="badge-dot"></span></div>
+      <div class="user-chip"><div class="avatar">运</div><span>运营管理员</span></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-hd">
+      <div class="page-hd-left">
+        <div class="page-title" id="page-title">仓库详情</div>
+        <div class="page-desc" id="page-desc">—</div>
+      </div>
+      <div class="page-actions">
+        <a href="index.html#warehouse"><button class="btn btn-default">返回列表</button></a>
+        <button class="btn btn-default" id="btn-edit">编辑</button>
+        <button class="btn btn-default" id="btn-toggle">停用</button>
+      </div>
+    </div>
+
+    <div style="max-width:1100px">
+      <!-- 统计卡 -->
+      <div class="g4 mb-4" id="stat-row"></div>
+
+      <div class="card">
+        <div class="card-body" style="padding-bottom:0">
+          <div class="v-tabs">
+            <div class="v-tab active" onclick="switchTab(this,'tab-locs')">库位明细</div>
+            <div class="v-tab" onclick="switchTab(this,'tab-info')">基本信息</div>
+            <div class="v-tab" onclick="switchTab(this,'tab-inout')">出入库记录</div>
+            <div class="v-tab" onclick="switchTab(this,'tab-weigh')">关联磅单</div>
+          </div>
+        </div>
+
+        <!-- 库位明细 -->
+        <div id="tab-locs" class="card-body" style="padding-top:8px">
+          <div class="flex-between mb-3">
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="form-ctrl" style="width:160px" id="filter-zone">
+                <option value="">全部库区</option>
+              </select>
+              <select class="form-ctrl" style="width:160px">
+                <option>全部状态</option>
+                <option>正常</option>
+                <option>接近满仓</option>
+                <option>空仓</option>
+              </select>
+            </div>
+            <a href="warehouse-new.html?mode=loc" id="btn-addloc"><button class="btn btn-primary btn-sm">+ 新增库位</button></a>
+          </div>
+          <div id="zone-list"></div>
+        </div>
+
+        <!-- 基本信息 -->
+        <div id="tab-info" class="card-body" style="display:none;padding-top:8px">
+          <div class="section-divider">仓库档案</div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="detail-label">仓库编码</div><div class="detail-val" id="d-id">—</div></div>
+            <div class="detail-item"><div class="detail-label">仓库名称</div><div class="detail-val fw-700" id="d-name">—</div></div>
+            <div class="detail-item"><div class="detail-label">仓库类型</div><div class="detail-val" id="d-type">—</div></div>
+            <div class="detail-item"><div class="detail-label">归属公司</div><div class="detail-val" id="d-company">—</div></div>
+            <div class="detail-item"><div class="detail-label">仓库管理员</div><div class="detail-val" id="d-keeper">—</div></div>
+            <div class="detail-item"><div class="detail-label">状态</div><div class="detail-val" id="d-status">—</div></div>
+            <div class="detail-item" style="grid-column:span 3"><div class="detail-label">仓库地址</div><div class="detail-val" id="d-address">—</div></div>
+            <div class="detail-item"><div class="detail-label">经度</div><div class="detail-val" id="d-lng">—</div></div>
+            <div class="detail-item"><div class="detail-label">纬度</div><div class="detail-val" id="d-lat">—</div></div>
+            <div class="detail-item"><div class="detail-label">电子围栏半径</div><div class="detail-val" id="d-fence">—</div></div>
+          </div>
+          <div class="section-divider">关联地磅</div>
+          <div id="d-weighbridges" class="detail-grid"></div>
+          <div class="section-divider">备注</div>
+          <div class="detail-val" id="d-remark" style="color:var(--text-3);font-style:italic">—</div>
+          <div style="padding-bottom:16px"></div>
+        </div>
+
+        <!-- 出入库记录 -->
+        <div id="tab-inout" class="card-body" style="display:none;padding-top:8px">
+          <div class="flex-between mb-3">
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="form-ctrl" style="width:120px"><option>全部类型</option><option>入库</option><option>出库</option><option>移库</option></select>
+              <input type="date" class="form-ctrl" style="width:150px" value="2026-06-01">
+              <span class="text-sm">至</span>
+              <input type="date" class="form-ctrl" style="width:150px" value="2026-06-23">
+              <button class="btn btn-default btn-sm">查询</button>
+            </div>
+            <a href="../inventory/index.html"><button class="btn btn-default btn-sm">查看库存总览</button></a>
+          </div>
+          <table class="data-tbl">
+            <thead><tr><th>单据号</th><th>日期</th><th>类型</th><th>物料</th><th>库位</th><th>数量（吨）</th><th>关联合同</th><th>操作人</th></tr></thead>
+            <tbody id="inout-tbody"></tbody>
+          </table>
+          <div class="card-ft"><span class="text-sm text-muted" id="inout-count">—</span></div>
+        </div>
+
+        <!-- 关联磅单 -->
+        <div id="tab-weigh" class="card-body" style="display:none;padding-top:8px">
+          <div class="flex-between mb-3">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="date" class="form-ctrl" style="width:150px" value="2026-06-01">
+              <span class="text-sm">至</span>
+              <input type="date" class="form-ctrl" style="width:150px" value="2026-06-23">
+              <select class="form-ctrl" style="width:120px"><option>全部地磅</option><option>地磅A</option><option>地磅B</option></select>
+              <button class="btn btn-default btn-sm">查询</button>
+            </div>
+            <a href="../weighbridge/index.html"><button class="btn btn-default btn-sm">磅站台账</button></a>
+          </div>
+          <table class="data-tbl">
+            <thead><tr><th>磅单号</th><th>过磅时间</th><th>车牌</th><th>地磅</th><th>物料</th><th>毛重</th><th>皮重</th><th>净重</th><th>关联运单</th></tr></thead>
+            <tbody id="weigh-tbody"></tbody>
+          </table>
+          <div class="card-ft"><span class="text-sm text-muted" id="weigh-count">—</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script>
+const WAREHOUSES = {
+  'WH-001': {
+    id: 'WH-001', name: '玉门堆场', type: '自有仓', status: 'active',
+    company: '玉门萤石运营管理有限公司', keeper: '陈仓（wh01）',
+    address: '甘肃省酒泉市玉门市工业园区萤石产业基地', lng: '97.0358', lat: '40.2725', fence: '500米',
+    remark: '主要堆场，承担采购入库及销售出库的主仓作业',
+    weighbridges: [
+      { id: 'WB-A', name: '地磅A', capacity: '额定100吨', status: '正常' },
+      { id: 'WB-B', name: '地磅B', capacity: '额定80吨', status: '正常' },
+    ],
+    zones: [
+      {
+        id: 'WH-001-A', name: 'A区', desc: '高品位萤石粉专用区',
+        locs: [
+          { id: 'A-01', cap: 150, cur: 145, mat: '萤石粉 CaF₂≥97%', weigh: '地磅A', type: '露天堆场', status: 'normal' },
+          { id: 'A-02', cap: 150, cur: 120, mat: '萤石粉 CaF₂≥97%', weigh: '地磅A', type: '露天堆场', status: 'normal' },
+          { id: 'A-03', cap: 150, cur: 68,  mat: '萤石粉 CaF₂≥97%', weigh: '地磅A', type: '露天堆场', status: 'normal' },
+        ],
+      },
+      {
+        id: 'WH-001-B', name: 'B区', desc: '通用品级萤石粉及萤石块',
+        locs: [
+          { id: 'B-01', cap: 300, cur: 180, mat: '萤石粉 CaF₂≥90%', weigh: '地磅B', type: '露天堆场', status: 'normal' },
+          { id: 'B-02', cap: 300, cur: 110, mat: '萤石块 CaF₂≥85%', weigh: '地磅B', type: '露天堆场', status: 'normal' },
+        ],
+      },
+    ],
+    inoutRecords: [
+      { no: 'RK2026-0623-001', date: '2026-06-23', type: '入库', mat: '萤石粉 CaF₂≥97%', loc: 'A-01', qty: 28.5, contract: 'CG2026-003', op: '陈仓' },
+      { no: 'CK2026-0622-002', date: '2026-06-22', type: '出库', mat: '萤石粉 CaF₂≥95%', loc: 'A-02', qty: 29.6, contract: 'XS2026-012', op: '陈仓' },
+      { no: 'RK2026-0621-003', date: '2026-06-21', type: '入库', mat: '萤石块 CaF₂≥85%', loc: 'B-02', qty: 55.0, contract: 'CG2026-002', op: '陈仓' },
+      { no: 'CK2026-0620-001', date: '2026-06-20', type: '出库', mat: '萤石粉 CaF₂≥97%', loc: 'A-01', qty: 28.2, contract: 'XS2026-011', op: '陈仓' },
+      { no: 'YK2026-0619-001', date: '2026-06-19', type: '移库', mat: '萤石粉 CaF₂≥90%', loc: 'B-01', qty: 30.0, contract: '—', op: '陈仓' },
+      { no: 'RK2026-0618-004', date: '2026-06-18', type: '入库', mat: '萤石粉 CaF₂≥90%', loc: 'B-01', qty: 42.0, contract: 'CG2026-001', op: '陈仓' },
+    ],
+    weighRecords: [
+      { no: 'WB2026-0623-001', time: '2026-06-23 07:15', plate: '甘A·12345', weigh: '地磅A', mat: '萤石粉 CaF₂≥97%', gross: 39.2, tare: 10.7, net: 28.5, order: 'YD2026-0623-001' },
+      { no: 'WB2026-0623-002', time: '2026-06-23 08:30', plate: '甘B·88890', weigh: '地磅A', mat: '萤石粉 CaF₂≥95%', gross: 40.4, tare: 11.2, net: 29.2, order: 'YD2026-0623-002' },
+      { no: 'WB2026-0622-003', time: '2026-06-22 14:20', plate: '甘A·55678', weigh: '地磅B', mat: '萤石块 CaF₂≥85%', gross: 68.3, tare: 13.3, net: 55.0, order: 'YD2026-0622-001' },
+      { no: 'WB2026-0621-001', time: '2026-06-21 09:05', plate: '陇A·33456', weigh: '地磅A', mat: '萤石粉 CaF₂≥97%', gross: 38.8, tare: 10.6, net: 28.2, order: 'YD2026-0621-003' },
+    ],
+  },
+  'WH-002': {
+    id: 'WH-002', name: '嘉峪关中转站', type: '第三方仓', status: 'active',
+    company: '酒泉供应链管理有限公司', keeper: '运营管理员',
+    address: '甘肃省嘉峪关市新城镇物流园区B区', lng: '98.2877', lat: '39.7764', fence: '300米',
+    remark: '嘉峪关中转站，主要用于发货前的短期暂存',
+    weighbridges: [
+      { id: 'WB-C', name: '地磅C', capacity: '额定80吨', status: '正常' },
+    ],
+    zones: [
+      {
+        id: 'WH-002-A', name: 'A区', desc: '通用暂存区',
+        locs: [
+          { id: 'A-01', cap: 200, cur: 0, mat: '通用', weigh: '地磅C', type: '封闭仓库', status: 'normal' },
+        ],
+      },
+    ],
+    inoutRecords: [],
+    weighRecords: [],
+  },
+};
+
+const params = new URLSearchParams(location.search);
+const whId = params.get('id') || 'WH-001';
+const wh = WAREHOUSES[whId] || WAREHOUSES['WH-001'];
+
+// 页头
+document.getElementById('bc-name').textContent = wh.name;
+document.getElementById('page-title').textContent = wh.name + ' · 仓库详情';
+document.getElementById('page-desc').textContent = wh.type + ' · ' + wh.address;
+document.getElementById('btn-edit').onclick = () => location.href = `warehouse-new.html?id=${whId}&mode=edit`;
+document.getElementById('btn-toggle').textContent = wh.status === 'active' ? '停用' : '启用';
+
+// 统计
+const totalCap = wh.zones.reduce((s,z)=>s+z.locs.reduce((ss,l)=>ss+l.cap,0),0);
+const totalCur = wh.zones.reduce((s,z)=>s+z.locs.reduce((ss,l)=>ss+l.cur,0),0);
+const pct = totalCap > 0 ? Math.round(totalCur/totalCap*100) : 0;
+const locCount = wh.zones.reduce((s,z)=>s+z.locs.length,0);
+document.getElementById('stat-row').innerHTML = [
+  { label:'库区数', val: wh.zones.length + ' 个' },
+  { label:'库位数', val: locCount + ' 个' },
+  { label:'总设计容量', val: totalCap + ' 吨' },
+  { label:'当前在库 / 使用率', val: totalCur + ' 吨 (' + pct + '%)', warn: pct >= 90 },
+].map(s=>`<div style="background:var(--surface-2);border-radius:var(--radius);padding:14px 16px;${s.warn?'border:1.5px solid var(--warning)':''}"><div style="font-size:11.5px;color:var(--text-3)">${s.label}</div><div style="font-size:18px;font-weight:800;color:${s.warn?'var(--warning)':'var(--text)'}">${s.val}</div></div>`).join('');
+
+// 基本信息
+['id','name','type','company','keeper','address','lng','lat','fence','remark'].forEach(k => {
+  const el = document.getElementById('d-' + k);
+  if (el) el.textContent = wh[k] || '—';
+});
+document.getElementById('d-status').innerHTML = wh.status === 'active'
+  ? '<span class="badge b-success">启用</span>'
+  : '<span class="badge b-default">停用</span>';
+document.getElementById('d-weighbridges').innerHTML = wh.weighbridges.map(w =>
+  `<div class="detail-item"><div class="detail-label">${w.id}</div><div class="detail-val">${w.name} · ${w.capacity} · <span class="badge b-success">${w.status}</span></div></div>`
+).join('');
+
+// 库位明细
+const zoneFilter = document.getElementById('filter-zone');
+wh.zones.forEach(z => {
+  const opt = document.createElement('option');
+  opt.value = z.id; opt.textContent = z.name;
+  zoneFilter.appendChild(opt);
+});
+
+function capClass(p) { return p >= 90 ? 'cap-hi' : p >= 70 ? 'cap-mid' : 'cap-lo'; }
+function capColor(p) { return p >= 90 ? 'var(--danger)' : p >= 70 ? 'var(--warning)' : 'var(--text)'; }
+
+function renderZones() {
+  const filterVal = zoneFilter.value;
+  const zones = filterVal ? wh.zones.filter(z=>z.id===filterVal) : wh.zones;
+  document.getElementById('zone-list').innerHTML = zones.map(zone => {
+    const zCap = zone.locs.reduce((s,l)=>s+l.cap,0);
+    const zCur = zone.locs.reduce((s,l)=>s+l.cur,0);
+    const zPct = zCap > 0 ? Math.round(zCur/zCap*100) : 0;
+    return `<div class="zone-block">
+      <div class="zone-hd" onclick="toggleZone('zone-body-${zone.id}', 'arr-${zone.id}')">
+        <div class="zone-hd-left">
+          <span class="zone-toggle" id="arr-${zone.id}">▼</span>
+          <span class="zone-title">${zone.name}</span>
+          <span class="badge b-default" style="font-size:11px">${zone.desc}</span>
+          <span class="text-sm text-muted" style="margin-left:4px">${zone.locs.length}个库位 · ${zCur}/${zCap}吨 (${zPct}%)</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-default btn-xs" onclick="event.stopPropagation();location.href='warehouse-new.html?zone=${zone.id}&mode=editzone'">编辑库区</button>
+          <button class="btn btn-primary btn-xs" onclick="event.stopPropagation();location.href='warehouse-new.html?zone=${zone.id}&mode=loc'">+ 新增库位</button>
+        </div>
+      </div>
+      <div id="zone-body-${zone.id}">
+        <div class="loc-hd">
+          <div>库位编码</div><div>设计容量</div><div>在库量</div><div>使用率</div><div>库存状态</div><div>适用物料</div><div>关联地磅</div><div>操作</div>
+        </div>
+        ${zone.locs.map(loc => {
+          const p = loc.cap > 0 ? Math.round(loc.cur/loc.cap*100) : 0;
+          const statusBadge = p >= 95 ? '<span class="badge b-warning">接近满仓</span>'
+                            : loc.cur === 0 ? '<span class="badge b-default">空仓</span>'
+                            : '<span class="badge b-success">正常</span>';
+          return `<div class="loc-row-detail">
+            <div class="fw-700">${loc.id}</div>
+            <div>${loc.cap}吨</div>
+            <div>${loc.cur}吨</div>
+            <div>
+              <span class="cap-bar"><span class="cap-fill ${capClass(p)}" style="width:${p}%"></span></span>
+              <span style="color:${capColor(p)};font-weight:700">${p}%</span>
+            </div>
+            <div>${statusBadge}</div>
+            <div class="text-sm">${loc.mat}</div>
+            <div class="text-sm">${loc.weigh}</div>
+            <div><button class="btn btn-default btn-xs" onclick="location.href='warehouse-new.html?loc=${whId}-${loc.id}&mode=editloc'">编辑</button></div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+zoneFilter.addEventListener('change', renderZones);
+renderZones();
+
+function toggleZone(bodyId, arrId) {
+  const body = document.getElementById(bodyId);
+  const arr = document.getElementById(arrId);
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? '' : 'none';
+  arr.classList.toggle('collapsed', !isHidden);
+}
+
+// 出入库记录
+const typeColors = { '入库': 'b-success', '出库': 'b-danger', '移库': 'b-info' };
+document.getElementById('inout-tbody').innerHTML = wh.inoutRecords.length
+  ? wh.inoutRecords.map(r =>
+      `<tr><td><a href="../inventory/index.html" class="tbl-link">${r.no}</a></td><td>${r.date}</td><td><span class="badge ${typeColors[r.type]||'b-default'}">${r.type}</span></td><td>${r.mat}</td><td><span class="tag">${r.loc}</span></td><td class="fw-700">${r.qty}吨</td><td><a href="../caixiao/detail.html" class="tbl-link">${r.contract}</a></td><td>${r.op}</td></tr>`
+    ).join('')
+  : '<tr><td colspan="8" class="text-center text-muted" style="padding:40px">暂无出入库记录</td></tr>';
+document.getElementById('inout-count').textContent = `共 ${wh.inoutRecords.length} 条记录`;
+
+// 磅单记录
+document.getElementById('weigh-tbody').innerHTML = wh.weighRecords.length
+  ? wh.weighRecords.map(w =>
+      `<tr><td><a href="../weighbridge/index.html" class="tbl-link">${w.no}</a></td><td>${w.time}</td><td class="fw-700"><a href="vehicle-detail.html" class="tbl-link">${w.plate}</a></td><td>${w.weigh}</td><td>${w.mat}</td><td>${w.gross}吨</td><td>${w.tare}吨</td><td class="fw-700">${w.net}吨</td><td><a href="../logistics/index.html" class="tbl-link">${w.order}</a></td></tr>`
+    ).join('')
+  : '<tr><td colspan="9" class="text-center text-muted" style="padding:40px">暂无磅单记录</td></tr>';
+document.getElementById('weigh-count').textContent = `共 ${wh.weighRecords.length} 条过磅记录`;
+
+function switchTab(el, tabId) {
+  document.querySelectorAll('.v-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['tab-locs','tab-info','tab-inout','tab-weigh'].forEach(id => {
+    document.getElementById(id).style.display = id === tabId ? 'block' : 'none';
+  });
+}
+</script>
+</body>
+</html>
