@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.next/
+coverage/
+.env
+.env.local
+*.log
+
+# Prisma
+prisma/migrations/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Redis
+dump.rdb

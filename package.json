@@ -1,0 +1,36 @@
+{
+  "name": "ricse",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @ricse/api dev",
+    "dev:web": "pnpm --filter @ricse/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r tsc --noEmit",
+    "test": "pnpm --filter @ricse/api test",
+    "db:generate": "pnpm --filter @ricse/api prisma:generate",
+    "db:migrate": "pnpm --filter @ricse/api prisma:migrate",
+    "db:studio": "pnpm --filter @ricse/api prisma:studio",
+    "db:seed": "pnpm --filter @ricse/api prisma:seed",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "setup": "pnpm install && pnpm docker:up && pnpm db:migrate && pnpm db:seed"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "unrs-resolver",
+      "bcryptjs",
+      "esbuild"
+    ]
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@10.33.4"
+}

@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== 合约模块 ==========
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("USER") // USER | ADMIN | APPROVER
+  phone     String?
+  email     String?
+  status    String   @default("ACTIVE") // ACTIVE | DISABLED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdContracts Contract[] @relation("ContractCreator")
+  approvalTasks   Approval[] @relation("ApprovalAssignee")
+
+  @@map("users")
+}
+
+model Contract {
+  id                String         @id @default(cuid())
+  contractNo        String         @unique
+  title             String
+  type              String         // PURCHASE | SALES | BILATERAL
+  status            String         @default("DRAFT") // DRAFT -> PENDING_APPROVAL -> APPROVED -> EXECUTING -> COMPLETED | VOIDED
+  supplierId        String
+  buyerId           String?
+  totalAmount       Decimal        @db.Decimal(15, 2)
+  signedAt          DateTime?
+  effectiveAt       DateTime?
+  expireAt          DateTime?
+  settlementMethod  String         @default("DELIVERY") // PREPAYMENT | INSTALLMENT | DELIVERY | NET_30 | NET_60
+  remarks           String?
+  createdBy         String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  lineItems  ContractLineItem[]
+  approvals  Approval[]
+  creator    User   @relation("ContractCreator", fields: [createdBy], references: [id])
+
+  @@index([contractNo])
+  @@index([status])
+  @@index([supplierId])
+  @@map("contracts")
+}
+
+model ContractLineItem {
+  id          String   @id @default(cuid())
+  contractId  String
+  materialId  String
+  materialName String?
+  quantity    Decimal  @db.Decimal(15, 3)
+  unit        String   @default("TON")
+  unitPrice   Decimal  @db.Decimal(15, 4)
+  totalPrice  Decimal  @db.Decimal(15, 2)
+  deliveryDate DateTime?
+  remarks     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id])
+
+  @@index([contractId])
+  @@map("contract_line_items")
+}
+
+model Approval {
+  id          String   @id @default(cuid())
+  contractId  String
+  assigneeId  String
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  comment     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id])
+  assignee User     @relation("ApprovalAssignee", fields: [assigneeId], references: [id])
+
+  @@index([contractId])
+  @@index([assigneeId])
+  @@map("approvals")
+}
+
+// ========== 基础主数据 ==========
+
+model Supplier {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  name          String
+  contactPerson String?
+  contactPhone  String?
+  address       String?
+  status        String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("suppliers")
+}
+
+model Material {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  category  String
+  unit      String   @default("TON")
+  spec      String?
+  status    String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("materials")
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  address   String?
+  status    String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("warehouses")
+}

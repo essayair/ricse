@@ -6,6 +6,32 @@
 
 ---
 
+## 快速开始（本地开发）
+
+```bash
+# 1. 安装依赖
+pnpm install
+
+# 2. 启动基础设施（PostgreSQL + Redis + MinIO）
+pnpm docker:up
+
+# 3. 数据库迁移 + 种子数据
+pnpm db:migrate
+pnpm db:seed
+
+# 4. 启动前后端开发服务器（并行）
+pnpm dev
+```
+
+- **前端**: http://localhost:3001
+- **API**: http://localhost:3000/api/v1
+- **API 文档**: http://localhost:3000/api/docs (Swagger)
+- **Prisma Studio**: `pnpm db:studio` → http://localhost:5555
+
+**默认账号**: `admin` / `admin123` 或 `approver` / `user123`
+
+---
+
 ## 项目定位
 
 | 层次 | 范围 |
@@ -26,14 +52,14 @@
 
 ```
 ├── apps/
-│   ├── web/              # 前端 Next.js (shadcn/ui + Tailwind CSS)
-│   └── api/              # 后端 NestJS (模块化单体 + DDD)
+│   ├── web/              # 前端 Next.js 14+ (App Router)
+│   ├── api/              # 后端 NestJS (模块化单体 + DDD)
+│   │   └── prisma/       # Prisma schema + 迁移 + 种子
 ├── packages/
 │   └── shared-types/     # 前后端共享 TypeScript 类型
-├── prisma/
-│   └── schema.prisma     # 数据库结构定义
 ├── docs/                 # AI OS 文档体系
 ├── ux-prototype/         # UX 原型参考（icpux）
+├── docker-compose.yml
 ├── CLAUDE.md
 └── README.md
 ```
@@ -45,30 +71,32 @@
 | 层次 | 选型 |
 |------|------|
 | 架构 | 模块化单体 + DDD |
-| 后端 | NestJS + TypeScript + Prisma + PostgreSQL |
-| 前端 | Next.js 14+ (App Router) + shadcn/ui |
+| 后端 | NestJS + TypeScript |
+| ORM | Prisma |
+| 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis + BullMQ |
-| 实时通信 | Socket.IO |
+| 前端 | Next.js 14+ (App Router) + Tailwind CSS |
+| API | REST + OpenAPI (@nestjs/swagger) |
 | 文件存储 | MinIO (开发) / 阿里云 OSS (生产) |
-| API | REST + OpenAPI |
+| 项目组织 | pnpm Monorepo |
 
 ---
 
-## 开始
+## 命令行速查
 
-```bash
-# 依赖安装
-pnpm install
-
-# 启动后端（开发模式）
-pnpm --filter @ricse/api dev
-
-# 启动前端（开发模式）
-pnpm --filter @ricse/web dev
-
-# 数据库迁移
-pnpm --filter @ricse/api prisma:migrate
-```
+| 操作 | 命令 |
+|------|------|
+| 一键初始化 | `pnpm setup` |
+| 启动基础设施 | `pnpm docker:up` |
+| 停止基础设施 | `pnpm docker:down` |
+| 启动前后端 | `pnpm dev` |
+| 仅启动后端 | `pnpm dev:api` |
+| 仅启动前端 | `pnpm dev:web` |
+| 生成 Prisma 类型 | `pnpm db:generate` |
+| 执行迁移 | `pnpm db:migrate` |
+| 填充种子数据 | `pnpm db:seed` |
+| 运行后端测试 | `pnpm test` |
+| 类型检查 | `pnpm typecheck` |
 
 ---
 
