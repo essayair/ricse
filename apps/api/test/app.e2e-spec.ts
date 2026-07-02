@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
@@ -47,13 +47,15 @@ describe('RICSE API (e2e)', () => {
       });
     });
 
-    it('POST /auth/login — 成功登录', async () => {
+    it('POST /auth/login — 成功登录并返回 JWT', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
         .send({ username: testUser.username, password: testUser.password })
         .expect(201);
 
       expect(res.body).toHaveProperty('token');
+      expect(res.body).toHaveProperty('refreshToken');
+      expect(res.body.token).not.toBe('placeholder-jwt-token');
       expect(res.body.username).toBe(testUser.username);
       expect(res.body.name).toBe(testUser.name);
     });
@@ -75,13 +77,32 @@ describe('RICSE API (e2e)', () => {
 
       expect(res.body.message).toBe('用户名或密码错误');
     });
+
+    it('GET /auth/profile — 需要 JWT', async () => {
+      // Without token
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/profile')
+        .expect(401);
+
+      // Login first
+      const loginRes = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ username: testUser.username, password: testUser.password });
+      const token = loginRes.body.token;
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/auth/profile')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body.username).toBe(testUser.username);
+    });
   });
 
   describe('Contracts', () => {
     let adminToken: string;
     let supplierId: string;
     let materialId: string;
-    let contractId: string;
 
     beforeEach(async () => {
       // Create admin user
@@ -125,7 +146,6 @@ describe('RICSE API (e2e)', () => {
       expect(res.body.contractNo).toMatch(/^PO-/);
       expect(res.body.status).toBe('DRAFT');
       expect(res.body.lineItems).toHaveLength(1);
-      contractId = res.body.id;
     });
 
     it('GET /contracts — 合同列表', async () => {
@@ -143,6 +163,8 @@ describe('RICSE API (e2e)', () => {
     });
 
     describe('状态机', () => {
+      let contractId: string;
+
       beforeEach(async () => {
         const c = await prisma.contract.create({
           data: { contractNo: 'PO-SM', title: '状态机测试', type: 'PURCHASE', supplierId, totalAmount: 50000, createdBy: 'admin' },
@@ -179,17 +201,31 @@ describe('RICSE API (e2e)', () => {
   });
 
   describe('Master Data', () => {
+    let authToken: string;
+
+    beforeEach(async () => {
+      const hashed = await bcrypt.hash('test123', 10);
+      await prisma.user.create({
+        data: { username: 'e2euser', password: hashed, name: 'E2E 用户', role: 'USER' },
+      });
+
+      const loginRes = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ username: 'e2euser', password: 'test123' });
+      authToken = loginRes.body.token;
+    });
+
     it('CRUD 供应商', async () => {
-      // Create
       const created = await request(app.getHttpServer())
         .post('/api/v1/master-data/suppliers')
+        .set('Authorization', `Bearer ${authToken}`)
         .send({ code: 'SUP-CRUD', name: 'CRUD 供应商', contactPerson: '测试', contactPhone: '13800000000' })
         .expect(201);
       expect(created.body.name).toBe('CRUD 供应商');
 
-      // List
       const list = await request(app.getHttpServer())
         .get('/api/v1/master-data/suppliers')
+        .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
       expect(list.body.items.length).toBeGreaterThanOrEqual(1);
     });
@@ -197,6 +233,7 @@ describe('RICSE API (e2e)', () => {
     it('CRUD 物料', async () => {
       const created = await request(app.getHttpServer())
         .post('/api/v1/master-data/materials')
+        .set('Authorization', `Bearer ${authToken}`)
         .send({ code: 'MAT-CRUD', name: 'CRUD 物料', category: '测试', unit: 'TON' })
         .expect(201);
       expect(created.body.name).toBe('CRUD 物料');
@@ -205,6 +242,7 @@ describe('RICSE API (e2e)', () => {
     it('CRUD 仓库', async () => {
       const created = await request(app.getHttpServer())
         .post('/api/v1/master-data/warehouses')
+        .set('Authorization', `Bearer ${authToken}`)
         .send({ code: 'WH-CRUD', name: 'CRUD 仓库', address: '测试地址' })
         .expect(201);
       expect(created.body.name).toBe('CRUD 仓库');

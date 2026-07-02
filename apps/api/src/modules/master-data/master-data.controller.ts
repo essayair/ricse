@@ -1,8 +1,11 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '@nestjs/passport';
 import { MasterDataService } from './master-data.service';
 
 @ApiTags('主数据管理')
+@ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'))
 @Controller('master-data')
 export class MasterDataController {
   constructor(private masterDataService: MasterDataService) {}

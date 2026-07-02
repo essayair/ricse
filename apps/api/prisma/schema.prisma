@@ -10,16 +10,17 @@ datasource db {
 // ========== 合约模块 ==========
 
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  password  String
-  name      String
-  role      String   @default("USER") // USER | ADMIN | APPROVER
-  phone     String?
-  email     String?
-  status    String   @default("ACTIVE") // ACTIVE | DISABLED
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  username      String   @unique
+  password      String
+  name          String
+  role          String   @default("USER") // USER | ADMIN | APPROVER
+  phone         String?
+  email         String?
+  status        String   @default("ACTIVE") // ACTIVE | DISABLED
+  refreshToken  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   createdContracts Contract[] @relation("ContractCreator")
   approvalTasks   Approval[] @relation("ApprovalAssignee")

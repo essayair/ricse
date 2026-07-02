@@ -6,30 +6,26 @@ import {
   Body,
   Param,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { PrismaService } from '../../prisma/prisma.service';
+import { AuthGuard } from '@nestjs/passport';
 import { ContractService } from './contract.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractStatusDto } from './dto/update-status.dto';
+import { CurrentUser } from '../common/current-user.decorator';
 
 @ApiTags('合同管理')
 @ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'))
 @Controller('contracts')
 export class ContractController {
-  constructor(
-    private readonly contractService: ContractService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly contractService: ContractService) {}
 
   @Post()
   @ApiOperation({ summary: '创建合同' })
-  async create(@Body() dto: CreateContractDto) {
-    // 临时：查询 admin 用户作为创建者（JWT 完善后替换）
-    const admin = await this.prisma.user.findFirst({
-      where: { role: 'ADMIN' },
-    });
-    return this.contractService.create(dto, admin?.id || 'placeholder');
+  create(@Body() dto: CreateContractDto, @CurrentUser('id') userId: string) {
+    return this.contractService.create(dto, userId);
   }
 
   @Get()

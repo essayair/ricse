@@ -12,6 +12,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     },
   });
 
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    throw new Error('登录已过期，请重新登录');
+  }
+
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message || `请求失败: ${res.status}`);
