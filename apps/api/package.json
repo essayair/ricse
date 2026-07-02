@@ -4,7 +4,7 @@
   "private": true,
   "prisma": {
     "schema": "prisma/schema.prisma",
-    "seed": "prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts"
   },
   "scripts": {
     "dev": "nest start --watch",
