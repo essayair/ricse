@@ -24,6 +24,7 @@ export class PartnerService {
     controllerPhone?: string;
     contactPerson?: string;
     contactPhone?: string;
+    isInternal?: boolean;
     country?: string;
     province?: string;
     city?: string;
@@ -67,13 +68,13 @@ export class PartnerService {
     });
     if (existingCode) throw new ConflictException(`编码 ${data.code} 已存在`);
 
-    // 内部企业编码规则校验
-    const isInternal = data.roles.includes('INTERNAL');
+    // 编码规则校验（由 isInternal 决定，与角色无关）
+    const isInternal = data.isInternal ?? false;
     if (isInternal && !/^[A-Za-z0-9]{4}$/.test(data.code)) {
       throw new BadRequestException('内部企业编码必须是 4 位字母数字');
     }
     if (!isInternal && !/^\d{6}$/.test(data.code)) {
-      throw new BadRequestException('外部企业编码必须是 6 位数字');
+      throw new BadRequestException('外部单位编码必须是 6 位数字');
     }
 
     return this.prisma.partner.create({
@@ -93,6 +94,7 @@ export class PartnerService {
         controllerPhone: data.controllerPhone,
         contactPerson: data.contactPerson,
         contactPhone: data.contactPhone,
+        isInternal,
         country: data.country,
         province: data.province,
         city: data.city,
@@ -301,10 +303,7 @@ export class PartnerService {
 
   async generateNextExternalCode(): Promise<string> {
     const last = await this.prisma.partner.findFirst({
-      where: {
-        code: { startsWith: '' },
-        roles: { hasSome: ['SUPPLIER', 'CUSTOMER', 'CARRIER'] },
-      },
+      where: { isInternal: false, deletedAt: null },
       orderBy: { code: 'desc' },
       select: { code: true },
     });

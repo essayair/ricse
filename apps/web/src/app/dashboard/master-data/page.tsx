@@ -17,7 +17,8 @@ import { api } from '@/lib/api';
 
 interface Partner {
   id: string; code: string; name: string; shortName: string | null;
-  roles: string[]; category: string | null; legalPerson: string | null;
+  roles: string[]; isInternal: boolean;
+  category: string | null; legalPerson: string | null;
   contactPerson: string | null; contactPhone: string | null;
   province: string | null; city: string | null;
   taxId: string | null; taxRating: string | null;
@@ -58,15 +59,11 @@ const PARTNER_ROLES = [
   { key: '',         label: '全部' },
   { key: 'SUPPLIER', label: '供应商' },
   { key: 'CUSTOMER', label: '客户' },
-  { key: 'CARRIER',  label: '承运商' },
-  { key: 'INTERNAL', label: '内部企业' },
 ];
 
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
-  SUPPLIER: { label: '供应商', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  SUPPLIER: { label: '供应商', className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800' },
   CUSTOMER: { label: '客户',   className: 'bg-success-bg text-success border-0' },
-  CARRIER:  { label: '承运商', className: 'bg-purple-50 text-purple-700 border-purple-200' },
-  INTERNAL: { label: '内部企业', className: 'bg-orange-50 text-orange-700 border-orange-200' },
 };
 
 const VEHICLE_TYPE: Record<string, string> = {
@@ -115,8 +112,13 @@ const StatusBadge = ({ status }: { status: string }) => {
   return <Badge variant="secondary" className={cfg.className}>{cfg.label}</Badge>;
 };
 
-const RoleBadges = ({ roles }: { roles: string[] }) => (
+const RoleBadges = ({ roles, isInternal }: { roles: string[]; isInternal: boolean }) => (
   <div className="flex flex-wrap gap-1">
+    {isInternal && (
+      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800">
+        内部
+      </Badge>
+    )}
     {roles.map((r) => {
       const cfg = ROLE_CONFIG[r];
       if (!cfg) return null;
@@ -302,7 +304,7 @@ export default function MasterDataPage() {
                   <div className="font-medium text-sm">{p.name}</div>
                   {p.shortName && <div className="text-xs text-muted-foreground">{p.shortName}</div>}
                 </div>,
-                <RoleBadges key="r" roles={p.roles} />,
+                <RoleBadges key="r" roles={p.roles} isInternal={p.isInternal} />,
                 <div key="loc" className="flex items-center gap-1 text-xs text-muted-foreground">
                   {(p.province || p.city) ? (
                     <><MapPin className="h-3 w-3" />{p.province?.replace('省','').replace('市','')} {p.city?.replace('市','')}</>

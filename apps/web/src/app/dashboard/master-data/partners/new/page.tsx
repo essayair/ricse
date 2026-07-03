@@ -13,8 +13,6 @@ import { api } from '@/lib/api';
 const ROLE_OPTIONS = [
   { key: 'SUPPLIER', label: '供应商', desc: '萤石矿企、原料提供方' },
   { key: 'CUSTOMER', label: '客户', desc: '钢厂、氟化工企业等下游买家' },
-  { key: 'CARRIER', label: '承运商', desc: '物流车队、运输公司' },
-  { key: 'INTERNAL', label: '内部企业', desc: '集团子公司、内部业务主体' },
 ];
 
 const CATEGORY_OPTIONS = [
@@ -129,12 +127,12 @@ export default function PartnerNewPage() {
   const router = useRouter();
   const [form, setForm] = useState(INIT);
   const [roles, setRoles] = useState<string[]>([]);
+  const [isInternal, setIsInternal] = useState(false);
   const [isParent, setIsParent] = useState(false);
   const [codeMode, setCodeMode] = useState<'auto' | 'manual'>('auto');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const isInternal = roles.includes('INTERNAL');
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
   // 自动获取外部编码
@@ -143,6 +141,9 @@ export default function PartnerNewPage() {
       api.get<string>('/partners/next-code')
         .then((code) => set('code', code))
         .catch(() => {});
+    }
+    if (isInternal) {
+      set('code', '');
     }
   }, [isInternal, codeMode]);
 
@@ -154,19 +155,26 @@ export default function PartnerNewPage() {
   const citiesForProvince = CITY_MAP[form.province] || [];
 
   const toggleRole = (role: string) => {
-    setRoles((prev) => {
-      const next = prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role];
-      if (role === 'INTERNAL' && !prev.includes('INTERNAL')) {
-        setCodeMode('manual');
-        set('code', '');
-      }
-      return next;
-    });
+    setRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  };
+
+  const handleInternalToggle = (val: boolean) => {
+    setIsInternal(val);
+    setIsParent(false);
+    if (val) {
+      setCodeMode('manual');
+      set('code', '');
+    } else {
+      setCodeMode('auto');
+      api.get<string>('/partners/next-code').then((code) => set('code', code)).catch(() => {});
+    }
   };
 
   const handleSubmit = async () => {
     if (!form.name) { setError('请填写企业名称'); return; }
-    if (!roles.length) { setError('请至少选择一个角色'); return; }
+    if (!roles.length) { setError('请至少选择一个角色（供应商 / 客户）'); return; }
     if (!form.code) { setError('请填写合作伙伴编码'); return; }
     setLoading(true);
     setError('');
@@ -175,6 +183,7 @@ export default function PartnerNewPage() {
         ...Object.fromEntries(Object.entries(form).filter(([, v]) => v !== '')),
         creditLimit: form.creditLimit ? parseFloat(form.creditLimit) : undefined,
         regCapital: form.regCapital ? parseFloat(form.regCapital) : undefined,
+        isInternal,
         isParent,
         roles,
       });
@@ -268,15 +277,15 @@ export default function PartnerNewPage() {
               </FormField>
             </div>
 
-            <SectionTitle>角色定位</SectionTitle>
-            <p className="text-xs text-muted-foreground mb-3">一家企业可同时具备多个角色，统一建档，按角色标签区分身份</p>
-            <div className="flex flex-wrap gap-2">
+            <SectionTitle>业务角色</SectionTitle>
+            <p className="text-xs text-muted-foreground mb-3">选择该单位与我方的业务关系，可同时具备供应商和客户身份</p>
+            <div className="flex gap-3">
               {ROLE_OPTIONS.map((r) => (
                 <button
                   key={r.key}
                   type="button"
                   onClick={() => toggleRole(r.key)}
-                  className={`flex flex-col items-start px-4 py-2.5 rounded-lg border-2 text-left transition-colors min-w-[120px] ${
+                  className={`flex flex-col items-start px-4 py-2.5 rounded-lg border-2 text-left transition-colors min-w-[130px] ${
                     roles.includes(r.key)
                       ? 'border-primary bg-primary/10 text-primary'
                       : 'border-input text-muted-foreground hover:border-foreground/30'
@@ -288,10 +297,38 @@ export default function PartnerNewPage() {
               ))}
             </div>
 
+            <SectionTitle>单位性质</SectionTitle>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => handleInternalToggle(false)}
+                className={`flex flex-col items-start px-4 py-2.5 rounded-lg border-2 text-left transition-colors min-w-[130px] ${
+                  !isInternal
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-input text-muted-foreground hover:border-foreground/30'
+                }`}
+              >
+                <span className="font-semibold text-sm">外部单位</span>
+                <span className="text-xs mt-0.5 opacity-70">独立法人，编码 6 位数字</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInternalToggle(true)}
+                className={`flex flex-col items-start px-4 py-2.5 rounded-lg border-2 text-left transition-colors min-w-[130px] ${
+                  isInternal
+                    ? 'border-orange-400 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400'
+                    : 'border-input text-muted-foreground hover:border-foreground/30'
+                }`}
+              >
+                <span className="font-semibold text-sm">内部企业</span>
+                <span className="text-xs mt-0.5 opacity-70">集团子公司，编码 4 位手动</span>
+              </button>
+            </div>
+
             <SectionTitle>合作伙伴编码</SectionTitle>
             <div className="flex items-end gap-3">
               <div className="flex-1">
-                <FormField label={isInternal ? '编码（4位字母数字，手动录入）' : '编码（6位数字）'} required>
+                <FormField label={isInternal ? '编码（4位字母数字，手动录入）' : '编码（6位数字，自动递增）'} required>
                   <Input
                     value={form.code}
                     onChange={(e) => set('code', e.target.value)}
@@ -573,10 +610,13 @@ export default function PartnerNewPage() {
                     <span className="font-medium">{form.name}</span>
                   </div>
                 )}
-                {roles.length > 0 && (
+                {(roles.length > 0 || isInternal) && (
                   <div className="flex items-center gap-2">
                     <span className="text-muted-foreground w-16 shrink-0">角色</span>
                     <div className="flex flex-wrap gap-1">
+                      {isInternal && (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-700 font-medium">内部</span>
+                      )}
                       {roles.map((r) => (
                         <span key={r} className="px-1.5 py-0.5 rounded text-xs bg-primary/10 text-primary font-medium">
                           {ROLE_OPTIONS.find((o) => o.key === r)?.label}

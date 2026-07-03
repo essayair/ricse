@@ -63,6 +63,8 @@ model Partner {
   bizScope      String?   // 经营范围
   tradingGoods  String?   // 拟交易品种
   creditLimit      Decimal?  @db.Decimal(15, 2)
+  // 内部 / 外部标识（独立于角色，决定编码规则：内部4位字母数字，外部6位数字）
+  isInternal       Boolean   @default(false)
   // 额外字段（来自原型）
   country          String?   // 国家/地区，默认中国大陆
   legalPersonType  String?   // 法人类型：自然人/法人
@@ -78,7 +80,7 @@ model Partner {
   mainBiz          String?   // 主营业务及品种
   equityStructure  String?   // 股权结构
   intro            String?   // 企业介绍
-  roles            String[]  // SUPPLIER | CUSTOMER | CARRIER | INTERNAL
+  roles            String[]  // SUPPLIER | CUSTOMER（角色：往来单位只有供应商和客户）
   status           String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
   remark           String?
   createdAt     DateTime  @default(now())

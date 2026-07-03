@@ -27,6 +27,7 @@ export class PartnerController {
     legalPerson?: string; legalPersonType?: string; legalIdCard?: string;
     controller?: string; controllerTitle?: string; controllerPhone?: string;
     contactPerson?: string; contactPhone?: string;
+    isInternal?: boolean;
     country?: string; province?: string; city?: string; address?: string; bizAddress?: string;
     sourceRegion?: string; estDate?: string; regCapital?: number;
     regCurrency?: string; revenueScale?: string; groupName?: string; isParent?: boolean;
