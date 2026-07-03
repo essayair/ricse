@@ -230,22 +230,22 @@ export default function PartnerNewPage() {
           <Card className="p-6">
             <SectionTitle>企业基本信息</SectionTitle>
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-              <FormField label="统一社会信用代码" required>
+              <div className="col-span-2">
+                <FormField label="企业名称" required>
+                  <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="请输入企业全称（与营业执照一致）" />
+                </FormField>
+              </div>
+
+              <FormField label="统一社会信用代码">
                 <Input
                   value={form.taxId} onChange={(e) => set('taxId', e.target.value)}
-                  placeholder="请输入18位统一社会信用代码" maxLength={18}
+                  placeholder="18位统一社会信用代码" maxLength={18}
                   className="font-mono"
                 />
               </FormField>
               <FormField label="国家 / 地区">
                 <SelectField value={form.country} onChange={(v) => set('country', v)} options={COUNTRIES} />
               </FormField>
-
-              <div className="col-span-2">
-                <FormField label="企业名称" required>
-                  <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="请输入企业全称（与营业执照一致）" />
-                </FormField>
-              </div>
 
               <FormField label="简称 / 别名">
                 <Input value={form.shortName} onChange={(e) => set('shortName', e.target.value)} placeholder="简称或别名（可选）" />
@@ -465,22 +465,22 @@ export default function PartnerNewPage() {
           <Card className="p-6">
             <SectionTitle>业务信息</SectionTitle>
             <div className="space-y-4">
-              <FormField label="货源地 / 矿区">
-                <Input value={form.sourceRegion} onChange={(e) => set('sourceRegion', e.target.value)} placeholder="如：金华、武义、福建" />
+              <FormField label="主要货源地" hint="供应商适用，填写原料或商品的主要来源地区">
+                <Input value={form.sourceRegion} onChange={(e) => set('sourceRegion', e.target.value)} placeholder="如：华东地区、进口、山东、云南" />
               </FormField>
-              <FormField label="主营业务及品种">
+              <FormField label="主营业务">
                 <textarea
                   rows={2} value={form.mainBiz}
                   onChange={(e) => set('mainBiz', e.target.value)}
-                  placeholder="主营业务及主要交易品种"
+                  placeholder="描述企业核心业务方向及主要产品或服务"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
               </FormField>
-              <FormField label="拟交易品种">
+              <FormField label="拟合作品种 / 业务" hint="与本方预计开展交易的具体商品品类或业务类型">
                 <textarea
                   rows={2} value={form.tradingGoods}
                   onChange={(e) => set('tradingGoods', e.target.value)}
-                  placeholder="如：萤石粉 CaF₂≥97%、萤石粉 CaF₂≥95%"
+                  placeholder="如：原材料采购、产品销售、物流运输、技术服务等"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
               </FormField>
@@ -496,7 +496,7 @@ export default function PartnerNewPage() {
                 <textarea
                   rows={2} value={form.equityStructure}
                   onChange={(e) => set('equityStructure', e.target.value)}
-                  placeholder="主要股东及持股比例"
+                  placeholder="主要股东及持股比例（可选）"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
               </FormField>
@@ -504,7 +504,7 @@ export default function PartnerNewPage() {
                 <textarea
                   rows={3} value={form.intro}
                   onChange={(e) => set('intro', e.target.value)}
-                  placeholder="企业简介（可选）"
+                  placeholder="企业背景、规模、核心能力等简介（可选）"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
               </FormField>
