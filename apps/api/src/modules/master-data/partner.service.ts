@@ -12,13 +12,43 @@ export class PartnerService {
     code: string;
     name: string;
     shortName?: string;
+    shortCode?: string;
     taxId?: string;
+    orgType?: string;
+    category?: string;
     legalPerson?: string;
+    legalPersonType?: string;
+    legalIdCard?: string;
+    controller?: string;
+    controllerTitle?: string;
+    controllerPhone?: string;
     contactPerson?: string;
     contactPhone?: string;
+    country?: string;
+    province?: string;
+    city?: string;
     address?: string;
     bizAddress?: string;
     sourceRegion?: string;
+    estDate?: string;
+    regCapital?: number;
+    regCurrency?: string;
+    revenueScale?: string;
+    groupName?: string;
+    isParent?: boolean;
+    taxType?: string;
+    taxRating?: string;
+    invoiceType?: string;
+    relatedPartyType?: string;
+    industry?: string;
+    corpType?: string;
+    licenseType?: string;
+    licenseExpiry?: string;
+    bizScope?: string;
+    mainBiz?: string;
+    tradingGoods?: string;
+    equityStructure?: string;
+    intro?: string;
     creditLimit?: number;
     roles: string[];
     remark?: string;
@@ -51,13 +81,43 @@ export class PartnerService {
         code: data.code,
         name: data.name,
         shortName: data.shortName,
+        shortCode: data.shortCode,
         taxId: data.taxId,
+        orgType: data.orgType,
+        category: data.category,
         legalPerson: data.legalPerson,
+        legalPersonType: data.legalPersonType,
+        legalIdCard: data.legalIdCard,
+        controller: data.controller,
+        controllerTitle: data.controllerTitle,
+        controllerPhone: data.controllerPhone,
         contactPerson: data.contactPerson,
         contactPhone: data.contactPhone,
+        country: data.country,
+        province: data.province,
+        city: data.city,
         address: data.address,
         bizAddress: data.bizAddress,
         sourceRegion: data.sourceRegion,
+        estDate: data.estDate ? new Date(data.estDate) : undefined,
+        regCapital: data.regCapital,
+        regCurrency: data.regCurrency,
+        revenueScale: data.revenueScale,
+        groupName: data.groupName,
+        isParent: data.isParent,
+        taxType: data.taxType,
+        taxRating: data.taxRating,
+        invoiceType: data.invoiceType,
+        relatedPartyType: data.relatedPartyType,
+        industry: data.industry,
+        corpType: data.corpType,
+        licenseType: data.licenseType,
+        licenseExpiry: data.licenseExpiry ? new Date(data.licenseExpiry) : undefined,
+        bizScope: data.bizScope,
+        mainBiz: data.mainBiz,
+        tradingGoods: data.tradingGoods,
+        equityStructure: data.equityStructure,
+        intro: data.intro,
         creditLimit: data.creditLimit,
         roles: data.roles,
         remark: data.remark,

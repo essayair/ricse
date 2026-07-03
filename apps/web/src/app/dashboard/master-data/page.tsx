@@ -1,16 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import {
   Plus, Search, Truck, DollarSign, Users, GitBranch,
-  Building2, Package, Warehouse, X,
+  Building2, Package, Warehouse, X, MapPin, ExternalLink,
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -19,8 +17,11 @@ import { api } from '@/lib/api';
 
 interface Partner {
   id: string; code: string; name: string; shortName: string | null;
-  roles: string[]; contactPerson: string | null; contactPhone: string | null;
-  taxId: string | null; status: string;
+  roles: string[]; category: string | null; legalPerson: string | null;
+  contactPerson: string | null; contactPhone: string | null;
+  province: string | null; city: string | null;
+  taxId: string | null; taxRating: string | null;
+  creditLimit: string | null; status: string;
 }
 interface MaterialCategory { id: string; name: string; }
 interface Material {
@@ -72,6 +73,19 @@ const VEHICLE_TYPE: Record<string, string> = {
   TRUCK: '自卸车', TANK: '罐车', TRAILER: '挂车',
 };
 
+const CATEGORY_CONFIG: Record<string, { label: string; className: string }> = {
+  CORE:   { label: '核心', className: 'bg-primary-bg text-primary border-0' },
+  NORMAL: { label: '普通', className: '' },
+  TEMP:   { label: '临时', className: 'bg-warning-bg text-warning border-0' },
+};
+
+const TAX_RATING_CONFIG: Record<string, string> = {
+  A级: 'bg-success-bg text-success border-0',
+  B级: 'bg-warning-bg text-warning border-0',
+  C级: '',
+  D级: 'bg-destructive-bg text-destructive border-0',
+};
+
 /* ── Mock data (price / users / approval — 后续迭代接真实接口) ── */
 
 const MOCK_PRICES: PriceItem[] = [
@@ -111,192 +125,6 @@ const RoleBadges = ({ roles }: { roles: string[] }) => (
   </div>
 );
 
-/* ── Create Partner Modal ── */
-
-const INIT_FORM = {
-  code: '', name: '', shortName: '', taxId: '', legalPerson: '',
-  contactPerson: '', contactPhone: '', address: '',
-  roles: [] as string[], remark: '',
-  codeMode: 'auto' as 'auto' | 'manual',
-};
-
-function CreatePartnerModal({ open, onClose, onCreated }: {
-  open: boolean; onClose: () => void; onCreated: () => void;
-}) {
-  const [form, setForm] = useState(INIT_FORM);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const isInternal = form.roles.includes('INTERNAL');
-
-  // Auto-generate code (non-internal only)
-  useEffect(() => {
-    if (open && !isInternal && form.codeMode === 'auto') {
-      api.get<string>('/partners/next-code')
-        .then((code) => setForm((f) => ({ ...f, code })))
-        .catch(() => {});
-    }
-  }, [open, isInternal, form.codeMode]);
-
-  const toggleRole = (role: string) => {
-    setForm((f) => {
-      const next = f.roles.includes(role)
-        ? f.roles.filter((r) => r !== role)
-        : [...f.roles, role];
-      // 切到内部企业时，清除编码以便手动输入
-      if (role === 'INTERNAL' && !f.roles.includes('INTERNAL')) {
-        return { ...f, roles: next, code: '', codeMode: 'manual' as const };
-      }
-      return { ...f, roles: next };
-    });
-  };
-
-  const handleSubmit = async () => {
-    if (!form.name) { setError('请填写企业名称'); return; }
-    if (!form.roles.length) { setError('请至少选择一个角色'); return; }
-    if (!form.code) { setError('请填写合作伙伴编码'); return; }
-    setLoading(true);
-    setError('');
-    try {
-      await api.post('/partners', {
-        code: form.code,
-        name: form.name,
-        shortName: form.shortName || undefined,
-        taxId: form.taxId || undefined,
-        legalPerson: form.legalPerson || undefined,
-        contactPerson: form.contactPerson || undefined,
-        contactPhone: form.contactPhone || undefined,
-        address: form.address || undefined,
-        roles: form.roles,
-        remark: form.remark || undefined,
-      });
-      onCreated();
-      onClose();
-      setForm(INIT_FORM);
-    } catch (e: any) {
-      setError(e.message || '创建失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>新建往来单位</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          {/* 角色 */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-2 block">角色 <span className="text-destructive">*</span></label>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(ROLE_CONFIG).map(([key, cfg]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => toggleRole(key)}
-                  className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                    form.roles.includes(key)
-                      ? `${cfg.className} font-medium`
-                      : 'border-input text-muted-foreground hover:border-foreground'
-                  }`}
-                >
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 合作伙伴编码 */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">
-              合作伙伴编码 <span className="text-destructive">*</span>
-              <span className="ml-2 text-xs text-muted-foreground">
-                {isInternal ? '（内部：4位字母数字，手动录入）' : '（外部：6位数字）'}
-              </span>
-            </label>
-            <div className="flex gap-2">
-              <Input
-                value={form.code}
-                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                placeholder={isInternal ? '如：HQ01' : '000001'}
-                maxLength={isInternal ? 4 : 6}
-                disabled={!isInternal && form.codeMode === 'auto'}
-                className="font-mono"
-              />
-              {!isInternal && (
-                <Button
-                  type="button" variant="outline" size="sm"
-                  onClick={() => setForm((f) => ({
-                    ...f,
-                    codeMode: f.codeMode === 'auto' ? 'manual' : 'auto',
-                    code: f.codeMode === 'auto' ? '' : f.code,
-                  }))}
-                >
-                  {form.codeMode === 'auto' ? '手动输入' : '自动生成'}
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* 企业名称 */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">企业名称 <span className="text-destructive">*</span></label>
-            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="企业全称" />
-          </div>
-
-          {/* 统一信用代码 */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">统一社会信用代码</label>
-            <Input value={form.taxId} onChange={(e) => setForm((f) => ({ ...f, taxId: e.target.value }))} placeholder="18位信用代码" maxLength={18} />
-          </div>
-
-          {/* 简称 + 法人 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1 block">简称</label>
-              <Input value={form.shortName} onChange={(e) => setForm((f) => ({ ...f, shortName: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1 block">法定代表人</label>
-              <Input value={form.legalPerson} onChange={(e) => setForm((f) => ({ ...f, legalPerson: e.target.value }))} />
-            </div>
-          </div>
-
-          {/* 联系人 + 电话 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1 block">联系人</label>
-              <Input value={form.contactPerson} onChange={(e) => setForm((f) => ({ ...f, contactPerson: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1 block">联系电话</label>
-              <Input value={form.contactPhone} onChange={(e) => setForm((f) => ({ ...f, contactPhone: e.target.value }))} />
-            </div>
-          </div>
-
-          {/* 地址 */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">注册地址</label>
-            <Input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
-          </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? '创建中...' : '确认创建'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /* ── Page ── */
 
 export default function MasterDataPage() {
@@ -327,9 +155,6 @@ export default function MasterDataPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-
-  // UI state
-  const [showCreate, setShowCreate] = useState(false);
 
   const fetchPartners = useCallback(() => {
     const params = new URLSearchParams();
@@ -367,10 +192,19 @@ export default function MasterDataPage() {
           <h1 className="text-2xl font-bold">主数据管理</h1>
           <p className="text-sm text-muted-foreground mt-1">管理基础档案数据，支撑业务运行</p>
         </div>
-        {(tab === 'partners') && (
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="h-4 w-4 mr-1" />新建往来单位
-          </Button>
+        {tab === 'partners' && (
+          <Link href="/dashboard/master-data/partners/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-1" />新建往来单位
+            </Button>
+          </Link>
+        )}
+        {tab === 'materials' && (
+          <Link href="/dashboard/master-data/materials/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-1" />新建物料
+            </Button>
+          </Link>
         )}
       </div>
 
@@ -458,18 +292,41 @@ export default function MasterDataPage() {
         {/* 往来单位 */}
         {tab === 'partners' && (
           <DataTable
-            headers={['编码', '名称', '角色', '联系人', '联系电话', '状态']}
-            rows={partners.map((p) => [
-              <span key="c" className="font-mono text-xs">{p.code}</span>,
-              <div key="n">
-                <div className="font-medium">{p.name}</div>
-                {p.shortName && <div className="text-xs text-muted-foreground">{p.shortName}</div>}
-              </div>,
-              <RoleBadges key="r" roles={p.roles} />,
-              p.contactPerson || '-',
-              p.contactPhone || '-',
-              <StatusBadge key="s" status={p.status} />,
-            ])}
+            headers={['编码', '企业名称', '角色', '省市', '法人', '联系电话', '类别', '纳税评级', '授信额度', '状态', '操作']}
+            rows={partners.map((p) => {
+              const catCfg = p.category ? CATEGORY_CONFIG[p.category] : null;
+              const creditNum = p.creditLimit ? parseFloat(p.creditLimit) : 0;
+              return [
+                <span key="c" className="font-mono text-xs text-muted-foreground">{p.code}</span>,
+                <div key="n">
+                  <div className="font-medium text-sm">{p.name}</div>
+                  {p.shortName && <div className="text-xs text-muted-foreground">{p.shortName}</div>}
+                </div>,
+                <RoleBadges key="r" roles={p.roles} />,
+                <div key="loc" className="flex items-center gap-1 text-xs text-muted-foreground">
+                  {(p.province || p.city) ? (
+                    <><MapPin className="h-3 w-3" />{p.province?.replace('省','').replace('市','')} {p.city?.replace('市','')}</>
+                  ) : '—'}
+                </div>,
+                <span key="lp" className="text-sm">{p.legalPerson || '—'}</span>,
+                <span key="ph" className="text-sm text-muted-foreground">{p.contactPhone || '—'}</span>,
+                catCfg
+                  ? <Badge key="cat" variant="secondary" className={catCfg.className}>{catCfg.label}</Badge>
+                  : <span key="cat2" className="text-muted-foreground text-xs">—</span>,
+                p.taxRating
+                  ? <Badge key="tax" variant="secondary" className={TAX_RATING_CONFIG[p.taxRating] || ''}>{p.taxRating}</Badge>
+                  : <span key="tax2" className="text-muted-foreground text-xs">—</span>,
+                creditNum > 0
+                  ? <span key="cl" className="font-mono text-sm">¥{(creditNum / 10000).toFixed(0)}万</span>
+                  : <span key="cl2" className="text-muted-foreground text-xs">—</span>,
+                <StatusBadge key="s" status={p.status} />,
+                <div key="ops" className="flex gap-1.5">
+                  <Link href={`/dashboard/master-data/partners/${p.id}`}>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button>
+                  </Link>
+                </div>,
+              ];
+            })}
             empty="暂无往来单位数据"
           />
         )}
@@ -576,12 +433,6 @@ export default function MasterDataPage() {
         )}
       </Card>
 
-      {/* Create Partner Modal */}
-      <CreatePartnerModal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        onCreated={fetchPartners}
-      />
     </div>
   );
 }

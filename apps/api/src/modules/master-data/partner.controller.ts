@@ -22,9 +22,18 @@ export class PartnerController {
   @Post()
   @ApiOperation({ summary: '创建往来单位' })
   create(@Body() dto: {
-    code: string; name: string; shortName?: string; taxId?: string;
-    legalPerson?: string; contactPerson?: string; contactPhone?: string;
-    address?: string; bizAddress?: string; sourceRegion?: string;
+    code: string; name: string; shortName?: string; shortCode?: string;
+    taxId?: string; orgType?: string; category?: string;
+    legalPerson?: string; legalPersonType?: string; legalIdCard?: string;
+    controller?: string; controllerTitle?: string; controllerPhone?: string;
+    contactPerson?: string; contactPhone?: string;
+    country?: string; province?: string; city?: string; address?: string; bizAddress?: string;
+    sourceRegion?: string; estDate?: string; regCapital?: number;
+    regCurrency?: string; revenueScale?: string; groupName?: string; isParent?: boolean;
+    taxType?: string; taxRating?: string; invoiceType?: string; relatedPartyType?: string;
+    industry?: string; corpType?: string;
+    licenseType?: string; licenseExpiry?: string;
+    bizScope?: string; mainBiz?: string; tradingGoods?: string; equityStructure?: string; intro?: string;
     creditLimit?: number; roles: string[]; remark?: string;
   }) {
     return this.partnerService.create(dto);

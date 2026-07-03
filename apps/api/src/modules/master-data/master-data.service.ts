@@ -22,15 +22,34 @@ export class MasterDataService {
 
   // ===== 物料 =====
 
+  async generateNextMaterialCode(): Promise<string> {
+    const last = await this.prisma.material.findFirst({
+      orderBy: { code: 'desc' },
+      select: { code: true },
+    });
+    let nextNum = 1;
+    if (last) {
+      const num = parseInt(last.code.replace(/\D/g, ''), 10);
+      if (!isNaN(num)) nextNum = num + 1;
+    }
+    return `MAT${String(nextNum).padStart(4, '0')}`;
+  }
+
   async createMaterial(data: {
     code: string;
     name: string;
     categoryId: string;
-    grade: string;
+    grade?: string;
     unit?: string;
     spec?: string;
     sourceRegion?: string;
     packageType?: string;
+    isVirtual?: boolean;
+    specs?: object;
+    hsCode?: string;
+    taxCode?: string;
+    internalCode?: string;
+    qcTemplate?: string;
     remark?: string;
   }) {
     return this.prisma.material.create({

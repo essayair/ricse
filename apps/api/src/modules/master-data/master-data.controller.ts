@@ -26,11 +26,19 @@ export class MasterDataController {
 
   // ===== 物料 =====
 
+  @Get('materials/next-code')
+  @ApiOperation({ summary: '获取下一个物料编码' })
+  getMaterialNextCode() {
+    return this.masterDataService.generateNextMaterialCode();
+  }
+
   @Post('materials')
   @ApiOperation({ summary: '创建物料' })
   createMaterial(@Body() dto: {
-    code: string; name: string; categoryId: string; grade: string;
-    unit?: string; spec?: string; sourceRegion?: string; packageType?: string; remark?: string;
+    code: string; name: string; categoryId: string; grade?: string;
+    unit?: string; spec?: string; sourceRegion?: string; packageType?: string;
+    isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
+    internalCode?: string; qcTemplate?: string; remark?: string;
   }) {
     return this.masterDataService.createMaterial(dto);
   }

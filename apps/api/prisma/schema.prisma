@@ -38,17 +38,49 @@ model Partner {
   code          String    @unique
   name          String
   shortName     String?
-  taxId         String?
+  shortCode     String?   // 拼音简码，用于快速搜索
+  taxId         String?   // 统一社会信用代码
+  orgType       String?   // 组织性质：有限责任公司/股份有限公司/国有企业/外资企业/个体工商户
+  category      String?   // 合作伙伴类别：CORE/NORMAL/TEMP
   legalPerson   String?
+  legalIdCard   String?   // 法人身份证号
+  controller    String?   // 实际控制人
+  controllerPhone String? // 实控人联系方式
   contactPerson String?
   contactPhone  String?
+  province      String?
+  city          String?
   address       String?
   bizAddress    String?
   sourceRegion  String?
-  creditLimit   Decimal?  @db.Decimal(15, 2)
-  roles         String[]   // SUPPLIER | CUSTOMER | CARRIER | INTERNAL
-  status        String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
-  remark        String?
+  estDate       DateTime? // 成立日期
+  regCapital    Decimal?  @db.Decimal(15, 2) // 注册资本（万）
+  taxType       String?   // 纳税人类型：GENERAL/SMALL_SCALE/EXEMPT
+  taxRating     String?   // 纳税评级：A/B/C/D
+  invoiceType   String?   // 发票类型
+  industry      String?   // 行业
+  corpType      String?   // 企业类型：PRODUCTION/TRADE/SERVICE
+  bizScope      String?   // 经营范围
+  tradingGoods  String?   // 拟交易品种
+  creditLimit      Decimal?  @db.Decimal(15, 2)
+  // 额外字段（来自原型）
+  country          String?   // 国家/地区，默认中国大陆
+  legalPersonType  String?   // 法人类型：自然人/法人
+  controllerTitle  String?   // 实际控制人职务
+  regNo            String?   // 注册登记号
+  regCurrency      String?   // 注册资本货币：人民币/美元/欧元
+  revenueScale     String?   // 营业收入规模
+  groupName        String?   // 所属集团
+  isParent         Boolean?  // 本身为母公司
+  relatedPartyType String?   // 是否为关联方
+  licenseType      String?   // 特殊证照：采矿许可证/危化品/道路运输/无
+  licenseExpiry    DateTime? // 资质到期日
+  mainBiz          String?   // 主营业务及品种
+  equityStructure  String?   // 股权结构
+  intro            String?   // 企业介绍
+  roles            String[]  // SUPPLIER | CUSTOMER | CARRIER | INTERNAL
+  status           String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
+  remark           String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
@@ -83,11 +115,17 @@ model Material {
   code         String   @unique
   name         String
   categoryId   String
-  grade        String   // 品级：CaF₂≥97%、CaF₂≥95% 等
+  grade        String?  // 品级：CaF₂≥97%、CaF₂≥95% 等（保留兼容）
   unit         String   @default("TON")
   spec         String?
   sourceRegion String?
   packageType  String?  // 包装方式：散装 / 吨袋 / 小包装
+  isVirtual    Boolean  @default(false)  // 是否虚拟物料
+  specs        Json?    // 规格指标数组 [{name,indicator,operator,value,unit}]
+  hsCode       String?  // HS编码（海关报关）
+  taxCode      String?  // 税务商品编码
+  internalCode String?  // 内部编码
+  qcTemplate   String?  // 质检模板ID
   status       String   @default("ACTIVE")
   remark       String?
   createdAt    DateTime @default(now())
