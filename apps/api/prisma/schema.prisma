@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ========== 合约模块 ==========
+// ========== 认证&用户 ==========
 
 model User {
   id            String   @id @default(cuid())
@@ -28,19 +28,159 @@ model User {
   @@map("users")
 }
 
+// ========== 主数据 ==========
+
+/// 往来单位（BP）
+/// code 规则：内部企业 4 位字母数字 / 外部企业 6 位纯数字
+/// 唯一校验：统一信用代码 + 企业名称联合唯一
+model Partner {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  name          String
+  shortName     String?
+  taxId         String?
+  legalPerson   String?
+  contactPerson String?
+  contactPhone  String?
+  address       String?
+  bizAddress    String?
+  sourceRegion  String?
+  creditLimit   Decimal?  @db.Decimal(15, 2)
+  roles         String[]   // SUPPLIER | CUSTOMER | CARRIER | INTERNAL
+  status        String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
+  remark        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  contractsAsSupplier Contract[]      @relation("ContractSupplier")
+  contractsAsBuyer    Contract[]      @relation("ContractBuyer")
+  vehicles            Vehicle[]
+  bankAccounts        BankAccount[]
+  warehouses          Warehouse[]
+
+  @@unique([taxId, name])
+  @@map("partners")
+}
+
+model MaterialCategory {
+  id        String   @id @default(cuid())
+  name      String
+  parentId  String?
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent    MaterialCategory? @relation("CategoryParent", fields: [parentId], references: [id])
+  children  MaterialCategory[] @relation("CategoryParent")
+  materials Material[]
+
+  @@map("material_categories")
+}
+
+model Material {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  categoryId   String
+  grade        String   // 品级：CaF₂≥97%、CaF₂≥95% 等
+  unit         String   @default("TON")
+  spec         String?
+  sourceRegion String?
+  packageType  String?  // 包装方式：散装 / 吨袋 / 小包装
+  status       String   @default("ACTIVE")
+  remark       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  category MaterialCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+  @@map("materials")
+}
+
+/// 车辆管理
+model Vehicle {
+  id           String   @id @default(cuid())
+  plateNo      String   @unique
+  vehicleType  String   // TRUCK | TANK | TRAILER
+  brand        String?
+  loadCapacity Decimal  @db.Decimal(10, 2)
+  ownerId      String?  // 关联 Partner（外协车辆）
+  ownerType    String   @default("SELF") // SELF | OUTSOURCED
+  driverName   String?
+  driverPhone  String?
+  status       String   @default("ACTIVE") // ACTIVE | MAINTENANCE | RETIRED
+  remark       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  owner Partner? @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId])
+  @@map("vehicles")
+}
+
+/// 银行账户
+model BankAccount {
+  id          String  @id @default(cuid())
+  partnerId   String
+  accountName String
+  accountNo   String
+  bankName    String
+  bankCode    String?
+  accountType String  @default("GENERAL") // BASIC | GENERAL
+  currency    String  @default("CNY")
+  isDefault   Boolean @default(false)
+  status      String  @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id])
+
+  @@index([partnerId])
+  @@map("bank_accounts")
+}
+
+/// 仓库
+model Warehouse {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  type         String   @default("SELF") // SELF（自有）| RENT（租赁）
+  partnerId    String?  // 关联 Partner（租赁方或所属方）
+  address      String?
+  manager      String?
+  managerPhone String?
+  status       String   @default("ACTIVE")
+  remark       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  partner Partner? @relation(fields: [partnerId], references: [id])
+
+  @@index([partnerId])
+  @@map("warehouses")
+}
+
+// ========== 合约模块 ==========
+
 model Contract {
   id                String         @id @default(cuid())
   contractNo        String         @unique
   title             String
   type              String         // PURCHASE | SALES | BILATERAL
-  status            String         @default("DRAFT") // DRAFT -> PENDING_APPROVAL -> APPROVED -> EXECUTING -> COMPLETED | VOIDED
-  supplierId        String
+  status            String         @default("DRAFT")
+  partnerId         String         // 交易对手方（原 supplierId，现统一引用 Partner）
   buyerId           String?
   totalAmount       Decimal        @db.Decimal(15, 2)
   signedAt          DateTime?
   effectiveAt       DateTime?
   expireAt          DateTime?
-  settlementMethod  String         @default("DELIVERY") // PREPAYMENT | INSTALLMENT | DELIVERY | NET_30 | NET_60
+  settlementMethod  String         @default("DELIVERY")
   remarks           String?
   createdBy         String
   createdAt         DateTime       @default(now())
@@ -50,10 +190,12 @@ model Contract {
   lineItems  ContractLineItem[]
   approvals  Approval[]
   creator    User   @relation("ContractCreator", fields: [createdBy], references: [id])
+  partner    Partner @relation("ContractSupplier", fields: [partnerId], references: [id])
+  buyer      Partner? @relation("ContractBuyer", fields: [buyerId], references: [id])
 
   @@index([contractNo])
   @@index([status])
-  @@index([supplierId])
+  @@index([partnerId])
   @@map("contracts")
 }
 
@@ -92,46 +234,4 @@ model Approval {
   @@index([contractId])
   @@index([assigneeId])
   @@map("approvals")
-}
-
-// ========== 基础主数据 ==========
-
-model Supplier {
-  id            String   @id @default(cuid())
-  code          String   @unique
-  name          String
-  contactPerson String?
-  contactPhone  String?
-  address       String?
-  status        String   @default("ACTIVE") // ACTIVE | INACTIVE
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@map("suppliers")
-}
-
-model Material {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  category  String
-  unit      String   @default("TON")
-  spec      String?
-  status    String   @default("ACTIVE") // ACTIVE | INACTIVE
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("materials")
-}
-
-model Warehouse {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  address   String?
-  status    String   @default("ACTIVE") // ACTIVE | INACTIVE
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("warehouses")
 }

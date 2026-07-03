@@ -56,9 +56,9 @@ export class CreateContractDto {
   @IsString()
   type: string;
 
-  @ApiProperty({ description: '供应商 ID' })
+  @ApiProperty({ description: '交易对手方（Partner ID）' })
   @IsString()
-  supplierId: string;
+  partnerId: string;
 
   @ApiProperty({ description: '总金额' })
   @IsNumber()

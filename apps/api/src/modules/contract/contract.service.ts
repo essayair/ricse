@@ -14,6 +14,7 @@ export class ContractService {
     approvals: {
       include: { assignee: { select: { id: true, name: true } } },
     },
+    partner: { select: { id: true, code: true, name: true, roles: true } },
   };
 
   async create(dto: CreateContractDto, userId: string) {
@@ -25,7 +26,7 @@ export class ContractService {
         contractNo,
         title: dto.title,
         type: dto.type,
-        supplierId: dto.supplierId,
+        partnerId: dto.partnerId,
         totalAmount: dto.totalAmount,
         signedAt: dto.signedAt ? new Date(dto.signedAt) : null,
         effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : null,
