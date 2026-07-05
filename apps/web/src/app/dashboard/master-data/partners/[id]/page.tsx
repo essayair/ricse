@@ -121,6 +121,7 @@ export default function PartnerDetailPage() {
   const [error, setError] = useState('');
   const [updating, setUpdating] = useState(false);
   const [statusMenu, setStatusMenu] = useState(false);
+  const [tab, setTab] = useState('basic');
 
   const fetchPartner = async () => {
     setLoading(true);
@@ -181,7 +182,6 @@ export default function PartnerDetailPage() {
     { key: 'vehicle', label: `车辆 (${p.vehicles?.length || 0})` },
     { key: 'warehouse', label: `仓库 (${p.warehouses?.length || 0})` },
   ];
-  const [tab, setTab] = useState('basic');
 
   return (
     <div className="space-y-6">
