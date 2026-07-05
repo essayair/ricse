@@ -71,7 +71,7 @@ const BASE_ITEMS: NavGroup[] = [
     label: '主数据管理',
     icon: Box,
     children: [
-      { href: '/dashboard/master-data?tab=suppliers', label: '往来单位' },
+      { href: '/dashboard/master-data?tab=partners', label: '往来单位' },
       { href: '/dashboard/master-data?tab=materials', label: '物料品类' },
       { href: '/dashboard/master-data?tab=warehouses', label: '仓库库位' },
       { href: '/dashboard/master-data?tab=vehicles', label: '车辆管理' },
