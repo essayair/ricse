@@ -62,8 +62,8 @@ const PARTNER_ROLES = [
 ];
 
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
-  SUPPLIER: { label: '供应商', className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800' },
-  CUSTOMER: { label: '客户',   className: 'bg-success-bg text-success border-0' },
+  SUPPLIER: { label: '供应商', className: 'text-blue-600 dark:text-blue-400 font-medium' },
+  CUSTOMER: { label: '客户',   className: 'text-emerald-600 dark:text-emerald-400 font-medium' },
 };
 
 const VEHICLE_TYPE: Record<string, string> = {
@@ -113,18 +113,22 @@ const StatusBadge = ({ status }: { status: string }) => {
 };
 
 const RoleBadges = ({ roles, isInternal }: { roles: string[]; isInternal: boolean }) => (
-  <div className="flex flex-wrap gap-1">
+  <span className="text-sm">
     {isInternal && (
-      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800">
-        内部
-      </Badge>
+      <span className="text-orange-600 dark:text-orange-400 font-medium">内部</span>
     )}
-    {roles.map((r) => {
+    {isInternal && roles.length > 0 && <span className="text-muted-foreground/40 mx-1">·</span>}
+    {roles.map((r, i) => {
       const cfg = ROLE_CONFIG[r];
       if (!cfg) return null;
-      return <Badge key={r} variant="outline" className={`text-xs ${cfg.className}`}>{cfg.label}</Badge>;
+      return (
+        <span key={r}>
+          {i > 0 && <span className="text-muted-foreground/40 mx-1">·</span>}
+          <span className={cfg.className}>{cfg.label}</span>
+        </span>
+      );
     })}
-  </div>
+  </span>
 );
 
 /* ── Page ── */
