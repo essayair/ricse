@@ -48,10 +48,12 @@ export default function ContractsPage() {
     if (status) params.set('status', status);
     try {
       const res = await fetch(`http://localhost:3000/api/v1/contracts?${params}`);
+      if (!res.ok) { setData(null); return; }
       const json = await res.json();
       setData(json);
     } catch (e) {
       console.error(e);
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -167,7 +169,7 @@ export default function ContractsPage() {
 
       {data && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>共 {data.pagination.total} 条</span>
+          <span>共 {data?.pagination?.total ?? 0} 条</span>
         </div>
       )}
     </div>
