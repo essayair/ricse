@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -129,7 +129,7 @@ const RoleBadges = ({ roles, isInternal }: { roles: string[]; isInternal: boolea
 
 /* ── Page ── */
 
-export default function MasterDataPage() {
+function MasterDataPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabFromUrl = searchParams.get('tab') as TabKey | null;
@@ -471,5 +471,13 @@ function DataTable({ headers, rows, empty }: {
       </table>
       <div className="px-4 py-2 text-xs text-muted-foreground border-t">共 {rows.length} 条</div>
     </div>
+  );
+}
+
+export default function MasterDataPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>}>
+      <MasterDataPageInner />
+    </Suspense>
   );
 }

@@ -11,8 +11,8 @@ import { api } from '@/lib/api';
 /* ── 枚举配置 ── */
 
 const ROLE_OPTIONS = [
-  { key: 'SUPPLIER', label: '供应商', desc: '萤石矿企、原料提供方' },
-  { key: 'CUSTOMER', label: '客户', desc: '钢厂、氟化工企业等下游买家' },
+  { key: 'SUPPLIER', label: '供应商', desc: '提供原材料、商品或服务' },
+  { key: 'CUSTOMER', label: '客户', desc: '采购本公司产品或商品' },
 ];
 
 const CATEGORY_OPTIONS = [
@@ -26,10 +26,10 @@ const CORP_TYPES = ['生产型企业', '贸易型企业', '生产 + 贸易', '�
 const TAX_TYPES = ['一般纳税人', '小规模纳税人', '免税单位'];
 const TAX_RATINGS = ['A级', 'B级', 'C级', 'D级'];
 const INVOICE_TYPES = ['增值税专用发票（13%）', '增值税专用发票（9%）', '增值税普通发票', '电子普通发票'];
-const INDUSTRIES = ['非金属矿采选', '化工原料制造', '货物运输', '供应链 / 贸易', '其他'];
+const INDUSTRIES = ['制造业', '批发和零售', '交通运输', '信息技术', '金融', '建筑', '采矿业', '农林牧渔', '其他'];
 const REVENUE_SCALES = ['1亿以下', '1亿–5亿', '5亿–20亿', '20亿以上'];
 const CURRENCIES = ['人民币', '美元', '欧元'];
-const LICENSE_TYPES = ['采矿许可证', '危化品经营许可证', '道路运输许可证', '无'];
+const LICENSE_TYPES = ['采矿许可证', '危化品经营许可证', '道路运输许可证', '建筑施工资质', '食品经营许可', '医疗器械许可', '其他', '无'];
 const RELATED_PARTY_TYPES = ['否', '是 · 全资子公司', '是 · 参股公司', '是 · 控股股东'];
 const LEGAL_PERSON_TYPES = ['自然人', '法人'];
 const COUNTRIES = ['中国大陆', '香港', '澳门', '台湾', '其他'];
