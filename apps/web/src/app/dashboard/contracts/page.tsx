@@ -60,9 +60,10 @@ export default function ContractsPage() {
   useEffect(() => { fetchContracts(statusFilter); }, [statusFilter]);
 
   // Summary stats computed from contract data
-  const executing = data?.items.filter((c) => c.status === 'EXECUTING').length || 0;
-  const pendingApproval = data?.items.filter((c) => c.status === 'PENDING_APPROVAL').length || 0;
-  const totalAmount = data?.items.reduce((sum, c) => sum + Number(c.totalAmount), 0) || 0;
+  const contractItems = data?.items ?? [];
+  const executing = contractItems.filter((c) => c.status === 'EXECUTING').length;
+  const pendingApproval = contractItems.filter((c) => c.status === 'PENDING_APPROVAL').length;
+  const totalAmount = contractItems.reduce((sum, c) => sum + Number(c.totalAmount), 0);
 
   return (
     <div className="space-y-6">
@@ -122,7 +123,7 @@ export default function ContractsPage() {
       <Card className="overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-muted-foreground">加载中...</div>
-        ) : !data || data.items.length === 0 ? (
+        ) : !data?.items?.length ? (
           <div className="p-12 text-center text-muted-foreground">暂无合同数据</div>
         ) : (
           <table className="w-full text-sm">
