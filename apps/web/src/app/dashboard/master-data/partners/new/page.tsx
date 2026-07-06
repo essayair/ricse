@@ -203,7 +203,7 @@ export default function PartnerNewPage() {
             <ArrowLeft className="h-4 w-4 mr-1" />返回
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">新增往来单位</h1>
+            <h1 className="text-2xl font-bold">新增合作伙伴</h1>
             <p className="text-sm text-muted-foreground mt-0.5">填写企业档案信息，提交后档案正式生效</p>
           </div>
         </div>
@@ -648,7 +648,7 @@ export default function PartnerNewPage() {
         <Button variant="outline" onClick={() => router.back()}>取消</Button>
         <Button onClick={handleSubmit} disabled={loading} size="lg">
           <Save className="h-4 w-4 mr-1" />
-          {loading ? '保存中...' : '保存往来单位档案'}
+          {loading ? '保存中...' : '保存合作伙伴档案'}
         </Button>
       </div>
     </div>

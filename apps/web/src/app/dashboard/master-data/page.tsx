@@ -46,7 +46,7 @@ interface ApprovalFlow { id: string; name: string; type: string; steps: number; 
 type TabKey = 'partners' | 'materials' | 'warehouses' | 'vehicles' | 'price' | 'users' | 'approval';
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
-  { key: 'partners',   label: '往来单位', icon: Building2 },
+  { key: 'partners',   label: '合作伙伴', icon: Building2 },
   { key: 'materials',  label: '物料品类', icon: Package },
   { key: 'warehouses', label: '仓库管理', icon: Warehouse },
   { key: 'vehicles',   label: '车辆管理', icon: Truck },
@@ -201,7 +201,7 @@ function MasterDataPageInner() {
         {tab === 'partners' && (
           <Link href="/dashboard/master-data/partners/new">
             <Button>
-              <Plus className="h-4 w-4 mr-1" />新建往来单位
+              <Plus className="h-4 w-4 mr-1" />新建合作伙伴
             </Button>
           </Link>
         )}
@@ -234,7 +234,7 @@ function MasterDataPageInner() {
 
       {/* Filter Bar */}
       <div className="flex items-center gap-3 flex-wrap">
-        {/* 角色筛选（往来单位 tab） */}
+        {/* 角色筛选（合作伙伴 tab） */}
         {tab === 'partners' && (
           <div className="flex gap-1">
             {PARTNER_ROLES.map((r) => (
@@ -295,7 +295,7 @@ function MasterDataPageInner() {
 
       {/* Content */}
       <Card className="overflow-hidden">
-        {/* 往来单位 */}
+        {/* 合作伙伴 */}
         {tab === 'partners' && (
           <DataTable
             headers={['编码', '企业名称', '角色', '省市', '法人', '联系电话', '类别', '纳税评级', '授信额度', '状态', '操作']}
@@ -333,7 +333,7 @@ function MasterDataPageInner() {
                 </div>,
               ];
             })}
-            empty="暂无往来单位数据"
+            empty="暂无合作伙伴数据"
           />
         )}
 

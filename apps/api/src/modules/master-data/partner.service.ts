@@ -175,7 +175,7 @@ export class PartnerService {
         warehouses: true,
       },
     });
-    if (!partner || partner.deletedAt) throw new NotFoundException('往来单位不存在');
+    if (!partner || partner.deletedAt) throw new NotFoundException('合作伙伴不存在');
     return partner;
   }
 
@@ -203,7 +203,7 @@ export class PartnerService {
       const dup = await this.prisma.partner.findFirst({
         where: { taxId: newTaxId, name: newName, id: { not: id }, deletedAt: null },
       });
-      if (dup) throw new ConflictException('统一信用代码与企业名称组合已被其他往来单位使用');
+      if (dup) throw new ConflictException('统一信用代码与企业名称组合已被其他合作伙伴使用');
     }
 
     return this.prisma.partner.update({

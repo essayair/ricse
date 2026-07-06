@@ -30,7 +30,7 @@ model User {
 
 // ========== 主数据 ==========
 
-/// 往来单位（BP）
+/// 合作伙伴（BP）
 /// code 规则：内部企业 4 位字母数字 / 外部企业 6 位纯数字
 /// 唯一校验：统一信用代码 + 企业名称联合唯一
 model Partner {
@@ -80,7 +80,7 @@ model Partner {
   mainBiz          String?   // 主营业务及品种
   equityStructure  String?   // 股权结构
   intro            String?   // 企业介绍
-  roles            String[]  // SUPPLIER | CUSTOMER（角色：往来单位只有供应商和客户）
+  roles            String[]  // SUPPLIER | CUSTOMER（角色：合作伙伴只有供应商和客户）
   status           String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
   remark           String?
   createdAt     DateTime  @default(now())

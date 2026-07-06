@@ -168,7 +168,7 @@ export default function PartnerDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-        <p className="text-muted-foreground">{error || '未找到该往来单位'}</p>
+        <p className="text-muted-foreground">{error || '未找到该合作伙伴'}</p>
         <Link href="/dashboard/master-data?tab=partners"><Button variant="outline">返回列表</Button></Link>
       </div>
     );

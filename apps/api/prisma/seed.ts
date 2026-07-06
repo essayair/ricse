@@ -34,7 +34,7 @@ async function main() {
   });
   console.log('✅ 内部企业:', hq.name);
 
-  // ===== 往来单位（外部供应商）=====
+  // ===== 合作伙伴（外部供应商）=====
   const supplier1 = await prisma.partner.upsert({
     where: { code: '000001' },
     update: {},
@@ -84,7 +84,7 @@ async function main() {
       status: 'ACTIVE',
     },
   });
-  console.log('✅ 往来单位:', supplier1.name);
+  console.log('✅ 合作伙伴:', supplier1.name);
 
   // ===== 物料分类 =====
   const catPowder = await prisma.materialCategory.upsert({

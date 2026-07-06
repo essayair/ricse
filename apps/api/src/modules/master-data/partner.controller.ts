@@ -6,7 +6,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PartnerService } from './partner.service';
 
-@ApiTags('往来单位')
+@ApiTags('合作伙伴')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
 @Controller('partners')
@@ -20,7 +20,7 @@ export class PartnerController {
   }
 
   @Post()
-  @ApiOperation({ summary: '创建往来单位' })
+  @ApiOperation({ summary: '创建合作伙伴' })
   create(@Body() dto: {
     code: string; name: string; shortName?: string; shortCode?: string;
     taxId?: string; orgType?: string; category?: string;
@@ -41,7 +41,7 @@ export class PartnerController {
   }
 
   @Get()
-  @ApiOperation({ summary: '往来单位列表（分页）' })
+  @ApiOperation({ summary: '合作伙伴列表（分页）' })
   findAll(
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
     @Query('search') search?: string, @Query('role') role?: string,
@@ -55,13 +55,13 @@ export class PartnerController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '往来单位详情（含银行账户/车辆/仓库）' })
+  @ApiOperation({ summary: '合作伙伴详情（含银行账户/车辆/仓库）' })
   findOne(@Param('id') id: string) {
     return this.partnerService.findOne(id);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: '更新往来单位' })
+  @ApiOperation({ summary: '更新合作伙伴' })
   update(@Param('id') id: string, @Body() dto: {
     name?: string; shortName?: string; taxId?: string;
     legalPerson?: string; contactPerson?: string; contactPhone?: string;
@@ -73,7 +73,7 @@ export class PartnerController {
 
   @Delete(':id')
   @HttpCode(204)
-  @ApiOperation({ summary: '删除往来单位（软删除）' })
+  @ApiOperation({ summary: '删除合作伙伴（软删除）' })
   remove(@Param('id') id: string) {
     return this.partnerService.remove(id);
   }
