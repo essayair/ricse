@@ -35,6 +35,7 @@ interface PartnerDetail {
   creditLimit: string | null; roles: string[]; status: string; remark: string | null;
   createdAt: string; updatedAt: string;
   creator: { id: string; name: string } | null;
+  attachments: Attachment[];
   bankAccounts: BankAccount[];
   vehicles: VehicleItem[];
   warehouses: WarehouseItem[];
@@ -49,6 +50,11 @@ interface VehicleItem {
   id: string; plateNo: string; vehicleType: string; brand: string | null;
   loadCapacity: string; driverName: string | null; driverPhone: string | null;
   status: string;
+}
+
+interface Attachment {
+  id: string; fileName: string; originalName: string;
+  mimeType: string; size: number; category: string; createdAt: string;
 }
 
 interface WarehouseItem {
@@ -182,6 +188,7 @@ export default function PartnerDetailPage() {
     { key: 'bank', label: `银行账户 (${p.bankAccounts?.length || 0})` },
     { key: 'vehicle', label: `车辆 (${p.vehicles?.length || 0})` },
     { key: 'warehouse', label: `仓库 (${p.warehouses?.length || 0})` },
+    { key: 'attachments', label: `影像附件 (${p.attachments?.length || 0})` },
   ];
 
   return (
@@ -524,6 +531,32 @@ export default function PartnerDetailPage() {
                 ))}
               </tbody>
             </table>
+          )}
+        </Card>
+      )}
+
+      {/* Attachments Tab */}
+      {tab === 'attachments' && (
+        <Card className="overflow-hidden">
+          {!p.attachments?.length ? (
+            <div className="p-12 text-center text-muted-foreground text-sm">
+              <div className="text-2xl mb-2 opacity-30">📎</div>
+              暂无影像附件
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-4 p-4">
+              {p.attachments.map((a) => (
+                <div key={a.id} className="border rounded-lg p-3 flex items-start gap-3 hover:bg-muted/30 transition-colors">
+                  <span className="text-xl mt-0.5">{a.mimeType.startsWith('image/') ? '🖼' : '📄'}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate" title={a.originalName}>{a.originalName}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {a.category === 'BUSINESS_LICENSE' ? '营业执照' : a.category} · {(a.size / 1024).toFixed(0)} KB
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </Card>
       )}

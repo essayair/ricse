@@ -132,6 +132,16 @@ export default function PartnerNewPage() {
   const [codeMode, setCodeMode] = useState<'auto' | 'manual'>('auto');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []);
+    setFiles((prev) => [...prev, ...selected]);
+    e.target.value = ''; // reset so re-upload same file works
+  };
+
+  const removeFile = (idx: number) => setFiles((prev) => prev.filter((_, i) => i !== idx));
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -176,10 +186,15 @@ export default function PartnerNewPage() {
     if (!form.name) { setError('请填写企业名称'); return; }
     if (!roles.length) { setError('请至少选择一个角色（供应商 / 客户）'); return; }
     if (!form.code) { setError('请填写合作伙伴编码'); return; }
+    const hasLicense = files.some((f) =>
+      f.name.match(/营业执照|license|biz/i) || f.type.startsWith('image/')
+    );
+    if (!hasLicense) { setError('请上传营业执照（必传）'); return; }
+
     setLoading(true);
     setError('');
     try {
-      await api.post('/partners', {
+      const partner = await api.post<{ id: string }>('/partners', {
         ...Object.fromEntries(Object.entries(form).filter(([, v]) => v !== '')),
         creditLimit: form.creditLimit ? parseFloat(form.creditLimit) : undefined,
         regCapital: form.regCapital ? parseFloat(form.regCapital) : undefined,
@@ -187,6 +202,19 @@ export default function PartnerNewPage() {
         isParent,
         roles,
       });
+
+      // Upload attachments
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const cat = file.name.match(/营业执照|license|biz/i) ? 'BUSINESS_LICENSE' : 'OTHER';
+        fd.append('category', cat);
+        await fetch(`http://localhost:3000/api/v1/partners/${partner.id}/attachments`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: fd,
+        });
+      }
       router.push('/dashboard/master-data?tab=partners');
     } catch (e: unknown) {
       setError((e as Error).message || '创建失败');
@@ -509,6 +537,46 @@ export default function PartnerNewPage() {
                 />
               </FormField>
             </div>
+          </Card>
+
+          {/* 影像附件 */}
+          <Card className="p-6">
+            <SectionTitle>影像附件</SectionTitle>
+            <div className="bg-muted/50 rounded-lg p-3 mb-3 text-xs text-muted-foreground leading-relaxed">
+              <strong className="text-foreground">上传要求：</strong>
+              附件名称不可含特殊符号（#、%、@、&amp;、~）；支持 JPG、PNG、WEBP、PDF 格式。<br />
+              <strong className="text-destructive">营业执照（必传）</strong>
+            </div>
+
+            {/* Upload zone */}
+            <label className="block border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
+              <input
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.webp,.pdf"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <div className="text-2xl mb-2">📎</div>
+              <div className="text-sm font-semibold">点击或拖拽上传附件</div>
+              <div className="text-xs text-muted-foreground mt-1">营业执照、身份证、资质证书等</div>
+            </label>
+
+            {/* File list */}
+            {files.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
+                    <span className="text-muted-foreground">
+                      {f.type.startsWith('image/') ? '🖼' : '📄'}
+                    </span>
+                    <span className="flex-1 truncate">{f.name}</span>
+                    <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                    <button onClick={() => removeFile(i)} className="text-destructive hover:bg-destructive/10 rounded px-1">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
         </div>

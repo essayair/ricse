@@ -7,6 +7,7 @@ import { UsersService } from './users.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { FileService } from './file.service';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { JwtStrategy } from './jwt.strategy';
     }),
   ],
   controllers: [UsersController, AuthController],
-  providers: [UsersService, AuthService, JwtStrategy],
-  exports: [UsersService, AuthService],
+  providers: [UsersService, AuthService, JwtStrategy, FileService],
+  exports: [UsersService, AuthService, FileService],
 })
 export class CommonModule {}

@@ -174,6 +174,7 @@ export class PartnerService {
         bankAccounts: true,
         vehicles: true,
         warehouses: true,
+        attachments: { orderBy: { createdAt: 'desc' } },
         creator: { select: { id: true, name: true } },
       },
     });
@@ -316,5 +317,33 @@ export class PartnerService {
       if (!isNaN(num)) nextNum = num + 1;
     }
     return String(nextNum).padStart(8, '0');
+  }
+
+  // ========== 附件 ==========
+
+  async createAttachment(data: {
+    partnerId: string;
+    fileName: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    category: string;
+  }) {
+    return this.prisma.attachment.create({ data });
+  }
+
+  async findAttachments(partnerId: string) {
+    return this.prisma.attachment.findMany({
+      where: { partnerId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findAttachmentById(id: string) {
+    return this.prisma.attachment.findUnique({ where: { id } });
+  }
+
+  async deleteAttachment(id: string) {
+    return this.prisma.attachment.delete({ where: { id } });
   }
 }

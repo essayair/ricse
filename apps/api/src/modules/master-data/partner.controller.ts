@@ -1,10 +1,13 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, UseGuards, HttpCode,
+  UseInterceptors, UploadedFile, BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PartnerService } from './partner.service';
+import { FileService } from '../common/file.service';
 import { CurrentUser } from '../common/current-user.decorator';
 
 @ApiTags('合作伙伴')
@@ -12,7 +15,11 @@ import { CurrentUser } from '../common/current-user.decorator';
 @UseGuards(AuthGuard('jwt'))
 @Controller('partners')
 export class PartnerController {
-  constructor(private partnerService: PartnerService) {}
+  constructor(
+    private partnerService: PartnerService,
+    private fileService: FileService,
+  ) {}
+
 
   @Get('next-code')
   @ApiOperation({ summary: '获取下一个外部编码' })
@@ -132,5 +139,48 @@ export class PartnerController {
   @ApiOperation({ summary: '删除车辆' })
   deleteVehicle(@Param('id') id: string) {
     return this.partnerService.deleteVehicle(id);
+  }
+
+  // ========== 附件/影像 ==========
+
+  @Post(':partnerId/attachments')
+  @ApiOperation({ summary: '上传附件（营业执照等）' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAttachment(
+    @Param('partnerId') partnerId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('category') category: string,
+  ) {
+    if (!file) throw new BadRequestException('请选择文件');
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowed.includes(file.mimetype)) {
+      throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    }
+
+    const result = await this.fileService.upload(file.buffer, file.originalname, file.mimetype);
+    return this.partnerService.createAttachment({
+      partnerId,
+      fileName: result.fileName,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      size: result.size,
+      category: category || 'OTHER',
+    });
+  }
+
+  @Get(':partnerId/attachments')
+  @ApiOperation({ summary: '附件列表' })
+  findAttachments(@Param('partnerId') partnerId: string) {
+    return this.partnerService.findAttachments(partnerId);
+  }
+
+  @Delete('attachments/:id')
+  @HttpCode(204)
+  @ApiOperation({ summary: '删除附件' })
+  async deleteAttachment(@Param('id') id: string) {
+    const att = await this.partnerService.findAttachmentById(id);
+    if (att) await this.fileService.delete(att.fileName);
+    return this.partnerService.deleteAttachment(id);
   }
 }

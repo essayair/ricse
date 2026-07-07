@@ -91,7 +91,8 @@ model Partner {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
-  creator            User?       @relation("PartnerCreator", fields: [createdBy], references: [id])
+  creator            User?         @relation("PartnerCreator", fields: [createdBy], references: [id])
+  attachments        Attachment[]
   contractsAsSeller  Contract[]      @relation("ContractSeller")
   contractsAsBuyer    Contract[]      @relation("ContractBuyer")
   vehicles            Vehicle[]
@@ -279,4 +280,21 @@ model Approval {
   @@index([contractId])
   @@index([assigneeId])
   @@map("approvals")
+}
+
+/// 附件/影像
+model Attachment {
+  id           String   @id @default(cuid())
+  partnerId    String   // 关联合作伙伴
+  fileName     String   // 存储文件名（UUID）
+  originalName String   // 原始文件名
+  mimeType     String
+  size         Int      // 字节
+  category     String   // 附件类别：BUSINESS_LICENSE | TAX_CERT | ID_CARD | ORG_CERT | OTHER
+  createdAt    DateTime @default(now())
+
+  partner Partner @relation(fields: [partnerId], references: [id])
+
+  @@index([partnerId])
+  @@map("attachments")
 }
