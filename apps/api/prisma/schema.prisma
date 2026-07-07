@@ -19,16 +19,111 @@ model User {
   email           String?
   status          String   @default("ACTIVE") // ACTIVE | DISABLED
   refreshToken    String?
-  companyId       String?  // 预留：所属企业（多租户隔离）
-  businessGroupId String?  // 预留：所属业务组（权限桥接）
+  companyId       String?  // 所属企业
+  businessGroupId String?  // 所属业务组
+  employeeId      String?  @unique // 关联员工档案（一对一）
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  createdContracts Contract[] @relation("ContractCreator")
-  createdPartners  Partner[]  @relation("PartnerCreator")
-  approvalTasks    Approval[] @relation("ApprovalAssignee")
+  company         Company?         @relation(fields: [companyId], references: [id])
+  employee        Employee?        @relation(fields: [employeeId], references: [id])
+  createdContracts Contract[]      @relation("ContractCreator")
+  createdPartners  Partner[]       @relation("PartnerCreator")
+  approvalTasks    Approval[]      @relation("ApprovalAssignee")
 
   @@map("users")
+}
+
+// ========== 组织架构 ==========
+
+/// 企业主体（内部企业 + 外部企业）
+model Company {
+  id        String   @id @default(cuid())
+  code      String   @unique // 6位(内部) 或 8位(外部)
+  name      String
+  shortName String?
+  type      String   @default("INTERNAL") // INTERNAL | EXTERNAL
+  partnerId String?  // 外部企业关联合作伙伴
+  parentId  String?  // 上级企业（组织树）
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent     Company?       @relation("CompanyTree", fields: [parentId], references: [id])
+  children   Company[]      @relation("CompanyTree")
+  partner    Partner?       @relation("CompanyPartner", fields: [partnerId], references: [id])
+  departments Department[]
+  employees   Employee[]
+  users       User[]
+  bgMappings  BusinessGroupCompany[]
+
+  @@map("companies")
+}
+
+/// 部门
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+  parentId  String?  // 上级部门
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company      @relation(fields: [companyId], references: [id])
+  parent   Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  children Department[] @relation("DeptTree")
+  employees Employee[]
+
+  @@index([companyId])
+  @@map("departments")
+}
+
+/// 员工
+model Employee {
+  id           String   @id @default(cuid())
+  name         String
+  departmentId String
+  companyId    String
+  position     String?  // 岗位
+  phone        String?
+  email        String?
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company    Company    @relation(fields: [companyId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+  user       User?
+
+  @@index([companyId])
+  @@index([departmentId])
+  @@map("employees")
+}
+
+/// 业务组
+model BusinessGroup {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  companies BusinessGroupCompany[]
+
+  @@map("business_groups")
+}
+
+/// 业务组 ↔ 企业 多对多
+model BusinessGroupCompany {
+  businessGroupId String
+  companyId       String
+
+  businessGroup BusinessGroup @relation(fields: [businessGroupId], references: [id])
+  company       Company       @relation(fields: [companyId], references: [id])
+
+  @@id([businessGroupId, companyId])
+  @@map("business_group_companies")
 }
 
 // ========== 主数据 ==========
@@ -93,6 +188,7 @@ model Partner {
 
   creator            User?         @relation("PartnerCreator", fields: [createdBy], references: [id])
   attachments        Attachment[]
+  companies          Company[]       @relation("CompanyPartner")
   contractsAsSeller  Contract[]      @relation("ContractSeller")
   contractsAsBuyer    Contract[]      @relation("ContractBuyer")
   vehicles            Vehicle[]

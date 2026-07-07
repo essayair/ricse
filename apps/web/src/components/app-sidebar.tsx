@@ -84,10 +84,10 @@ const BASE_ITEMS: NavGroup[] = [
     label: '组织数据',
     icon: Building2,
     children: [
-      { href: '/dashboard/org', label: '公司维护' },
+      { href: '/dashboard/org', label: '企业维护' },
       { href: '/dashboard/org?tab=dept', label: '部门管理' },
-      { href: '/dashboard/org?tab=group', label: '部门组' },
-      { href: '/dashboard/org?tab=position', label: '岗位管理' },
+      { href: '/dashboard/org?tab=employee', label: '员工管理' },
+      { href: '/dashboard/org?tab=business-group', label: '业务组' },
     ],
   },
 ];
