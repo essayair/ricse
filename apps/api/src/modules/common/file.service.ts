@@ -9,11 +9,11 @@ export class FileService {
 
   constructor() {
     this.client = new Minio.Client({
-      endPoint: process.env.MINIO_ENDPOINT || 'localhost',
-      port: Number(process.env.MINIO_PORT) || 9002,
+      endPoint: 'localhost',
+      port: 9002,
       useSSL: false,
-      accessKey: process.env.MINIO_ACCESS_KEY || 'ricse',
-      secretKey: process.env.MINIO_SECRET_KEY || 'ricse_dev',
+      accessKey: 'ricse',
+      secretKey: 'ricse_dev',
     });
     this.ensureBucket();
   }
