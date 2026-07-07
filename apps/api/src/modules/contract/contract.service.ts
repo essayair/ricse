@@ -11,11 +11,11 @@ export class ContractService {
   private readonly include = {
     lineItems: true,
     creator: { select: { id: true, name: true, username: true } },
-    approvals: {
-      include: { assignee: { select: { id: true, name: true } } },
-    },
+    approvals: { include: { assignee: { select: { id: true, name: true } } } },
     seller: { select: { id: true, code: true, name: true, roles: true } },
     buyer: { select: { id: true, code: true, name: true, roles: true } },
+    company: { select: { id: true, code: true, name: true } },
+    attachments: { orderBy: { createdAt: 'desc' as const } },
   };
 
   async create(dto: CreateContractDto, userId: string) {
@@ -126,12 +126,18 @@ export class ContractService {
 
   async update(id: string, dto: {
     title?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
+    companyId?: string; departmentId?: string; externalNo?: string;
+    contactPerson?: string; contactPhone?: string;
+    pricingType?: string; overfillPct?: number; shortfallPct?: number;
+    deliveryMethod?: string; deliveryLocation?: string;
     signedAt?: string; effectiveAt?: string; expireAt?: string;
-    settlementMethod?: string; remarks?: string;
+    settlementMethod?: string; settlementBasis?: string;
+    prepayPct?: number; paymentDays?: number; paymentMethod?: string;
+    moistureRule?: string; impurityRule?: string; remarks?: string;
   }) {
     const contract = await this.findOne(id);
-    if (contract.status !== 'DRAFT') {
-      throw new BadRequestException('仅草稿状态的合同可以编辑');
+    if (contract.status !== 'DRAFT' && contract.status !== 'REJECTED') {
+      throw new BadRequestException('仅草稿或已驳回状态的合同可以编辑');
     }
 
     const data: any = { ...dto };
@@ -139,11 +145,7 @@ export class ContractService {
     if (dto.effectiveAt) data.effectiveAt = new Date(dto.effectiveAt);
     if (dto.expireAt) data.expireAt = new Date(dto.expireAt);
 
-    return this.prisma.contract.update({
-      where: { id },
-      data,
-      include: this.include,
-    });
+    return this.prisma.contract.update({ where: { id }, data, include: this.include });
   }
 
   async remove(id: string) {
@@ -161,10 +163,11 @@ export class ContractService {
     const transitions: Record<string, string[]> = {
       DRAFT: ['PENDING_APPROVAL', 'VOIDED'],
       PENDING_APPROVAL: ['APPROVED', 'REJECTED'],
-      APPROVED: ['EXECUTING'],
+      APPROVED: ['EXECUTING', 'VOIDED'],
       EXECUTING: ['COMPLETED', 'VOIDED'],
       REJECTED: ['DRAFT'],
-      COMPLETED: [],
+      COMPLETED: ['CLOSED'],
+      CLOSED: [],
       VOIDED: [],
     };
 
