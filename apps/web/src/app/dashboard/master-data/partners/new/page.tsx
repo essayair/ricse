@@ -134,6 +134,20 @@ export default function PartnerNewPage() {
   const [error, setError] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  // Bank accounts
+  const [bankAccounts, setBankAccounts] = useState<Array<{id: string; accountName: string; accountNo: string; bankName: string; bankCode: string; accountType: string; isDefault: boolean}>>([]);
+
+  const addBankAccount = () => {
+    const isFirst = bankAccounts.length === 0;
+    setBankAccounts((prev) => [...prev, { id: String(Date.now()), accountName: '', accountNo: '', bankName: '', bankCode: '', accountType: 'GENERAL', isDefault: isFirst }]);
+  };
+  const removeBankAccount = (idx: number) => setBankAccounts((prev) => prev.filter((_, i) => i !== idx));
+  const updateBankAccount = (idx: number, field: string, value: any) => {
+    setBankAccounts((prev) => prev.map((a, i) => {
+      if (i !== idx) return field === 'isDefault' && value ? { ...a, isDefault: false } : a;
+      return { ...a, [field]: value };
+    }));
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []);
@@ -215,6 +229,20 @@ export default function PartnerNewPage() {
           body: fd,
         });
       }
+
+      // Create bank accounts
+      for (const acct of bankAccounts) {
+        if (!acct.accountName || !acct.accountNo || !acct.bankName) continue;
+        await api.post(`/partners/${partner.id}/bank-accounts`, {
+          accountName: acct.accountName,
+          accountNo: acct.accountNo,
+          bankName: acct.bankName,
+          bankCode: acct.bankCode || undefined,
+          accountType: acct.accountType,
+          isDefault: acct.isDefault,
+        });
+      }
+
       router.push('/dashboard/master-data?tab=partners');
     } catch (e: unknown) {
       setError((e as Error).message || '创建失败');
@@ -537,6 +565,45 @@ export default function PartnerNewPage() {
                 />
               </FormField>
             </div>
+          </Card>
+
+          {/* 银行账户 */}
+          <Card className="p-6">
+            <SectionTitle>银行账户</SectionTitle>
+            <p className="text-xs text-muted-foreground mb-3">支持多个银行账户，须指定一个为默认结算账户</p>
+            {bankAccounts.map((a, i) => (
+              <div key={a.id} className="grid grid-cols-6 gap-2 mb-3 p-3 bg-muted/30 rounded-lg">
+                <div className="col-span-2">
+                  <label className="text-xs text-muted-foreground">开户名称*</label>
+                  <Input value={a.accountName} onChange={(e) => updateBankAccount(i, 'accountName', e.target.value)} placeholder="与合同/发票一致" className="h-8 text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-muted-foreground">银行账号*</label>
+                  <Input value={a.accountNo} onChange={(e) => updateBankAccount(i, 'accountNo', e.target.value)} placeholder="账号" className="h-8 text-sm font-mono" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">开户行*</label>
+                  <Input value={a.bankName} onChange={(e) => updateBankAccount(i, 'bankName', e.target.value)} placeholder="全称" className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">联行号</label>
+                  <Input value={a.bankCode} onChange={(e) => updateBankAccount(i, 'bankCode', e.target.value)} placeholder="可选" className="h-8 text-sm font-mono" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">类型</label>
+                  <select value={a.accountType} onChange={(e) => updateBankAccount(i, 'accountType', e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs">
+                    <option value="GENERAL">一般户</option><option value="BASIC">基本户</option>
+                  </select>
+                </div>
+                <div className="flex items-end gap-1">
+                  <label className="flex items-center gap-1 text-xs cursor-pointer mb-1">
+                    <input type="checkbox" checked={a.isDefault} onChange={(e) => updateBankAccount(i, 'isDefault', e.target.checked)} /> 默认
+                  </label>
+                  <button onClick={() => removeBankAccount(i)} className="text-destructive text-xs hover:underline ml-auto mb-1">删除</button>
+                </div>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addBankAccount}>+ 添加银行账户</Button>
           </Card>
 
           {/* 影像附件 */}
