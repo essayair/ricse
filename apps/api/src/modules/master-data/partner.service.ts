@@ -70,11 +70,11 @@ export class PartnerService {
 
     // 编码规则校验（由 isInternal 决定，与角色无关）
     const isInternal = data.isInternal ?? false;
-    if (isInternal && !/^[A-Za-z0-9]{4}$/.test(data.code)) {
-      throw new BadRequestException('内部企业编码必须是 4 位字母数字');
+    if (isInternal && !/^[A-Za-z0-9]{6}$/.test(data.code)) {
+      throw new BadRequestException('内部企业编码必须是 6 位字母数字');
     }
-    if (!isInternal && !/^\d{6}$/.test(data.code)) {
-      throw new BadRequestException('外部单位编码必须是 6 位数字');
+    if (!isInternal && !/^\d{8}$/.test(data.code)) {
+      throw new BadRequestException('外部单位编码必须是 8 位数字');
     }
 
     return this.prisma.partner.create({
@@ -313,6 +313,6 @@ export class PartnerService {
       const num = parseInt(last.code, 10);
       if (!isNaN(num)) nextNum = num + 1;
     }
-    return String(nextNum).padStart(6, '0');
+    return String(nextNum).padStart(8, '0');
   }
 }

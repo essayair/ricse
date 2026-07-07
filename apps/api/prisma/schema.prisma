@@ -31,7 +31,7 @@ model User {
 // ========== 主数据 ==========
 
 /// 合作伙伴（BP）
-/// code 规则：内部企业 4 位字母数字 / 外部企业 6 位纯数字
+/// code 规则：内部企业 6 位字母数字 / 外部企业 8 位纯数字
 /// 唯一校验：统一信用代码 + 企业名称联合唯一
 model Partner {
   id            String    @id @default(cuid())
@@ -63,7 +63,7 @@ model Partner {
   bizScope      String?   // 经营范围
   tradingGoods  String?   // 拟交易品种
   creditLimit      Decimal?  @db.Decimal(15, 2)
-  // 内部 / 外部标识（独立于角色，决定编码规则：内部4位字母数字，外部6位数字）
+  // 内部 / 外部标识（独立于角色，决定编码规则：内部6位字母数字，外部8位数字）
   isInternal       Boolean   @default(false)
   // 额外字段（来自原型）
   country          String?   // 国家/地区，默认中国大陆

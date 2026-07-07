@@ -309,7 +309,7 @@ export default function PartnerNewPage() {
                 }`}
               >
                 <span className="font-semibold text-sm">外部单位</span>
-                <span className="text-xs mt-0.5 opacity-70">独立法人，编码 6 位数字</span>
+                <span className="text-xs mt-0.5 opacity-70">独立法人，编码 8 位数字</span>
               </button>
               <button
                 type="button"
@@ -321,19 +321,19 @@ export default function PartnerNewPage() {
                 }`}
               >
                 <span className="font-semibold text-sm">内部企业</span>
-                <span className="text-xs mt-0.5 opacity-70">集团子公司，编码 4 位手动</span>
+                <span className="text-xs mt-0.5 opacity-70">集团子公司，编码 6 位手动</span>
               </button>
             </div>
 
             <SectionTitle>合作伙伴编码</SectionTitle>
             <div className="flex items-end gap-3">
               <div className="flex-1">
-                <FormField label={isInternal ? '编码（4位字母数字，手动录入）' : '编码（6位数字，自动递增）'} required>
+                <FormField label={isInternal ? '编码（6位字母数字，手动录入）' : '编码（8位数字，自动递增）'} required>
                   <Input
                     value={form.code}
                     onChange={(e) => set('code', e.target.value)}
-                    placeholder={isInternal ? '如：HQ01' : '000001'}
-                    maxLength={isInternal ? 4 : 6}
+                    placeholder={isInternal ? '如：100001' : '00000001'}
+                    maxLength={isInternal ? 6 : 8}
                     disabled={!isInternal && codeMode === 'auto'}
                     className="font-mono"
                   />
