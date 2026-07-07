@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Plus, Search, Truck, DollarSign, Users, GitBranch,
+  Plus, Search, Truck, DollarSign, GitBranch,
   Building2, Package, Warehouse, X, MapPin, ExternalLink,
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -40,10 +40,9 @@ interface Vehicle {
   driverName: string | null; driverPhone: string | null; status: string;
 }
 interface PriceItem { id: string; material: string; buyPrice: number; sellPrice: number; effectiveAt: string; status: string; }
-interface UserItem { id: string; name: string; role: string; phone: string; status: string; }
 interface ApprovalFlow { id: string; name: string; type: string; steps: number; status: string; }
 
-type TabKey = 'partners' | 'materials' | 'warehouses' | 'vehicles' | 'price' | 'users' | 'approval';
+type TabKey = 'partners' | 'materials' | 'warehouses' | 'vehicles' | 'price' | 'approval';
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'partners',   label: '合作伙伴', icon: Building2 },
@@ -51,7 +50,6 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'warehouses', label: '仓库管理', icon: Warehouse },
   { key: 'vehicles',   label: '车辆管理', icon: Truck },
   { key: 'price',      label: '价格基准', icon: DollarSign },
-  { key: 'users',      label: '用户与权限', icon: Users },
   { key: 'approval',   label: '审批流程', icon: GitBranch },
 ];
 
@@ -89,11 +87,6 @@ const MOCK_PRICES: PriceItem[] = [
   { id: '1', material: '萤石粉 CaF₂≥97%', buyPrice: 1450, sellPrice: 1550, effectiveAt: '2026-06-01', status: 'ACTIVE' },
   { id: '2', material: '萤石粉 CaF₂≥95%', buyPrice: 1280, sellPrice: 1380, effectiveAt: '2026-06-01', status: 'ACTIVE' },
   { id: '3', material: '萤石粉 CaF₂≥90%', buyPrice: 980,  sellPrice: 1060, effectiveAt: '2026-06-05', status: 'ACTIVE' },
-];
-const MOCK_USERS: UserItem[] = [
-  { id: '1', name: '系统管理员', role: 'ADMIN',    phone: '13900000001', status: 'ACTIVE' },
-  { id: '2', name: '采购员张三', role: 'USER',     phone: '13900000002', status: 'ACTIVE' },
-  { id: '3', name: '审批人李四', role: 'APPROVER', phone: '13900000003', status: 'ACTIVE' },
 ];
 const MOCK_APPROVALS: ApprovalFlow[] = [
   { id: '1', name: '合同审批流', type: '合同', steps: 3, status: 'ACTIVE' },
@@ -409,22 +402,6 @@ function MasterDataPageInner() {
               empty="暂无价格数据"
             />
           </>
-        )}
-
-        {/* 用户与权限（mock） */}
-        {tab === 'users' && (
-          <DataTable
-            headers={['姓名', '角色', '电话', '状态']}
-            rows={MOCK_USERS.filter((u) => !searchTerm || u.name.includes(searchTerm)).map((u) => [
-              u.name,
-              <Badge key="r" variant="outline">
-                {u.role === 'ADMIN' ? '管理员' : u.role === 'APPROVER' ? '审批人' : '普通用户'}
-              </Badge>,
-              u.phone,
-              <StatusBadge key="s" status={u.status} />,
-            ])}
-            empty="暂无用户数据"
-          />
         )}
 
         {/* 审批流程（mock） */}

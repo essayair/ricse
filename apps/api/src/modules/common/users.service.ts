@@ -6,7 +6,10 @@ import * as bcrypt from 'bcryptjs';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: { username: string; password: string; name: string; role?: string }) {
+  async create(data: {
+    username: string; password: string; name: string;
+    role?: string; employeeId?: string; companyId?: string; businessGroupId?: string;
+  }) {
     const existing = await this.prisma.user.findUnique({
       where: { username: data.username },
     });
@@ -19,8 +22,11 @@ export class UsersService {
         password: hashed,
         name: data.name,
         role: data.role || 'USER',
+        employeeId: data.employeeId,
+        companyId: data.companyId,
+        businessGroupId: data.businessGroupId,
       },
-      select: { id: true, username: true, name: true, role: true, createdAt: true },
+      select: { id: true, username: true, name: true, role: true, employeeId: true, companyId: true, businessGroupId: true, createdAt: true },
     });
   }
 
@@ -28,10 +34,26 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { username } });
   }
 
+  async findAll() {
+    return this.prisma.user.findMany({
+      select: {
+        id: true, username: true, name: true, role: true, status: true,
+        employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
+        employee: { select: { id: true, name: true, department: { select: { name: true } } } },
+        company: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async findById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, username: true, name: true, role: true, status: true, createdAt: true },
+      select: {
+        id: true, username: true, name: true, role: true, status: true,
+        employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
+        employee: { select: { id: true, name: true, department: { select: { name: true } } } },
+      },
     });
     if (!user) throw new NotFoundException('用户不存在');
     return user;
