@@ -40,7 +40,7 @@ export default function ContractCreatePage() {
     companyId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
-    pricingType: 'FIXED', unitPrice: '', overfillPct: '5', shortfallPct: '5',
+    pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '5', shortfallPct: '5',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: new Date().toISOString().split('T')[0], effectiveAt: '', expireAt: '',
     settlementMethod: 'DELIVERY', settlementBasis: 'WEIGHT',
@@ -60,7 +60,14 @@ export default function ContractCreatePage() {
     api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(()=>{});
   }, []);
 
-  const totalAmount = Number(form.quantity || 0) * Number(form.unitPrice || 0);
+  const qty = Number(form.quantity || 0);
+  const purchaseUnitPrice = Number(form.unitPrice || 0);
+  const saleUnitPrice = Number(form.saleUnitPrice || 0);
+  const purchaseAmount = qty * purchaseUnitPrice;
+  const saleAmount = qty * saleUnitPrice;
+  const totalAmount = form.type === 'BILATERAL' ? purchaseAmount : purchaseAmount;
+  const profit = saleAmount - purchaseAmount;
+
 
   const handleSelectPartner = (id: string, field: string) => {
     set(field, id);
@@ -89,7 +96,15 @@ export default function ContractCreatePage() {
     moistureRule: form.moistureRule || undefined, impurityRule: form.impurityRule || undefined,
     remarks: form.remarks || undefined,
     ...(form.type === 'BILATERAL' ? { buyerId: form.buyerId || undefined } : {}),
-    lineItems: form.materialId ? [{ materialId: form.materialId, materialName: form.materialName, quantity: Number(form.quantity), unit: form.unit, unitPrice: Number(form.unitPrice) }] : [],
+    lineItems: form.materialId ? [{
+      materialId: form.materialId, materialName: form.materialName,
+      quantity: Number(form.quantity), unit: form.unit,
+      unitPrice: Number(form.unitPrice),
+    }] : [],
+    // bilateral extra: sale price stored in totalAmount as purchase total (sale info in remarks for now)
+    ...(form.type === 'BILATERAL' && form.saleUnitPrice ? {
+      remarks: [form.remarks, `销售单价:${form.saleUnitPrice}元/吨 销售金额:${saleAmount} 毛利:${profit}`].filter(Boolean).join(' | ')
+    } : {}),
   });
 
   const uploadAttachments = async (contractId: string) => {
@@ -141,26 +156,21 @@ export default function ContractCreatePage() {
       </div>
 
       <div className="max-w-4xl">
-        {/* 合同类型 */}
+        {/* 合同类型 + 基本信息 */}
         <Card className="p-6">
           <SectionTitle>合同类型</SectionTitle>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="flex gap-2 mb-6">
             {[
-              { key: 'PURCHASE', label: '采购合同', desc: '向上游供应商采购货物', icon: TrendingDown },
-              { key: 'SALES', label: '销售合同', desc: '向下游客户销售货物', icon: TrendingUp },
-              { key: 'BILATERAL', label: '双边合同', desc: '以销定购，同时确定采销两端', icon: Zap },
+              { key: 'PURCHASE', label: '采购合同' },
+              { key: 'SALES', label: '销售合同' },
+              { key: 'BILATERAL', label: '双边合同' },
             ].map(t => (
               <button key={t.key} type="button" onClick={() => set('type', t.key)}
-                className={`flex flex-col items-center gap-2 p-6 rounded-lg border-2 transition-colors ${
-                  form.type === t.key ? 'border-primary bg-primary/5 text-primary' : 'border-input text-muted-foreground hover:border-foreground/30'}`}>
-                <t.icon className="h-8 w-8" /><span className="font-semibold">{t.label}</span><span className="text-xs text-center">{t.desc}</span>
-              </button>
+                className={`px-4 py-2 rounded-md border text-sm font-medium transition-colors ${
+                  form.type === t.key ? 'border-primary bg-primary/5 text-primary' : 'border-input text-muted-foreground hover:border-foreground/30'}`}>{t.label}</button>
             ))}
           </div>
-        </Card>
 
-        {/* 基本信息 */}
-        <Card className="p-6 mt-4">
           <SectionTitle>合同基本信息</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <div className="col-span-2"><FormField label="合同标题"><Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" /></FormField></div>
@@ -174,32 +184,47 @@ export default function ContractCreatePage() {
           </div>
 
           <SectionTitle>交易对手方</SectionTitle>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <FormField label={form.type === 'PURCHASE' ? '供应商' : form.type === 'SALES' ? '客户' : '采购对手方'} required>
-              <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">请选择</option>
-                {allPartners.map(p => (
-                  <option key={p.id} value={p.id} disabled={p.id === form.companyId}>
-                    {p.code} {p.name}{p.id === form.companyId ? '（我方）' : ''}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            {form.type === 'BILATERAL' && (
-              <FormField label="销售对手方" required>
-                <select value={form.buyerId} onChange={e => handleSelectPartner(e.target.value, 'buyerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+          {form.type === 'BILATERAL' ? (
+            <>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-3 p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg">
+                  <div className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">上游 — 供应商（采购端）</div>
+                  <FormField label="供应商" required>
+                    <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                      <option value="">请选择</option>
+                      {allPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.companyId}>{p.code} {p.name}{p.id === form.companyId ? '（我方）' : ''}</option>)}
+                    </select>
+                  </FormField>
+                </div>
+                <div className="space-y-3 p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                  <div className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">下游 — 客户（销售端）</div>
+                  <FormField label="客户" required>
+                    <select value={form.buyerId} onChange={e => handleSelectPartner(e.target.value, 'buyerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                      <option value="">请选择</option>
+                      {allPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.companyId || p.id === form.sellerId}>{p.code} {p.name}{p.id === form.companyId ? '（我方）' : p.id === form.sellerId ? '（已选）' : ''}</option>)}
+                    </select>
+                  </FormField>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4 mt-4">
+                <FormField label="联系人"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></FormField>
+                <FormField label="联系电话"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></FormField>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <FormField label={form.type === 'PURCHASE' ? '供应商' : '客户'} required>
+                <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">请选择</option>
                   {allPartners.map(p => (
-                    <option key={p.id} value={p.id} disabled={p.id === form.companyId || p.id === form.sellerId}>
-                      {p.code} {p.name}{p.id === form.companyId ? '（我方）' : p.id === form.sellerId ? '（已选）' : ''}
-                    </option>
+                    <option key={p.id} value={p.id} disabled={p.id === form.companyId}>{p.code} {p.name}{p.id === form.companyId ? '（我方）' : ''}</option>
                   ))}
                 </select>
               </FormField>
-            )}
-            <FormField label="联系人"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></FormField>
-            <FormField label="联系电话"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></FormField>
-          </div>
+              <FormField label="联系人"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></FormField>
+              <FormField label="联系电话"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></FormField>
+            </div>
+          )}
         </Card>
 
         {/* 货物与价格 */}
@@ -222,10 +247,24 @@ export default function ContractCreatePage() {
             <FormField label="溢装比例(%)"><Input type="number" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} /></FormField>
             <FormField label="短装比例(%)"><Input type="number" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} /></FormField>
           </div>
-          {totalAmount > 0 && (
-            <div className="mt-4 p-3 bg-muted/30 rounded-lg text-sm">
-              <span className="text-muted-foreground">合同总金额：</span>
-              <span className="text-lg font-bold text-primary ml-2">¥{totalAmount.toLocaleString()}</span>
+          {form.type === 'BILATERAL' && (
+            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
+              <FormField label="采购单价（元/吨）"><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
+              <FormField label="销售单价（元/吨）"><Input type="number" value={form.saleUnitPrice} onChange={e => set('saleUnitPrice', e.target.value)} step="0.01" /></FormField>
+            </div>
+          )}
+          {(totalAmount > 0 || profit !== 0) && (
+            <div className="mt-4 p-3 bg-muted/30 rounded-lg text-sm space-y-1">
+              {form.type !== 'BILATERAL' && purchaseAmount > 0 && (
+                <div><span className="text-muted-foreground">合同总金额：</span><span className="text-lg font-bold text-primary ml-2">¥{purchaseAmount.toLocaleString()}</span></div>
+              )}
+              {form.type === 'BILATERAL' && (
+                <>
+                  <div className="flex justify-between"><span className="text-muted-foreground">采购金额：</span><span className="font-mono">¥{purchaseAmount.toLocaleString()}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">销售金额：</span><span className="font-mono">¥{saleAmount.toLocaleString()}</span></div>
+                  <div className="flex justify-between border-t pt-1"><span className="text-muted-foreground">预计毛利：</span><span className={`font-bold ${profit > 0 ? 'text-success' : 'text-destructive'}`}>¥{profit.toLocaleString()}</span></div>
+                </>
+              )}
             </div>
           )}
         </Card>
