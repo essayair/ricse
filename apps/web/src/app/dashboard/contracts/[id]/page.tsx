@@ -15,9 +15,16 @@ interface ContractDetail {
   totalAmount: string; settlementMethod: string;
   signedAt: string; effectiveAt: string; expireAt: string;
   remarks: string | null; createdAt: string;
+  company?: { code: string; name: string } | null;
+  externalNo?: string; contactPerson?: string; contactPhone?: string;
+  pricingType?: string; overfillPct?: string; shortfallPct?: string;
+  deliveryMethod?: string; deliveryLocation?: string;
+  settlementBasis?: string; prepayPct?: string; paymentDays?: number; paymentMethod?: string;
+  moistureRule?: string; impurityRule?: string;
   creator: { name: string };
   seller: { id: string; code: string; name: string; roles: string[] } | null;
   buyer: { id: string; code: string; name: string; roles: string[] } | null;
+  attachments?: Array<{ id: string; originalName: string; mimeType: string; size: number; category: string }>;
   lineItems: Array<{ id: string; materialName: string; quantity: string; unit: string; unitPrice: string; totalPrice: string; deliveryDate: string | null }>;
 }
 
@@ -106,12 +113,36 @@ export default function ContractDetailPage() {
           <div className="grid grid-cols-3 gap-4 text-sm">
             <Field label="卖方" value={<span>{c.seller ? `${c.seller.code} ${c.seller.name}` : '—'}</span>} />
             <Field label="买方" value={<span>{c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'}</span>} />
+            <Field label="签约主体" value={<span>{c.company ? `${c.company.code} ${c.company.name}` : '—'}</span>} />
             <Field label="总金额" value={<span className="text-lg font-bold text-primary">¥{Number(c.totalAmount).toLocaleString()}</span>} />
-            <Field label="结算方式" value={c.settlementMethod} />
+            <Field label="外部合同号" value={c.externalNo || '—'} />
+            <Field label="联系人" value={`${c.contactPerson || '—'} ${c.contactPhone || ''}`} />
+            <Field label="定价类型" value={c.pricingType === 'FIXED' ? '一口价' : c.pricingType === 'BASIS' ? '基差定价' : c.pricingType === 'FLOATING' ? '不定价' : '—'} />
+            <Field label="溢装/短装" value={`${c.overfillPct || '—'}% / ${c.shortfallPct || '—'}%`} />
+            <Field label="交货方式" value={c.deliveryMethod || '—'} />
+            <Field label="交货地点" value={c.deliveryLocation || '—'} />
             <Field label="签订日期" value={c.signedAt ? new Date(c.signedAt).toLocaleDateString('zh-CN') : '—'} />
             <Field label="生效日期" value={c.effectiveAt ? new Date(c.effectiveAt).toLocaleDateString('zh-CN') : '—'} />
             <Field label="到期日期" value={c.expireAt ? new Date(c.expireAt).toLocaleDateString('zh-CN') : '—'} />
           </div>
+
+          {/* Settlement */}
+          {(c.prepayPct || c.paymentDays || c.paymentMethod || c.moistureRule) && (
+            <>
+              <Separator className="my-4" />
+              <h4 className="text-sm font-semibold mb-3">结算条款</h4>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <Field label="结算依据" value={c.settlementBasis === 'WEIGHT' ? '地磅净重' : c.settlementBasis === 'QUALITY' ? '质检干重' : '合同量'} />
+                <Field label="结算方式" value={c.settlementMethod} />
+                <Field label="预付比例" value={c.prepayPct ? `${c.prepayPct}%` : '—'} />
+                <Field label="尾款账期" value={c.paymentDays ? `${c.paymentDays} 天` : '—'} />
+                <Field label="付款方式" value={c.paymentMethod || '—'} />
+                <Field label="扣水规则" value={c.moistureRule || '—'} />
+                <Field label="扣杂规则" value={c.impurityRule || '—'} />
+              </div>
+            </>
+          )}
+
           {c.remarks && <div className="mt-4 text-sm text-muted-foreground">备注: {c.remarks}</div>}
 
           {actions.length > 0 && (
