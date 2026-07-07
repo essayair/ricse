@@ -123,6 +123,39 @@ export class ContractService {
     });
   }
 
+  async update(id: string, dto: {
+    title?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
+    signedAt?: string; effectiveAt?: string; expireAt?: string;
+    settlementMethod?: string; remarks?: string;
+  }) {
+    const contract = await this.findOne(id);
+    if (contract.status !== 'DRAFT') {
+      throw new BadRequestException('仅草稿状态的合同可以编辑');
+    }
+
+    const data: any = { ...dto };
+    if (dto.signedAt) data.signedAt = new Date(dto.signedAt);
+    if (dto.effectiveAt) data.effectiveAt = new Date(dto.effectiveAt);
+    if (dto.expireAt) data.expireAt = new Date(dto.expireAt);
+
+    return this.prisma.contract.update({
+      where: { id },
+      data,
+      include: this.include,
+    });
+  }
+
+  async remove(id: string) {
+    const contract = await this.findOne(id);
+    if (!['DRAFT', 'VOIDED'].includes(contract.status)) {
+      throw new BadRequestException('仅草稿或已作废的合同可以删除');
+    }
+    return this.prisma.contract.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+  }
+
   private validateTransition(current: string, next: string) {
     const transitions: Record<string, string[]> = {
       DRAFT: ['PENDING_APPROVAL', 'VOIDED'],

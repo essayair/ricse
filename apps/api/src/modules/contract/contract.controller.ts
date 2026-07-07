@@ -1,12 +1,6 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Body,
-  Param,
-  Query,
-  UseGuards,
+  Controller, Get, Post, Patch, Delete,
+  Body, Param, Query, UseGuards, HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -54,5 +48,21 @@ export class ContractController {
   @ApiOperation({ summary: '更新合同状态（审核流）' })
   updateStatus(@Param('id') id: string, @Body() dto: UpdateContractStatusDto) {
     return this.contractService.updateStatus(id, dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: '编辑合同（仅草稿状态可编辑）' })
+  update(@Param('id') id: string, @Body() dto: {
+    title?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
+    signedAt?: string; effectiveAt?: string; expireAt?: string;
+    settlementMethod?: string; remarks?: string;
+  }) {
+    return this.contractService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '删除合同（软删除，仅草稿/已作废）' })
+  remove(@Param('id') id: string) {
+    return this.contractService.remove(id);
   }
 }

@@ -6,7 +6,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, FileText, Truck, Package, AlertTriangle, DollarSign, ChevronRight } from 'lucide-react';
+import { Plus, Search, FileText, Truck, Package, AlertTriangle, DollarSign, ChevronRight, Trash2 } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface Contract {
   id: string;
@@ -44,12 +45,11 @@ export default function ContractsPage() {
 
   const fetchContracts = async (status?: string) => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (status) params.set('status', status);
     try {
-      const res = await fetch(`http://localhost:3000/api/v1/contracts?${params}`);
-      if (!res.ok) { setData(null); return; }
-      const json = await res.json();
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      if (searchTerm) params.set('search', searchTerm);
+      const json = await api.get<{ items: Contract[]; pagination: any }>(`/contracts?${params}`);
       setData(json);
     } catch (e) {
       console.error(e);
@@ -59,7 +59,15 @@ export default function ContractsPage() {
     }
   };
 
-  useEffect(() => { fetchContracts(statusFilter); }, [statusFilter]);
+  const handleDelete = async (contractId: string) => {
+    if (!confirm('确定删除此合同？')) return;
+    try {
+      await api.delete(`/contracts/${contractId}`);
+      fetchContracts(statusFilter);
+    } catch (e: any) { alert(e.message || '删除失败'); }
+  };
+
+  useEffect(() => { fetchContracts(statusFilter); }, [statusFilter, searchTerm]);
 
   // Summary stats computed from contract data
   const contractItems = data?.items ?? [];
@@ -138,6 +146,7 @@ export default function ContractsPage() {
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">金额</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">创建人</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">创建时间</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -159,6 +168,13 @@ export default function ContractsPage() {
                   <td className="px-4 py-3 text-muted-foreground">{c.creator?.name}</td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {new Date(c.createdAt).toLocaleDateString('zh-CN')}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
+                      className="text-destructive hover:bg-destructive/10 rounded p-1"
+                      title="删除">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
