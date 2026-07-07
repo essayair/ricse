@@ -14,8 +14,8 @@ export class OrgController {
   // ========== 企业 ==========
 
   @Post('companies')
-  @ApiOperation({ summary: '创建企业' })
-  createCompany(@Body() dto: { code: string; name: string; shortName?: string; type?: string; partnerId?: string; parentId?: string }) {
+  @ApiOperation({ summary: '创建企业（从合作伙伴拉取基本信息）' })
+  createCompany(@Body() dto: { partnerId: string; parentId?: string }) {
     return this.orgService.createCompany(dto);
   }
 

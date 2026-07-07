@@ -54,6 +54,8 @@ function OrgPageInner() {
   const [newType, setNewType] = useState('INTERNAL');
   const [newParent, setNewParent] = useState('');
   const [newCompanyId, setNewCompanyId] = useState('');
+  const [partnerList, setPartnerList] = useState<Array<{id:string;code:string;name:string;isInternal:boolean;taxId?:string;contactPerson?:string}>>([]);
+  const [selectedPartner, setSelectedPartner] = useState<{id:string;code:string;name:string;isInternal:boolean;taxId?:string;contactPerson?:string}|null>(null);
   // User-specific form fields
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -103,7 +105,10 @@ function OrgPageInner() {
   const handleCreate = async () => {
     if (!newName) return;
     try {
-      if (tab === 'company') await api.post('/org/companies', { code: newCode, name: newName, type: newType, parentId: newParent || undefined });
+      if (tab === 'company') {
+        if (!selectedPartner) { alert('请先选择一个合作伙伴'); return; }
+        await api.post('/org/companies', { partnerId: selectedPartner.id, parentId: newParent || undefined });
+      }
       if (tab === 'dept') await api.post('/org/departments', { name: newName, companyId: newCompanyId });
       if (tab === 'employee') await api.post('/org/employees', { name: newName, companyId: newCompanyId, departmentId: newParent });
       if (tab === 'business-group') await api.post('/org/business-groups', { name: newName });
@@ -128,7 +133,13 @@ function OrgPageInner() {
           <h1 className="text-2xl font-bold">组织数据</h1>
           <p className="text-sm text-muted-foreground mt-1">管理企业、部门、员工和业务组</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1" />新建</Button>
+        <Button onClick={async () => {
+          if (tab === 'company') {
+            const ps = await api.get<{ items: any[] }>('/partners');
+            setPartnerList(Array.isArray(ps?.items) ? ps.items : []);
+          }
+          setShowCreate(true); setSelectedPartner(null);
+        }}><Plus className="h-4 w-4 mr-1" />新建</Button>
       </div>
 
       {/* Tabs */}
@@ -151,13 +162,33 @@ function OrgPageInner() {
           </h3>
           {tab === 'company' && (
             <>
-              <Input placeholder="企业编码（6位/8位）" value={newCode} onChange={(e) => setNewCode(e.target.value)} />
-              <select value={newType} onChange={(e) => setNewType(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="INTERNAL">内部企业</option><option value="EXTERNAL">外部企业</option>
+              <select
+                value={selectedPartner?.id || ''}
+                onChange={(e) => {
+                  const p = partnerList.find((p) => p.id === e.target.value);
+                  setSelectedPartner(p || null);
+                }}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">选择合作伙伴...</option>
+                {partnerList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.code} {p.name} ({p.isInternal ? '内部' : '外部'})
+                  </option>
+                ))}
               </select>
+              {selectedPartner && (
+                <div className="grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg text-sm">
+                  <div><span className="text-muted-foreground">编码：</span><span className="font-mono">{selectedPartner.code}</span></div>
+                  <div><span className="text-muted-foreground">性质：</span>{selectedPartner.isInternal ? '内部企业' : '外部单位'}</div>
+                  <div className="col-span-2"><span className="text-muted-foreground">名称：</span>{selectedPartner.name}</div>
+                  {selectedPartner.taxId && <div className="col-span-2"><span className="text-muted-foreground">信用代码：</span><span className="font-mono text-xs">{selectedPartner.taxId}</span></div>}
+                  {selectedPartner.contactPerson && <div><span className="text-muted-foreground">联系人：</span>{selectedPartner.contactPerson}</div>}
+                </div>
+              )}
             </>
           )}
-          <Input placeholder="名称" value={newName} onChange={(e) => setNewName(e.target.value)} />
+          {tab !== 'company' && <Input placeholder="名称" value={newName} onChange={(e) => setNewName(e.target.value)} />}
           {(tab === 'dept' || tab === 'employee') && (
             <select value={newCompanyId} onChange={(e) => setNewCompanyId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="">选择企业</option>

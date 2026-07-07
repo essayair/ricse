@@ -8,12 +8,30 @@ export class OrgService {
   // ========== 企业 ==========
 
   async createCompany(data: {
-    code: string; name: string; shortName?: string;
-    type?: string; partnerId?: string; parentId?: string;
+    partnerId: string; parentId?: string;
   }) {
-    const exists = await this.prisma.company.findUnique({ where: { code: data.code } });
-    if (exists) throw new ConflictException(`企业编码 ${data.code} 已存在`);
-    return this.prisma.company.create({ data });
+    // 从合作伙伴拉取基本信息
+    const partner = await this.prisma.partner.findUnique({
+      where: { id: data.partnerId },
+      select: { code: true, name: true, shortName: true, isInternal: true },
+    });
+    if (!partner) throw new NotFoundException('合作伙伴不存在');
+
+    const code = partner.code;
+    const exists = await this.prisma.company.findUnique({ where: { code } });
+    if (exists) throw new ConflictException(`企业编码 ${code} 已存在`);
+
+    return this.prisma.company.create({
+      data: {
+        code,
+        name: partner.name,
+        shortName: partner.shortName,
+        type: partner.isInternal ? 'INTERNAL' : 'EXTERNAL',
+        partnerId: data.partnerId,
+        parentId: data.parentId,
+      },
+      include: { partner: { select: { id: true, code: true, name: true } } },
+    });
   }
 
   async findAllCompanies(type?: string) {
