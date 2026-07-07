@@ -26,14 +26,41 @@ async function main() {
     update: {},
     create: {
       code: '100001',
-      name: '总部运营公司',
-      shortName: '总部',
+      name: '嘉溢运营管理有限公司',
+      shortName: '嘉溢',
       isInternal: true,
       roles: ['CUSTOMER', 'SUPPLIER'],
       status: 'ACTIVE',
     },
   });
-  console.log('✅ 内部企业:', hq.name);
+
+  await prisma.partner.upsert({
+    where: { code: '200001' },
+    update: {},
+    create: {
+      code: '200001',
+      name: '嘉溢供应链管理有限公司',
+      shortName: '嘉溢供应链',
+      isInternal: true,
+      roles: ['CUSTOMER', 'SUPPLIER'],
+      status: 'ACTIVE',
+    },
+  });
+
+  // 技术公司（内部企业 300000 段）
+  await prisma.partner.upsert({
+    where: { code: '300001' },
+    update: {},
+    create: {
+      code: '300001',
+      name: '浙江和光云链科技有限公司',
+      shortName: '和光云链',
+      isInternal: true,
+      roles: ['CUSTOMER', 'SUPPLIER'],
+      status: 'ACTIVE',
+    },
+  });
+  console.log('✅ 内部企业: 嘉溢 + 供应链 + 和光云链');
 
   // ===== 合作伙伴（外部供应商/客户）=====
   const supplier1 = await prisma.partner.upsert({
