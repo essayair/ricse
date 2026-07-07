@@ -144,8 +144,9 @@ ricse/
 
 - 创建/修改代码文件
 - 运行 `pnpm install`
-- 运行 `prisma generate` / `prisma migrate dev`
-- 运行测试
+- 运行 `prisma generate` / `prisma db push`
+- 运行 TypeScript 检查（`tsc --noEmit`）
+- **每完成一个或多个功能，必须运行集成测试验证**（curl/API 调用覆盖 CRUD + 边界情况）
 - 更新 docs/ 下文档（更新记录.md 同步登记）
 - git add / git commit
 
