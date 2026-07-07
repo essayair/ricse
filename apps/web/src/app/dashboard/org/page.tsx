@@ -230,12 +230,21 @@ function OrgPageInner() {
           <>
             {/* 企业列表 */}
             {tab === 'company' && (
-              <DataTable headers={['编码', '名称', '类型', '简称', '状态']} rows={companies.map((c) => [
+              <DataTable headers={['编码', '名称', '类型', '简称', '状态', '操作']} rows={companies.map((c) => [
                 <span key="co" className="font-mono text-xs">{c.code}</span>,
                 <span key="nm" className="font-medium">{c.name}</span>,
                 <Badge key="tp" variant={c.type === 'INTERNAL' ? 'default' : 'secondary'} className="text-xs">{typeLabel(c.type)}</Badge>,
                 <span key="sn" className="text-muted-foreground">{c.shortName || '—'}</span>,
                 <Badge key="st" variant="secondary" className={c.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>{c.status === 'ACTIVE' ? '启用' : '停用'}</Badge>,
+                <button key="op" onClick={async () => {
+                  const newStatus = c.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+                  try {
+                    await api.patch(`/org/companies/${c.id}`, { status: newStatus });
+                    fetchAll();
+                  } catch (e: any) { alert(e.message || '操作失败'); }
+                }} className="text-xs text-primary hover:underline">
+                  {c.status === 'ACTIVE' ? '停用' : '启用'}
+                </button>,
               ])} empty="暂无企业数据" />
             )}
 
