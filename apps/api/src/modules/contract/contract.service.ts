@@ -15,6 +15,7 @@ export class ContractService {
       include: { assignee: { select: { id: true, name: true } } },
     },
     seller: { select: { id: true, code: true, name: true, roles: true } },
+    buyer: { select: { id: true, code: true, name: true, roles: true } },
   };
 
   async create(dto: CreateContractDto, userId: string) {

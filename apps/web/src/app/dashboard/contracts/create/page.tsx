@@ -7,20 +7,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface Supplier { id: string; name: string }
 interface Material { id: string; name: string; unit: string }
 
 export default function CreateContractPage() {
   const router = useRouter();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [partners, setSuppliers] = useState<Supplier[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     title: '',
     type: 'PURCHASE',
-    supplierId: '',
+    sellerId: '',
     signedAt: new Date().toISOString().split('T')[0],
     effectiveAt: '',
     expireAt: '',
@@ -33,8 +34,8 @@ export default function CreateContractPage() {
   ]);
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/v1/master-data/suppliers').then(r => r.json()).then(d => setSuppliers(d.items));
-    fetch('http://localhost:3000/api/v1/master-data/materials').then(r => r.json()).then(d => setMaterials(d.items));
+    api.get<{ items: any[] }>('/partners').then(d => setSuppliers(d.items || [])).catch(() => {});
+    api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(() => {});
   }, []);
 
   const totalAmount = lineItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
@@ -59,19 +60,9 @@ export default function CreateContractPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const res = await fetch('http://localhost:3000/api/v1/contracts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, totalAmount, lineItems }),
-      });
-      if (res.ok) {
-        const c = await res.json();
-        router.push(`/dashboard/contracts/${c.id}`);
-      } else {
-        const err = await res.json();
-        alert(err.message?.[0] || err.message || '创建失败');
-      }
-    } catch { alert('创建失败'); }
+      const c = await api.post<{ id: string }>('/contracts', { ...form, totalAmount, lineItems });
+      router.push(`/dashboard/contracts/${c.id}`);
+    } catch (e: any) { alert(e.message || '创建失败'); }
     finally { setSubmitting(false); }
   };
 
@@ -106,11 +97,11 @@ export default function CreateContractPage() {
               </Select>
             </div>
             <div>
-              <label className="text-sm font-medium mb-1 block">供应商 *</label>
-              <Select value={form.supplierId} onValueChange={v => setForm({...form, supplierId: v})}>
+              <label className="text-sm font-medium mb-1 block">交易对手方 *</label>
+              <Select value={form.sellerId} onValueChange={v => setForm({...form, sellerId: v})}>
                 <SelectTrigger><SelectValue placeholder="请选择" /></SelectTrigger>
                 <SelectContent>
-                  {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  {partners.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
