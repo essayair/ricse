@@ -30,7 +30,10 @@ export default function ContractCreatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [partners, setPartners] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
-  const [companies, setCompanies] = useState<any[]>([]);
+  const [internalPartners, setInternalPartners] = useState<any[]>([]);
+  const [allPartners, setAllPartners] = useState<any[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  const [draftId, setDraftId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     type: 'PURCHASE' as string, title: '',
@@ -48,20 +51,20 @@ export default function ContractCreatePage() {
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    api.get<{ items: any[] }>('/partners').then(d => setPartners(d.items || [])).catch(()=>{});
+    api.get<{ items: any[] }>('/partners').then(d => {
+      const all = d.items || [];
+      setPartners(all);
+      setAllPartners(all);
+      setInternalPartners(all.filter((p: any) => p.isInternal));
+    }).catch(()=>{});
     api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(()=>{});
-    api.get<any[]>('/org/companies').then(d => setCompanies(Array.isArray(d) ? d : [])).catch(()=>{});
   }, []);
 
   const totalAmount = Number(form.quantity || 0) * Number(form.unitPrice || 0);
 
-  // Filter partners by contract type
-  const counterparties = form.type === 'PURCHASE' ? partners.filter(p => p.roles?.includes('SUPPLIER'))
-    : form.type === 'SALES' ? partners.filter(p => p.roles?.includes('CUSTOMER')) : partners;
-
   const handleSelectPartner = (id: string, field: string) => {
     set(field, id);
-    const p = partners.find(x => x.id === id);
+    const p = allPartners.find(x => x.id === id);
     if (p) { set('contactPerson', p.contactPerson || ''); set('contactPhone', p.contactPhone || ''); }
   };
 
@@ -71,31 +74,57 @@ export default function ContractCreatePage() {
     if (m) { set('materialName', m.name); set('unit', m.unit || 'TON'); }
   };
 
-  const handleSubmit = async () => {
+  const buildPayload = () => ({
+    type: form.type, title: form.title || `${form.type==='PURCHASE'?'采购':form.type==='SALES'?'销售':'双边'}合同`,
+    sellerId: form.sellerId, totalAmount,
+    companyId: form.companyId || undefined,
+    externalNo: form.externalNo || undefined,
+    contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
+    pricingType: form.pricingType, overfillPct: Number(form.overfillPct) || undefined, shortfallPct: Number(form.shortfallPct) || undefined,
+    deliveryMethod: form.deliveryMethod || undefined, deliveryLocation: form.deliveryLocation || undefined,
+    signedAt: form.signedAt, effectiveAt: form.effectiveAt || undefined, expireAt: form.expireAt || undefined,
+    settlementMethod: form.settlementMethod, settlementBasis: form.settlementBasis,
+    prepayPct: Number(form.prepayPct) || undefined, paymentDays: Number(form.paymentDays) || undefined,
+    paymentMethod: form.paymentMethod || undefined,
+    moistureRule: form.moistureRule || undefined, impurityRule: form.impurityRule || undefined,
+    remarks: form.remarks || undefined,
+    ...(form.type === 'BILATERAL' ? { buyerId: form.buyerId || undefined } : {}),
+    lineItems: form.materialId ? [{ materialId: form.materialId, materialName: form.materialName, quantity: Number(form.quantity), unit: form.unit, unitPrice: Number(form.unitPrice) }] : [],
+  });
+
+  const uploadAttachments = async (contractId: string) => {
+    for (const file of files) {
+      const fd = new FormData(); fd.append('file', file); fd.append('category', 'OTHER');
+      await fetch(`http://localhost:3000/api/v1/partners/${contractId}/attachments`, {
+        method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: fd,
+      });
+    }
+  };
+
+  const handleSaveDraft = async () => {
     setSubmitting(true);
     try {
-      const payload: any = {
-        type: form.type, title: form.title || `${form.type==='PURCHASE'?'采购':form.type==='SALES'?'销售':'双边'}合同`,
-        sellerId: form.sellerId, totalAmount,
-        companyId: form.companyId || undefined,
-        externalNo: form.externalNo || undefined,
-        contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
-        pricingType: form.pricingType, overfillPct: Number(form.overfillPct) || undefined, shortfallPct: Number(form.shortfallPct) || undefined,
-        deliveryMethod: form.deliveryMethod || undefined, deliveryLocation: form.deliveryLocation || undefined,
-        signedAt: form.signedAt, effectiveAt: form.effectiveAt || undefined, expireAt: form.expireAt || undefined,
-        settlementMethod: form.settlementMethod, settlementBasis: form.settlementBasis,
-        prepayPct: Number(form.prepayPct) || undefined, paymentDays: Number(form.paymentDays) || undefined,
-        paymentMethod: form.paymentMethod || undefined,
-        moistureRule: form.moistureRule || undefined, impurityRule: form.impurityRule || undefined,
-        remarks: form.remarks || undefined,
-      };
-      if (form.type === 'BILATERAL') payload.buyerId = form.buyerId || undefined;
-      if (form.materialId) payload.lineItems = [{ materialId: form.materialId, materialName: form.materialName, quantity: Number(form.quantity), unit: form.unit, unitPrice: Number(form.unitPrice) }];
-      else payload.lineItems = [];
-
+      const payload = buildPayload();
       const c = await api.post<{ id: string }>('/contracts', payload);
+      if (files.length > 0) await uploadAttachments(c.id);
       router.push(`/dashboard/contracts/${c.id}`);
-    } catch (e: any) { alert(e.message || '创建失败'); setSubmitting(false); }
+    } catch (e: any) { alert(e.message || '保存失败'); setSubmitting(false); }
+  };
+
+  const handleSubmit = async () => {
+    if (!form.sellerId) { alert('请选择交易对手方'); return; }
+    if (!form.materialId || !form.quantity || !form.unitPrice) { alert('请完整填写货物信息（物料/数量/单价）'); return; }
+    if (form.companyId === form.sellerId) { alert('我方签约主体与交易对手方不能相同'); return; }
+    if (form.type === 'BILATERAL' && !form.buyerId) { alert('双边合同请选择销售对手方'); return; }
+    setSubmitting(true);
+    try {
+      const payload = buildPayload();
+      const c = await api.post<{ id: string }>('/contracts', payload);
+      // Submit for approval
+      await api.patch(`/contracts/${c.id}/status`, { status: 'PENDING_APPROVAL' });
+      if (files.length > 0) await uploadAttachments(c.id);
+      router.push(`/dashboard/contracts/${c.id}`);
+    } catch (e: any) { alert(e.message || '提交失败'); setSubmitting(false); }
   };
 
   return (
@@ -135,10 +164,10 @@ export default function ContractCreatePage() {
           <SectionTitle>合同基本信息</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <div className="col-span-2"><FormField label="合同标题"><Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" /></FormField></div>
-            <FormField label="我方签约主体">
+            <FormField label="我方签约主体（内部企业）">
               <select value={form.companyId} onChange={e => set('companyId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">请选择</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+                {internalPartners.map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
               </select>
             </FormField>
             <FormField label="外部合同号"><Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="对手方合同号，方便对账" /></FormField>
@@ -149,14 +178,22 @@ export default function ContractCreatePage() {
             <FormField label={form.type === 'PURCHASE' ? '供应商' : form.type === 'SALES' ? '客户' : '采购对手方'} required>
               <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">请选择</option>
-                {counterparties.map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
+                {allPartners.map(p => (
+                  <option key={p.id} value={p.id} disabled={p.id === form.companyId}>
+                    {p.code} {p.name}{p.id === form.companyId ? '（我方）' : ''}
+                  </option>
+                ))}
               </select>
             </FormField>
             {form.type === 'BILATERAL' && (
               <FormField label="销售对手方" required>
                 <select value={form.buyerId} onChange={e => handleSelectPartner(e.target.value, 'buyerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">请选择</option>
-                  {partners.filter(p => p.roles?.includes('CUSTOMER')).map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
+                  {allPartners.map(p => (
+                    <option key={p.id} value={p.id} disabled={p.id === form.companyId || p.id === form.sellerId}>
+                      {p.code} {p.name}{p.id === form.companyId ? '（我方）' : p.id === form.sellerId ? '（已选）' : ''}
+                    </option>
+                  ))}
                 </select>
               </FormField>
             )}
@@ -234,10 +271,35 @@ export default function ContractCreatePage() {
           </div>
         </Card>
 
+        {/* Attachments */}
+        <Card className="p-6 mt-4">
+          <SectionTitle>合同附件</SectionTitle>
+          <p className="text-xs text-muted-foreground mb-3">上传合同扫描件、签章文件等。支持 JPG/PNG/PDF。</p>
+          <label className="block border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
+            <input type="file" multiple accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setFiles(prev => [...prev, ...Array.from(e.target.files || [])])} className="hidden" />
+            <div className="text-2xl mb-2">📎</div>
+            <div className="text-sm font-semibold">点击或拖拽上传附件</div>
+            <div className="text-xs text-muted-foreground mt-1">纸质合同扫描件、签章文件等</div>
+          </label>
+          {files.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
+                  <span>{f.name}</span><span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                  <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="ml-auto text-destructive text-xs">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
         {/* Bottom actions */}
-        <div className="flex justify-end gap-3 pb-8 border-t pt-6 mt-6">
+        <div className="flex justify-between pb-8 border-t pt-6 mt-6">
           <Button variant="outline" onClick={() => router.push('/dashboard/contracts')}>取消</Button>
-          <Button onClick={handleSubmit} disabled={submitting} size="lg"><Save className="h-4 w-4 mr-1" />{submitting ? '提交中...' : '提交审批'}</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleSaveDraft} disabled={submitting}><Save className="h-4 w-4 mr-1" />保存草稿</Button>
+            <Button onClick={handleSubmit} disabled={submitting} size="lg">{submitting ? '提交中...' : '提交审批'}</Button>
+          </div>
         </div>
       </div>
     </div>
