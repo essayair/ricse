@@ -25,7 +25,8 @@ model User {
   updatedAt       DateTime @updatedAt
 
   createdContracts Contract[] @relation("ContractCreator")
-  approvalTasks   Approval[] @relation("ApprovalAssignee")
+  createdPartners  Partner[]  @relation("PartnerCreator")
+  approvalTasks    Approval[] @relation("ApprovalAssignee")
 
   @@map("users")
 }
@@ -85,10 +86,12 @@ model Partner {
   roles            String[]  // SUPPLIER | CUSTOMER（角色：合作伙伴只有供应商和客户）
   status           String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
   remark           String?
+  createdBy        String?   // 创建人
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
+  creator            User?       @relation("PartnerCreator", fields: [createdBy], references: [id])
   contractsAsSeller  Contract[]      @relation("ContractSeller")
   contractsAsBuyer    Contract[]      @relation("ContractBuyer")
   vehicles            Vehicle[]

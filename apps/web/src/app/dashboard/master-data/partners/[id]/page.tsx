@@ -34,6 +34,7 @@ interface PartnerDetail {
   bizScope: string | null; equityStructure: string | null; intro: string | null;
   creditLimit: string | null; roles: string[]; status: string; remark: string | null;
   createdAt: string; updatedAt: string;
+  creator: { id: string; name: string } | null;
   bankAccounts: BankAccount[];
   vehicles: VehicleItem[];
   warehouses: WarehouseItem[];
@@ -403,6 +404,7 @@ export default function PartnerDetailPage() {
                 <Row label="电话" value={p.contactPhone || '—'} />
                 <Row label="状态" value={statusCfg.label} />
                 <Row label="更新于" value={fmtDate(p.updatedAt) || '—'} />
+                <Row label="创建人" value={p.creator?.name || '—'} />
               </div>
             </Card>
           </div>

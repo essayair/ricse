@@ -53,7 +53,7 @@ export class PartnerService {
     creditLimit?: number;
     roles: string[];
     remark?: string;
-  }) {
+  }, userId?: string) {
     // 校验税号+名称唯一
     if (data.taxId && data.name) {
       const existing = await this.prisma.partner.findFirst({
@@ -123,6 +123,7 @@ export class PartnerService {
         creditLimit: data.creditLimit,
         roles: data.roles,
         remark: data.remark,
+        createdBy: userId,
       },
     });
   }
@@ -173,6 +174,7 @@ export class PartnerService {
         bankAccounts: true,
         vehicles: true,
         warehouses: true,
+        creator: { select: { id: true, name: true } },
       },
     });
     if (!partner || partner.deletedAt) throw new NotFoundException('合作伙伴不存在');

@@ -5,6 +5,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PartnerService } from './partner.service';
+import { CurrentUser } from '../common/current-user.decorator';
 
 @ApiTags('合作伙伴')
 @ApiBearerAuth()
@@ -36,8 +37,8 @@ export class PartnerController {
     licenseType?: string; licenseExpiry?: string;
     bizScope?: string; mainBiz?: string; tradingGoods?: string; equityStructure?: string; intro?: string;
     creditLimit?: number; roles: string[]; remark?: string;
-  }) {
-    return this.partnerService.create(dto);
+  }, @CurrentUser('id') userId: string) {
+    return this.partnerService.create(dto, userId);
   }
 
   @Get()
