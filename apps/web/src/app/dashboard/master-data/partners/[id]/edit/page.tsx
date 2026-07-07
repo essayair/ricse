@@ -6,10 +6,10 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Save, Loader2, Lock } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Lock, Upload, X } from 'lucide-react';
 import { api } from '@/lib/api';
 
-/* ── Constants (shared with create page) ── */
+/* ── Constants ── */
 
 const ORG_TYPES = ['有限责任公司','股份有限公司','国有企业','外资企业','个体工商户','合伙企业'];
 const CORP_TYPES = ['生产型企业','贸易型企业','生产 + 贸易','服务型企业'];
@@ -45,11 +45,12 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
 }
 
-function FormField({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function FormField({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-sm font-medium text-foreground">{label}{required && <span className="text-destructive ml-0.5">*</span>}</label>
       {children}
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
     </div>
   );
 }
@@ -65,6 +66,8 @@ function SelectField({ value, onChange, options, placeholder }: { value: string;
 
 /* ── Page ── */
 
+interface AttItem { id: string; fileName: string; originalName: string; mimeType: string; size: number; category: string; createdAt: string; }
+
 export default function PartnerEditPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -75,14 +78,21 @@ export default function PartnerEditPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [isInternal, setIsInternal] = useState(false);
   const [originalRoles, setOriginalRoles] = useState<string[]>([]);
+  const [partnerCode, setPartnerCode] = useState('');
+  const [partnerTaxId, setPartnerTaxId] = useState('');
+  const [attachments, setAttachments] = useState<AttItem[]>([]);
+  const [newFiles, setNewFiles] = useState<File[]>([]);
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
   useEffect(() => {
     api.get<any>(`/partners/${id}`).then((p) => {
+      setPartnerCode(p.code);
+      setPartnerTaxId(p.taxId);
       setIsInternal(p.isInternal);
       setRoles(p.roles || []);
       setOriginalRoles(p.roles || []);
+      setAttachments(p.attachments || []);
       setForm({
         name: p.name || '', shortName: p.shortName || '', shortCode: p.shortCode || '',
         orgType: p.orgType || '', category: p.category || '',
@@ -106,35 +116,48 @@ export default function PartnerEditPage() {
   const toggleRole = (role: string) => {
     setRoles((prev) => {
       if (prev.includes(role)) {
-        // 不允许移除原有角色
-        if (originalRoles.includes(role)) {
-          alert('不允许移除已有角色。角色仅支持追加。');
-          return prev;
-        }
+        if (originalRoles.includes(role)) { alert('不允许移除已有角色。角色仅支持追加。'); return prev; }
         return prev.filter((r) => r !== role);
       }
       return [...prev, role];
     });
   };
 
+  const deleteAttachment = async (attId: string) => {
+    if (!confirm('确定删除此附件？')) return;
+    try {
+      await api.delete(`/partners/attachments/${attId}`);
+      setAttachments((prev) => prev.filter((a) => a.id !== attId));
+    } catch (e: any) { alert(e.message || '删除失败'); }
+  };
+
+  const uploadNewFiles = async () => {
+    for (const file of newFiles) {
+      const fd = new FormData();
+      fd.append('file', file);
+      const cat = file.name.match(/营业执照|license|biz/i) ? 'BUSINESS_LICENSE' : 'OTHER';
+      fd.append('category', cat);
+      await fetch(`http://localhost:3000/api/v1/partners/${id}/attachments`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: fd,
+      });
+    }
+  };
+
   const handleSubmit = async () => {
     setSaving(true); setError('');
     try {
-      // Filter to only changed/modified fields
-      const patch: Record<string, any> = {};
-      // Always send name and roles
-      patch.name = form.name;
-      patch.roles = roles;
-      // Send other non-empty fields
+      const patch: Record<string, any> = { name: form.name, roles };
       for (const [k, v] of Object.entries(form)) {
-        if (k !== 'name' && v !== '' && v != null) {
-          // Convert numeric fields
-          if (k === 'creditLimit' || k === 'regCapital') patch[k] = parseFloat(v);
-          else if (k === 'isParent') patch[k] = v === 'true';
-          else patch[k] = v;
-        }
+        if (k === 'name') continue;
+        if (v === '' || v == null) continue;
+        if (k === 'creditLimit' || k === 'regCapital') patch[k] = parseFloat(v) || 0;
+        else if (k === 'isParent') patch[k] = v === 'true';
+        else patch[k] = v;
       }
       await api.patch(`/partners/${id}`, patch);
+      if (newFiles.length > 0) await uploadNewFiles();
       router.push(`/dashboard/master-data/partners/${id}`);
     } catch (e: any) {
       setError(e.message || '保存失败');
@@ -156,54 +179,59 @@ export default function PartnerEditPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.back()}>取消</Button>
-          <Button onClick={handleSubmit} disabled={saving}><Save className="h-4 w-4 mr-1" />{saving ? '保存中...' : '保存'}</Button>
+          <Link href={`/dashboard/master-data/partners/${id}`}><Button variant="outline">取消</Button></Link>
+          <Button onClick={handleSubmit} disabled={saving}><Save className="h-4 w-4 mr-1" />{saving ? '保存中...' : '保存修改'}</Button>
         </div>
       </div>
 
       {error && <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-md border border-destructive/20">{error}</div>}
 
       <div className="grid grid-cols-3 gap-6 items-start">
+        {/* Left main column */}
         <div className="col-span-2 space-y-4">
+
+          {/* Locked fields */}
           <Card className="p-6">
             <SectionTitle>不可修改字段</SectionTitle>
             <div className="grid grid-cols-3 gap-4 p-3 bg-muted/30 rounded-lg">
-              <LockedField label="编码" value={form.code || id} />
-              <LockedField label="统一社会信用代码" value={form.taxId || '—'} />
+              <LockedField label="编码" value={partnerCode} />
+              <LockedField label="统一社会信用代码" value={partnerTaxId || '—'} />
               <LockedField label="单位性质" value={isInternal ? '内部企业' : '外部单位'} />
             </div>
 
-            <SectionTitle>基本信息</SectionTitle>
+            <SectionTitle>企业基本信息</SectionTitle>
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <div className="col-span-2"><FormField label="企业名称" required><Input value={form.name} onChange={(e) => set('name', e.target.value)} /></FormField></div>
+              <FormField label="国家 / 地区"><SelectField value={form.country} onChange={(v) => set('country', v)} options={COUNTRIES} /></FormField>
               <FormField label="简称"><Input value={form.shortName} onChange={(e) => set('shortName', e.target.value)} /></FormField>
               <FormField label="搜索简码"><Input value={form.shortCode} onChange={(e) => set('shortCode', e.target.value)} /></FormField>
               <FormField label="组织性质"><SelectField value={form.orgType} onChange={(v) => set('orgType', v)} options={ORG_TYPES} /></FormField>
+              <FormField label="企业类型"><SelectField value={form.corpType} onChange={(v) => set('corpType', v)} options={CORP_TYPES} /></FormField>
               <FormField label="合作伙伴类别">
-                <div className="flex gap-2 flex-wrap pt-0.5">
+                <div className="flex gap-2 pt-0.5">
                   {CATEGORY_OPTIONS.map((c) => (
                     <button key={c.value} type="button" onClick={() => set('category', form.category === c.value ? '' : c.value)}
                       className={`px-3 py-1.5 rounded-md border text-sm font-medium transition-colors ${form.category === c.value ? 'border-primary bg-primary/10 text-primary' : 'border-input text-muted-foreground hover:border-foreground/30'}`}>{c.label}</button>
                   ))}
                 </div>
               </FormField>
-              <FormField label="国家/地区"><SelectField value={form.country} onChange={(v) => set('country', v)} options={COUNTRIES} /></FormField>
             </div>
 
-            <SectionTitle>业务角色 <span className="text-xs font-normal text-muted-foreground">（仅允许追加）</span></SectionTitle>
+            <SectionTitle>业务角色 <span className="text-xs font-normal text-muted-foreground">（仅允许追加，原有角色标记🔒）</span></SectionTitle>
             <div className="flex gap-3">
-              {[{ key: 'SUPPLIER', label: '供应商' }, { key: 'CUSTOMER', label: '客户' }].map((r) => (
+              {[{ key: 'SUPPLIER', label: '供应商', desc: '提供原材料、商品或服务' }, { key: 'CUSTOMER', label: '客户', desc: '采购本公司产品或商品' }].map((r) => (
                 <button key={r.key} type="button" onClick={() => toggleRole(r.key)}
-                  className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-colors ${roles.includes(r.key) ? 'border-primary bg-primary/10 text-primary' : 'border-input text-muted-foreground hover:border-foreground/30'}`}>
-                  {r.label} {originalRoles.includes(r.key) && <Lock className="h-3 w-3 inline ml-1 opacity-50" />}
+                  className={`flex flex-col items-start px-4 py-2.5 rounded-lg border-2 text-left transition-colors min-w-[130px] ${roles.includes(r.key) ? 'border-primary bg-primary/10 text-primary' : 'border-input text-muted-foreground hover:border-foreground/30'}`}>
+                  <span className="font-semibold text-sm">{r.label} {originalRoles.includes(r.key) && <Lock className="h-3 w-3 inline ml-1 opacity-50" />}</span>
+                  <span className="text-xs mt-0.5 opacity-70">{r.desc}</span>
                 </button>
               ))}
             </div>
           </Card>
 
-          {/* Quick edit: key fields */}
+          {/* 法人/实控人 */}
           <Card className="p-6">
-            <SectionTitle>法人 / 实控人</SectionTitle>
+            <SectionTitle>法人 / 实际控制人</SectionTitle>
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <FormField label="法定代表人"><Input value={form.legalPerson} onChange={(e) => set('legalPerson', e.target.value)} /></FormField>
               <FormField label="法人类型"><SelectField value={form.legalPersonType} onChange={(v) => set('legalPersonType', v)} options={LEGAL_PERSON_TYPES} /></FormField>
@@ -212,8 +240,28 @@ export default function PartnerEditPage() {
               <FormField label="实控人职务"><Input value={form.controllerTitle} onChange={(e) => set('controllerTitle', e.target.value)} /></FormField>
               <FormField label="实控人联系方式"><Input value={form.controllerPhone} onChange={(e) => set('controllerPhone', e.target.value)} /></FormField>
             </div>
+          </Card>
 
-            <SectionTitle>联系 / 地址</SectionTitle>
+          {/* 工商登记信息 */}
+          <Card className="p-6">
+            <SectionTitle>工商登记信息</SectionTitle>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <FormField label="注册登记号"><Input value={form.regNo} onChange={(e) => set('regNo', e.target.value)} className="font-mono" /></FormField>
+              <FormField label="成立日期"><Input type="date" value={form.estDate} onChange={(e) => set('estDate', e.target.value)} /></FormField>
+              <div>
+                <FormField label="注册资本（万）">
+                  <div className="flex gap-2"><Input type="number" value={form.regCapital} onChange={(e) => set('regCapital', e.target.value)} className="flex-1" /><SelectField value={form.regCurrency} onChange={(v) => set('regCurrency', v)} options={CURRENCIES} placeholder="币种" /></div>
+                </FormField>
+              </div>
+              <FormField label="营业收入规模"><SelectField value={form.revenueScale} onChange={(v) => set('revenueScale', v)} options={REVENUE_SCALES} /></FormField>
+              <FormField label="所属集团"><Input value={form.groupName} onChange={(e) => set('groupName', e.target.value)} placeholder="集团名称（可选）" /></FormField>
+              <FormField label="行业"><SelectField value={form.industry} onChange={(v) => set('industry', v)} options={INDUSTRIES} /></FormField>
+            </div>
+          </Card>
+
+          {/* 联系人/地址 */}
+          <Card className="p-6">
+            <SectionTitle>联系人 / 地址信息</SectionTitle>
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <FormField label="主联系人"><Input value={form.contactPerson} onChange={(e) => set('contactPerson', e.target.value)} /></FormField>
               <FormField label="联系电话"><Input value={form.contactPhone} onChange={(e) => set('contactPhone', e.target.value)} /></FormField>
@@ -226,41 +274,90 @@ export default function PartnerEditPage() {
               <div className="col-span-2"><FormField label="注册地址"><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></FormField></div>
               <div className="col-span-2"><FormField label="办公地址"><Input value={form.bizAddress} onChange={(e) => set('bizAddress', e.target.value)} /></FormField></div>
             </div>
+          </Card>
 
+          {/* 业务信息 */}
+          <Card className="p-6">
             <SectionTitle>业务信息</SectionTitle>
             <div className="space-y-4">
-              <FormField label="主要货源地"><Input value={form.sourceRegion} onChange={(e) => set('sourceRegion', e.target.value)} /></FormField>
+              <FormField label="主要货源地" hint="供应商适用，填写原料或商品的主要来源地区"><Input value={form.sourceRegion} onChange={(e) => set('sourceRegion', e.target.value)} /></FormField>
               <FormField label="主营业务"><textarea rows={2} value={form.mainBiz} onChange={(e) => set('mainBiz', e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" /></FormField>
-              <FormField label="拟合作品种/业务"><textarea rows={2} value={form.tradingGoods} onChange={(e) => set('tradingGoods', e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" /></FormField>
+              <FormField label="拟合作品种 / 业务"><textarea rows={2} value={form.tradingGoods} onChange={(e) => set('tradingGoods', e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" /></FormField>
               <FormField label="经营范围"><textarea rows={3} value={form.bizScope} onChange={(e) => set('bizScope', e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" /></FormField>
               <FormField label="股权结构"><textarea rows={2} value={form.equityStructure} onChange={(e) => set('equityStructure', e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" /></FormField>
               <FormField label="企业介绍"><textarea rows={3} value={form.intro} onChange={(e) => set('intro', e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" /></FormField>
             </div>
           </Card>
+
+          {/* 影像附件 */}
+          <Card className="p-6">
+            <SectionTitle>影像附件</SectionTitle>
+            <div className="bg-muted/50 rounded-lg p-3 mb-3 text-xs text-muted-foreground leading-relaxed">
+              支持 JPG、PNG、WEBP、PDF 格式。已有附件可删除，也可追加新文件。
+            </div>
+            {/* Existing attachments */}
+            {attachments.length > 0 && (
+              <div className="mb-3 space-y-1.5">
+                {attachments.map((a) => (
+                  <div key={a.id} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
+                    <span>{a.mimeType.startsWith('image/') ? '🖼' : '📄'}</span>
+                    <span className="flex-1 truncate">{a.originalName}</span>
+                    <span className="text-xs text-muted-foreground">{a.category === 'BUSINESS_LICENSE' ? '营业执照' : ''} · {(a.size / 1024).toFixed(0)} KB</span>
+                    <button onClick={() => deleteAttachment(a.id)} className="text-destructive hover:bg-destructive/10 rounded px-1"><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* New file upload */}
+            <label className="block border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
+              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(e) => setNewFiles((prev) => [...prev, ...Array.from(e.target.files || [])])} className="hidden" />
+              <Upload className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+              <div className="text-sm">追加附件</div>
+            </label>
+            {newFiles.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {newFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm py-1 px-2 rounded bg-primary/5">
+                    <span>{f.name}</span>
+                    <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                    <button onClick={() => setNewFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-auto text-destructive"><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* Right sidebar */}
         <div className="space-y-4">
-          <Card className="p-5"><SectionTitle>税务/发票</SectionTitle>
+          <Card className="p-5">
+            <SectionTitle>税务 / 发票</SectionTitle>
             <div className="space-y-3">
               <FormField label="纳税人类型"><SelectField value={form.taxType} onChange={(v) => set('taxType', v)} options={TAX_TYPES} /></FormField>
               <FormField label="纳税评级">
                 <div className="flex gap-2">{TAX_RATINGS.map((r) => <button key={r} type="button" onClick={() => set('taxRating', form.taxRating === r ? '' : r)} className={`flex-1 py-1.5 rounded-md border text-sm font-medium ${form.taxRating === r ? 'border-primary bg-primary/10 text-primary' : 'border-input text-muted-foreground'}`}>{r}</button>)}</div>
               </FormField>
               <FormField label="发票类型"><SelectField value={form.invoiceType} onChange={(v) => set('invoiceType', v)} options={INVOICE_TYPES} /></FormField>
-              <FormField label="行业"><SelectField value={form.industry} onChange={(v) => set('industry', v)} options={INDUSTRIES} /></FormField>
               <FormField label="关联方"><SelectField value={form.relatedPartyType} onChange={(v) => set('relatedPartyType', v)} options={RELATED_PARTY_TYPES} /></FormField>
             </div>
+
+            <SectionTitle>特殊资质</SectionTitle>
+            <div className="space-y-3">
+              <FormField label="特殊证照"><SelectField value={form.licenseType} onChange={(v) => set('licenseType', v)} options={LICENSE_TYPES} /></FormField>
+              <FormField label="资质到期日"><Input type="date" value={form.licenseExpiry} onChange={(e) => set('licenseExpiry', e.target.value)} /></FormField>
+            </div>
           </Card>
-          <Card className="p-5"><SectionTitle>授信</SectionTitle>
-            <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">¥</span><Input type="number" className="pl-7" value={form.creditLimit} onChange={(e) => set('creditLimit', e.target.value)} /></div>
+
+          <Card className="p-5"><SectionTitle>授信 / 结算</SectionTitle>
+            <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">¥</span><Input type="number" className="pl-7" value={form.creditLimit} onChange={(e) => set('creditLimit', e.target.value)} placeholder="0" /></div>
           </Card>
           <Card className="p-5"><SectionTitle>备注</SectionTitle>
-            <textarea rows={4} value={form.remark} onChange={(e) => set('remark', e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" />
+            <textarea rows={5} value={form.remark} onChange={(e) => set('remark', e.target.value)} placeholder="补充说明（可选）" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none" />
           </Card>
         </div>
       </div>
 
+      {/* Bottom actions */}
       <div className="flex justify-end gap-3 pb-8 border-t pt-6">
         <Link href={`/dashboard/master-data/partners/${id}`}><Button variant="outline">取消</Button></Link>
         <Button onClick={handleSubmit} disabled={saving} size="lg"><Save className="h-4 w-4 mr-1" />{saving ? '保存中...' : '保存修改'}</Button>
