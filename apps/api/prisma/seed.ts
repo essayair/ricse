@@ -20,26 +20,27 @@ async function main() {
   });
   console.log('✅ 用户:', admin.username);
 
-  // ===== 内部企业（Partner INTERNAL）=====
+  // ===== 内部企业 =====
   const hq = await prisma.partner.upsert({
-    where: { code: 'HQ01' },
+    where: { code: '100001' },
     update: {},
     create: {
-      code: 'HQ01',
+      code: '100001',
       name: '总部运营公司',
       shortName: '总部',
-      roles: ['INTERNAL'],
+      isInternal: true,
+      roles: ['CUSTOMER', 'SUPPLIER'],
       status: 'ACTIVE',
     },
   });
   console.log('✅ 内部企业:', hq.name);
 
-  // ===== 合作伙伴（外部供应商）=====
+  // ===== 合作伙伴（外部供应商/客户）=====
   const supplier1 = await prisma.partner.upsert({
-    where: { code: '000001' },
+    where: { code: '80000001' },
     update: {},
     create: {
-      code: '000001',
+      code: '80000001',
       name: '金华萤石矿业有限公司',
       shortName: '金华萤石',
       taxId: '91330700XXXXXXXX01',
@@ -47,32 +48,34 @@ async function main() {
       contactPhone: '13800138001',
       address: '浙江省金华市婺城区',
       sourceRegion: '金华',
+      isInternal: false,
       roles: ['SUPPLIER'],
       status: 'ACTIVE',
     },
   });
 
   await prisma.partner.upsert({
-    where: { code: '000002' },
+    where: { code: '80000002' },
     update: {},
     create: {
-      code: '000002',
+      code: '80000002',
       name: '南京钢铁联合有限公司',
       shortName: '南钢',
       taxId: '91320100XXXXXXXX02',
       contactPerson: '李四',
       contactPhone: '13900139002',
       address: '江苏省南京市六合区',
+      isInternal: false,
       roles: ['CUSTOMER'],
       status: 'ACTIVE',
     },
   });
 
   await prisma.partner.upsert({
-    where: { code: '000003' },
+    where: { code: '80000003' },
     update: {},
     create: {
-      code: '000003',
+      code: '80000003',
       name: '武义氟化工科技有限公司',
       shortName: '武义氟化工',
       taxId: '91330700XXXXXXXX03',
@@ -80,7 +83,8 @@ async function main() {
       contactPhone: '13700137003',
       address: '浙江省金华市武义县',
       sourceRegion: '武义',
-      roles: ['SUPPLIER', 'CUSTOMER'],  // 既是供应商也是客户
+      isInternal: false,
+      roles: ['SUPPLIER', 'CUSTOMER'],
       status: 'ACTIVE',
     },
   });
