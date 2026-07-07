@@ -10,17 +10,19 @@ datasource db {
 // ========== 认证&用户 ==========
 
 model User {
-  id            String   @id @default(cuid())
-  username      String   @unique
-  password      String
-  name          String
-  role          String   @default("USER") // USER | ADMIN | APPROVER
-  phone         String?
-  email         String?
-  status        String   @default("ACTIVE") // ACTIVE | DISABLED
-  refreshToken  String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  username        String   @unique
+  password        String
+  name            String
+  role            String   @default("USER") // USER | ADMIN | APPROVER
+  phone           String?
+  email           String?
+  status          String   @default("ACTIVE") // ACTIVE | DISABLED
+  refreshToken    String?
+  companyId       String?  // 预留：所属企业（多租户隔离）
+  businessGroupId String?  // 预留：所属业务组（权限桥接）
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   createdContracts Contract[] @relation("ContractCreator")
   approvalTasks   Approval[] @relation("ApprovalAssignee")
@@ -87,7 +89,7 @@ model Partner {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
-  contractsAsSupplier Contract[]      @relation("ContractSupplier")
+  contractsAsSeller  Contract[]      @relation("ContractSeller")
   contractsAsBuyer    Contract[]      @relation("ContractBuyer")
   vehicles            Vehicle[]
   bankAccounts        BankAccount[]
@@ -214,7 +216,7 @@ model Contract {
   title             String
   type              String         // PURCHASE | SALES | BILATERAL
   status            String         @default("DRAFT")
-  partnerId         String         // 交易对手方（原 supplierId，现统一引用 Partner）
+  sellerId          String         // 卖方（必填）
   buyerId           String?
   totalAmount       Decimal        @db.Decimal(15, 2)
   signedAt          DateTime?
@@ -229,13 +231,13 @@ model Contract {
 
   lineItems  ContractLineItem[]
   approvals  Approval[]
-  creator    User   @relation("ContractCreator", fields: [createdBy], references: [id])
-  partner    Partner @relation("ContractSupplier", fields: [partnerId], references: [id])
+  creator    User    @relation("ContractCreator", fields: [createdBy], references: [id])
+  seller     Partner @relation("ContractSeller", fields: [sellerId], references: [id])
   buyer      Partner? @relation("ContractBuyer", fields: [buyerId], references: [id])
 
   @@index([contractNo])
   @@index([status])
-  @@index([partnerId])
+  @@index([sellerId])
   @@map("contracts")
 }
 

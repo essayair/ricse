@@ -47,7 +47,7 @@ describe('ContractService', () => {
       prisma.contract.create.mockResolvedValue(mockContract as any);
 
       const result = await service.create(
-        { title: '测试合同', type: 'PURCHASE', partnerId: 'sup-1', totalAmount: 100000, lineItems: [] },
+        { title: '测试合同', type: 'PURCHASE', sellerId: 'sup-1', totalAmount: 100000, lineItems: [] },
         'user-1',
       );
 
