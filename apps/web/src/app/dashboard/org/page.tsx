@@ -103,7 +103,7 @@ function OrgPageInner() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const handleCreate = async () => {
-    if (!newName) return;
+    if (tab !== 'company' && !newName) return;
     try {
       if (tab === 'company') {
         if (!selectedPartner) { alert('请先选择一个合作伙伴'); return; }
