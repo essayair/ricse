@@ -183,36 +183,65 @@ export class PartnerService {
   }
 
   async update(id: string, data: {
-    name?: string;
-    shortName?: string;
-    taxId?: string;
-    legalPerson?: string;
-    contactPerson?: string;
-    contactPhone?: string;
-    address?: string;
-    bizAddress?: string;
-    sourceRegion?: string;
-    creditLimit?: number;
-    roles?: string[];
-    status?: string;
-    remark?: string;
+    name?: string; shortName?: string; shortCode?: string;
+    orgType?: string; category?: string;
+    legalPerson?: string; legalPersonType?: string; legalIdCard?: string;
+    controller?: string; controllerTitle?: string; controllerPhone?: string;
+    contactPerson?: string; contactPhone?: string;
+    country?: string; province?: string; city?: string;
+    address?: string; bizAddress?: string; sourceRegion?: string;
+    estDate?: string; regCapital?: number; regCurrency?: string;
+    revenueScale?: string; groupName?: string; isParent?: boolean;
+    taxType?: string; taxRating?: string; invoiceType?: string;
+    relatedPartyType?: string; industry?: string; corpType?: string;
+    licenseType?: string; licenseExpiry?: string;
+    bizScope?: string; mainBiz?: string; tradingGoods?: string;
+    equityStructure?: string; intro?: string;
+    creditLimit?: number; roles?: string[]; status?: string; remark?: string;
   }) {
     const partner = await this.findOne(id);
 
-    // 如果更新税号+名称，校验唯一
-    const newTaxId = data.taxId ?? partner.taxId;
-    const newName = data.name ?? partner.name;
-    if (newTaxId && newName) {
-      const dup = await this.prisma.partner.findFirst({
-        where: { taxId: newTaxId, name: newName, id: { not: id }, deletedAt: null },
-      });
-      if (dup) throw new ConflictException('统一信用代码与企业名称组合已被其他合作伙伴使用');
+    // 1. 名称变更 → 校验 taxId + name 联合唯一
+    if (data.name && data.name !== partner.name) {
+      const taxId = partner.taxId;
+      if (taxId) {
+        const dup = await this.prisma.partner.findFirst({
+          where: { taxId, name: data.name, id: { not: id }, deletedAt: null },
+        });
+        if (dup) throw new ConflictException('统一信用代码与企业名称组合已被其他合作伙伴使用');
+      }
     }
 
-    return this.prisma.partner.update({
-      where: { id },
-      data,
-    });
+    // 2. 角色只允许追加，不允许移除
+    if (data.roles) {
+      const removed = partner.roles.filter((r: string) => !data.roles!.includes(r));
+      if (removed.length > 0) {
+        throw new BadRequestException(`不允许移除已有角色: ${removed.join('、')}。角色仅支持追加。`);
+      }
+    }
+
+    // 3. 停用/黑名单 → 校验无进行中合同
+    if (data.status && data.status !== partner.status && data.status !== 'ACTIVE') {
+      const activeContracts = await this.prisma.contract.count({
+        where: {
+          OR: [{ sellerId: id }, { buyerId: id }],
+          status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'EXECUTING'] },
+          deletedAt: null,
+        },
+      });
+      if (activeContracts > 0) {
+        throw new BadRequestException(`存在 ${activeContracts} 个进行中的合同，无法停用。请先处理相关合同。`);
+      }
+    }
+
+    // 4. 过滤掉不可修改字段
+    const { roles, status, name, ...rest } = data;
+    const updateData: any = { ...rest };
+    if (name) updateData.name = name;
+    if (roles) updateData.roles = roles;
+    if (status) updateData.status = status;
+
+    return this.prisma.partner.update({ where: { id }, data: updateData });
   }
 
   async remove(id: string) {
