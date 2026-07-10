@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, UseGuards, HttpCode,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ContractService } from './contract.service';
 import { CreateContractDto } from './dto/create-contract.dto';
@@ -23,18 +23,34 @@ export class ContractController {
   }
 
   @Get()
-  @ApiOperation({ summary: '合同列表（分页）' })
+  @ApiOperation({ summary: '合同列表（分页+多维筛选）' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'pageSize', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'type', required: false, enum: ['PURCHASE', 'SALES', 'BILATERAL'] })
+  @ApiQuery({ name: 'search', required: false, description: '合同号/标题/合作伙伴名称' })
+  @ApiQuery({ name: 'sellerId', required: false, description: '合作伙伴 ID（买卖双方均匹配）' })
+  @ApiQuery({ name: 'dateFrom', required: false, description: '签订日期起（ISO）' })
+  @ApiQuery({ name: 'dateTo', required: false, description: '签订日期止（ISO）' })
   findAll(
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('status') status?: string,
+    @Query('type') type?: string,
     @Query('search') search?: string,
+    @Query('sellerId') sellerId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
   ) {
     return this.contractService.findAll({
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
       status,
+      type,
       search,
+      sellerId,
+      dateFrom,
+      dateTo,
     });
   }
 
@@ -45,18 +61,36 @@ export class ContractController {
   }
 
   @Patch(':id/status')
-  @ApiOperation({ summary: '更新合同状态（审核流）' })
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateContractStatusDto) {
-    return this.contractService.updateStatus(id, dto);
+  @ApiOperation({ summary: '状态流转（提交审批/审批通过/驳回等）' })
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateContractStatusDto,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    return this.contractService.updateStatus(id, dto, user);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: '编辑合同（仅草稿状态可编辑）' })
-  update(@Param('id') id: string, @Body() dto: {
-    title?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
-    signedAt?: string; effectiveAt?: string; expireAt?: string;
-    settlementMethod?: string; remarks?: string;
-  }) {
+  @ApiOperation({ summary: '编辑合同（仅草稿/已驳回状态）' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: {
+      title?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
+      companyId?: string; departmentId?: string; externalNo?: string;
+      contactPerson?: string; contactPhone?: string;
+      pricingType?: string; overfillPct?: number; shortfallPct?: number;
+      deliveryMethod?: string; deliveryLocation?: string;
+      signedAt?: string; effectiveAt?: string; expireAt?: string;
+      settlementMethod?: string; settlementBasis?: string;
+      prepayPct?: number; paymentDays?: number; paymentMethod?: string;
+      moistureRule?: string; impurityRule?: string; remarks?: string;
+      lineItems?: Array<{
+        materialId: string; materialName?: string;
+        quantity: number; unit?: string;
+        unitPrice: number; deliveryDate?: string; remarks?: string;
+      }>;
+    },
+  ) {
     return this.contractService.update(id, dto);
   }
 

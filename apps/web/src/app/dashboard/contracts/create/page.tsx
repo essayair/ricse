@@ -110,7 +110,7 @@ export default function ContractCreatePage() {
   const uploadAttachments = async (contractId: string) => {
     for (const file of files) {
       const fd = new FormData(); fd.append('file', file); fd.append('category', 'OTHER');
-      await fetch(`http://localhost:3000/api/v1/partners/${contractId}/attachments`, {
+      await fetch(`http://localhost:3000/api/v1/contracts/${contractId}/attachments`, {
         method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: fd,
       });
     }

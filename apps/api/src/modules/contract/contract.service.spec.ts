@@ -55,7 +55,7 @@ describe('ContractService', () => {
       expect(prisma.contract.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            contractNo: 'PO-000001',
+            contractNo: expect.stringMatching(/^CG\d{12}$/),
             title: '测试合同',
           }),
         }),
@@ -91,8 +91,13 @@ describe('ContractService', () => {
   });
 
   describe('状态机 — validateTransition', () => {
+    const adminUser = { id: 'user-1', role: 'ADMIN' };
+
     const setupContract = async (status: string) => {
       prisma.contract.findUnique.mockResolvedValue({ ...mockContract, status } as any);
+      prisma.approval.deleteMany.mockResolvedValue({ count: 0 } as any);
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
+      prisma.approval.createMany.mockResolvedValue({ count: 0 } as any);
     };
 
     // 合法路径
@@ -100,92 +105,92 @@ describe('ContractService', () => {
       await setupContract('DRAFT');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'PENDING_APPROVAL' } as any);
 
-      const result = await service.updateStatus('test-id', { status: 'PENDING_APPROVAL' });
+      const result = await service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, adminUser);
       expect(result).toBeDefined();
     });
 
     it('DRAFT → VOIDED', async () => {
       await setupContract('DRAFT');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
-      await expect(service.updateStatus('test-id', { status: 'VOIDED' })).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'VOIDED' }, adminUser)).resolves.toBeDefined();
     });
 
     it('PENDING_APPROVAL → APPROVED', async () => {
       await setupContract('PENDING_APPROVAL');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'APPROVED' } as any);
-      await expect(service.updateStatus('test-id', { status: 'APPROVED' })).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'APPROVED', comment: 'approved' }, adminUser)).resolves.toBeDefined();
     });
 
     it('PENDING_APPROVAL → REJECTED', async () => {
       await setupContract('PENDING_APPROVAL');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'REJECTED' } as any);
-      await expect(service.updateStatus('test-id', { status: 'REJECTED' })).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'REJECTED', comment: 'rejected' }, adminUser)).resolves.toBeDefined();
     });
 
     it('REJECTED → DRAFT', async () => {
       await setupContract('REJECTED');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'DRAFT' } as any);
-      await expect(service.updateStatus('test-id', { status: 'DRAFT' })).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).resolves.toBeDefined();
     });
 
     it('APPROVED → EXECUTING', async () => {
       await setupContract('APPROVED');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'EXECUTING' } as any);
-      await expect(service.updateStatus('test-id', { status: 'EXECUTING' })).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'EXECUTING' }, adminUser)).resolves.toBeDefined();
     });
 
     it('EXECUTING → COMPLETED', async () => {
       await setupContract('EXECUTING');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'COMPLETED' } as any);
-      await expect(service.updateStatus('test-id', { status: 'COMPLETED' })).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'COMPLETED' }, adminUser)).resolves.toBeDefined();
     });
 
     it('EXECUTING → VOIDED', async () => {
       await setupContract('EXECUTING');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
-      await expect(service.updateStatus('test-id', { status: 'VOIDED' })).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'VOIDED' }, adminUser)).resolves.toBeDefined();
     });
 
     // 非法路径
     it('DRAFT → COMPLETED 应拒绝', async () => {
       await setupContract('DRAFT');
-      await expect(service.updateStatus('test-id', { status: 'COMPLETED' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'COMPLETED' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
     it('DRAFT → APPROVED 应拒绝', async () => {
       await setupContract('DRAFT');
-      await expect(service.updateStatus('test-id', { status: 'APPROVED' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'APPROVED', comment: 'x' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
     it('DRAFT → EXECUTING 应拒绝', async () => {
       await setupContract('DRAFT');
-      await expect(service.updateStatus('test-id', { status: 'EXECUTING' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'EXECUTING' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
     it('PENDING_APPROVAL → DRAFT 应拒绝', async () => {
       await setupContract('PENDING_APPROVAL');
-      await expect(service.updateStatus('test-id', { status: 'DRAFT' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
     it('PENDING_APPROVAL → EXECUTING 应拒绝', async () => {
       await setupContract('PENDING_APPROVAL');
-      await expect(service.updateStatus('test-id', { status: 'EXECUTING' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'EXECUTING' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
     it('PENDING_APPROVAL → COMPLETED 应拒绝', async () => {
       await setupContract('PENDING_APPROVAL');
-      await expect(service.updateStatus('test-id', { status: 'COMPLETED' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'COMPLETED' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
     it('COMPLETED 不再接受任何变更', async () => {
       await setupContract('COMPLETED');
-      await expect(service.updateStatus('test-id', { status: 'DRAFT' })).rejects.toThrow(BadRequestException);
-      await expect(service.updateStatus('test-id', { status: 'VOIDED' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'VOIDED' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
     it('VOIDED 不再接受任何变更', async () => {
       await setupContract('VOIDED');
-      await expect(service.updateStatus('test-id', { status: 'DRAFT' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).rejects.toThrow(BadRequestException);
     });
   });
 });

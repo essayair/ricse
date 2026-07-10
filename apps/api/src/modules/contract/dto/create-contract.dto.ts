@@ -95,6 +95,10 @@ export class CreateContractDto {
   @IsOptional() @IsString()
   companyId?: string;
 
+  @ApiPropertyOptional({ description: '业务部门' })
+  @IsOptional() @IsString()
+  departmentId?: string;
+
   @ApiPropertyOptional({ description: '外部合同号' })
   @IsOptional() @IsString()
   externalNo?: string;

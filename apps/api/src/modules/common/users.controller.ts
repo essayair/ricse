@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
@@ -23,5 +23,16 @@ export class UsersController {
   @ApiOperation({ summary: '用户列表' })
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Patch(':id')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '更新用户（角色/状态）' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: { role?: string; status?: string; name?: string; phone?: string; email?: string },
+  ) {
+    return this.usersService.update(id, dto);
   }
 }

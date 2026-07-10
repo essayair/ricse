@@ -86,4 +86,12 @@ export class UsersService {
       data: { refreshToken: null },
     });
   }
+
+  async update(id: string, data: { role?: string; status?: string; name?: string; phone?: string; email?: string }) {
+    return this.prisma.user.update({
+      where: { id },
+      data,
+      select: { id: true, username: true, name: true, role: true, status: true, phone: true, email: true, updatedAt: true },
+    });
+  }
 }

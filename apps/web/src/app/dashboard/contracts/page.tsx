@@ -41,13 +41,15 @@ export default function ContractsPage() {
   const [data, setData] = useState<{ items: Contract[]; pagination: any } | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const fetchContracts = async (status?: string) => {
+  const fetchContracts = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (status) params.set('status', status);
+      if (statusFilter) params.set('status', statusFilter);
+      if (typeFilter) params.set('type', typeFilter);
       if (searchTerm) params.set('search', searchTerm);
       const json = await api.get<{ items: Contract[]; pagination: any }>(`/contracts?${params}`);
       setData(json);
@@ -63,11 +65,11 @@ export default function ContractsPage() {
     if (!confirm('确定删除此合同？')) return;
     try {
       await api.delete(`/contracts/${contractId}`);
-      fetchContracts(statusFilter);
+      fetchContracts();
     } catch (e: any) { alert(e.message || '删除失败'); }
   };
 
-  useEffect(() => { fetchContracts(statusFilter); }, [statusFilter, searchTerm]);
+  useEffect(() => { fetchContracts(); }, [statusFilter, typeFilter, searchTerm]);
 
   // Summary stats computed from contract data
   const contractItems = data?.items ?? [];
@@ -102,18 +104,31 @@ export default function ContractsPage() {
       </div>
 
       {/* Filter & Search */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="搜索合同编号 / 标题..."
-            className="pl-9"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="搜索合同编号 / 标题 / 合作方..."
+              className="pl-9"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          {/* 合同类型 */}
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>类型:</span>
+            {[['', '全部'], ['PURCHASE', '采购'], ['SALES', '销售'], ['BILATERAL', '双边']].map(([v, label]) => (
+              <button key={v} onClick={() => setTypeFilter(v)}
+                className={`px-2.5 py-1 rounded border text-xs transition-colors ${typeFilter === v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border hover:bg-accent'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
+        {/* 状态筛选 */}
         <div className="flex items-center gap-1.5">
-          {['', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'EXECUTING', 'COMPLETED'].map((s) => (
+          {['', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'EXECUTING', 'COMPLETED', 'VOIDED'].map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
@@ -123,7 +138,7 @@ export default function ContractsPage() {
                   : 'bg-background text-muted-foreground border-border hover:bg-accent'
               }`}
             >
-              {s ? STATUS_MAP[s]?.label || s : '全部'}
+              {s ? STATUS_MAP[s]?.label || s : '全部状态'}
             </button>
           ))}
         </div>

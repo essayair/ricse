@@ -60,6 +60,7 @@ function OrgPageInner() {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newBgroupId, setNewBgroupId] = useState('');
+  const [newRole, setNewRole] = useState('USER');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -115,12 +116,13 @@ function OrgPageInner() {
       if (tab === 'users') {
         await api.post('/users', {
           username: newUsername, password: newPassword, name: newName,
+          role: newRole || 'USER',
           employeeId: newParent || undefined,
           companyId: newCompanyId || undefined,
           businessGroupId: newBgroupId || undefined,
         });
       }
-      setShowCreate(false); setNewName(''); setNewCode(''); setNewUsername(''); setNewPassword(''); setNewBgroupId(''); fetchAll();
+      setShowCreate(false); setNewName(''); setNewCode(''); setNewUsername(''); setNewPassword(''); setNewBgroupId(''); setNewRole('USER'); fetchAll();
     } catch (e: any) { alert(e.message || '创建失败'); }
   };
 
@@ -205,6 +207,14 @@ function OrgPageInner() {
             <>
               <Input placeholder="用户名（登录用）" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
               <Input type="password" placeholder="密码" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="USER">普通用户</option>
+                <option value="SALESPERSON">业务员</option>
+                <option value="APPROVER">审批人</option>
+                <option value="MANAGER">部门经理</option>
+                <option value="FINANCE">财务</option>
+                <option value="ADMIN">管理员</option>
+              </select>
               <select value={newParent} onChange={(e) => setNewParent(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">关联员工（可选）</option>
                 {employees.filter((e) => !users.some((u) => u.employeeId === e.id)).map((e) => <option key={e.id} value={e.id}>{e.name} ({e.company?.code})</option>)}
@@ -268,15 +278,41 @@ function OrgPageInner() {
               ])} empty="暂无员工数据" />
             )}
 
-            {/* 业务组列表 */}
+            {/* 用户账号列表 */}
             {tab === 'users' && (
-              <DataTable headers={['用户名', '姓名', '关联员工', '所属企业', '角色', '状态']} rows={users.map((u) => [
+              <DataTable headers={['用户名', '姓名', '关联员工', '所属企业', '角色', '状态', '操作']} rows={users.map((u) => [
                 <span key="un" className="font-mono text-sm">{u.username}</span>,
                 <span key="nm" className="font-medium">{u.name}</span>,
                 <span key="em" className="text-muted-foreground text-xs">{u.employee?.name || '—'}{u.employee?.department ? ` · ${u.employee.department.name}` : ''}</span>,
                 <span key="co" className="text-muted-foreground text-xs">{u.company?.code ? `${u.company.code} ${u.company.name}` : '—'}</span>,
-                <Badge key="ro" variant="secondary" className="text-xs">{u.role === 'ADMIN' ? '管理员' : u.role === 'APPROVER' ? '审批人' : '用户'}</Badge>,
+                <select
+                  key="ro"
+                  defaultValue={u.role}
+                  onChange={async (e) => {
+                    try {
+                      await api.patch(`/users/${u.id}`, { role: e.target.value });
+                      fetchAll();
+                    } catch (err: any) { alert(err.message || '修改失败'); }
+                  }}
+                  className="h-7 rounded border border-input bg-background px-2 text-xs"
+                >
+                  <option value="USER">普通用户</option>
+                  <option value="SALESPERSON">业务员</option>
+                  <option value="APPROVER">审批人</option>
+                  <option value="MANAGER">部门经理</option>
+                  <option value="FINANCE">财务</option>
+                  <option value="ADMIN">管理员</option>
+                </select>,
                 <Badge key="st" variant="secondary" className={u.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>{u.status === 'ACTIVE' ? '正常' : '禁用'}</Badge>,
+                <button key="op" onClick={async () => {
+                  const newStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+                  try {
+                    await api.patch(`/users/${u.id}`, { status: newStatus });
+                    fetchAll();
+                  } catch (err: any) { alert(err.message || '操作失败'); }
+                }} className="text-xs text-primary hover:underline">
+                  {u.status === 'ACTIVE' ? '禁用' : '启用'}
+                </button>,
               ])} empty="暂无用户数据" />
             )}
 
