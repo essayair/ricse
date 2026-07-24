@@ -138,7 +138,7 @@ export default function PartnerEditPage() {
   const toggleRole = (role: string) => {
     setRoles((prev) => {
       if (prev.includes(role)) {
-        if (originalRoles.includes(role)) { alert('不允许移除已有角色。角色仅支持追加。'); return prev; }
+        if (originalRoles.includes(role)) { alert('不允许移除已有合作伙伴角色。合作伙伴角色仅支持追加。'); return prev; }
         return prev.filter((r) => r !== role);
       }
       return [...prev, role];
@@ -248,7 +248,7 @@ export default function PartnerEditPage() {
               </FormField>
             </div>
 
-            <SectionTitle>业务角色 <span className="text-xs font-normal text-muted-foreground">（仅允许追加，原有角色标记🔒）</span></SectionTitle>
+            <SectionTitle>合作伙伴角色 <span className="text-xs font-normal text-muted-foreground">（仅允许追加，原有角色标记🔒）</span></SectionTitle>
             <div className="flex gap-3">
               {[{ key: 'SUPPLIER', label: '供应商', desc: '提供原材料、商品或服务' }, { key: 'CUSTOMER', label: '客户', desc: '采购本公司产品或商品' }].map((r) => (
                 <button key={r.key} type="button" onClick={() => toggleRole(r.key)}

@@ -19,6 +19,8 @@ import {
   FlaskConical,
   Building2,
   Box,
+  Settings2,
+  CircleDollarSign,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -33,8 +35,8 @@ const NAV_ITEMS: NavGroup[] = [
     icon: FileText,
     children: [
       { href: '/dashboard/contracts', label: '合同管理' },
-      { href: '/dashboard/orders', label: '订单管理' },
-      { href: '/dashboard/settlement', label: '结算管理' },
+      { href: '/dashboard/orders', label: '执行管理' },
+      { href: '/dashboard/dispatch-notices', label: '执行通知' },
     ],
   },
   {
@@ -53,6 +55,7 @@ const NAV_ITEMS: NavGroup[] = [
       { href: '/dashboard/inventory', label: '在库总览' },
       { href: '/dashboard/inbound', label: '入库单管理' },
       { href: '/dashboard/outbound', label: '出库单管理' },
+      { href: '/dashboard/inventory-reversals', label: '库存冲销' },
     ],
   },
   {
@@ -64,6 +67,14 @@ const NAV_ITEMS: NavGroup[] = [
       { href: '/dashboard/monitor', label: '监控录像' },
     ],
   },
+  {
+    label: '结算中心',
+    icon: CircleDollarSign,
+    children: [
+      { href: '/dashboard/settlement', label: '应收管理' },
+      { href: '/dashboard/payables', label: '应付管理' },
+    ],
+  },
 ];
 
 const BASE_ITEMS: NavGroup[] = [
@@ -72,11 +83,11 @@ const BASE_ITEMS: NavGroup[] = [
     icon: Box,
     children: [
       { href: '/dashboard/master-data?tab=partners', label: '合作伙伴' },
+      { href: '/dashboard/master-data/service-organizations', label: '服务生态' },
       { href: '/dashboard/master-data?tab=materials', label: '物料品类' },
       { href: '/dashboard/master-data?tab=warehouses', label: '仓库库位' },
       { href: '/dashboard/master-data?tab=vehicles', label: '车辆管理' },
       { href: '/dashboard/master-data?tab=price', label: '价格基准' },
-      { href: '/dashboard/master-data?tab=approval', label: '审批流程' },
     ],
   },
   {
@@ -92,7 +103,17 @@ const BASE_ITEMS: NavGroup[] = [
   },
 ];
 
-export function AppSidebar() {
+const SYSTEM_ITEMS: NavGroup[] = [
+  {
+    label: '系统管理',
+    icon: Settings2,
+    children: [
+      { href: '/dashboard/system/approvals', label: '审批流程' },
+    ],
+  },
+];
+
+export function AppSidebar({ userRole }: { userRole: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { open } = useSidebar();
@@ -103,6 +124,9 @@ export function AppSidebar() {
 
     // Different base path → not active
     if (pathname !== base && !pathname.startsWith(base + '/')) return false;
+
+    // 服务生态下的分类由页面内标签切换，侧边导航始终保持选中。
+    if (base === '/dashboard/master-data/service-organizations') return true;
 
     // Nav item has query params (e.g. ?tab=suppliers) → match them exactly
     if (qs) {
@@ -162,6 +186,16 @@ export function AppSidebar() {
         <SidebarSectionLabel>基础管理</SidebarSectionLabel>
 
         {BASE_ITEMS.map((group) => (
+          <SidebarGroupItem
+            key={group.label}
+            icon={group.icon}
+            label={group.label}
+            items={group.children}
+            isActive={isActive}
+          />
+        ))}
+
+        {userRole === 'ADMIN' && SYSTEM_ITEMS.map((group) => (
           <SidebarGroupItem
             key={group.label}
             icon={group.icon}

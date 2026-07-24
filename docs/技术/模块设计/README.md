@@ -11,5 +11,7 @@
 | Iteration 2 | 主数据模块 | `主数据模块.md` | ⬜ 待编写 |
 | Iteration 3 | 合同模块 | `合同模块.md` | ⬜ 待编写 |
 | Iteration 4 | 审批模块 | `审批模块.md` | ⬜ 待编写 |
-| Iteration 5 | 订单模块 | `订单模块.md` | ⬜ 待编写 |
-| Iteration 6 | 结算模块 | `结算模块.md` | ⬜ 待编写 |
+| Iteration 5 | 执行批次模块 | `执行批次模块.md` | ⬜ 待编写 |
+| Iteration 6 | 执行通知与物流模块 | `执行通知与物流模块.md` | ✅ 第一版完成 |
+| Iteration 7 | 磅单模块 | `磅单模块.md` | ✅ 第一版完成 |
+| Iteration 7 | 结算模块 | `结算模块.md` | ⬜ 待编写 |

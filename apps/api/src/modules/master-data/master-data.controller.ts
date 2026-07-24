@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { MasterDataService } from './master-data.service';
@@ -22,6 +22,18 @@ export class MasterDataController {
   @ApiOperation({ summary: '物料分类树' })
   findAllCategories() {
     return this.masterDataService.findAllCategories();
+  }
+
+  @Patch('material-categories/:id')
+  @ApiOperation({ summary: '更新物料分类' })
+  updateCategory(@Param('id') id: string, @Body() dto: { name?: string; parentId?: string; sort?: number }) {
+    return this.masterDataService.updateCategory(id, dto);
+  }
+
+  @Delete('material-categories/:id')
+  @ApiOperation({ summary: '删除物料分类' })
+  deleteCategory(@Param('id') id: string) {
+    return this.masterDataService.deleteCategory(id);
   }
 
   // ===== 物料 =====
@@ -56,6 +68,23 @@ export class MasterDataController {
     });
   }
 
+  @Get('materials/:id')
+  @ApiOperation({ summary: '物料详情' })
+  findMaterialById(@Param('id') id: string) {
+    return this.masterDataService.findMaterialById(id);
+  }
+
+  @Patch('materials/:id')
+  @ApiOperation({ summary: '更新物料' })
+  updateMaterial(@Param('id') id: string, @Body() dto: {
+    name?: string; categoryId?: string; grade?: string; unit?: string;
+    spec?: string; sourceRegion?: string; packageType?: string;
+    isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
+    internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
+  }) {
+    return this.masterDataService.updateMaterial(id, dto);
+  }
+
   @Delete('materials/:id')
   @ApiOperation({ summary: '删除物料（软删除）' })
   deleteMaterial(@Param('id') id: string) {
@@ -77,6 +106,22 @@ export class MasterDataController {
   @ApiOperation({ summary: '仓库列表' })
   findAllWarehouses() {
     return this.masterDataService.findAllWarehouses();
+  }
+
+  @Get('warehouses/:id')
+  @ApiOperation({ summary: '仓库详情' })
+  findWarehouseById(@Param('id') id: string) {
+    return this.masterDataService.findWarehouseById(id);
+  }
+
+  @Patch('warehouses/:id')
+  @ApiOperation({ summary: '更新仓库' })
+  updateWarehouse(@Param('id') id: string, @Body() dto: {
+    name?: string; type?: string; partnerId?: string;
+    address?: string; manager?: string; managerPhone?: string;
+    status?: string; remark?: string;
+  }) {
+    return this.masterDataService.updateWarehouse(id, dto);
   }
 
   @Delete('warehouses/:id')

@@ -1,29 +1,37 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User } from 'lucide-react';
+import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
+import { unitLabel } from '@/lib/unit';
 
 interface Approval {
   id: string;
   status: string;
+  nodeName: string;
+  step: number;
+  round: number;
+  actedAt: string | null;
   comment: string | null;
   createdAt: string;
   updatedAt: string;
   assignee: { id: string; name: string; role: string };
+  actedBy: { id: string; name: string; role: string } | null;
 }
 
 interface ContractDetail {
   id: string; contractNo: string; title: string; type: string; status: string;
   totalAmount: string; settlementMethod: string;
   signedAt: string | null; effectiveAt: string | null; expireAt: string | null;
-  remarks: string | null; createdAt: string;
+  remarks: string | null; createdAt: string; updatedAt: string;
+  signingPartnerId?: string;
+  signingPartner?: { id: string; code: string; name: string; roles: string[]; isInternal: boolean } | null;
   company?: { code: string; name: string } | null;
   externalNo?: string; contactPerson?: string; contactPhone?: string;
   pricingType?: string; overfillPct?: string; shortfallPct?: string;
@@ -34,8 +42,37 @@ interface ContractDetail {
   seller: { id: string; code: string; name: string; roles: string[] } | null;
   buyer: { id: string; code: string; name: string; roles: string[] } | null;
   attachments?: Array<{ id: string; originalName: string; mimeType: string; size: number; category: string }>;
-  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; deliveryDate: string | null }>;
+  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; deliveryDate: string | null; remarks?: string | null }>;
   approvals: Approval[];
+  fulfillment: { directions: FulfillmentDirection[] };
+  orders: Array<{
+    id: string;
+    orderNo: string;
+    name: string;
+    type: string;
+    status: string;
+    totalAmount: string;
+    plannedDate: string | null;
+    dispatchedAt: string | null;
+    completedAt: string | null;
+    createdAt: string;
+    dispatchNotices: Array<{
+      id: string; noticeNo: string; type: string; status: string; totalQuantity: string;
+      _count: { waybills: number };
+    }>;
+  }>;
+}
+
+interface FulfillmentDirection {
+  type: string;
+  totalQuantity: Array<{ unit: string; quantity: number }>;
+  totalAmount: number;
+  pendingQuantity: Array<{ unit: string; quantity: number }>;
+  pendingAmount: number;
+  executingQuantity: Array<{ unit: string; quantity: number }>;
+  executingAmount: number;
+  executedQuantity: Array<{ unit: string; quantity: number }>;
+  executedAmount: number;
 }
 
 const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'destructive' | 'outline' | 'secondary' }> = {
@@ -147,14 +184,17 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
               </div>
               <div className="pb-4 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{a.assignee?.name}</span>
+                  <span className="text-sm font-medium">第 {a.step} 级 · {a.nodeName || '合同审批'} · {a.assignee?.name}</span>
                   <Badge variant={a.status === 'APPROVED' ? 'default' : a.status === 'REJECTED' ? 'destructive' : 'secondary'} className="text-xs">
-                    {a.status === 'APPROVED' ? '已通过' : a.status === 'REJECTED' ? '已驳回' : '待审批'}
+                    {a.status === 'APPROVED' ? '已通过' : a.status === 'REJECTED' ? '已驳回' : a.status === 'PENDING' ? '待审批' : a.status === 'WAITING' ? '等待中' : '已取消'}
                   </Badge>
                   <span className="text-xs text-muted-foreground ml-auto">
-                    {new Date(a.status !== 'PENDING' ? a.updatedAt : a.createdAt).toLocaleString('zh-CN')}
+                    {new Date(a.actedAt || a.createdAt).toLocaleString('zh-CN')}
                   </span>
                 </div>
+                {a.actedBy && a.actedBy.id !== a.assignee?.id && (
+                  <p className="mt-1 text-xs text-amber-600">由系统管理员 {a.actedBy.name} 代为处理</p>
+                )}
                 {a.comment && (
                   <p className="text-sm text-muted-foreground mt-1 bg-muted/50 rounded px-2 py-1">
                     {a.comment}
@@ -166,6 +206,150 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  CONFIRMED: '已确认',
+  DISPATCHED: '执行中',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消',
+};
+
+function FulfillmentProgress({ contract }: { contract: ContractDetail }) {
+  const activeOrders = (contract.orders || []).filter(order => order.status !== 'CANCELLED');
+  const weights: Record<string, number> = { DRAFT: 10, CONFIRMED: 35, DISPATCHED: 70, COMPLETED: 100 };
+  const orderProgress = activeOrders.length
+    ? Math.round(activeOrders.reduce((sum, order) => sum + (weights[order.status] || 0), 0) / activeOrders.length)
+    : 0;
+  const progress = ['COMPLETED', 'CLOSED'].includes(contract.status)
+    ? 100
+    : activeOrders.length
+      ? orderProgress
+      : ['APPROVED', 'EXECUTING'].includes(contract.status) ? 5 : 0;
+  const completedOrders = activeOrders.filter(order => order.status === 'COMPLETED').length;
+  const notices = activeOrders.flatMap(order => order.dispatchNotices || []).filter(notice => notice.status !== 'CANCELLED');
+  const waybillCount = notices.reduce((sum, notice) => sum + notice._count.waybills, 0);
+
+  return (
+    <Card className="lg:sticky lg:top-20">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">履约进度</CardTitle>
+        <p className="text-xs text-muted-foreground">关联合同下游的具体执行单据</p>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div>
+          <div className="mb-2 text-sm font-medium">履约数量与金额</div>
+          <div className="space-y-3">
+            {(contract.fulfillment?.directions || []).map(direction => <FulfillmentDirectionPanel key={direction.type} direction={direction} showDirection={contract.type === 'BILATERAL'} />)}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-end justify-between">
+            <span className="text-sm text-muted-foreground">总体进度</span>
+            <span className="text-2xl font-bold text-primary">{progress}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+            <span>{activeOrders.length} 个执行批次</span>
+            <span>{completedOrders} 个已完成</span>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <ProgressModule icon={CheckCircle2} label="合同生效" status={['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'].includes(contract.status) ? '已完成' : '未完成'} active />
+
+          <div className="rounded-lg border">
+            <div className="flex items-center gap-3 p-3">
+              <ClipboardList className="h-4 w-4 text-primary" />
+              <div className="flex-1">
+                <div className="text-sm font-medium">执行批次</div>
+                <div className="text-xs text-muted-foreground">{activeOrders.length ? `${completedOrders}/${activeOrders.length} 已完成` : '暂无执行批次'}</div>
+              </div>
+              {['APPROVED', 'EXECUTING'].includes(contract.status) && (
+                <Link href={`/dashboard/orders/create?contractId=${contract.id}`} className="text-xs text-primary hover:underline">新建</Link>
+              )}
+            </div>
+            {contract.orders?.length > 0 && (
+              <div className="border-t px-3 py-2">
+                <div className="max-h-60 space-y-1 overflow-y-auto">
+                  {contract.orders.map(order => (
+                    <Link key={order.id} href={`/dashboard/orders/${order.id}`} className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-medium">{order.name}</div>
+                        <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{order.orderNo}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {order.type === 'PURCHASE' ? '采购执行批次' : '销售执行批次'} · ¥{Number(order.totalAmount).toLocaleString()}
+                        </div>
+                      </div>
+                      <Badge variant={order.status === 'COMPLETED' ? 'default' : order.status === 'CANCELLED' ? 'destructive' : 'secondary'} className="shrink-0 text-[10px]">
+                        {ORDER_STATUS_LABEL[order.status] || order.status}
+                      </Badge>
+                      <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <ProgressModule icon={ClipboardList} label="执行通知" status={notices.length ? `${notices.length} 张，${notices.filter(item => item.status === 'COMPLETED').length} 张已完成` : '暂无关联单据'} active={notices.length > 0} />
+          <ProgressModule icon={Truck} label="物流运输" status={waybillCount ? `${waybillCount} 张物流运单` : '暂无关联单据'} active={waybillCount > 0} />
+          <ProgressModule icon={Warehouse} label="出入库执行" status="暂无关联单据" />
+          <ProgressModule icon={ReceiptText} label="结算执行" status="暂无关联单据" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FulfillmentDirectionPanel({ direction, showDirection }: { direction: FulfillmentDirection; showDirection: boolean }) {
+  const rows = [
+    { label: '待执行', quantity: direction.pendingQuantity, amount: direction.pendingAmount, className: '' },
+    { label: '执行中', quantity: direction.executingQuantity, amount: direction.executingAmount, className: 'text-amber-600' },
+    { label: '已执行', quantity: direction.executedQuantity, amount: direction.executedAmount, className: 'text-primary' },
+  ];
+  return <div className="overflow-hidden rounded-lg border">
+    {showDirection && <div className="border-b bg-muted/40 px-3 py-2 text-xs font-medium">{direction.type === 'PURCHASE' ? '采购端' : '销售端'}</div>}
+    <div className="grid grid-cols-[58px_1fr_1fr] gap-x-2 gap-y-2 p-3 text-xs">
+      <span className="text-muted-foreground">状态</span><span className="text-muted-foreground">数量</span><span className="text-right text-muted-foreground">金额</span>
+      {rows.map(row => <Fragment key={row.label}>
+        <span className="text-muted-foreground">{row.label}</span>
+        <span className={`font-medium ${row.className}`}>{fulfillmentQuantity(row.quantity)}</span>
+        <span className={`text-right font-mono font-medium ${row.className}`}>{fulfillmentMoney(row.amount)}</span>
+      </Fragment>)}
+    </div>
+  </div>;
+}
+
+function fulfillmentQuantity(items: Array<{ unit: string; quantity: number }>) {
+  return items.length
+    ? items.map(item => `${Number(item.quantity).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} ${unitLabel(item.unit)}`).join(' / ')
+    : '0 吨';
+}
+
+function fulfillmentMoney(value: number) {
+  return `¥${Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
+}
+
+function ProgressModule({ icon: Icon, label, status, active = false }: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  status: string;
+  active?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border p-3">
+      <Icon className={`h-4 w-4 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
+      <div className="flex-1">
+        <div className="text-sm font-medium">{label}</div>
+        <div className="text-xs text-muted-foreground">{status}</div>
+      </div>
+    </div>
   );
 }
 
@@ -211,13 +395,29 @@ export default function ContractDetailPage() {
     }
   };
 
+  const viewAttachment = async (id: string) => {
+    const preview = window.open('about:blank', '_blank');
+    try {
+      const { url } = await api.get<{ url: string }>(`/contracts/attachments/${id}/view-url`);
+      if (preview) preview.location.assign(url);
+      else window.location.assign(url);
+    } catch (e: any) {
+      preview?.close();
+      alert(e.message || '附件打开失败');
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" />加载中...</div>;
   if (!contract) return <div className="p-12 text-center text-destructive">合同不存在</div>;
 
   const c = contract;
   const cfg = STATUS_MAP[c.status] || { label: c.status, variant: 'secondary' as const };
   const userRole = currentUser?.role || 'USER';
-  const actions = ROLE_ACTIONS[c.status]?.[userRole] || ROLE_ACTIONS[c.status]?.['USER'] || [];
+  const roleActions = ROLE_ACTIONS[c.status]?.[userRole] || ROLE_ACTIONS[c.status]?.['USER'] || [];
+  const currentPendingApproval = c.approvals?.find((approval) => approval.status === 'PENDING');
+  const actions = c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN' && userRole === 'APPROVER' && currentPendingApproval?.assignee.id !== currentUser?.id
+    ? []
+    : roleActions;
   const canEdit = ['DRAFT', 'REJECTED'].includes(c.status) && ['SALESPERSON', 'MANAGER', 'ADMIN', 'USER'].includes(userRole);
 
   return (
@@ -252,9 +452,9 @@ export default function ContractDetailPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-4 text-sm">
-            <Field label="卖方" value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
-            <Field label="买方" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />
-            <Field label="签约主体" value={c.company ? `${c.company.code} ${c.company.name}` : '—'} />
+            <Field label={c.type === 'PURCHASE' ? '对手方（供应商）' : c.type === 'SALES' ? '对手方（客户）' : '上游对手方（供应商）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
+            {c.type === 'BILATERAL' && <Field label="下游对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />}
+            <Field label="我方签约主体（内部）" value={c.signingPartner ? `${c.signingPartner.code} ${c.signingPartner.name}` : c.company ? `${c.company.code} ${c.company.name}（旧数据）` : '—'} />
             <Field label="总金额" value={<span className="text-lg font-bold text-primary">¥{Number(c.totalAmount).toLocaleString()}</span>} />
             <Field label="外部合同号" value={c.externalNo || '—'} />
             <Field label="联系人" value={`${c.contactPerson || '—'}${c.contactPhone ? ` ${c.contactPhone}` : ''}`} />
@@ -265,10 +465,11 @@ export default function ContractDetailPage() {
             <Field label="签订日期" value={c.signedAt ? new Date(c.signedAt).toLocaleDateString('zh-CN') : '—'} />
             <Field label="生效日期" value={c.effectiveAt ? new Date(c.effectiveAt).toLocaleDateString('zh-CN') : '—'} />
             <Field label="到期日期" value={c.expireAt ? new Date(c.expireAt).toLocaleDateString('zh-CN') : '—'} />
+            <Field label="创建时间" value={new Date(c.createdAt).toLocaleString('zh-CN')} />
+            <Field label="最后修改" value={new Date(c.updatedAt).toLocaleString('zh-CN')} />
           </div>
 
-          {(c.prepayPct || c.paymentDays || c.paymentMethod || c.moistureRule) && (
-            <>
+          <>
               <Separator className="my-4" />
               <h4 className="text-sm font-semibold mb-3">结算条款</h4>
               <div className="grid grid-cols-3 gap-4 text-sm">
@@ -281,7 +482,6 @@ export default function ContractDetailPage() {
                 <Field label="扣杂规则" value={c.impurityRule || '—'} />
               </div>
             </>
-          )}
 
           {c.remarks && <div className="mt-4 text-sm text-muted-foreground">备注: {c.remarks}</div>}
 
@@ -304,6 +504,8 @@ export default function ContractDetailPage() {
         </CardContent>
       </Card>
 
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-6">
       {/* Line Items */}
       <Card>
         <CardHeader><CardTitle className="text-base">合同行项</CardTitle></CardHeader>
@@ -318,6 +520,8 @@ export default function ContractDetailPage() {
                   <th className="pb-2">数量</th>
                   <th className="pb-2">单位</th>
                   <th className="pb-2">单价</th>
+                  <th className="pb-2">交货日期</th>
+                  <th className="pb-2">行项备注</th>
                   <th className="pb-2 text-right">小计</th>
                 </tr>
               </thead>
@@ -326,8 +530,10 @@ export default function ContractDetailPage() {
                   <tr key={item.id} className="border-b last:border-0">
                     <td className="py-3 font-medium">{item.materialName || '—'}</td>
                     <td className="py-3">{Number(item.quantity).toLocaleString()}</td>
-                    <td className="py-3">{item.unit}</td>
+                    <td className="py-3">{unitLabel(item.unit)}</td>
                     <td className="py-3 font-mono">¥{Number(item.unitPrice).toLocaleString()}</td>
+                    <td className="py-3">{item.deliveryDate ? new Date(item.deliveryDate).toLocaleDateString('zh-CN') : '—'}</td>
+                    <td className="py-3">{item.remarks || '—'}</td>
                     <td className="py-3 text-right font-mono">¥{Number(item.totalPrice).toLocaleString()}</td>
                   </tr>
                 ))}
@@ -345,8 +551,9 @@ export default function ContractDetailPage() {
             <div className="space-y-2">
               {c.attachments.map((att) => (
                 <div key={att.id} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
-                  <span className="flex-1">{att.originalName}</span>
+                  <button type="button" onClick={() => viewAttachment(att.id)} className="flex-1 text-left text-primary hover:underline">{att.originalName}</button>
                   <span className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => viewAttachment(att.id)}>查看</Button>
                 </div>
               ))}
             </div>
@@ -356,6 +563,10 @@ export default function ContractDetailPage() {
 
       {/* Approval Timeline */}
       <ApprovalTimeline approvals={c.approvals} />
+        </div>
+
+        <FulfillmentProgress contract={c} />
+      </div>
     </div>
   );
 }

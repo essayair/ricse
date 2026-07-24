@@ -87,11 +87,20 @@ export class UsersService {
     });
   }
 
-  async update(id: string, data: { role?: string; status?: string; name?: string; phone?: string; email?: string }) {
+  async update(id: string, data: { role?: string; status?: string; name?: string; username?: string; phone?: string; email?: string }) {
     return this.prisma.user.update({
       where: { id },
       data,
       select: { id: true, username: true, name: true, role: true, status: true, phone: true, email: true, updatedAt: true },
+    });
+  }
+
+  async resetPassword(id: string, newPassword: string) {
+    const hashed = await bcrypt.hash(newPassword, 10);
+    return this.prisma.user.update({
+      where: { id },
+      data: { password: hashed, refreshToken: null },
+      select: { id: true, username: true, name: true },
     });
   }
 }

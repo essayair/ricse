@@ -19,17 +19,35 @@ model User {
   email           String?
   status          String   @default("ACTIVE") // ACTIVE | DISABLED
   refreshToken    String?
-  companyId       String?  // 所属企业
-  businessGroupId String?  // 所属业务组
+  companyId       String? // 所属企业
+  businessGroupId String? // 所属业务组
   employeeId      String?  @unique // 关联员工档案（一对一）
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company         Company?         @relation(fields: [companyId], references: [id])
-  employee        Employee?        @relation(fields: [employeeId], references: [id])
-  createdContracts Contract[]      @relation("ContractCreator")
-  createdPartners  Partner[]       @relation("PartnerCreator")
-  approvalTasks    Approval[]      @relation("ApprovalAssignee")
+  company                     Company?            @relation(fields: [companyId], references: [id])
+  employee                    Employee?           @relation(fields: [employeeId], references: [id])
+  createdContracts            Contract[]          @relation("ContractCreator")
+  createdPartners             Partner[]           @relation("PartnerCreator")
+  approvalTasks               Approval[]          @relation("ApprovalAssignee")
+  actedApprovals              Approval[]          @relation("ApprovalActor")
+  approvalFlowNodes           ApprovalFlowNode[]
+  createdOrders               Order[]             @relation("OrderCreator")
+  createdDispatchNotices      DispatchNotice[]    @relation("DispatchNoticeCreator")
+  createdWaybills             Waybill[]           @relation("WaybillCreator")
+  createdWeighTickets         WeighTicket[]       @relation("WeighTicketCreator")
+  reviewedWeighTickets        WeighTicket[]       @relation("WeighTicketReviewer")
+  weighRecords                WeighRecord[]       @relation("WeighRecordOperator")
+  createdQualityInspections   QualityInspection[] @relation("QualityInspectionCreator")
+  confirmedQualityInspections QualityInspection[] @relation("QualityInspectionConfirmer")
+  createdInboundReceipts      InboundReceipt[]    @relation("InboundReceiptCreator")
+  createdBusinessInbounds     BusinessInbound[]   @relation("BusinessInboundCreator")
+  createdOutboundReceipts     OutboundReceipt[]   @relation("OutboundReceiptCreator")
+  createdSalesOutbounds       SalesOutbound[]     @relation("SalesOutboundCreator")
+  inventoryLedgerEntries      InventoryLedger[]   @relation("InventoryLedgerCreator")
+  createdInventoryReversals   InventoryReversal[] @relation("InventoryReversalCreator")
+  approvedInventoryReversals  InventoryReversal[] @relation("InventoryReversalApprover")
+  postedInventoryReversals    InventoryReversal[] @relation("InventoryReversalPoster")
 
   @@map("users")
 }
@@ -43,15 +61,15 @@ model Company {
   name      String
   shortName String?
   type      String   @default("INTERNAL") // INTERNAL | EXTERNAL
-  partnerId String?  // 外部企业关联合作伙伴
-  parentId  String?  // 上级企业（组织树）
+  partnerId String? // 外部企业关联合作伙伴
+  parentId  String? // 上级企业（组织树）
   status    String   @default("ACTIVE")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  parent     Company?       @relation("CompanyTree", fields: [parentId], references: [id])
-  children   Company[]      @relation("CompanyTree")
-  partner    Partner?       @relation("CompanyPartner", fields: [partnerId], references: [id])
+  parent      Company?               @relation("CompanyTree", fields: [parentId], references: [id])
+  children    Company[]              @relation("CompanyTree")
+  partner     Partner?               @relation("CompanyPartner", fields: [partnerId], references: [id])
   departments Department[]
   employees   Employee[]
   users       User[]
@@ -66,14 +84,14 @@ model Department {
   id        String   @id @default(cuid())
   name      String
   companyId String
-  parentId  String?  // 上级部门
+  parentId  String? // 上级部门
   sort      Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company  Company      @relation(fields: [companyId], references: [id])
-  parent   Department?  @relation("DeptTree", fields: [parentId], references: [id])
-  children Department[] @relation("DeptTree")
+  company   Company      @relation(fields: [companyId], references: [id])
+  parent    Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  children  Department[] @relation("DeptTree")
   employees Employee[]
 
   @@index([companyId])
@@ -86,7 +104,7 @@ model Employee {
   name         String
   departmentId String
   companyId    String
-  position     String?  // 岗位
+  position     String? // 岗位
   phone        String?
   email        String?
   status       String   @default("ACTIVE")
@@ -133,71 +151,116 @@ model BusinessGroupCompany {
 /// code 规则：内部企业 6 位字母数字 / 外部企业 8 位纯数字
 /// 唯一校验：统一信用代码 + 企业名称联合唯一
 model Partner {
-  id            String    @id @default(cuid())
-  code          String    @unique
-  name          String
-  shortName     String?
-  shortCode     String?   // 拼音简码，用于快速搜索
-  taxId         String?   // 统一社会信用代码
-  orgType       String?   // 组织性质：有限责任公司/股份有限公司/国有企业/外资企业/个体工商户
-  category      String?   // 合作伙伴类别：CORE/NORMAL/TEMP
-  legalPerson   String?
-  legalIdCard   String?   // 法人身份证号
-  controller    String?   // 实际控制人
-  controllerPhone String? // 实控人联系方式
-  contactPerson String?
-  contactPhone  String?
-  province      String?
-  city          String?
-  address       String?
-  bizAddress    String?
-  sourceRegion  String?
-  estDate       DateTime? // 成立日期
-  regCapital    Decimal?  @db.Decimal(15, 2) // 注册资本（万）
-  taxType       String?   // 纳税人类型：GENERAL/SMALL_SCALE/EXEMPT
-  taxRating     String?   // 纳税评级：A/B/C/D
-  invoiceType   String?   // 发票类型
-  industry      String?   // 行业
-  corpType      String?   // 企业类型：PRODUCTION/TRADE/SERVICE
-  bizScope      String?   // 经营范围
-  tradingGoods  String?   // 拟交易品种
+  id               String    @id @default(cuid())
+  code             String
+  name             String
+  shortName        String?
+  shortCode        String? // 拼音简码，用于快速搜索
+  taxId            String? // 统一社会信用代码
+  orgType          String? // 组织性质：有限责任公司/股份有限公司/国有企业/外资企业/个体工商户
+  category         String? // 合作伙伴类别：CORE/NORMAL/TEMP
+  legalPerson      String?
+  legalIdCard      String? // 法人身份证号
+  controller       String? // 实际控制人
+  controllerPhone  String? // 实控人联系方式
+  contactPerson    String?
+  contactPhone     String?
+  province         String?
+  city             String?
+  address          String?
+  bizAddress       String?
+  sourceRegion     String?
+  estDate          DateTime? // 成立日期
+  regCapital       Decimal?  @db.Decimal(15, 2) // 注册资本（万）
+  taxType          String? // 纳税人类型：GENERAL/SMALL_SCALE/EXEMPT
+  taxRating        String? // 纳税评级：A/B/C/D
+  invoiceType      String? // 发票类型
+  industry         String? // 行业
+  corpType         String? // 企业类型：PRODUCTION/TRADE/SERVICE
+  bizScope         String? // 经营范围
+  tradingGoods     String? // 拟交易品种
   creditLimit      Decimal?  @db.Decimal(15, 2)
   // 内部 / 外部标识（独立于角色，决定编码规则：内部6位字母数字，外部8位数字）
   isInternal       Boolean   @default(false)
   // 额外字段（来自原型）
-  country          String?   // 国家/地区，默认中国大陆
-  legalPersonType  String?   // 法人类型：自然人/法人
-  controllerTitle  String?   // 实际控制人职务
-  regNo            String?   // 注册登记号
-  regCurrency      String?   // 注册资本货币：人民币/美元/欧元
-  revenueScale     String?   // 营业收入规模
-  groupName        String?   // 所属集团
-  isParent         Boolean?  // 本身为母公司
-  relatedPartyType String?   // 是否为关联方
-  licenseType      String?   // 特殊证照：采矿许可证/危化品/道路运输/无
+  country          String? // 国家/地区，默认中国大陆
+  legalPersonType  String? // 法人类型：自然人/法人
+  controllerTitle  String? // 实际控制人职务
+  regNo            String? // 注册登记号
+  regCurrency      String? // 注册资本货币：人民币/美元/欧元
+  revenueScale     String? // 营业收入规模
+  groupName        String? // 所属集团
+  isParent         Boolean? // 本身为母公司
+  relatedPartyType String? // 是否为关联方
+  licenseType      String? // 特殊证照：采矿许可证/危化品/道路运输/无
   licenseExpiry    DateTime? // 资质到期日
-  mainBiz          String?   // 主营业务及品种
-  equityStructure  String?   // 股权结构
-  intro            String?   // 企业介绍
-  roles            String[]  // SUPPLIER | CUSTOMER（角色：合作伙伴只有供应商和客户）
+  mainBiz          String? // 主营业务及品种
+  equityStructure  String? // 股权结构
+  intro            String? // 企业介绍
+  roles            String[] // SUPPLIER | CUSTOMER（角色：合作伙伴只有供应商和客户）
   status           String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
   remark           String?
-  createdBy        String?   // 创建人
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  createdBy        String? // 创建人
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
 
-  creator            User?         @relation("PartnerCreator", fields: [createdBy], references: [id])
-  attachments        Attachment[]
-  companies          Company[]       @relation("CompanyPartner")
-  contractsAsSeller  Contract[]      @relation("ContractSeller")
-  contractsAsBuyer    Contract[]      @relation("ContractBuyer")
-  vehicles            Vehicle[]
-  bankAccounts        BankAccount[]
-  warehouses          Warehouse[]
+  creator                 User?                 @relation("PartnerCreator", fields: [createdBy], references: [id])
+  attachments             Attachment[]
+  companies               Company[]             @relation("CompanyPartner")
+  contractsAsSeller       Contract[]            @relation("ContractSeller")
+  contractsAsBuyer        Contract[]            @relation("ContractBuyer")
+  contractsAsSigningParty Contract[]            @relation("ContractSigningPartner")
+  vehicles                Vehicle[]
+  bankAccounts            BankAccount[]
+  warehouses              Warehouse[]
+  serviceOrganizations    ServiceOrganization[]
+  carrierWaybills         Waybill[]             @relation("WaybillCarrierPartner")
+  institutionInspections  QualityInspection[]   @relation("QualityInstitutionPartner")
 
   @@unique([taxId, name])
   @@map("partners")
+}
+
+/// 合作伙伴服务生态档案
+/// 一个合作伙伴可分别维护物流承运、质检、仓储与港口三类专业档案
+model ServiceOrganization {
+  id                 String    @id @default(cuid())
+  code               String    @unique
+  partnerId          String
+  organizationType   String // LOGISTICS_CARRIER | QUALITY_INSTITUTION | WAREHOUSE_PORT
+  licenseNo          String?
+  licenseExpiry      DateTime?
+  qualificationNo    String?
+  cmaNo              String?
+  cnasNo             String?
+  serviceScope       String?
+  serviceRegions     String?
+  transportModes     String[]
+  cargoTypes         String?
+  supportedMaterials String?
+  supportedItems     String?
+  operationType      String? // WAREHOUSE | PORT | WAREHOUSE_PORT
+  storageCapacity    Decimal?  @db.Decimal(15, 3)
+  dispatcherName     String?
+  dispatcherPhone    String?
+  contactPerson      String?
+  contactPhone       String?
+  settlementMethod   String?
+  reportCycleDays    Int?
+  insuranceInfo      String?
+  status             String    @default("ACTIVE") // ACTIVE | INACTIVE | BLACKLIST
+  remark             String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  partner Partner @relation(fields: [partnerId], references: [id])
+
+  @@unique([partnerId, organizationType])
+  @@index([organizationType, status])
+  @@index([partnerId])
+  @@map("service_organizations")
 }
 
 model MaterialCategory {
@@ -208,7 +271,7 @@ model MaterialCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  parent    MaterialCategory? @relation("CategoryParent", fields: [parentId], references: [id])
+  parent    MaterialCategory?  @relation("CategoryParent", fields: [parentId], references: [id])
   children  MaterialCategory[] @relation("CategoryParent")
   materials Material[]
 
@@ -216,28 +279,33 @@ model MaterialCategory {
 }
 
 model Material {
-  id           String   @id @default(cuid())
-  code         String   @unique
+  id           String    @id @default(cuid())
+  code         String    @unique
   name         String
   categoryId   String
-  grade        String?  // 品级：CaF₂≥97%、CaF₂≥95% 等（保留兼容）
-  unit         String   @default("TON")
+  grade        String? // 品级：CaF₂≥97%、CaF₂≥95% 等（保留兼容）
+  unit         String    @default("TON")
   spec         String?
   sourceRegion String?
-  packageType  String?  // 包装方式：散装 / 吨袋 / 小包装
-  isVirtual    Boolean  @default(false)  // 是否虚拟物料
-  specs        Json?    // 规格指标数组 [{name,indicator,operator,value,unit}]
-  hsCode       String?  // HS编码（海关报关）
-  taxCode      String?  // 税务商品编码
-  internalCode String?  // 内部编码
-  qcTemplate   String?  // 质检模板ID
-  status       String   @default("ACTIVE")
+  packageType  String? // 包装方式：散装 / 吨袋 / 小包装
+  isVirtual    Boolean   @default(false) // 是否虚拟物料
+  specs        Json? // 规格指标数组 [{name,indicator,operator,value,unit}]
+  hsCode       String? // HS编码（海关报关）
+  taxCode      String? // 税务商品编码
+  internalCode String? // 内部编码
+  qcTemplate   String? // 质检模板ID
+  status       String    @default("ACTIVE")
   remark       String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  category MaterialCategory @relation(fields: [categoryId], references: [id])
+  category         MaterialCategory  @relation(fields: [categoryId], references: [id])
+  businessInbounds BusinessInbound[]
+  salesOutbounds   SalesOutbound[]
+  inventoryLots    InventoryLot[]
+  inventoryLedgers InventoryLedger[]
+  OutboundReceipt  OutboundReceipt[]
 
   @@index([categoryId])
   @@map("materials")
@@ -245,22 +313,23 @@ model Material {
 
 /// 车辆管理
 model Vehicle {
-  id           String   @id @default(cuid())
-  plateNo      String   @unique
-  vehicleType  String   // TRUCK | TANK | TRAILER
+  id           String    @id @default(cuid())
+  plateNo      String    @unique
+  vehicleType  String // TRUCK | TANK | TRAILER
   brand        String?
-  loadCapacity Decimal  @db.Decimal(10, 2)
-  ownerId      String?  // 关联 Partner（外协车辆）
-  ownerType    String   @default("SELF") // SELF | OUTSOURCED
+  loadCapacity Decimal   @db.Decimal(10, 2)
+  ownerId      String? // 关联 Partner（外协车辆）
+  ownerType    String    @default("SELF") // SELF | OUTSOURCED
   driverName   String?
   driverPhone  String?
-  status       String   @default("ACTIVE") // ACTIVE | MAINTENANCE | RETIRED
+  status       String    @default("ACTIVE") // ACTIVE | MAINTENANCE | RETIRED
   remark       String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  owner Partner? @relation(fields: [ownerId], references: [id])
+  owner    Partner?  @relation(fields: [ownerId], references: [id])
+  waybills Waybill[]
 
   @@index([ownerId])
   @@map("vehicles")
@@ -268,16 +337,16 @@ model Vehicle {
 
 /// 银行账户
 model BankAccount {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   partnerId   String
   accountName String
   accountNo   String
   bankName    String
   bankCode    String?
-  accountType String  @default("GENERAL") // BASIC | GENERAL
-  currency    String  @default("CNY")
-  isDefault   Boolean @default(false)
-  status      String  @default("ACTIVE")
+  accountType String   @default("GENERAL") // BASIC | GENERAL
+  currency    String   @default("CNY")
+  isDefault   Boolean  @default(false)
+  status      String   @default("ACTIVE")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -289,21 +358,28 @@ model BankAccount {
 
 /// 仓库
 model Warehouse {
-  id           String   @id @default(cuid())
-  code         String   @unique
+  id           String    @id @default(cuid())
+  code         String    @unique
   name         String
-  type         String   @default("SELF") // SELF（自有）| RENT（租赁）
-  partnerId    String?  // 关联 Partner（租赁方或所属方）
+  type         String    @default("SELF") // SELF（自有）| RENT（租赁）
+  partnerId    String? // 关联 Partner（租赁方或所属方）
   address      String?
   manager      String?
   managerPhone String?
-  status       String   @default("ACTIVE")
+  status       String    @default("ACTIVE")
   remark       String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  partner Partner? @relation(fields: [partnerId], references: [id])
+  partner          Partner?          @relation(fields: [partnerId], references: [id])
+  dispatchNotices  DispatchNotice[]
+  inboundReceipts  InboundReceipt[]
+  businessInbounds BusinessInbound[]
+  outboundReceipts OutboundReceipt[]
+  salesOutbounds   SalesOutbound[]
+  inventoryLots    InventoryLot[]
+  inventoryLedgers InventoryLedger[]
 
   @@index([partnerId])
   @@map("warehouses")
@@ -312,72 +388,76 @@ model Warehouse {
 // ========== 合约模块 ==========
 
 model Contract {
-  id                String         @id @default(cuid())
-  contractNo        String         @unique
-  title             String
-  type              String         // PURCHASE | SALES | BILATERAL
-  status            String         @default("DRAFT") // DRAFT|PENDING_APPROVAL|APPROVED|REJECTED|EXECUTING|COMPLETED|CLOSED|VOIDED
-  sellerId          String         // 卖方（必填）
-  buyerId           String?
+  id               String    @id @default(cuid())
+  contractNo       String    @unique
+  title            String
+  type             String // PURCHASE | SALES | BILATERAL
+  status           String    @default("DRAFT") // DRAFT|PENDING_APPROVAL|APPROVED|REJECTED|EXECUTING|COMPLETED|CLOSED|VOIDED
+  sellerId         String // 卖方（必填）
+  buyerId          String?
   // 我方信息
-  companyId         String?        // 签约主体（内部企业）
-  departmentId      String?        // 业务部门
-  externalNo        String?        // 外部合同号
+  signingPartnerId String? // 我方签约主体（内部合作伙伴）
+  companyId        String? // 签约主体（内部企业）
+  departmentId     String? // 业务部门
+  externalNo       String? // 外部合同号
   // 对手方
-  contactPerson     String?        // 对手方联系人
-  contactPhone      String?        // 对手方电话
+  contactPerson    String? // 对手方联系人
+  contactPhone     String? // 对手方电话
   // 货物与价格
-  pricingType       String?        // 定价类型：FIXED/BASIS/FLOATING
-  overfillPct       Decimal?       @db.Decimal(5, 2)  // 溢装比例(%)
-  shortfallPct      Decimal?       @db.Decimal(5, 2)  // 短装比例(%)
+  pricingType      String? // 定价类型：FIXED/BASIS/FLOATING
+  overfillPct      Decimal?  @db.Decimal(5, 2) // 溢装比例(%)
+  shortfallPct     Decimal?  @db.Decimal(5, 2) // 短装比例(%)
   // 履约
-  deliveryMethod    String?        // 交货方式
-  deliveryLocation  String?        // 收货/发货地点
-  totalAmount       Decimal        @db.Decimal(15, 2)
-  signedAt          DateTime?
-  effectiveAt       DateTime?
-  expireAt          DateTime?
+  deliveryMethod   String? // 交货方式
+  deliveryLocation String? // 收货/发货地点
+  totalAmount      Decimal   @db.Decimal(15, 2)
+  signedAt         DateTime?
+  effectiveAt      DateTime?
+  expireAt         DateTime?
   // 结算
-  settlementMethod  String         @default("DELIVERY")
-  settlementBasis   String?        // 结算数量依据：WEIGHT/QUALITY/CONTRACT
-  prepayPct         Decimal?       @db.Decimal(5, 2)  // 预付比例(%)
-  paymentDays       Int?           // 尾款账期（天）
-  paymentMethod     String?        // 付款方式
-  moistureRule      String?        // 扣水规则
-  impurityRule      String?        // 扣杂规则
-  remarks           String?
-  createdBy         String
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  deletedAt         DateTime?
+  settlementMethod String    @default("DELIVERY")
+  settlementBasis  String? // 结算数量依据：WEIGHT/QUALITY/CONTRACT
+  prepayPct        Decimal?  @db.Decimal(5, 2) // 预付比例(%)
+  paymentDays      Int? // 尾款账期（天）
+  paymentMethod    String? // 付款方式
+  moistureRule     String? // 扣水规则
+  impurityRule     String? // 扣杂规则
+  remarks          String?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
 
-  lineItems   ContractLineItem[]
-  approvals   Approval[]
-  attachments Attachment[]
-  creator     User     @relation("ContractCreator", fields: [createdBy], references: [id])
-  seller      Partner  @relation("ContractSeller", fields: [sellerId], references: [id])
-  buyer       Partner? @relation("ContractBuyer", fields: [buyerId], references: [id])
-  company     Company? @relation(fields: [companyId], references: [id])
+  lineItems      ContractLineItem[]
+  approvals      Approval[]
+  attachments    Attachment[]
+  creator        User               @relation("ContractCreator", fields: [createdBy], references: [id])
+  seller         Partner            @relation("ContractSeller", fields: [sellerId], references: [id])
+  buyer          Partner?           @relation("ContractBuyer", fields: [buyerId], references: [id])
+  signingPartner Partner?           @relation("ContractSigningPartner", fields: [signingPartnerId], references: [id])
+  company        Company?           @relation(fields: [companyId], references: [id])
+  orders         Order[]
 
   @@index([contractNo])
   @@index([status])
   @@index([sellerId])
+  @@index([signingPartnerId])
   @@map("contracts")
 }
 
 model ContractLineItem {
-  id          String   @id @default(cuid())
-  contractId  String
-  materialId  String
+  id           String    @id @default(cuid())
+  contractId   String
+  materialId   String
   materialName String?
-  quantity    Decimal  @db.Decimal(15, 3)
-  unit        String   @default("TON")
-  unitPrice   Decimal  @db.Decimal(15, 4)
-  totalPrice  Decimal  @db.Decimal(15, 2)
+  quantity     Decimal   @db.Decimal(15, 3)
+  unit         String    @default("TON")
+  unitPrice    Decimal   @db.Decimal(15, 4)
+  totalPrice   Decimal   @db.Decimal(15, 2)
   deliveryDate DateTime?
-  remarks     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  remarks      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   contract Contract @relation(fields: [contractId], references: [id])
 
@@ -385,39 +465,722 @@ model ContractLineItem {
   @@map("contract_line_items")
 }
 
+model Order {
+  id               String    @id @default(cuid())
+  orderNo          String    @unique
+  name             String
+  contractId       String
+  type             String // PURCHASE | SALES
+  status           String    @default("DRAFT") // DRAFT | CONFIRMED | DISPATCHED | COMPLETED | CANCELLED
+  totalAmount      Decimal   @db.Decimal(15, 2)
+  plannedDate      DateTime?
+  deliveryLocation String?
+  remarks          String?
+  dispatchedAt     DateTime?
+  completedAt      DateTime?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  contract        Contract         @relation(fields: [contractId], references: [id])
+  creator         User             @relation("OrderCreator", fields: [createdBy], references: [id])
+  lineItems       OrderLineItem[]
+  dispatchNotices DispatchNotice[]
+
+  @@index([orderNo])
+  @@index([contractId])
+  @@index([status])
+  @@index([type])
+  @@map("orders")
+}
+
+model OrderLineItem {
+  id                 String   @id @default(cuid())
+  orderId            String
+  contractLineItemId String
+  materialId         String
+  materialName       String?
+  quantity           Decimal  @db.Decimal(15, 3)
+  unit               String   @default("TON")
+  unitPrice          Decimal  @db.Decimal(15, 4)
+  totalPrice         Decimal  @db.Decimal(15, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  order                   Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dispatchNoticeLineItems DispatchNoticeLineItem[]
+
+  @@index([orderId])
+  @@index([contractLineItemId])
+  @@map("order_line_items")
+}
+
+// ========== 执行通知与物流 ==========
+
+model DispatchNotice {
+  id                  String    @id @default(cuid())
+  noticeNo            String    @unique
+  orderId             String
+  type                String // PURCHASE | SALES
+  mode                String    @default("STANDARD") // STANDARD | DIRECT
+  status              String    @default("DRAFT") // DRAFT | ISSUED | IN_PROGRESS | COMPLETED | CANCELLED
+  warehouseId         String?
+  plannedDate         DateTime?
+  originLocation      String?
+  destinationLocation String?
+  totalQuantity       Decimal   @db.Decimal(15, 3)
+  remarks             String?
+  issuedAt            DateTime?
+  completedAt         DateTime?
+  createdBy           String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  order     Order                    @relation(fields: [orderId], references: [id])
+  warehouse Warehouse?               @relation(fields: [warehouseId], references: [id])
+  creator   User                     @relation("DispatchNoticeCreator", fields: [createdBy], references: [id])
+  lineItems DispatchNoticeLineItem[]
+  waybills  Waybill[]
+
+  @@index([noticeNo])
+  @@index([orderId])
+  @@index([type])
+  @@index([status])
+  @@index([warehouseId])
+  @@map("dispatch_notices")
+}
+
+model DispatchNoticeLineItem {
+  id               String   @id @default(cuid())
+  dispatchNoticeId String
+  orderLineItemId  String
+  materialId       String
+  materialName     String?
+  quantity         Decimal  @db.Decimal(15, 3)
+  unit             String   @default("TON")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  dispatchNotice   DispatchNotice    @relation(fields: [dispatchNoticeId], references: [id], onDelete: Cascade)
+  orderLineItem    OrderLineItem     @relation(fields: [orderLineItemId], references: [id])
+  waybillLineItems WaybillLineItem[]
+
+  @@index([dispatchNoticeId])
+  @@index([orderLineItemId])
+  @@map("dispatch_notice_line_items")
+}
+
+model Waybill {
+  id                  String    @id @default(cuid())
+  waybillNo           String    @unique
+  dispatchNoticeId    String
+  status              String    @default("PENDING") // PENDING | IN_TRANSIT | ARRIVED | SIGNED | CANCELLED
+  freightMode         String    @default("SELF") // SELF | THIRD_PARTY
+  vehicleId           String?
+  carrierPartnerId    String?
+  carrierName         String?
+  plateNo             String?
+  driverName          String?
+  driverPhone         String?
+  originLocation      String?
+  destinationLocation String?
+  totalQuantity       Decimal   @db.Decimal(15, 3)
+  plannedDepartureAt  DateTime?
+  plannedArrivalAt    DateTime?
+  departedAt          DateTime?
+  arrivedAt           DateTime?
+  signedAt            DateTime?
+  remarks             String?
+  createdBy           String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  dispatchNotice   DispatchNotice    @relation(fields: [dispatchNoticeId], references: [id])
+  vehicle          Vehicle?          @relation(fields: [vehicleId], references: [id])
+  carrierPartner   Partner?          @relation("WaybillCarrierPartner", fields: [carrierPartnerId], references: [id])
+  creator          User              @relation("WaybillCreator", fields: [createdBy], references: [id])
+  lineItems        WaybillLineItem[]
+  weighTickets     WeighTicket[]
+  attachments      Attachment[]
+  inboundReceipts  InboundReceipt[]
+  outboundReceipts OutboundReceipt[]
+
+  @@index([waybillNo])
+  @@index([dispatchNoticeId])
+  @@index([status])
+  @@index([vehicleId])
+  @@index([carrierPartnerId])
+  @@map("waybills")
+}
+
+model WaybillLineItem {
+  id                       String   @id @default(cuid())
+  waybillId                String
+  dispatchNoticeLineItemId String
+  materialId               String
+  materialName             String?
+  quantity                 Decimal  @db.Decimal(15, 3)
+  unit                     String   @default("TON")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  waybill                Waybill                @relation(fields: [waybillId], references: [id], onDelete: Cascade)
+  dispatchNoticeLineItem DispatchNoticeLineItem @relation(fields: [dispatchNoticeLineItemId], references: [id])
+
+  @@index([waybillId])
+  @@index([dispatchNoticeLineItemId])
+  @@map("waybill_line_items")
+}
+
+model WeighTicket {
+  id                    String    @id @default(cuid())
+  ticketNo              String    @unique
+  waybillId             String
+  direction             String // INBOUND | OUTBOUND
+  status                String    @default("PENDING") // PENDING | WEIGHING | COMPLETED | REVIEWED | VOIDED
+  dataSource            String    @default("MANUAL") // DEVICE | MANUAL | IMPORTED
+  ticketDate            DateTime  @default(now())
+  plateNo               String?
+  materialName          String?
+  materialSpec          String?
+  shipperName           String?
+  receiverName          String?
+  packageCount          Int?
+  driverName            String?
+  weighmasterName       String?
+  printedAt             DateTime?
+  plannedQuantity       Decimal   @db.Decimal(15, 3)
+  selectedGrossRecordId String?
+  selectedTareRecordId  String?
+  grossWeight           Decimal?  @db.Decimal(15, 3)
+  tareWeight            Decimal?  @db.Decimal(15, 3)
+  netWeight             Decimal?  @db.Decimal(15, 3)
+  shippingWeight        Decimal?  @db.Decimal(15, 3)
+  receivingWeight       Decimal?  @db.Decimal(15, 3)
+  customerWeight        Decimal?  @db.Decimal(15, 3)
+  thirdPartyWeight      Decimal?  @db.Decimal(15, 3)
+  manualWeight          Decimal?  @db.Decimal(15, 3)
+  settlementBasis       String    @default("RECEIVING") // RECEIVING | SHIPPING | CUSTOMER | THIRD_PARTY | MANUAL
+  settlementWeight      Decimal?  @db.Decimal(15, 3)
+  varianceWeight        Decimal?  @db.Decimal(15, 3)
+  varianceRate          Decimal?  @db.Decimal(10, 4)
+  toleranceRate         Decimal   @default(0.5) @db.Decimal(10, 4)
+  abnormal              Boolean   @default(false)
+  remarks               String?
+  reviewRemark          String?
+  reviewedBy            String?
+  reviewedAt            DateTime?
+  createdBy             String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+
+  waybill            Waybill             @relation(fields: [waybillId], references: [id])
+  creator            User                @relation("WeighTicketCreator", fields: [createdBy], references: [id])
+  reviewer           User?               @relation("WeighTicketReviewer", fields: [reviewedBy], references: [id])
+  records            WeighRecord[]
+  attachments        Attachment[]
+  qualityInspections QualityInspection[]
+  inboundReceipts    InboundReceipt[]
+  outboundReceipts   OutboundReceipt[]
+
+  @@index([ticketNo])
+  @@index([ticketDate])
+  @@index([waybillId])
+  @@index([status])
+  @@index([abnormal])
+  @@map("weigh_tickets")
+}
+
+model WeighRecord {
+  id            String   @id @default(cuid())
+  weighTicketId String
+  weighingType  String // GROSS | TARE
+  sequence      Int
+  weight        Decimal  @db.Decimal(15, 3)
+  dataSource    String   @default("MANUAL") // DEVICE | MANUAL | IMPORTED
+  weighedAt     DateTime @default(now())
+  operatorId    String
+  remarks       String?
+  createdAt     DateTime @default(now())
+
+  weighTicket WeighTicket @relation(fields: [weighTicketId], references: [id], onDelete: Cascade)
+  operator    User        @relation("WeighRecordOperator", fields: [operatorId], references: [id])
+
+  @@unique([weighTicketId, sequence])
+  @@index([weighTicketId])
+  @@index([weighingType])
+  @@map("weigh_records")
+}
+
+// ========== 质检化验 ==========
+
+model QualityInspection {
+  id                      String    @id @default(cuid())
+  inspectionNo            String    @unique
+  weighTicketId           String
+  status                  String    @default("DRAFT") // DRAFT | TESTING | REPORTED | CONFIRMED | VOIDED
+  conclusion              String    @default("PENDING") // PENDING | PASS | DEDUCTION | FUSE
+  dataSource              String    @default("MANUAL") // DEVICE | MANUAL | OCR
+  institutionType         String    @default("OUR") // OUR | PARTNER | THIRD_PARTY | OTHER
+  institutionPartnerId    String?
+  institutionName         String
+  reportNo                String
+  testedAt                DateTime
+  sampledAt               DateTime
+  samplerName             String
+  samplingMethod          String?
+  sampleNo1               String?
+  sampleNo2               String?
+  sampleNo3               String?
+  materialName            String
+  materialSpec            String?
+  supplierName            String?
+  plateNo                 String?
+  baseWeight              Decimal?  @db.Decimal(15, 3)
+  moistureDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
+  impurityDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
+  settlementWeight        Decimal?  @db.Decimal(15, 3)
+  deductionAmount         Decimal   @default(0) @db.Decimal(15, 2)
+  fuseReason              String?
+  resolution              String?
+  resolvedAt              DateTime?
+  remarks                 String?
+  confirmedBy             String?
+  confirmedAt             DateTime?
+  createdBy               String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  deletedAt               DateTime?
+
+  weighTicket        WeighTicket                  @relation(fields: [weighTicketId], references: [id])
+  creator            User                         @relation("QualityInspectionCreator", fields: [createdBy], references: [id])
+  confirmer          User?                        @relation("QualityInspectionConfirmer", fields: [confirmedBy], references: [id])
+  institutionPartner Partner?                     @relation("QualityInstitutionPartner", fields: [institutionPartnerId], references: [id])
+  indicators         QualityInspectionIndicator[]
+  attachments        Attachment[]
+  inboundReceipts    InboundReceipt[]
+
+  @@index([inspectionNo])
+  @@index([weighTicketId])
+  @@index([status])
+  @@index([conclusion])
+  @@index([institutionType])
+  @@index([institutionPartnerId])
+  @@index([reportNo])
+  @@index([testedAt])
+  @@index([sampledAt])
+  @@map("quality_inspections")
+}
+
+model QualityInspectionIndicator {
+  id            String   @id @default(cuid())
+  inspectionId  String
+  code          String
+  name          String
+  operator      String // GTE | LTE | EQ | RANGE
+  standardValue Decimal? @db.Decimal(15, 4)
+  upperValue    Decimal? @db.Decimal(15, 4)
+  fuseValue     Decimal? @db.Decimal(15, 4)
+  unit          String   @default("%")
+  measuredValue Decimal? @db.Decimal(15, 4)
+  result        String   @default("PENDING") // PENDING | PASS | FAIL | FUSE
+  sort          Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  inspection QualityInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@unique([inspectionId, code])
+  @@index([inspectionId])
+  @@map("quality_inspection_indicators")
+}
+
+// ========== 入库与库存 ==========
+
+model InboundReceipt {
+  id                      String    @id @default(cuid())
+  receiptNo               String    @unique
+  waybillId               String
+  weighTicketId           String
+  qualityInspectionId     String
+  warehouseId             String
+  status                  String    @default("DRAFT") // DRAFT | RECEIVED | POSTED | CANCELLED
+  acceptanceConclusion    String // PASS | DEDUCTION
+  materialName            String
+  materialSpec            String?
+  supplierName            String?
+  plateNo                 String?
+  receivedQuantity        Decimal   @db.Decimal(15, 3)
+  moistureDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
+  impurityDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
+  deductionAmount         Decimal   @default(0) @db.Decimal(15, 2)
+  receivedAt              DateTime
+  receiverName            String
+  remarks                 String?
+  createdBy               String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  deletedAt               DateTime?
+
+  waybill           Waybill           @relation(fields: [waybillId], references: [id])
+  weighTicket       WeighTicket       @relation(fields: [weighTicketId], references: [id])
+  qualityInspection QualityInspection @relation(fields: [qualityInspectionId], references: [id])
+  warehouse         Warehouse         @relation(fields: [warehouseId], references: [id])
+  creator           User              @relation("InboundReceiptCreator", fields: [createdBy], references: [id])
+  businessInbound   BusinessInbound?
+  attachments       Attachment[]
+
+  @@index([receiptNo])
+  @@index([waybillId])
+  @@index([weighTicketId])
+  @@index([qualityInspectionId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("inbound_receipts")
+}
+
+model BusinessInbound {
+  id           String   @id @default(cuid())
+  inboundNo    String   @unique
+  receiptId    String   @unique
+  warehouseId  String
+  materialId   String
+  materialName String
+  supplierName String?
+  quantity     Decimal  @db.Decimal(15, 3)
+  status       String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
+  lotNo        String
+  postedAt     DateTime @default(now())
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  receipt      InboundReceipt      @relation(fields: [receiptId], references: [id])
+  warehouse    Warehouse           @relation(fields: [warehouseId], references: [id])
+  material     Material            @relation(fields: [materialId], references: [id])
+  creator      User                @relation("BusinessInboundCreator", fields: [createdBy], references: [id])
+  inventoryLot InventoryLot?
+  reversals    InventoryReversal[]
+
+  @@index([inboundNo])
+  @@index([warehouseId])
+  @@index([materialId])
+  @@index([status])
+  @@map("business_inbounds")
+}
+
+model InventoryLot {
+  id                String   @id @default(cuid())
+  lotNo             String   @unique
+  businessInboundId String   @unique
+  warehouseId       String
+  materialId        String
+  materialName      String
+  supplierName      String?
+  initialQuantity   Decimal  @db.Decimal(15, 3)
+  availableQuantity Decimal  @db.Decimal(15, 3)
+  qualityConclusion String
+  status            String   @default("AVAILABLE") // AVAILABLE | DEPLETED | LOCKED
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  businessInbound     BusinessInbound             @relation(fields: [businessInboundId], references: [id])
+  warehouse           Warehouse                   @relation(fields: [warehouseId], references: [id])
+  material            Material                    @relation(fields: [materialId], references: [id])
+  ledgers             InventoryLedger[]
+  outboundAllocations OutboundReceiptAllocation[]
+  salesOutboundLines  SalesOutboundLine[]
+  reversalLines       InventoryReversalLine[]
+
+  @@index([warehouseId])
+  @@index([materialId])
+  @@index([status])
+  @@map("inventory_lots")
+}
+
+model InventoryLedger {
+  id             String   @id @default(cuid())
+  lotId          String
+  warehouseId    String
+  materialId     String
+  businessType   String // INBOUND | OUTBOUND | ADJUSTMENT
+  businessNo     String
+  quantityChange Decimal  @db.Decimal(15, 3)
+  balanceAfter   Decimal  @db.Decimal(15, 3)
+  remarks        String?
+  createdBy      String
+  createdAt      DateTime @default(now())
+
+  lot       InventoryLot @relation(fields: [lotId], references: [id])
+  warehouse Warehouse    @relation(fields: [warehouseId], references: [id])
+  material  Material     @relation(fields: [materialId], references: [id])
+  creator   User         @relation("InventoryLedgerCreator", fields: [createdBy], references: [id])
+
+  @@index([lotId])
+  @@index([warehouseId])
+  @@index([materialId])
+  @@index([businessType])
+  @@map("inventory_ledgers")
+}
+
+// ========== 销售出库与库存扣减 ==========
+
+model OutboundReceipt {
+  id               String    @id @default(cuid())
+  receiptNo        String    @unique
+  waybillId        String
+  weighTicketId    String
+  warehouseId      String
+  status           String    @default("DRAFT") // DRAFT | DEPARTURE_CONFIRMED | POSTED | CANCELLED
+  materialId       String
+  materialName     String
+  customerName     String?
+  plateNo          String?
+  outboundQuantity Decimal   @db.Decimal(15, 3)
+  departedAt       DateTime
+  operatorName     String
+  remarks          String?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  waybill       Waybill                     @relation(fields: [waybillId], references: [id])
+  weighTicket   WeighTicket                 @relation(fields: [weighTicketId], references: [id])
+  warehouse     Warehouse                   @relation(fields: [warehouseId], references: [id])
+  material      Material                    @relation(fields: [materialId], references: [id])
+  creator       User                        @relation("OutboundReceiptCreator", fields: [createdBy], references: [id])
+  allocations   OutboundReceiptAllocation[]
+  salesOutbound SalesOutbound?
+  attachments   Attachment[]
+
+  @@index([receiptNo])
+  @@index([waybillId])
+  @@index([weighTicketId])
+  @@index([warehouseId])
+  @@index([materialId])
+  @@index([status])
+  @@map("outbound_receipts")
+}
+
+model OutboundReceiptAllocation {
+  id                String   @id @default(cuid())
+  outboundReceiptId String
+  inventoryLotId    String
+  quantity          Decimal  @db.Decimal(15, 3)
+  createdAt         DateTime @default(now())
+
+  outboundReceipt OutboundReceipt @relation(fields: [outboundReceiptId], references: [id], onDelete: Cascade)
+  inventoryLot    InventoryLot    @relation(fields: [inventoryLotId], references: [id])
+
+  @@unique([outboundReceiptId, inventoryLotId])
+  @@index([inventoryLotId])
+  @@map("outbound_receipt_allocations")
+}
+
+model SalesOutbound {
+  id           String   @id @default(cuid())
+  outboundNo   String   @unique
+  receiptId    String   @unique
+  warehouseId  String
+  materialId   String
+  materialName String
+  customerName String?
+  quantity     Decimal  @db.Decimal(15, 3)
+  status       String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
+  postedAt     DateTime @default(now())
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  receipt   OutboundReceipt     @relation(fields: [receiptId], references: [id])
+  warehouse Warehouse           @relation(fields: [warehouseId], references: [id])
+  material  Material            @relation(fields: [materialId], references: [id])
+  creator   User                @relation("SalesOutboundCreator", fields: [createdBy], references: [id])
+  lines     SalesOutboundLine[]
+  reversals InventoryReversal[]
+
+  @@index([outboundNo])
+  @@index([warehouseId])
+  @@index([materialId])
+  @@index([status])
+  @@map("sales_outbounds")
+}
+
+model SalesOutboundLine {
+  id              String   @id @default(cuid())
+  salesOutboundId String
+  inventoryLotId  String
+  quantity        Decimal  @db.Decimal(15, 3)
+  balanceAfter    Decimal  @db.Decimal(15, 3)
+  createdAt       DateTime @default(now())
+
+  salesOutbound SalesOutbound           @relation(fields: [salesOutboundId], references: [id], onDelete: Cascade)
+  inventoryLot  InventoryLot            @relation(fields: [inventoryLotId], references: [id])
+  reversalLines InventoryReversalLine[]
+
+  @@unique([salesOutboundId, inventoryLotId])
+  @@index([inventoryLotId])
+  @@map("sales_outbound_lines")
+}
+
+// ========== 库存冲销 ==========
+
+model InventoryReversal {
+  id                String    @id @default(cuid())
+  reversalNo        String    @unique
+  type              String // INBOUND | OUTBOUND
+  status            String    @default("DRAFT") // DRAFT | PENDING_APPROVAL | APPROVED | REJECTED | POSTED | CANCELLED
+  businessInboundId String?
+  salesOutboundId   String?
+  reason            String
+  remarks           String?
+  submittedAt       DateTime?
+  approvedBy        String?
+  approvedAt        DateTime?
+  approvalComment   String?
+  rejectedReason    String?
+  postedBy          String?
+  postedAt          DateTime?
+  createdBy         String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  businessInbound BusinessInbound?        @relation(fields: [businessInboundId], references: [id])
+  salesOutbound   SalesOutbound?          @relation(fields: [salesOutboundId], references: [id])
+  creator         User                    @relation("InventoryReversalCreator", fields: [createdBy], references: [id])
+  approver        User?                   @relation("InventoryReversalApprover", fields: [approvedBy], references: [id])
+  poster          User?                   @relation("InventoryReversalPoster", fields: [postedBy], references: [id])
+  lines           InventoryReversalLine[]
+  attachments     Attachment[]
+
+  @@index([reversalNo])
+  @@index([type])
+  @@index([status])
+  @@index([businessInboundId])
+  @@index([salesOutboundId])
+  @@index([createdBy])
+  @@index([approvedBy])
+  @@index([postedBy])
+  @@map("inventory_reversals")
+}
+
+model InventoryReversalLine {
+  id                        String   @id @default(cuid())
+  reversalId                String
+  inventoryLotId            String
+  sourceSalesOutboundLineId String?
+  sourceQuantity            Decimal  @db.Decimal(15, 3)
+  quantity                  Decimal  @db.Decimal(15, 3)
+  balanceAfter              Decimal? @db.Decimal(15, 3)
+  createdAt                 DateTime @default(now())
+
+  reversal                InventoryReversal  @relation(fields: [reversalId], references: [id], onDelete: Cascade)
+  inventoryLot            InventoryLot       @relation(fields: [inventoryLotId], references: [id])
+  sourceSalesOutboundLine SalesOutboundLine? @relation(fields: [sourceSalesOutboundLineId], references: [id])
+
+  @@unique([reversalId, inventoryLotId])
+  @@index([inventoryLotId])
+  @@index([sourceSalesOutboundLineId])
+  @@map("inventory_reversal_lines")
+}
+
 model Approval {
-  id          String   @id @default(cuid())
-  contractId  String
-  assigneeId  String
-  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
-  comment     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String    @id @default(cuid())
+  contractId String
+  assigneeId String
+  actedById  String?
+  nodeName   String    @default("合同审批")
+  step       Int       @default(1)
+  round      Int       @default(1)
+  status     String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | CANCELLED
+  comment    String?
+  actedAt    DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   contract Contract @relation(fields: [contractId], references: [id])
   assignee User     @relation("ApprovalAssignee", fields: [assigneeId], references: [id])
+  actedBy  User?    @relation("ApprovalActor", fields: [actedById], references: [id])
 
   @@index([contractId])
   @@index([assigneeId])
+  @@index([actedById])
+  @@index([contractId, round, step])
   @@map("approvals")
+}
+
+model ApprovalFlow {
+  id              String   @id @default(cuid())
+  name            String
+  contractType    String   @unique
+  amountThreshold Decimal? @db.Decimal(15, 2)
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  nodes ApprovalFlowNode[]
+
+  @@map("approval_flows")
+}
+
+model ApprovalFlowNode {
+  id         String   @id @default(cuid())
+  flowId     String
+  nodeName   String
+  step       Int
+  assigneeId String
+  condition  String   @default("ALWAYS") // ALWAYS | AMOUNT_GTE_THRESHOLD
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  flow     ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  assignee User         @relation(fields: [assigneeId], references: [id])
+
+  @@unique([flowId, step])
+  @@index([assigneeId])
+  @@map("approval_flow_nodes")
 }
 
 /// 附件/影像
 model Attachment {
-  id           String   @id @default(cuid())
-  partnerId    String?  // 关联合作伙伴
-  contractId   String?  // 关联合同
-  fileName     String   // 存储文件名（UUID）
-  originalName String   // 原始文件名
-  mimeType     String
-  size         Int      // 字节
-  category     String   // 附件类别
-  createdAt    DateTime @default(now())
+  id                  String   @id @default(cuid())
+  partnerId           String? // 关联合作伙伴
+  contractId          String? // 关联合同
+  waybillId           String? // 关联物流运单
+  weighTicketId       String? // 关联磅单
+  qualityInspectionId String? // 关联质检单
+  inboundReceiptId    String? // 关联物流入库单
+  outboundReceiptId   String? // 关联物流出库单
+  inventoryReversalId String? // 关联库存冲销单
+  fileName            String // 存储文件名（UUID）
+  originalName        String // 原始文件名
+  mimeType            String
+  size                Int // 字节
+  category            String // 附件类别
+  createdAt           DateTime @default(now())
 
-  partner  Partner?  @relation(fields: [partnerId], references: [id])
-  contract Contract? @relation(fields: [contractId], references: [id])
+  partner           Partner?           @relation(fields: [partnerId], references: [id])
+  contract          Contract?          @relation(fields: [contractId], references: [id])
+  waybill           Waybill?           @relation(fields: [waybillId], references: [id])
+  weighTicket       WeighTicket?       @relation(fields: [weighTicketId], references: [id])
+  qualityInspection QualityInspection? @relation(fields: [qualityInspectionId], references: [id])
+  inboundReceipt    InboundReceipt?    @relation(fields: [inboundReceiptId], references: [id])
+  outboundReceipt   OutboundReceipt?   @relation(fields: [outboundReceiptId], references: [id])
+  inventoryReversal InventoryReversal? @relation(fields: [inventoryReversalId], references: [id])
 
   @@index([partnerId])
   @@index([contractId])
+  @@index([waybillId])
+  @@index([weighTicketId])
+  @@index([qualityInspectionId])
+  @@index([inboundReceiptId])
+  @@index([outboundReceiptId])
+  @@index([inventoryReversalId])
   @@map("attachments")
 }

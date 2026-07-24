@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 
@@ -95,6 +95,29 @@ export class MasterDataService {
     };
   }
 
+  async findMaterialById(id: string) {
+    const m = await this.prisma.material.findUnique({
+      where: { id },
+      include: { category: true },
+    });
+    if (!m || m.deletedAt) throw new NotFoundException('物料不存在');
+    return m;
+  }
+
+  async updateMaterial(id: string, data: {
+    name?: string; categoryId?: string; grade?: string; unit?: string;
+    spec?: string; sourceRegion?: string; packageType?: string;
+    isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
+    internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
+  }) {
+    await this.findMaterialById(id);
+    return this.prisma.material.update({
+      where: { id },
+      data,
+      include: { category: true },
+    });
+  }
+
   async deleteMaterial(id: string) {
     return this.prisma.material.update({
       where: { id },
@@ -103,6 +126,21 @@ export class MasterDataService {
   }
 
   // ===== 仓库 =====
+
+  private async validateWarehouseOperator(type: string, partnerId?: string) {
+    if (type !== 'RENT') return;
+    if (!partnerId) throw new BadRequestException('租赁仓库必须选择仓储与港口服务商');
+    const profile = await this.prisma.serviceOrganization.findFirst({
+      where: {
+        partnerId,
+        organizationType: 'WAREHOUSE_PORT',
+        status: 'ACTIVE',
+        deletedAt: null,
+        partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } },
+      },
+    });
+    if (!profile) throw new BadRequestException('所选仓储与港口服务商不存在、已停用或合作伙伴不具备供应商角色');
+  }
 
   async createWarehouse(data: {
     code: string;
@@ -114,6 +152,7 @@ export class MasterDataService {
     managerPhone?: string;
     remark?: string;
   }) {
+    await this.validateWarehouseOperator(data.type || 'SELF', data.partnerId);
     return this.prisma.warehouse.create({ data });
   }
 
@@ -130,5 +169,38 @@ export class MasterDataService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+  }
+
+  async findWarehouseById(id: string) {
+    const w = await this.prisma.warehouse.findUnique({
+      where: { id },
+      include: { partner: { select: { id: true, code: true, name: true } } },
+    });
+    if (!w || w.deletedAt) throw new NotFoundException('仓库不存在');
+    return w;
+  }
+
+  async updateWarehouse(id: string, data: {
+    name?: string; type?: string; partnerId?: string;
+    address?: string; manager?: string; managerPhone?: string;
+    status?: string; remark?: string;
+  }) {
+    const warehouse = await this.findWarehouseById(id);
+    await this.validateWarehouseOperator(data.type || warehouse.type, data.partnerId ?? warehouse.partnerId ?? undefined);
+    return this.prisma.warehouse.update({
+      where: { id },
+      data,
+      include: { partner: { select: { id: true, code: true, name: true } } },
+    });
+  }
+
+  // ===== 物料分类 =====
+
+  async updateCategory(id: string, data: { name?: string; parentId?: string; sort?: number }) {
+    return this.prisma.materialCategory.update({ where: { id }, data });
+  }
+
+  async deleteCategory(id: string) {
+    return this.prisma.materialCategory.delete({ where: { id } });
   }
 }

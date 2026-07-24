@@ -1,20 +1,26 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, Query, UseGuards, HttpCode,
+  Body, Param, Query, UseGuards, HttpCode, UseInterceptors, UploadedFile, BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ContractService } from './contract.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractStatusDto } from './dto/update-status.dto';
 import { CurrentUser } from '../common/current-user.decorator';
+import { FileService } from '../common/file.service';
+import { normalizeUploadFilename } from '../common/filename-encoding';
 
 @ApiTags('合同管理')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
 @Controller('contracts')
 export class ContractController {
-  constructor(private readonly contractService: ContractService) {}
+  constructor(
+    private readonly contractService: ContractService,
+    private readonly fileService: FileService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: '创建合同' })
@@ -60,6 +66,68 @@ export class ContractController {
     return this.contractService.findOne(id);
   }
 
+  @Post(':id/attachments')
+  @ApiOperation({ summary: '上传合同附件' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAttachment(
+    @Param('id') contractId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('category') category?: string,
+    @Body('originalName') requestedName?: string,
+  ) {
+    if (!file) throw new BadRequestException('请选择文件');
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowed.includes(file.mimetype)) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    await this.contractService.findOne(contractId);
+    const originalName = (requestedName?.trim() || normalizeUploadFilename(file.originalname)).slice(0, 255);
+    const result = await this.fileService.upload(file.buffer, originalName, file.mimetype);
+    return this.contractService.createAttachment({
+      contractId,
+      fileName: result.fileName,
+      originalName,
+      mimeType: file.mimetype,
+      size: result.size,
+      category: category || 'OTHER',
+    });
+  }
+
+  @Get('attachments/:id/view-url')
+  @ApiOperation({ summary: '获取合同附件临时查看地址' })
+  async getAttachmentViewUrl(@Param('id') id: string) {
+    const attachment = await this.contractService.findAttachmentById(id);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('attachments/:id')
+  @HttpCode(204)
+  @ApiOperation({ summary: '删除合同附件' })
+  async deleteAttachment(@Param('id') id: string) {
+    const attachment = await this.contractService.findAttachmentById(id);
+    if (!attachment) return;
+    try {
+      await this.fileService.delete(attachment.fileName);
+    } catch {
+      // 存储对象已丢失时仍清理数据库记录，保证删除操作可恢复。
+    }
+    await this.contractService.deleteAttachment(id);
+  }
+
+  @Patch('attachments/:id/name')
+  @ApiOperation({ summary: '修改合同附件名称' })
+  async renameAttachment(
+    @Param('id') id: string,
+    @Body('originalName') originalName?: string,
+  ) {
+    const name = originalName?.trim();
+    if (!name) throw new BadRequestException('附件名称不能为空');
+    if (name.length > 255) throw new BadRequestException('附件名称不能超过 255 个字符');
+    const attachment = await this.contractService.findAttachmentById(id);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return this.contractService.renameAttachment(id, name);
+  }
+
   @Patch(':id/status')
   @ApiOperation({ summary: '状态流转（提交审批/审批通过/驳回等）' })
   updateStatus(
@@ -75,8 +143,8 @@ export class ContractController {
   update(
     @Param('id') id: string,
     @Body() dto: {
-      title?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
-      companyId?: string; departmentId?: string; externalNo?: string;
+      title?: string; type?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
+      signingPartnerId?: string; companyId?: string; departmentId?: string; externalNo?: string;
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;

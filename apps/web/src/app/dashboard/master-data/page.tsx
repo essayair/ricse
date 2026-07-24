@@ -7,11 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Plus, Search, Truck, DollarSign, GitBranch,
+  Plus, Search, Truck, DollarSign,
   Building2, Package, Warehouse, X, MapPin, ExternalLink,
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { unitLabel } from '@/lib/unit';
 
 /* ── Types ── */
 
@@ -27,22 +28,24 @@ interface Partner {
 interface MaterialCategory { id: string; name: string; }
 interface Material {
   id: string; code: string; name: string;
-  category: { id: string; name: string }; grade: string; unit: string; status: string;
+  category: { id: string; name: string }; grade: string | null; unit: string; status: string;
+  internalCode: string | null; spec: string | null; sourceRegion: string | null; packageType: string | null;
+  hsCode: string | null; qcTemplate: string | null; isVirtual: boolean;
 }
 interface WarehouseItem {
   id: string; code: string; name: string; type: string;
-  address: string | null; manager: string | null;
+  address: string | null; manager: string | null; managerPhone: string | null;
   partner: { id: string; name: string } | null; status: string;
 }
 interface Vehicle {
   id: string; plateNo: string; vehicleType: string; loadCapacity: string;
+  brand: string | null;
   owner: { name: string } | null; ownerType: string;
   driverName: string | null; driverPhone: string | null; status: string;
 }
 interface PriceItem { id: string; material: string; buyPrice: number; sellPrice: number; effectiveAt: string; status: string; }
-interface ApprovalFlow { id: string; name: string; type: string; steps: number; status: string; }
 
-type TabKey = 'partners' | 'materials' | 'warehouses' | 'vehicles' | 'price' | 'approval';
+type TabKey = 'partners' | 'materials' | 'warehouses' | 'vehicles' | 'price';
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'partners',   label: '合作伙伴', icon: Building2 },
@@ -50,7 +53,6 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'warehouses', label: '仓库管理', icon: Warehouse },
   { key: 'vehicles',   label: '车辆管理', icon: Truck },
   { key: 'price',      label: '价格基准', icon: DollarSign },
-  { key: 'approval',   label: '审批流程', icon: GitBranch },
 ];
 
 const PARTNER_ROLES = [
@@ -81,18 +83,13 @@ const TAX_RATING_CONFIG: Record<string, string> = {
   D级: 'bg-destructive-bg text-destructive border-0',
 };
 
-/* ── Mock data (price / users / approval — 后续迭代接真实接口) ── */
+/* ── Mock data (price — 后续迭代接真实接口) ── */
 
 const MOCK_PRICES: PriceItem[] = [
   { id: '1', material: '萤石粉 CaF₂≥97%', buyPrice: 1450, sellPrice: 1550, effectiveAt: '2026-06-01', status: 'ACTIVE' },
   { id: '2', material: '萤石粉 CaF₂≥95%', buyPrice: 1280, sellPrice: 1380, effectiveAt: '2026-06-01', status: 'ACTIVE' },
   { id: '3', material: '萤石粉 CaF₂≥90%', buyPrice: 980,  sellPrice: 1060, effectiveAt: '2026-06-05', status: 'ACTIVE' },
 ];
-const MOCK_APPROVALS: ApprovalFlow[] = [
-  { id: '1', name: '合同审批流', type: '合同', steps: 3, status: 'ACTIVE' },
-  { id: '2', name: '结算审批流', type: '结算', steps: 2, status: 'ACTIVE' },
-];
-
 /* ── Helpers ── */
 
 const StatusBadge = ({ status }: { status: string }) => {
@@ -130,7 +127,8 @@ function MasterDataPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabFromUrl = searchParams.get('tab') as TabKey | null;
-  const [tab, setTabState] = useState<TabKey>(tabFromUrl || 'partners');
+  const initialTab = tabFromUrl && TABS.some((item) => item.key === tabFromUrl) ? tabFromUrl : 'partners';
+  const [tab, setTabState] = useState<TabKey>(initialTab);
 
   const setTab = (t: TabKey) => {
     setTabState(t);
@@ -181,6 +179,24 @@ function MasterDataPageInner() {
   // Clear search when switching tabs
   useEffect(() => { setSearchTerm(''); }, [tab]);
 
+  // Status toggles
+  const toggleMaterialStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    try {
+      await api.patch(`/master-data/materials/${id}`, { status: newStatus });
+      fetchMaterials();
+    } catch (e: unknown) { /* ignore */ }
+  };
+
+  const toggleWarehouseStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    try {
+      await api.patch(`/master-data/warehouses/${id}`, { status: newStatus });
+      const data = await api.get<WarehouseItem[]>('/master-data/warehouses');
+      setWarehouses(Array.isArray(data) ? data : []);
+    } catch (e: unknown) { /* ignore */ }
+  };
+
   const currentLabel = TABS.find((t) => t.key === tab)?.label || '';
 
   return (
@@ -202,6 +218,13 @@ function MasterDataPageInner() {
           <Link href="/dashboard/master-data/materials/new">
             <Button>
               <Plus className="h-4 w-4 mr-1" />新建物料
+            </Button>
+          </Link>
+        )}
+        {tab === 'warehouses' && (
+          <Link href="/dashboard/master-data/warehouses/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-1" />新建仓库
             </Button>
           </Link>
         )}
@@ -227,7 +250,7 @@ function MasterDataPageInner() {
 
       {/* Filter Bar */}
       <div className="flex items-center gap-3 flex-wrap">
-        {/* 角色筛选（合作伙伴 tab） */}
+        {/* 合作伙伴角色筛选（合作伙伴 tab） */}
         {tab === 'partners' && (
           <div className="flex gap-1">
             {PARTNER_ROLES.map((r) => (
@@ -291,12 +314,12 @@ function MasterDataPageInner() {
         {/* 合作伙伴 */}
         {tab === 'partners' && (
           <DataTable
-            headers={['编码', '企业名称', '角色', '省市', '法人', '联系电话', '类别', '纳税评级', '授信额度', '状态', '操作']}
+            headers={['编码 / 信用代码', '企业名称', '合作伙伴角色', '省市', '法人', '联系人 / 电话', '类别', '纳税评级', '授信额度', '状态', '操作']}
             rows={partners.map((p) => {
               const catCfg = p.category ? CATEGORY_CONFIG[p.category] : null;
               const creditNum = p.creditLimit ? parseFloat(p.creditLimit) : 0;
               return [
-                <span key="c" className="font-mono text-xs text-muted-foreground">{p.code}</span>,
+                <div key="c"><div className="font-mono text-xs">{p.code}</div><div className="mt-1 max-w-44 truncate font-mono text-[11px] text-muted-foreground">{p.taxId || '无统一信用代码'}</div></div>,
                 <div key="n">
                   <div className="font-medium text-sm">{p.name}</div>
                   {p.shortName && <div className="text-xs text-muted-foreground">{p.shortName}</div>}
@@ -308,7 +331,7 @@ function MasterDataPageInner() {
                   ) : '—'}
                 </div>,
                 <span key="lp" className="text-sm">{p.legalPerson || '—'}</span>,
-                <span key="ph" className="text-sm text-muted-foreground">{p.contactPhone || '—'}</span>,
+                <div key="ph"><div className="text-sm">{p.contactPerson || '—'}</div><div className="mt-1 text-xs text-muted-foreground">{p.contactPhone || '无联系电话'}</div></div>,
                 catCfg
                   ? <Badge key="cat" variant="secondary" className={catCfg.className}>{catCfg.label}</Badge>
                   : <span key="cat2" className="text-muted-foreground text-xs">—</span>,
@@ -323,6 +346,9 @@ function MasterDataPageInner() {
                   <Link href={`/dashboard/master-data/partners/${p.id}`}>
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button>
                   </Link>
+                  <Link href={`/dashboard/master-data/partners/${p.id}/edit`}>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">编辑</Button>
+                  </Link>
                 </div>,
               ];
             })}
@@ -333,14 +359,28 @@ function MasterDataPageInner() {
         {/* 物料品类 */}
         {tab === 'materials' && (
           <DataTable
-            headers={['编码', '品名', '分类', '品级', '单位', '状态']}
+            headers={['编码 / 内部编码', '品名 / 规格', '分类', '品级 / 包装', '产地 / HS编码', '单位', '质检模板', '状态', '操作']}
             rows={materials.map((m) => [
-              <span key="c" className="font-mono text-xs">{m.code}</span>,
-              m.name,
+              <div key="c"><div className="font-mono text-xs">{m.code}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.internalCode || '无内部编码'}</div></div>,
+              <div key="n"><div className="font-medium">{m.name}</div><div className="mt-1 max-w-56 truncate text-xs text-muted-foreground">{m.spec || (m.isVirtual ? '虚拟物料' : '未设置规格')}</div></div>,
               <Badge key="cat" variant="outline" className="text-xs">{m.category?.name || '-'}</Badge>,
-              <span key="g" className="text-xs text-muted-foreground">{m.grade}</span>,
-              m.unit,
+              <div key="g"><div className="text-xs">{m.grade || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{m.packageType || '未设置包装'}</div></div>,
+              <div key="src"><div className="text-xs">{m.sourceRegion || '-'}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.hsCode || '无 HS 编码'}</div></div>,
+              unitLabel(m.unit),
+              <span key="qc" className="text-xs text-muted-foreground">{m.qcTemplate || '—'}</span>,
               <StatusBadge key="s" status={m.status} />,
+              <div key="ops" className="flex gap-1.5">
+                <Link href={`/dashboard/master-data/materials/${m.id}/edit`}>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">编辑</Button>
+                </Link>
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => toggleMaterialStatus(m.id, m.status)}
+                >
+                  {m.status === 'ACTIVE' ? '停用' : '启用'}
+                </Button>
+              </div>,
             ])}
             empty="暂无物料数据"
           />
@@ -349,7 +389,7 @@ function MasterDataPageInner() {
         {/* 仓库管理 */}
         {tab === 'warehouses' && (
           <DataTable
-            headers={['编码', '名称', '类型', '仓管员', '地址', '状态']}
+            headers={['编码', '名称 / 权属方', '类型', '仓管员 / 电话', '地址', '状态', '操作']}
             rows={warehouses.map((w) => [
               <span key="c" className="font-mono text-xs">{w.code}</span>,
               <div key="n">
@@ -357,9 +397,21 @@ function MasterDataPageInner() {
                 {w.partner && <div className="text-xs text-muted-foreground">{w.partner.name}</div>}
               </div>,
               <Badge key="t" variant="outline" className="text-xs">{w.type === 'SELF' ? '自有' : '租赁'}</Badge>,
-              w.manager || '-',
+              <div key="mgr"><div>{w.manager || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{w.managerPhone || '无联系电话'}</div></div>,
               w.address || '-',
               <StatusBadge key="s" status={w.status} />,
+              <div key="ops" className="flex gap-1.5">
+                <Link href={`/dashboard/master-data/warehouses/${w.id}/edit`}>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">编辑</Button>
+                </Link>
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => toggleWarehouseStatus(w.id, w.status)}
+                >
+                  {w.status === 'ACTIVE' ? '停用' : '启用'}
+                </Button>
+              </div>,
             ])}
             empty="暂无仓库数据"
           />
@@ -368,16 +420,16 @@ function MasterDataPageInner() {
         {/* 车辆管理 */}
         {tab === 'vehicles' && (
           <DataTable
-            headers={['车牌号', '车型', '核定载重(吨)', '归属', '驾驶员', '状态']}
+            headers={['车牌号', '车型 / 品牌', '核定载重(吨)', '归属', '驾驶员 / 电话', '状态']}
             rows={vehicles.map((v) => [
               <span key="p" className="font-mono font-medium">{v.plateNo}</span>,
-              VEHICLE_TYPE[v.vehicleType] || v.vehicleType,
+              <div key="vt"><div>{VEHICLE_TYPE[v.vehicleType] || v.vehicleType}</div><div className="mt-1 text-xs text-muted-foreground">{v.brand || '未设置品牌'}</div></div>,
               <span key="l" className="font-mono">{Number(v.loadCapacity).toFixed(1)}</span>,
               <div key="o">
                 <Badge variant="outline" className="text-xs mr-1">{v.ownerType === 'SELF' ? '自有' : '外协'}</Badge>
                 {v.owner?.name && <span className="text-xs text-muted-foreground">{v.owner.name}</span>}
               </div>,
-              v.driverName ? `${v.driverName} ${v.driverPhone || ''}` : '-',
+              <div key="drv"><div>{v.driverName || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{v.driverPhone || '无联系电话'}</div></div>,
               <StatusBadge key="s" status={v.status} />,
             ])}
             empty="暂无车辆数据"
@@ -404,16 +456,6 @@ function MasterDataPageInner() {
           </>
         )}
 
-        {/* 审批流程（mock） */}
-        {tab === 'approval' && (
-          <DataTable
-            headers={['流程名称', '类型', '审批节点数', '状态']}
-            rows={MOCK_APPROVALS.filter((a) => !searchTerm || a.name.includes(searchTerm)).map((a) => [
-              a.name, a.type, `${a.steps} 级`, <StatusBadge key="s" status={a.status} />,
-            ])}
-            empty="暂无审批流程配置"
-          />
-        )}
       </Card>
 
     </div>

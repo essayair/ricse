@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, TrendingDown, TrendingUp, Zap, Save } from 'lucide-react';
 import { api } from '@/lib/api';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
 }
@@ -31,13 +33,15 @@ export default function ContractCreatePage() {
   const [partners, setPartners] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
   const [internalPartners, setInternalPartners] = useState<any[]>([]);
+  const [supplierPartners, setSupplierPartners] = useState<any[]>([]);
+  const [customerPartners, setCustomerPartners] = useState<any[]>([]);
   const [allPartners, setAllPartners] = useState<any[]>([]);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<Array<{ file: File; name: string }>>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     type: 'PURCHASE' as string, title: '',
-    companyId: '', externalNo: '',
+    signingPartnerId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
     pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '5', shortfallPct: '5',
@@ -51,12 +55,21 @@ export default function ContractCreatePage() {
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    api.get<{ items: any[] }>('/partners').then(d => {
-      const all = d.items || [];
+    // 并行加载：供应商+客户+内部企业
+    Promise.all([
+      api.get<{ items: any[] }>('/partners?role=SUPPLIER'),
+      api.get<{ items: any[] }>('/partners?role=CUSTOMER'),
+      api.get<{ items: any[] }>('/partners'),
+    ]).then(([supplierRes, customerRes, allRes]) => {
+      const suppliers = supplierRes?.items || [];
+      const customers = customerRes?.items || [];
+      const all = allRes?.items || [];
       setPartners(all);
       setAllPartners(all);
+      setSupplierPartners(suppliers);
+      setCustomerPartners(customers);
       setInternalPartners(all.filter((p: any) => p.isInternal));
-    }).catch(()=>{});
+    }).catch(() => {});
     api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(()=>{});
   }, []);
 
@@ -84,7 +97,7 @@ export default function ContractCreatePage() {
   const buildPayload = () => ({
     type: form.type, title: form.title || `${form.type==='PURCHASE'?'采购':form.type==='SALES'?'销售':'双边'}合同`,
     sellerId: form.sellerId, totalAmount,
-    companyId: form.companyId || undefined,
+    signingPartnerId: form.signingPartnerId || undefined,
     externalNo: form.externalNo || undefined,
     contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
     pricingType: form.pricingType, overfillPct: Number(form.overfillPct) || undefined, shortfallPct: Number(form.shortfallPct) || undefined,
@@ -108,11 +121,18 @@ export default function ContractCreatePage() {
   });
 
   const uploadAttachments = async (contractId: string) => {
-    for (const file of files) {
-      const fd = new FormData(); fd.append('file', file); fd.append('category', 'OTHER');
-      await fetch(`http://localhost:3000/api/v1/contracts/${contractId}/attachments`, {
+    for (const item of files) {
+      const fd = new FormData();
+      fd.append('file', item.file);
+      fd.append('category', 'OTHER');
+      fd.append('originalName', item.name.trim() || item.file.name);
+      const response = await fetch(`${API_BASE_URL}/contracts/${contractId}/attachments`, {
         method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: fd,
       });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || `附件 ${item.name} 上传失败`);
+      }
     }
   };
 
@@ -127,9 +147,9 @@ export default function ContractCreatePage() {
   };
 
   const handleSubmit = async () => {
+    if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     if (!form.materialId || !form.quantity || !form.unitPrice) { alert('请完整填写货物信息（物料/数量/单价）'); return; }
-    if (form.companyId === form.sellerId) { alert('我方签约主体与交易对手方不能相同'); return; }
     if (form.type === 'BILATERAL' && !form.buyerId) { alert('双边合同请选择销售对手方'); return; }
     setSubmitting(true);
     try {
@@ -174,10 +194,15 @@ export default function ContractCreatePage() {
           <SectionTitle>合同基本信息</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <div className="col-span-2"><FormField label="合同标题"><Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" /></FormField></div>
-            <FormField label="我方签约主体（内部企业）">
-              <select value={form.companyId} onChange={e => set('companyId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+            <FormField label="我方签约主体（内部）">
+              <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">请选择</option>
-                {internalPartners.map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
+                {internalPartners
+                  .filter(p => form.type === 'BILATERAL' || p.roles?.includes(form.type === 'PURCHASE' ? 'CUSTOMER' : 'SUPPLIER'))
+                  .map(p => {
+                    const selectedAsCounterparty = p.id === form.sellerId || p.id === form.buyerId;
+                    return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
+                  })}
               </select>
             </FormField>
             <FormField label="外部合同号"><Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="对手方合同号，方便对账" /></FormField>
@@ -192,7 +217,7 @@ export default function ContractCreatePage() {
                   <FormField label="供应商" required>
                     <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                       <option value="">请选择</option>
-                      {allPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.companyId}>{p.code} {p.name}{p.id === form.companyId ? '（我方）' : ''}</option>)}
+                      {supplierPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
                     </select>
                   </FormField>
                 </div>
@@ -201,7 +226,11 @@ export default function ContractCreatePage() {
                   <FormField label="客户" required>
                     <select value={form.buyerId} onChange={e => handleSelectPartner(e.target.value, 'buyerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                       <option value="">请选择</option>
-                      {allPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.companyId || p.id === form.sellerId}>{p.code} {p.name}{p.id === form.companyId ? '（我方）' : p.id === form.sellerId ? '（已选）' : ''}</option>)}
+                      {customerPartners.map(p => {
+                        const disabled = p.id === form.signingPartnerId || p.id === form.sellerId;
+                        const suffix = p.id === form.signingPartnerId ? '（我方）' : p.id === form.sellerId ? '（已选为上游）' : '';
+                        return <option key={p.id} value={p.id} disabled={disabled}>{p.code} {p.name}{suffix}</option>;
+                      })}
                     </select>
                   </FormField>
                 </div>
@@ -216,8 +245,8 @@ export default function ContractCreatePage() {
               <FormField label={form.type === 'PURCHASE' ? '供应商' : '客户'} required>
                 <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">请选择</option>
-                  {allPartners.map(p => (
-                    <option key={p.id} value={p.id} disabled={p.id === form.companyId}>{p.code} {p.name}{p.id === form.companyId ? '（我方）' : ''}</option>
+                  {(form.type === 'PURCHASE' ? supplierPartners : customerPartners).map(p => (
+                    <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>
                   ))}
                 </select>
               </FormField>
@@ -315,17 +344,32 @@ export default function ContractCreatePage() {
           <SectionTitle>合同附件</SectionTitle>
           <p className="text-xs text-muted-foreground mb-3">上传合同扫描件、签章文件等。支持 JPG/PNG/PDF。</p>
           <label className="block border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
-            <input type="file" multiple accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setFiles(prev => [...prev, ...Array.from(e.target.files || [])])} className="hidden" />
+            <input type="file" multiple accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => {
+              const selectedFiles = Array.from(e.currentTarget.files || []);
+              setFiles(prev => [...prev, ...selectedFiles.map(file => ({ file, name: file.name }))]);
+              e.target.value = '';
+            }} className="hidden" />
             <div className="text-2xl mb-2">📎</div>
             <div className="text-sm font-semibold">点击或拖拽上传附件</div>
             <div className="text-xs text-muted-foreground mt-1">纸质合同扫描件、签章文件等</div>
           </label>
           {files.length > 0 && (
             <div className="mt-3 space-y-1.5">
-              {files.map((f, i) => (
+              {files.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
-                  <span>{f.name}</span><span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
-                  <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="ml-auto text-destructive text-xs">×</button>
+                  <button type="button" onClick={() => {
+                    const url = URL.createObjectURL(item.file);
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                  }} className="shrink-0 text-primary hover:underline">查看</button>
+                  <Input value={item.name} onChange={e => setFiles(current => current.map((entry, index) => index === i ? { ...entry, name: e.target.value } : entry))} placeholder="附件名称" />
+                  <span className="shrink-0 text-xs text-muted-foreground">{(item.file.size / 1024).toFixed(0)} KB</span>
+                  <button type="button" onClick={() => {
+                    const url = URL.createObjectURL(item.file);
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                  }} className="text-primary text-xs">预览</button>
+                  <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-destructive text-xs">×</button>
                 </div>
               ))}
             </div>

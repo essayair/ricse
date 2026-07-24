@@ -3,6 +3,33 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractStatusDto } from './dto/update-status.dto';
 import { Prisma } from '@prisma/client';
+import { normalizeUploadFilename } from '../common/filename-encoding';
+
+type QuantityValue = { quantity: unknown; unit: string };
+
+function sumQuantities(lines: QuantityValue[]) {
+  const totals = new Map<string, number>();
+  for (const line of lines) {
+    totals.set(line.unit, (totals.get(line.unit) || 0) + Number(line.quantity || 0));
+  }
+  return Array.from(totals.entries()).map(([unit, quantity]) => ({ unit, quantity }));
+}
+
+function subtractQuantities(
+  total: Array<{ unit: string; quantity: number }>,
+  ...deductions: Array<Array<{ unit: string; quantity: number }>>
+) {
+  const deducted = new Map<string, number>();
+  deductions.flat().forEach((item) => deducted.set(item.unit, (deducted.get(item.unit) || 0) + item.quantity));
+  return total.map((item) => ({
+    unit: item.unit,
+    quantity: Math.max(0, item.quantity - (deducted.get(item.unit) || 0)),
+  }));
+}
+
+function sumAmounts(items: Array<{ totalAmount: unknown }>) {
+  return items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+}
 
 // 每个状态转换允许的角色
 const TRANSITION_ROLES: Record<string, string[]> = {
@@ -24,13 +51,43 @@ export class ContractService {
     lineItems: { orderBy: { createdAt: 'asc' as const } },
     creator: { select: { id: true, name: true, username: true } },
     approvals: {
-      include: { assignee: { select: { id: true, name: true, role: true } } },
-      orderBy: { createdAt: 'desc' as const },
+      include: {
+        assignee: { select: { id: true, name: true, role: true } },
+        actedBy: { select: { id: true, name: true, role: true } },
+      },
+      orderBy: [{ round: 'desc' as const }, { step: 'asc' as const }],
     },
     seller: { select: { id: true, code: true, name: true, roles: true } },
     buyer: { select: { id: true, code: true, name: true, roles: true } },
+    signingPartner: { select: { id: true, code: true, name: true, roles: true, isInternal: true } },
     company: { select: { id: true, code: true, name: true } },
     attachments: { orderBy: { createdAt: 'desc' as const } },
+    orders: {
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        orderNo: true,
+        name: true,
+        type: true,
+        status: true,
+        totalAmount: true,
+        plannedDate: true,
+        dispatchedAt: true,
+        completedAt: true,
+        createdAt: true,
+        lineItems: {
+          select: { quantity: true, unit: true, totalPrice: true },
+        },
+        dispatchNotices: {
+          where: { deletedAt: null },
+          select: {
+            id: true, noticeNo: true, type: true, status: true, totalQuantity: true,
+            _count: { select: { waybills: { where: { deletedAt: null } } } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' as const },
+    },
   };
 
   private async generateContractNo(type: string): Promise<string> {
@@ -50,7 +107,84 @@ export class ContractService {
     return `${prefix}${dateStr}${String(todayCount + 1).padStart(4, '0')}`;
   }
 
+  /**
+   * 合同履约数量及金额均由有效执行批次实时汇总，不落冗余字段。
+   * 已完成批次 = 已执行；执行中批次 = 执行中；合同剩余量 = 待执行。
+   * 双边合同分别按采购、销售方向计算，避免把同一合同额度重复相加。
+   */
+  private withFulfillment<T extends {
+    type: string;
+    totalAmount: unknown;
+    lineItems?: Array<{ quantity: unknown; unit: string }>;
+    orders?: Array<{
+      type: string;
+      status: string;
+      totalAmount: unknown;
+      lineItems?: Array<{ quantity: unknown; unit: string }>;
+    }>;
+  }>(contract: T) {
+    const directions = contract.type === 'BILATERAL' ? ['PURCHASE', 'SALES'] : [contract.type];
+    const totalQuantity = sumQuantities(contract.lineItems || []);
+    const contractAmount = Number(contract.totalAmount || 0);
+
+    return {
+      ...contract,
+      fulfillment: {
+        directions: directions.map((type) => {
+          const orders = (contract.orders || []).filter((order) => order.type === type && order.status !== 'CANCELLED');
+          const executingOrders = orders.filter((order) => order.status === 'DISPATCHED');
+          const executedOrders = orders.filter((order) => order.status === 'COMPLETED');
+          const executingQuantity = sumQuantities(executingOrders.flatMap((order) => order.lineItems || []));
+          const executedQuantity = sumQuantities(executedOrders.flatMap((order) => order.lineItems || []));
+          const pendingQuantity = subtractQuantities(totalQuantity, executingQuantity, executedQuantity);
+          const executingAmount = sumAmounts(executingOrders);
+          const executedAmount = sumAmounts(executedOrders);
+
+          return {
+            type,
+            totalQuantity,
+            totalAmount: contractAmount,
+            pendingQuantity,
+            pendingAmount: Math.max(0, contractAmount - executingAmount - executedAmount),
+            executingQuantity,
+            executingAmount,
+            executedQuantity,
+            executedAmount,
+          };
+        }),
+      },
+    };
+  }
+
+  private async validateSigningPartner(signingPartnerId: string | undefined, type: string) {
+    if (!signingPartnerId) throw new BadRequestException('请选择我方签约主体');
+    const partner = await this.prisma.partner.findFirst({
+      where: { id: signingPartnerId, isInternal: true, status: 'ACTIVE', deletedAt: null },
+      select: { roles: true },
+    });
+    if (!partner) throw new BadRequestException('我方签约主体必须是有效的内部合作伙伴');
+
+    const requiredRole = type === 'PURCHASE' ? 'CUSTOMER' : type === 'SALES' ? 'SUPPLIER' : undefined;
+    if (requiredRole && !partner.roles.includes(requiredRole)) {
+      throw new BadRequestException(`我方签约主体缺少${requiredRole === 'CUSTOMER' ? '客户' : '供应商'}角色`);
+    }
+  }
+
+  private validateContractParties(signingPartnerId?: string, sellerId?: string, buyerId?: string) {
+    if (signingPartnerId && sellerId && signingPartnerId === sellerId) {
+      throw new BadRequestException('交易对手方不能与我方签约主体相同');
+    }
+    if (signingPartnerId && buyerId && signingPartnerId === buyerId) {
+      throw new BadRequestException('下游对手方不能与我方签约主体相同');
+    }
+    if (sellerId && buyerId && sellerId === buyerId) {
+      throw new BadRequestException('上游与下游对手方不能相同');
+    }
+  }
+
   async create(dto: CreateContractDto, userId: string) {
+    await this.validateSigningPartner(dto.signingPartnerId, dto.type);
+    this.validateContractParties(dto.signingPartnerId, dto.sellerId, dto.buyerId);
     const contractNo = await this.generateContractNo(dto.type);
 
     return this.prisma.contract.create({
@@ -60,7 +194,7 @@ export class ContractService {
         type: dto.type,
         sellerId: dto.sellerId,
         buyerId: dto.buyerId,
-        companyId: dto.companyId,
+        signingPartnerId: dto.signingPartnerId,
         departmentId: dto.departmentId,
         externalNo: dto.externalNo,
         contactPerson: dto.contactPerson,
@@ -155,7 +289,7 @@ export class ContractService {
     ]);
 
     return {
-      items,
+      items: items.map((contract) => this.withFulfillment(contract)),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     };
   }
@@ -166,7 +300,13 @@ export class ContractService {
       include: this.include,
     });
     if (!contract) throw new NotFoundException('合同不存在');
-    return contract;
+    return this.withFulfillment({
+      ...contract,
+      attachments: (contract.attachments || []).map((attachment) => ({
+        ...attachment,
+        originalName: normalizeUploadFilename(attachment.originalName),
+      })),
+    });
   }
 
   async updateStatus(id: string, dto: UpdateContractStatusDto, user: { id: string; role: string }) {
@@ -186,28 +326,42 @@ export class ContractService {
       if (!comment?.trim()) {
         throw new BadRequestException('审批意见不能为空');
       }
-      // 更新对应 Approval 记录
       const pendingApproval = await this.prisma.approval.findFirst({
-        where: { contractId: id, assigneeId: user.id, status: 'PENDING' },
+        where: { contractId: id, status: 'PENDING' },
+        orderBy: [{ round: 'desc' }, { step: 'asc' }],
       });
-      if (pendingApproval) {
-        await this.prisma.approval.update({
-          where: { id: pendingApproval.id },
-          data: {
-            status: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
-            comment: comment.trim(),
-          },
+      if (!pendingApproval) throw new BadRequestException('当前没有待处理的审批节点');
+      if (user.role !== 'ADMIN' && pendingApproval.assigneeId !== user.id) {
+        throw new ForbiddenException('当前审批节点未分配给该用户');
+      }
+
+      await this.prisma.approval.update({
+        where: { id: pendingApproval.id },
+        data: {
+          status: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
+          comment: comment.trim(),
+          actedAt: new Date(),
+          actedById: user.id,
+        },
+      });
+
+      if (status === 'REJECTED') {
+        await this.prisma.approval.updateMany({
+          where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
+          data: { status: 'CANCELLED' },
         });
       } else {
-        // 创建一条审批记录（以便留下记录）
-        await this.prisma.approval.create({
-          data: {
-            contractId: id,
-            assigneeId: user.id,
-            status: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
-            comment: comment.trim(),
-          },
+        const nextApproval = await this.prisma.approval.findFirst({
+          where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
+          orderBy: { step: 'asc' },
         });
+        if (nextApproval) {
+          await this.prisma.approval.update({
+            where: { id: nextApproval.id },
+            data: { status: 'PENDING' },
+          });
+          return this.prisma.contract.findUnique({ where: { id }, include: this.include });
+        }
       }
     }
 
@@ -229,25 +383,40 @@ export class ContractService {
   }
 
   private async autoAssignApprovals(contractId: string, totalAmount: any) {
-    // 清除之前的 PENDING 记录（重新提交时）
-    await this.prisma.approval.deleteMany({
-      where: { contractId, status: 'PENDING' },
+    await this.prisma.approval.updateMany({
+      where: { contractId, status: { in: ['PENDING', 'WAITING'] } },
+      data: { status: 'CANCELLED' },
     });
 
-    // 找所有 APPROVER 和 ADMIN 用户
-    const approvers = await this.prisma.user.findMany({
-      where: { role: { in: ['APPROVER', 'ADMIN'] }, status: 'ACTIVE' },
-      select: { id: true },
+    const contract = await this.prisma.contract.findUnique({
+      where: { id: contractId },
+      select: { type: true },
     });
+    if (!contract) throw new NotFoundException('合同不存在');
 
-    if (approvers.length === 0) return;
+    const flow = await this.prisma.approvalFlow.findUnique({
+      where: { contractType: contract.type },
+      include: { nodes: { where: { enabled: true }, orderBy: { step: 'asc' } } },
+    });
+    if (!flow || flow.status !== 'ACTIVE') throw new BadRequestException('当前合同类型未启用审批流程');
+    const threshold = Number(flow.amountThreshold || 0);
+    const activeNodes = flow.nodes.filter((node) => node.condition === 'ALWAYS' || Number(totalAmount) >= threshold);
+    if (activeNodes.length === 0) throw new BadRequestException('审批流程没有可用节点');
 
-    // 一期写死：所有审批人都收到待审批记录，任一人审批即可
+    const latest = await this.prisma.approval.aggregate({
+      where: { contractId },
+      _max: { round: true },
+    });
+    const round = (latest._max.round || 0) + 1;
+
     await this.prisma.approval.createMany({
-      data: approvers.map((a) => ({
+      data: activeNodes.map((node, index) => ({
         contractId,
-        assigneeId: a.id,
-        status: 'PENDING',
+        assigneeId: node.assigneeId,
+        nodeName: node.nodeName,
+        step: index + 1,
+        round,
+        status: index === 0 ? 'PENDING' : 'WAITING',
       })),
     });
   }
@@ -255,8 +424,8 @@ export class ContractService {
   async update(
     id: string,
     dto: {
-      title?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
-      companyId?: string; departmentId?: string; externalNo?: string;
+      title?: string; type?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
+      signingPartnerId?: string; companyId?: string; departmentId?: string; externalNo?: string;
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;
@@ -275,6 +444,15 @@ export class ContractService {
     if (contract.status !== 'DRAFT' && contract.status !== 'REJECTED') {
       throw new BadRequestException('仅草稿或已驳回状态的合同可以编辑');
     }
+
+    if (dto.signingPartnerId !== undefined || dto.type !== undefined) {
+      await this.validateSigningPartner(dto.signingPartnerId ?? contract.signingPartnerId ?? undefined, dto.type ?? contract.type);
+    }
+    this.validateContractParties(
+      dto.signingPartnerId ?? contract.signingPartnerId ?? undefined,
+      dto.sellerId ?? contract.sellerId,
+      dto.buyerId ?? contract.buyerId ?? undefined,
+    );
 
     const { lineItems, signedAt, effectiveAt, expireAt, ...rest } = dto;
 
@@ -339,5 +517,24 @@ export class ContractService {
     if (!allowed.includes(next)) {
       throw new BadRequestException(`不能从 ${current} 变更为 ${next}`);
     }
+  }
+
+  createAttachment(data: { contractId: string; fileName: string; originalName: string; mimeType: string; size: number; category: string }) {
+    return this.prisma.attachment.create({ data });
+  }
+
+  findAttachmentById(id: string) {
+    return this.prisma.attachment.findFirst({ where: { id, contractId: { not: null } } });
+  }
+
+  deleteAttachment(id: string) {
+    return this.prisma.attachment.delete({ where: { id } });
+  }
+
+  renameAttachment(id: string, originalName: string) {
+    return this.prisma.attachment.update({
+      where: { id },
+      data: { originalName },
+    });
   }
 }

@@ -252,7 +252,7 @@ export default function PartnerDetailPage() {
       {/* Quick info cards */}
       <div className="grid grid-cols-4 gap-4">
         <Card className="p-4">
-          <div className="text-xs text-muted-foreground mb-1">业务角色</div>
+          <div className="text-xs text-muted-foreground mb-1">合作伙伴角色</div>
           <div className="text-sm font-semibold flex flex-wrap gap-1">
             {p.isInternal && (
               <span className="text-orange-600 font-medium">内部</span>
@@ -399,7 +399,7 @@ export default function PartnerDetailPage() {
                 <Row label="编码" value={<span className="font-mono font-medium">{p.code}</span>} />
                 <Row label="名称" value={p.name} />
                 <Row label="性质" value={p.isInternal ? '内部企业' : '外部单位'} />
-                <Row label="角色" value={
+                <Row label="合作伙伴角色" value={
                   <span>
                     {p.roles?.map((r) => r === 'SUPPLIER' ? '供应商' : '客户').join(' · ') || '—'}
                   </span>

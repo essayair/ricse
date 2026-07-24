@@ -9,6 +9,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { PartnerService } from './partner.service';
 import { FileService } from '../common/file.service';
 import { CurrentUser } from '../common/current-user.decorator';
+import { normalizeUploadFilename } from '../common/filename-encoding';
 
 @ApiTags('合作伙伴')
 @ApiBearerAuth()
@@ -30,7 +31,7 @@ export class PartnerController {
   @Post()
   @ApiOperation({ summary: '创建合作伙伴' })
   create(@Body() dto: {
-    code: string; name: string; shortName?: string; shortCode?: string;
+    code?: string; name: string; shortName?: string; shortCode?: string;
     taxId?: string; orgType?: string; category?: string;
     legalPerson?: string; legalPersonType?: string; legalIdCard?: string;
     controller?: string; controllerTitle?: string; controllerPhone?: string;
@@ -59,6 +60,20 @@ export class PartnerController {
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
       search, role, status,
+    });
+  }
+
+  // 静态单段路由必须放在 :id 之前，避免 vehicles 被当作合作伙伴 ID。
+  @Get('vehicles')
+  @ApiOperation({ summary: '车辆列表（分页）' })
+  findAllVehicles(
+    @Query('page') page?: string, @Query('pageSize') pageSize?: string,
+    @Query('status') status?: string, @Query('ownerId') ownerId?: string,
+  ) {
+    return this.partnerService.findAllVehicles({
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+      status, ownerId,
     });
   }
 
@@ -132,19 +147,6 @@ export class PartnerController {
     return this.partnerService.createVehicle(dto);
   }
 
-  @Get('vehicles')
-  @ApiOperation({ summary: '车辆列表（分页）' })
-  findAllVehicles(
-    @Query('page') page?: string, @Query('pageSize') pageSize?: string,
-    @Query('status') status?: string, @Query('ownerId') ownerId?: string,
-  ) {
-    return this.partnerService.findAllVehicles({
-      page: page ? Number(page) : undefined,
-      pageSize: pageSize ? Number(pageSize) : undefined,
-      status, ownerId,
-    });
-  }
-
   @Delete('vehicles/:id')
   @HttpCode(204)
   @ApiOperation({ summary: '删除车辆' })
@@ -169,11 +171,12 @@ export class PartnerController {
       throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
     }
 
-    const result = await this.fileService.upload(file.buffer, file.originalname, file.mimetype);
+    const originalName = normalizeUploadFilename(file.originalname);
+    const result = await this.fileService.upload(file.buffer, originalName, file.mimetype);
     return this.partnerService.createAttachment({
       partnerId,
       fileName: result.fileName,
-      originalName: file.originalname,
+      originalName,
       mimeType: file.mimetype,
       size: result.size,
       category: category || 'OTHER',

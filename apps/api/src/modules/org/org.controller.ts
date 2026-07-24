@@ -63,6 +63,18 @@ export class OrgController {
     return this.orgService.getDepartmentTree(companyId);
   }
 
+  @Patch('departments/reorder')
+  @ApiOperation({ summary: '批量调整部门顺序' })
+  reorderDepartments(@Body() dto: { companyId: string; orderedIds: string[] }) {
+    return this.orgService.reorderDepartments(dto.companyId, dto.orderedIds);
+  }
+
+  @Patch('departments/:id')
+  @ApiOperation({ summary: '更新部门' })
+  updateDepartment(@Param('id') id: string, @Body() dto: { name?: string; parentId?: string; sort?: number }) {
+    return this.orgService.updateDepartment(id, dto);
+  }
+
   @Delete('departments/:id')
   @HttpCode(204)
   @ApiOperation({ summary: '删除部门' })
@@ -82,6 +94,12 @@ export class OrgController {
   @ApiOperation({ summary: '员工列表' })
   findAllEmployees(@Query('companyId') companyId?: string, @Query('departmentId') departmentId?: string) {
     return this.orgService.findAllEmployees(companyId, departmentId);
+  }
+
+  @Get('employees/:id')
+  @ApiOperation({ summary: '员工详情（含关联账号）' })
+  findEmployeeById(@Param('id') id: string) {
+    return this.orgService.findEmployeeById(id);
   }
 
   @Delete('employees/:id')

@@ -91,9 +91,9 @@ export class CreateContractDto {
   remarks?: string;
 
   // 我方信息
-  @ApiPropertyOptional({ description: '签约主体' })
+  @ApiPropertyOptional({ description: '我方签约主体（Partner ID）' })
   @IsOptional() @IsString()
-  companyId?: string;
+  signingPartnerId?: string;
 
   @ApiPropertyOptional({ description: '业务部门' })
   @IsOptional() @IsString()

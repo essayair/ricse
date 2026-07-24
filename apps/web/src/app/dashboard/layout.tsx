@@ -42,31 +42,62 @@ function Breadcrumbs() {
   const labels: Record<string, string> = {
     dashboard: '系统总览',
     contracts: '合同管理',
-    orders: '订单管理',
-    settlement: '结算管理',
+    orders: '合同执行批次管理',
+    'dispatch-notices': '执行通知管理',
+    settlement: '应收管理',
+    payables: '应付管理',
     dispatch: '调度看板',
     waybills: '运单管理',
     'logistics-reconciliation': '物流对账',
     inventory: '在库总览',
     inbound: '入库单管理',
     outbound: '出库单管理',
+    'inventory-reversals': '库存冲销',
     weighbridge: '磅单管理',
     quality: '质检单管理',
     monitor: '监控录像',
     'master-data': '主数据管理',
     org: '组织数据',
+    system: '系统管理',
+    approvals: '审批流程',
     create: '新建',
+    edit: '编辑',
   };
+
+  const crumbs = segments.slice(1).map((seg, index) => {
+    const previous = segments[index];
+    const isDynamicId = !labels[seg];
+    const label = isDynamicId && previous === 'contracts'
+      ? '合同详情'
+      : isDynamicId && previous === 'orders'
+        ? '执行批次详情'
+        : isDynamicId && previous === 'dispatch-notices'
+          ? '执行通知详情'
+          : isDynamicId && previous === 'waybills'
+            ? '物流运单详情'
+          : isDynamicId && previous === 'weighbridge'
+            ? '磅单详情'
+          : isDynamicId && previous === 'inbound'
+            ? '物流入库单详情'
+          : isDynamicId && previous === 'outbound'
+            ? '物流出库单详情'
+          : isDynamicId && previous === 'inventory-reversals'
+            ? '库存冲销单详情'
+        : labels[seg] || seg;
+    return { label, href: `/${segments.slice(0, index + 2).join('/')}` };
+  });
 
   return (
     <div className="flex items-center gap-1 text-sm text-muted-foreground">
       <Link href="/dashboard" className="hover:text-foreground">首页</Link>
-      {segments.slice(1).map((seg, i) => (
-        <span key={seg} className="flex items-center gap-1">
+      {crumbs.map((crumb, i) => (
+        <span key={crumb.href} className="flex items-center gap-1">
           <ChevronRight className="h-3 w-3" />
-          <span className={i === segments.length - 2 ? 'text-foreground font-medium' : ''}>
-            {labels[seg] || seg}
-          </span>
+          {i === crumbs.length - 1 ? (
+            <span className="text-foreground font-medium">{crumb.label}</span>
+          ) : (
+            <Link href={crumb.href} className="hover:text-foreground">{crumb.label}</Link>
+          )}
         </span>
       ))}
     </div>
@@ -87,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <AppSidebar userRole={user.role} />
       <SidebarInset>
         <header className="flex h-14 items-center gap-4 border-b bg-background px-6">
           <SidebarTrigger />

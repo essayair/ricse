@@ -40,6 +40,7 @@ export class OrgService {
       include: {
         departments: { select: { id: true, name: true } },
         partner: { select: { id: true, code: true, name: true } },
+        _count: { select: { departments: true, employees: true, users: true } },
       },
       orderBy: { code: 'asc' },
     });
@@ -105,6 +106,20 @@ export class OrgService {
     });
   }
 
+  async updateDepartment(id: string, data: { name?: string; parentId?: string; sort?: number }) {
+    return this.prisma.department.update({ where: { id }, data });
+  }
+
+  async reorderDepartments(companyId: string, orderedIds: string[]) {
+    const updates = orderedIds.map((id, index) =>
+      this.prisma.department.update({
+        where: { id },
+        data: { sort: index },
+      })
+    );
+    return this.prisma.$transaction(updates);
+  }
+
   async deleteDepartment(id: string) {
     return this.prisma.department.delete({ where: { id } });
   }
@@ -131,6 +146,19 @@ export class OrgService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async findEmployeeById(id: string) {
+    const emp = await this.prisma.employee.findUnique({
+      where: { id },
+      include: {
+        company: { select: { id: true, code: true, name: true } },
+        department: { select: { id: true, name: true } },
+        user: { select: { id: true, username: true, status: true, role: true, createdAt: true } },
+      },
+    });
+    if (!emp) throw new NotFoundException('员工不存在');
+    return emp;
   }
 
   async deleteEmployee(id: string) {

@@ -8,16 +8,38 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Search, FileText, Truck, Package, AlertTriangle, DollarSign, ChevronRight, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { unitLabel } from '@/lib/unit';
 
 interface Contract {
   id: string;
   contractNo: string;
   title: string;
+  externalNo: string | null;
   type: string;
   status: string;
   totalAmount: string;
   createdAt: string;
+  signedAt: string | null;
+  effectiveAt: string | null;
+  expireAt: string | null;
+  deliveryLocation: string | null;
   creator: { name: string };
+  signingPartner: { name: string } | null;
+  seller: { name: string } | null;
+  buyer: { name: string } | null;
+  lineItems: Array<{ materialName: string; quantity: string; unit: string }>;
+  orders: Array<{ dispatchNotices: Array<{ _count?: { waybills: number } }> }>;
+  fulfillment: { directions: FulfillmentDirection[] };
+}
+
+interface FulfillmentDirection {
+  type: string;
+  pendingQuantity: Array<{ unit: string; quantity: number }>;
+  pendingAmount: number;
+  executingQuantity: Array<{ unit: string; quantity: number }>;
+  executingAmount: number;
+  executedQuantity: Array<{ unit: string; quantity: number }>;
+  executedAmount: number;
 }
 
 const STATUS_MAP: Record<string, { label: string; variant: string }> = {
@@ -83,7 +105,7 @@ export default function ContractsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">合同管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理采购与销售合同全流程；双边合同自动拆分采购单与销售单</p>
+          <p className="text-sm text-muted-foreground mt-1">管理采购与销售合同全流程；双边合同分别生成采购执行批次与销售执行批次</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => {}}>
@@ -151,16 +173,18 @@ export default function ContractsPage() {
         ) : !data?.items?.length ? (
           <div className="p-12 text-center text-muted-foreground">暂无合同数据</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="min-w-[1660px] w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">合同编号</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">标题</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">类型</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
-                <th className="px-4 py-3 text-right font-medium text-muted-foreground">金额</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">创建人</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">创建时间</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">合同编号 / 外部编号</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">标题 / 标的</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">我方 / 对手方</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">类型 / 状态</th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">数量 / 金额</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">有效期 / 交付地</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">履约进度</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">创建信息</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">操作</th>
               </tr>
             </thead>
@@ -171,18 +195,41 @@ export default function ContractsPage() {
                   className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
                   onClick={() => router.push(`/dashboard/contracts/${c.id}`)}
                 >
-                  <td className="px-4 py-3 font-mono text-xs">{c.contractNo}</td>
-                  <td className="px-4 py-3 font-medium">{c.title}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{TYPE_MAP[c.type] || c.type}</td>
                   <td className="px-4 py-3">
+                    <div className="font-mono text-xs font-medium">{c.contractNo}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{c.externalNo || '无外部编号'}</div>
+                  </td>
+                  <td className="max-w-64 px-4 py-3">
+                    <div className="truncate font-medium">{c.title}</div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">
+                      {c.lineItems?.length ? `${c.lineItems[0].materialName}${c.lineItems.length > 1 ? ` 等 ${c.lineItems.length} 项` : ''}` : '未录入合同标的'}
+                    </div>
+                  </td>
+                  <td className="max-w-64 px-4 py-3">
+                    <div className="truncate">{c.signingPartner?.name || '-'}</div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">对手方：{counterpartyName(c)}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="mb-1 text-xs text-muted-foreground">{TYPE_MAP[c.type] || c.type}</div>
                     <Badge variant={(STATUS_MAP[c.status]?.variant as any) || 'secondary'}>
                       {STATUS_MAP[c.status]?.label || c.status}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3 text-right font-mono">¥{Number(c.totalAmount).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{c.creator?.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {new Date(c.createdAt).toLocaleDateString('zh-CN')}
+                  <td className="px-4 py-3 text-right">
+                    <div>{quantitySummary(c.lineItems)}</div>
+                    <div className="mt-1 font-mono text-xs text-muted-foreground">¥{Number(c.totalAmount).toLocaleString()}</div>
+                  </td>
+                  <td className="max-w-60 px-4 py-3 text-xs">
+                    <div>{formatDate(c.effectiveAt || c.signedAt)} — {formatDate(c.expireAt)}</div>
+                    <div className="mt-1 truncate text-muted-foreground">{c.deliveryLocation || '未设置交付地点'}</div>
+                  </td>
+                  <td className="min-w-80 px-4 py-3">
+                    <FulfillmentSummary directions={c.fulfillment?.directions || []} />
+                    <div className="mt-2 text-[11px] text-muted-foreground">{c.orders?.length || 0} 个执行批次 · {noticeCount(c)} 个执行通知</div>
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    <div>{c.creator?.name || '-'}</div>
+                    <div className="mt-1 text-muted-foreground">{formatDate(c.createdAt)}</div>
                   </td>
                   <td className="px-4 py-3">
                     <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
@@ -195,6 +242,7 @@ export default function ContractsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -205,6 +253,47 @@ export default function ContractsPage() {
       )}
     </div>
   );
+}
+
+function counterpartyName(contract: Contract) {
+  if (contract.type === 'PURCHASE') return contract.seller?.name || '-';
+  if (contract.type === 'SALES') return contract.buyer?.name || '-';
+  return [contract.seller?.name, contract.buyer?.name].filter(Boolean).join(' / ') || '-';
+}
+
+function quantitySummary(lines: Contract['lineItems']) {
+  if (!lines?.length) return '-';
+  const totals = new Map<string, number>();
+  lines.forEach(line => totals.set(line.unit, (totals.get(line.unit) || 0) + Number(line.quantity)));
+  return Array.from(totals.entries()).map(([unit, quantity]) => `${quantity.toLocaleString()} ${unitLabel(unit)}`).join(' / ');
+}
+
+function noticeCount(contract: Contract) {
+  return (contract.orders || []).reduce((sum, order) => sum + (order.dispatchNotices?.length || 0), 0);
+}
+
+function FulfillmentSummary({ directions }: { directions: FulfillmentDirection[] }) {
+  if (!directions.length) return <span className="text-xs text-muted-foreground">暂无履约数据</span>;
+  return <div className="space-y-2">{directions.map(direction => <div key={direction.type}>
+    {directions.length > 1 && <div className="mb-1 text-[11px] font-medium text-muted-foreground">{direction.type === 'PURCHASE' ? '采购端' : '销售端'}</div>}
+    <div className="grid grid-cols-[52px_1fr_1fr] gap-x-2 text-xs">
+      <span className="text-muted-foreground">待执行</span><span>{quantityText(direction.pendingQuantity)}</span><span className="text-right font-mono">{money(direction.pendingAmount)}</span>
+      <span className="text-muted-foreground">执行中</span><span className="text-amber-600">{quantityText(direction.executingQuantity)}</span><span className="text-right font-mono text-amber-600">{money(direction.executingAmount)}</span>
+      <span className="text-muted-foreground">已执行</span><span className="text-primary">{quantityText(direction.executedQuantity)}</span><span className="text-right font-mono text-primary">{money(direction.executedAmount)}</span>
+    </div>
+  </div>)}</div>;
+}
+
+function quantityText(items: Array<{ unit: string; quantity: number }>) {
+  return items.length ? items.map(item => `${Number(item.quantity).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} ${unitLabel(item.unit)}`).join(' / ') : '0 吨';
+}
+
+function money(value: number) {
+  return `¥${Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
+}
+
+function formatDate(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleDateString('zh-CN') : '-';
 }
 
 function SummaryItem({ label, value, color }: { label: string; value: string | number; color?: string }) {

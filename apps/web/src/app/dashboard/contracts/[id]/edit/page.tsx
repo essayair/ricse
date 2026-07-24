@@ -5,8 +5,11 @@ import { useRouter, useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, Paperclip, Loader2, Pencil, X } from 'lucide-react';
 import { api } from '@/lib/api';
+import { unitLabel } from '@/lib/unit';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -43,10 +46,15 @@ export default function ContractEditPage() {
   const [partners, setPartners] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
   const [internalPartners, setInternalPartners] = useState<any[]>([]);
+  const [supplierPartners, setSupplierPartners] = useState<any[]>([]);
+  const [customerPartners, setCustomerPartners] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<Array<{ file: File; name: string }>>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
 
   const [form, setForm] = useState({
     type: 'PURCHASE', title: '',
-    companyId: '', externalNo: '',
+    signingPartnerId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     pricingType: 'FIXED', overfillPct: '5', shortfallPct: '5',
     deliveryMethod: '', deliveryLocation: '',
@@ -66,18 +74,25 @@ export default function ContractEditPage() {
   useEffect(() => {
     Promise.all([
       api.get<any>(`/contracts/${contractId}`),
+      api.get<{ items: any[] }>('/partners?role=SUPPLIER'),
+      api.get<{ items: any[] }>('/partners?role=CUSTOMER'),
       api.get<{ items: any[] }>('/partners'),
       api.get<{ items: any[] }>('/master-data/materials'),
-    ]).then(([contract, partnerData, materialData]) => {
-      const all = partnerData.items || [];
+    ]).then(([contract, supplierData, customerData, allData, materialData]) => {
+      const suppliers = supplierData.items || [];
+      const customers = customerData.items || [];
+      const all = allData.items || [];
       setPartners(all);
+      setSupplierPartners(suppliers);
+      setCustomerPartners(customers);
       setInternalPartners(all.filter((p: any) => p.isInternal));
       setMaterials(materialData.items || []);
+      setAttachments(contract.attachments || []);
 
       setForm({
         type: contract.type || 'PURCHASE',
         title: contract.title || '',
-        companyId: contract.companyId || '',
+        signingPartnerId: contract.signingPartnerId || '',
         externalNo: contract.externalNo || '',
         sellerId: contract.sellerId || '',
         buyerId: contract.buyerId || '',
@@ -145,6 +160,7 @@ export default function ContractEditPage() {
   }, 0);
 
   const handleSave = async () => {
+    if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     const validItems = lineItems.filter(i => i.materialId && i.quantity && i.unitPrice);
     if (validItems.length === 0) { alert('请至少填写一条货物信息（物料/数量/单价）'); return; }
@@ -162,7 +178,7 @@ export default function ContractEditPage() {
         effectiveAt: form.effectiveAt || undefined,
         expireAt: form.expireAt || undefined,
         buyerId: form.buyerId || undefined,
-        companyId: form.companyId || undefined,
+        signingPartnerId: form.signingPartnerId || undefined,
         lineItems: validItems.map(item => ({
           materialId: item.materialId,
           materialName: item.materialName,
@@ -177,6 +193,71 @@ export default function ContractEditPage() {
     } catch (e: any) {
       alert(e.message || '保存失败');
       setSubmitting(false);
+    }
+  };
+
+  const uploadAttachments = async () => {
+    if (pendingAttachments.length === 0) return;
+    setUploadingAttachments(true);
+    try {
+      for (const item of pendingAttachments) {
+        const body = new FormData();
+        body.append('file', item.file);
+        body.append('category', 'OTHER');
+        body.append('originalName', item.name.trim() || item.file.name);
+        const response = await fetch(`${API_BASE_URL}/contracts/${contractId}/attachments`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body,
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || `附件 ${item.name} 上传失败`);
+        setAttachments(current => [result, ...current]);
+      }
+      setPendingAttachments([]);
+    } catch (e: any) {
+      alert(e.message || '上传附件失败');
+    } finally {
+      setUploadingAttachments(false);
+    }
+  };
+
+  const viewPendingAttachment = (file: File) => {
+    const url = URL.createObjectURL(file);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
+  const deleteAttachment = async (id: string) => {
+    if (!confirm('确定删除这个附件吗？')) return;
+    try {
+      await api.delete(`/contracts/attachments/${id}`);
+      setAttachments(current => current.filter(item => item.id !== id));
+    } catch (e: any) {
+      alert(e.message || '删除附件失败');
+    }
+  };
+
+  const renameAttachment = async (attachment: any) => {
+    const originalName = prompt('请输入新的附件名称', attachment.originalName)?.trim();
+    if (!originalName || originalName === attachment.originalName) return;
+    try {
+      const updated = await api.patch<any>(`/contracts/attachments/${attachment.id}/name`, { originalName });
+      setAttachments(current => current.map(item => item.id === attachment.id ? updated : item));
+    } catch (e: any) {
+      alert(e.message || '修改附件名称失败');
+    }
+  };
+
+  const viewStoredAttachment = async (id: string) => {
+    const preview = window.open('about:blank', '_blank');
+    try {
+      const { url } = await api.get<{ url: string }>(`/contracts/attachments/${id}/view-url`);
+      if (preview) preview.location.assign(url);
+      else window.location.assign(url);
+    } catch (e: any) {
+      preview?.close();
+      alert(e.message || '附件打开失败');
     }
   };
 
@@ -225,27 +306,36 @@ export default function ContractEditPage() {
             <FormField label="外部合同号">
               <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="对手方合同号" />
             </FormField>
-            <FormField label="我方签约主体">
-              <select value={form.companyId} onChange={e => set('companyId', e.target.value)} className={SELECT_CLS}>
+            <FormField label="我方签约主体（内部）">
+              <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className={SELECT_CLS}>
                 <option value="">请选择</option>
-                {internalPartners.map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
+                {internalPartners
+                  .filter(p => form.type === 'BILATERAL' || p.roles?.includes(form.type === 'PURCHASE' ? 'CUSTOMER' : 'SUPPLIER'))
+                  .map(p => {
+                    const selectedAsCounterparty = p.id === form.sellerId || p.id === form.buyerId;
+                    return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
+                  })}
               </select>
             </FormField>
           </div>
 
           <SectionTitle>交易对手方</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <FormField label={form.type === 'PURCHASE' ? '供应商' : '客户'} required>
+            <FormField label={form.type === 'PURCHASE' ? '供应商' : form.type === 'SALES' ? '客户' : '上游供应商'} required>
               <select value={form.sellerId} onChange={e => set('sellerId', e.target.value)} className={SELECT_CLS}>
                 <option value="">请选择</option>
-                {partners.map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
+                {(form.type === 'PURCHASE' || form.type === 'BILATERAL' ? supplierPartners : customerPartners).map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
               </select>
             </FormField>
             {form.type === 'BILATERAL' && (
               <FormField label="下游客户" required>
                 <select value={form.buyerId} onChange={e => set('buyerId', e.target.value)} className={SELECT_CLS}>
                   <option value="">请选择</option>
-                  {partners.filter(p => p.id !== form.sellerId).map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
+                  {customerPartners.map(p => {
+                    const disabled = p.id === form.signingPartnerId || p.id === form.sellerId;
+                    const suffix = p.id === form.signingPartnerId ? '（我方）' : p.id === form.sellerId ? '（已选为上游）' : '';
+                    return <option key={p.id} value={p.id} disabled={disabled}>{p.code} {p.name}{suffix}</option>;
+                  })}
                 </select>
               </FormField>
             )}
@@ -277,7 +367,7 @@ export default function ContractEditPage() {
                 </div>
                 <div className="col-span-1">
                   <label className="text-xs text-muted-foreground">单位</label>
-                  <Input className="mt-1" value={item.unit} onChange={e => updateLineItem(idx, 'unit', e.target.value)} />
+                  <Input className="mt-1" value={unitLabel(item.unit)} onChange={e => updateLineItem(idx, 'unit', e.target.value)} />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-muted-foreground">单价(元/吨){idx === 0 && <span className="text-destructive">*</span>}</label>
@@ -298,6 +388,10 @@ export default function ContractEditPage() {
                   <Button type="button" variant="ghost" size="sm" onClick={() => removeLineItem(idx)} disabled={lineItems.length === 1}>
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
+                </div>
+                <div className="col-span-12">
+                  <label className="text-xs text-muted-foreground">行项备注</label>
+                  <Input className="mt-1" value={item.remarks} onChange={e => updateLineItem(idx, 'remarks', e.target.value)} placeholder="该行物料的交付、质量或价格备注" />
                 </div>
               </div>
             ))}
@@ -396,6 +490,51 @@ export default function ContractEditPage() {
             <FormField label="扣杂规则">
               <Input value={form.impurityRule} onChange={e => set('impurityRule', e.target.value)} placeholder="每超0.1%扣款（元/吨）" />
             </FormField>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <SectionTitle>合同附件</SectionTitle>
+          <div className="space-y-2">
+            {attachments.map(att => (
+              <div key={att.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                <Paperclip className="h-4 w-4 text-muted-foreground" />
+                <button type="button" onClick={() => viewStoredAttachment(att.id)} className="flex-1 text-left text-primary hover:underline">{att.originalName}</button>
+                <span className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => viewStoredAttachment(att.id)}>查看</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => renameAttachment(att)}>
+                  <Pencil className="mr-1 h-4 w-4" />修改名称
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => deleteAttachment(att.id)} aria-label={`删除 ${att.originalName}`} className="text-destructive hover:text-destructive">
+                  <Trash2 className="mr-1 h-4 w-4" />删除
+                </Button>
+              </div>
+            ))}
+            {pendingAttachments.map((item, index) => (
+              <div key={`${item.file.name}-${index}`} className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm">
+                <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Input value={item.name} onChange={e => setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, name: e.target.value } : entry))} placeholder="附件名称" />
+                <span className="shrink-0 text-xs text-muted-foreground">{(item.file.size / 1024).toFixed(0)} KB</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => viewPendingAttachment(item.file)}>预览</Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setPendingAttachments(current => current.filter((_, i) => i !== index))} aria-label={`移除 ${item.name}`}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            <label className={`inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-muted ${uploadingAttachments ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+              <Paperclip className="mr-2 h-4 w-4" />选择附件
+              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" className="hidden" onChange={e => {
+                const selectedFiles = Array.from(e.currentTarget.files || []);
+                setPendingAttachments(current => [...current, ...selectedFiles.map(file => ({ file, name: file.name }))]);
+                e.target.value = '';
+              }} disabled={uploadingAttachments} />
+            </label>
+            {pendingAttachments.length > 0 && (
+              <Button type="button" onClick={() => void uploadAttachments()} disabled={uploadingAttachments}>
+                {uploadingAttachments ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Paperclip className="mr-2 h-4 w-4" />}
+                {uploadingAttachments ? '上传中...' : '上传附件'}
+              </Button>
+            )}
           </div>
         </Card>
 

@@ -9,7 +9,7 @@ export class PartnerService {
   // ========== 合作伙伴 CRUD ==========
 
   async create(data: {
-    code: string;
+    code?: string;
     name: string;
     shortName?: string;
     shortCode?: string;
@@ -62,24 +62,29 @@ export class PartnerService {
       if (existing) throw new ConflictException('统一信用代码与企业名称组合已存在');
     }
 
-    // 校验编码唯一
-    const existingCode = await this.prisma.partner.findUnique({
-      where: { code: data.code },
-    });
-    if (existingCode) throw new ConflictException(`编码 ${data.code} 已存在`);
-
-    // 编码规则校验（由 isInternal 决定，与角色无关）
     const isInternal = data.isInternal ?? false;
-    if (isInternal && !/^[A-Za-z0-9]{6}$/.test(data.code)) {
-      throw new BadRequestException('内部企业编码必须是 6 位字母数字');
+
+    // 编码：内部企业手动提供并校验，外部单位系统自动生成
+    let code: string;
+    if (isInternal) {
+      if (!data.code) throw new BadRequestException('内部企业必须提供编码');
+      code = String(data.code);
+      if (!/^[A-Za-z0-9]{6}$/.test(code)) {
+        throw new BadRequestException('内部企业编码必须是 6 位字母数字');
+      }
+    } else {
+      code = await this.generateNextExternalCode();
     }
-    if (!isInternal && !/^\d{8}$/.test(data.code)) {
-      throw new BadRequestException('外部单位编码必须是 8 位数字');
-    }
+
+    // 校验编码唯一（排除已软删除）
+    const existingCode = await this.prisma.partner.findFirst({
+      where: { code, deletedAt: null },
+    });
+    if (existingCode) throw new ConflictException(`编码 ${code} 已存在`);
 
     return this.prisma.partner.create({
       data: {
-        code: data.code,
+        code,
         name: data.name,
         shortName: data.shortName,
         shortCode: data.shortCode,
@@ -174,6 +179,7 @@ export class PartnerService {
         bankAccounts: true,
         vehicles: true,
         warehouses: true,
+        serviceOrganizations: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' } },
         attachments: { orderBy: { createdAt: 'desc' } },
         creator: { select: { id: true, name: true } },
       },
@@ -212,11 +218,11 @@ export class PartnerService {
       }
     }
 
-    // 2. 角色只允许追加，不允许移除
+    // 2. 合作伙伴角色只允许追加，不允许移除
     if (data.roles) {
       const removed = partner.roles.filter((r: string) => !data.roles!.includes(r));
       if (removed.length > 0) {
-        throw new BadRequestException(`不允许移除已有角色: ${removed.join('、')}。角色仅支持追加。`);
+        throw new BadRequestException(`不允许移除已有合作伙伴角色: ${removed.join('、')}。合作伙伴角色仅支持追加。`);
       }
     }
 

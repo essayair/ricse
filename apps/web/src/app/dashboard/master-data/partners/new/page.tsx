@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -129,7 +129,6 @@ export default function PartnerNewPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [isInternal, setIsInternal] = useState(false);
   const [isParent, setIsParent] = useState(false);
-  const [codeMode, setCodeMode] = useState<'auto' | 'manual'>('auto');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -159,18 +158,6 @@ export default function PartnerNewPage() {
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
-  // 自动获取外部编码
-  useEffect(() => {
-    if (!isInternal && codeMode === 'auto') {
-      api.get<string>('/partners/next-code')
-        .then((code) => set('code', code))
-        .catch(() => {});
-    }
-    if (isInternal) {
-      set('code', '');
-    }
-  }, [isInternal, codeMode]);
-
   // 省份切换时清空城市
   const handleProvinceChange = (v: string) => {
     setForm((f) => ({ ...f, province: v, city: '' }));
@@ -187,19 +174,13 @@ export default function PartnerNewPage() {
   const handleInternalToggle = (val: boolean) => {
     setIsInternal(val);
     setIsParent(false);
-    if (val) {
-      setCodeMode('manual');
-      set('code', '');
-    } else {
-      setCodeMode('auto');
-      api.get<string>('/partners/next-code').then((code) => set('code', code)).catch(() => {});
-    }
+    set('code', '');
   };
 
   const handleSubmit = async () => {
     if (!form.name) { setError('请填写企业名称'); return; }
-    if (!roles.length) { setError('请至少选择一个角色（供应商 / 客户）'); return; }
-    if (!form.code) { setError('请填写合作伙伴编码'); return; }
+    if (!roles.length) { setError('请至少选择一个合作伙伴角色（供应商 / 客户）'); return; }
+    if (isInternal && !form.code) { setError('请填写内部企业编码（6位字母数字）'); return; }
     const hasLicense = files.some((f) =>
       f.name.match(/营业执照|license|biz/i) || f.type.startsWith('image/')
     );
@@ -333,7 +314,7 @@ export default function PartnerNewPage() {
               </FormField>
             </div>
 
-            <SectionTitle>业务角色</SectionTitle>
+            <SectionTitle>合作伙伴角色</SectionTitle>
             <p className="text-xs text-muted-foreground mb-3">选择该单位与我方的业务关系，可同时具备供应商和客户身份</p>
             <div className="flex gap-3">
               {ROLE_OPTIONS.map((r) => (
@@ -382,36 +363,24 @@ export default function PartnerNewPage() {
             </div>
 
             <SectionTitle>合作伙伴编码</SectionTitle>
-            <div className="flex items-end gap-3">
-              <div className="flex-1">
-                <FormField label={isInternal ? '编码（6位字母数字，手动录入）' : '编码（8位数字，自动递增）'} required>
-                  <Input
-                    value={form.code}
-                    onChange={(e) => set('code', e.target.value)}
-                    placeholder={isInternal ? '如：100001' : '00000001'}
-                    maxLength={isInternal ? 6 : 8}
-                    disabled={!isInternal && codeMode === 'auto'}
-                    className="font-mono"
-                  />
-                </FormField>
+            {isInternal ? (
+              <FormField label="编码（6位字母数字，手动录入）" required>
+                <Input
+                  value={form.code}
+                  onChange={(e) => set('code', e.target.value)}
+                  placeholder="如：100001"
+                  maxLength={6}
+                  className="font-mono"
+                />
+              </FormField>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-md px-4 py-3">
+                <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>编码由系统自动生成，创建成功后可在详情页查看</span>
               </div>
-              {!isInternal && (
-                <Button
-                  type="button" variant="outline" size="sm" className="mb-0.5"
-                  onClick={() => {
-                    const next = codeMode === 'auto' ? 'manual' : 'auto';
-                    setCodeMode(next);
-                    if (next === 'auto') {
-                      api.get<string>('/partners/next-code').then((code) => set('code', code)).catch(() => {});
-                    } else {
-                      set('code', '');
-                    }
-                  }}
-                >
-                  {codeMode === 'auto' ? '手动指定' : '自动生成'}
-                </Button>
-              )}
-            </div>
+            )}
           </Card>
 
           {/* 法人 / 实控人 */}
@@ -747,7 +716,7 @@ export default function PartnerNewPage() {
                 )}
                 {(roles.length > 0 || isInternal) && (
                   <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground w-16 shrink-0">角色</span>
+                    <span className="text-muted-foreground w-24 shrink-0">合作伙伴角色</span>
                     <div className="flex flex-wrap gap-1">
                       {isInternal && (
                         <span className="px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-700 font-medium">内部</span>

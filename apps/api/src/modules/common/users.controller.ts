@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
@@ -14,6 +14,12 @@ export class UsersController {
     username: string; password: string; name: string; role?: string;
     employeeId?: string; companyId?: string; businessGroupId?: string;
   }) {
+    if (!dto.username || !/^[a-zA-Z0-9]{3,}$/.test(dto.username)) {
+      throw new BadRequestException('用户名只能包含字母和数字，至少3位');
+    }
+    if (!dto.password || dto.password.length < 6) {
+      throw new BadRequestException('密码至少6位');
+    }
     return this.usersService.create(dto);
   }
 
@@ -28,11 +34,30 @@ export class UsersController {
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
-  @ApiOperation({ summary: '更新用户（角色/状态）' })
+  @ApiOperation({ summary: '更新用户（状态/名称/用户名）' })
   update(
     @Param('id') id: string,
-    @Body() dto: { role?: string; status?: string; name?: string; phone?: string; email?: string },
+    @Body() dto: { status?: string; name?: string; username?: string; phone?: string; email?: string },
   ) {
+    if (dto.username !== undefined) {
+      if (!dto.username || !/^[a-zA-Z0-9]{3,}$/.test(dto.username)) {
+        throw new BadRequestException('用户名只能包含字母和数字，至少3位');
+      }
+    }
     return this.usersService.update(id, dto);
+  }
+
+  @Patch(':id/password')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '管理员重置用户密码' })
+  async resetPassword(
+    @Param('id') id: string,
+    @Body() dto: { password: string },
+  ) {
+    if (!dto.password || dto.password.length < 6) {
+      throw new BadRequestException('密码至少6位');
+    }
+    return this.usersService.resetPassword(id, dto.password);
   }
 }

@@ -37,7 +37,7 @@ const STAT_COLORS: Record<string, { bg: string; icon: string }> = {
 };
 
 const FLOW_STEPS = [
-  { icon: ClipboardList, label: '采销订单', desc: '5 单执行中', color: 'blue' },
+  { icon: ClipboardList, label: '合同执行批次', desc: '5 个执行中', color: 'blue' },
   { icon: Truck, label: '物流运输', desc: '12 车在途', color: 'orange' },
   { icon: Scale, label: '过磅称重', desc: '今日 8 次', color: 'green' },
   { icon: FlaskConical, label: '质检化验', desc: '3 批待检', color: 'purple' },
@@ -54,7 +54,7 @@ const FLOW_COLORS: Record<string, { bg: string; text: string }> = {
 };
 
 const FLOW_DESC_COLORS: Record<string, string> = {
-  blue: 'text-primary',       // 采销订单
+  blue: 'text-primary',       // 执行批次
   orange: 'text-warning',     // 物流运输
   green: 'text-muted-foreground', // 过磅称重
   purple: 'text-warning',     // 质检化验
@@ -71,13 +71,13 @@ const MODULES: Array<{
 }> = [
   {
     name: '采销管理',
-    desc: '合同 / 订单 / 结算',
+    desc: '合同 / 执行批次 / 结算',
     icon: FileText,
     href: '/dashboard/contracts',
     color: 'bg-primary-bg text-primary',
     stats: [
       { label: '合同执行中', value: '8' },
-      { label: '订单待发货', value: '5' },
+      { label: '待开始执行', value: '5' },
     ],
   },
   {
@@ -142,9 +142,9 @@ const TIMELINE = [
   { time: '08:55', text: '⚠ HT-2026003 质检熔断，水分超标 0.3%', sub: '质检化验 · 待采销协商处理', type: 'warning' },
   { time: '08:30', text: '✅ 批次 PC-0610-03 完成入库，净重 68.5 吨', sub: '库存管理 · 玉门堆场 A-03 库位', type: 'done' },
   { time: '08:12', text: '✅ 甘B·88890 完成过磅，净重 72.4 吨', sub: '地磅管理 · 关联运单 WB-20260610-06', type: 'done' },
-  { time: '07:45', text: '📋 合同 HT-2026007 审核通过，已生成采购订单', sub: '采销系统 · 玉门众鑫矿业 · 萤石粉97% · 200吨', type: 'info' },
-  { time: '07:20', text: '🚛 3 辆车从玉门出发，预计 14:00 到达巨化', sub: '物流管理 · 销售订单 SO-20260610-002', type: 'done' },
-  { time: '18:30', text: '💰 结算单 STL-2026-019 财务审核完成', sub: '结算管理 · 合同 HT-2026002 · 金额 ¥326,500', type: 'done' },
+  { time: '07:45', text: '📋 合同 HT-2026007 审核通过，已生成采购执行批次', sub: '采销系统 · 玉门众鑫矿业 · 萤石粉97% · 200吨', type: 'info' },
+  { time: '07:20', text: '🚛 3 辆车从玉门出发，预计 14:00 到达巨化', sub: '物流管理 · 销售执行批次 SO-20260610-002', type: 'done' },
+  { time: '18:30', text: '💰 结算单 STL-2026-019 财务审核完成', sub: '结算中心 · 合同 HT-2026002 · 金额 ¥326,500', type: 'done' },
 ];
 
 const TIMELINE_DOTS: Record<string, string> = {
