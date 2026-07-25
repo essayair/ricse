@@ -11,6 +11,7 @@ if ! command -v pnpm >/dev/null 2>&1; then
   corepack enable
 fi
 pnpm install --frozen-lockfile
+pnpm db:generate
 pnpm lint
 pnpm typecheck
 pnpm test
