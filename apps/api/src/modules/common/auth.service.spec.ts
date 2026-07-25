@@ -3,13 +3,14 @@ import { AuthService } from './auth.service';
 import { UsersService } from './users.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException, ConflictException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException, ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 
 describe('AuthService', () => {
   let service: AuthService;
   let usersService: jest.Mocked<UsersService>;
   let jwtService: jest.Mocked<JwtService>;
+  let configService: jest.Mocked<ConfigService>;
 
   const mockUser = {
     id: 'user-1',
@@ -65,6 +66,7 @@ describe('AuthService', () => {
     service = module.get<AuthService>(AuthService);
     usersService = module.get(UsersService) as jest.Mocked<UsersService>;
     jwtService = module.get(JwtService) as jest.Mocked<JwtService>;
+    configService = module.get(ConfigService) as jest.Mocked<ConfigService>;
   });
 
   describe('login', () => {
@@ -118,6 +120,48 @@ describe('AuthService', () => {
 
       expect(result).toHaveProperty('token');
       expect(result.username).toBe('newuser');
+      expect(usersService.create).toHaveBeenCalledWith({
+        username: 'newuser',
+        password: 'password123',
+        name: '新用户',
+      });
+    });
+
+    it('线上默认禁止公开注册', async () => {
+      configService.get.mockImplementation((key: string) => {
+        const config: Record<string, string> = {
+          NODE_ENV: 'production',
+          JWT_SECRET: 'test-secret',
+          JWT_REFRESH_SECRET: 'test-refresh-secret',
+        };
+        return config[key];
+      });
+
+      await expect(service.register({
+        username: 'newuser',
+        password: 'password123',
+        name: '新用户',
+      })).rejects.toThrow(ForbiddenException);
+      expect(usersService.create).not.toHaveBeenCalled();
+    });
+
+    it('公开注册不能自行指定管理员角色', async () => {
+      usersService.create.mockResolvedValue({
+        id: 'user-2',
+        username: 'newuser',
+        name: '新用户',
+        role: 'USER',
+        createdAt: new Date(),
+      } as any);
+      usersService.setRefreshToken.mockResolvedValue({} as any);
+
+      await service.register({
+        username: 'newuser',
+        password: 'password123',
+        name: '新用户',
+        role: 'ADMIN',
+      });
+
       expect(usersService.create).toHaveBeenCalledWith({
         username: 'newuser',
         password: 'password123',

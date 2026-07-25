@@ -8,7 +8,7 @@ export default function Home() {
         </p>
         <div className="flex gap-4 justify-center">
           <a
-            href="http://localhost:3001/api/docs"
+            href="/api/docs"
             className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             target="_blank"
           >

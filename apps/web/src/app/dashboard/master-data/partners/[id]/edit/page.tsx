@@ -159,11 +159,7 @@ export default function PartnerEditPage() {
       fd.append('file', file);
       const cat = file.name.match(/营业执照|license|biz/i) ? 'BUSINESS_LICENSE' : 'OTHER';
       fd.append('category', cat);
-      await fetch(`http://localhost:3000/api/v1/partners/${id}/attachments`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        body: fd,
-      });
+      await api.upload(`/partners/${id}/attachments`, fd);
     }
   };
 

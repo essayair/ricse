@@ -204,11 +204,7 @@ export default function PartnerNewPage() {
         fd.append('file', file);
         const cat = file.name.match(/营业执照|license|biz/i) ? 'BUSINESS_LICENSE' : 'OTHER';
         fd.append('category', cat);
-        await fetch(`http://localhost:3000/api/v1/partners/${partner.id}/attachments`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-          body: fd,
-        });
+        await api.upload(`/partners/${partner.id}/attachments`, fd);
       }
 
       // Create bank accounts

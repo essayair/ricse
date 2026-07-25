@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { FileService } from './file.service';
 import { AdminGuard } from './admin.guard';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { AdminGuard } from './admin.guard';
       }),
     }),
   ],
-  controllers: [UsersController, AuthController],
+  controllers: [UsersController, AuthController, HealthController],
   providers: [UsersService, AuthService, JwtStrategy, FileService, AdminGuard],
   exports: [UsersService, AuthService, FileService, AdminGuard],
 })

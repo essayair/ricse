@@ -30,6 +30,17 @@ pnpm dev
 
 **默认账号**: `admin` / `admin123` 或 `approver` / `user123`
 
+> 上述账号仅用于本地开发。线上测试环境通过环境变量设置独立密码，并默认关闭公开注册。
+
+## 阿里云测试环境部署
+
+项目已提供 ECS + Docker Compose 部署配置，入口见：
+
+- [`deploy/README.md`](deploy/README.md)
+- [`docs/技术/阿里云测试环境部署.md`](docs/技术/阿里云测试环境部署.md)
+
+部署配置不会向公网暴露 PostgreSQL、Redis、MinIO、API 或 Web 原始端口，外部流量统一通过 Nginx 的 80/443 进入。
+
 ---
 
 ## 项目定位

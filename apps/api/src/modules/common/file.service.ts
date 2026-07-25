@@ -1,21 +1,57 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as Minio from 'minio';
 
 @Injectable()
 export class FileService {
   private readonly logger = new Logger(FileService.name);
   private readonly client: Minio.Client;
-  private readonly bucket = 'ricse-attachments';
+  private readonly publicClient: Minio.Client;
+  private readonly bucket: string;
 
-  constructor() {
-    this.client = new Minio.Client({
-      endPoint: 'localhost',
-      port: 9002,
-      useSSL: false,
-      accessKey: 'ricse',
-      secretKey: 'ricse_dev',
-    });
-    this.ensureBucket();
+  constructor(private readonly configService: ConfigService) {
+    const accessKey = this.configService.get<string>('MINIO_ACCESS_KEY') || 'ricse';
+    const secretKey = this.configService.get<string>('MINIO_SECRET_KEY') || 'ricse_dev';
+    const internalEndpoint = this.parseEndpoint(
+      this.configService.get<string>('MINIO_ENDPOINT') || 'localhost',
+      this.configService.get<string>('MINIO_PORT'),
+      this.configService.get<string>('MINIO_USE_SSL'),
+      9002,
+      false,
+    );
+    const publicEndpoint = this.parseEndpoint(
+      this.configService.get<string>('MINIO_PUBLIC_ENDPOINT') || internalEndpoint.endPoint,
+      this.configService.get<string>('MINIO_PUBLIC_PORT'),
+      this.configService.get<string>('MINIO_PUBLIC_USE_SSL'),
+      internalEndpoint.port,
+      internalEndpoint.useSSL,
+    );
+
+    this.bucket = this.configService.get<string>('MINIO_BUCKET') || 'ricse-attachments';
+    this.client = new Minio.Client({ ...internalEndpoint, accessKey, secretKey });
+    this.publicClient = new Minio.Client({ ...publicEndpoint, accessKey, secretKey });
+    void this.ensureBucket();
+  }
+
+  private parseEndpoint(
+    rawEndpoint: string,
+    configuredPort: string | undefined,
+    configuredSsl: string | undefined,
+    defaultPort: number,
+    defaultSsl: boolean,
+  ): { endPoint: string; port: number; useSSL: boolean } {
+    const withProtocol = rawEndpoint.includes('://') ? rawEndpoint : `http://${rawEndpoint}`;
+    const parsed = new URL(withProtocol);
+    const useSSL = configuredSsl === undefined
+      ? (rawEndpoint.includes('://') ? parsed.protocol === 'https:' : defaultSsl)
+      : configuredSsl.toLowerCase() === 'true';
+    const port = Number(configuredPort || parsed.port || (useSSL ? 443 : defaultPort));
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(`MINIO 端口配置无效: ${configuredPort || parsed.port}`);
+    }
+
+    return { endPoint: parsed.hostname, port, useSSL };
   }
 
   private async ensureBucket() {
@@ -35,6 +71,7 @@ export class FileService {
     originalName: string,
     mimeType: string,
   ): Promise<{ fileName: string; size: number }> {
+    await this.ensureBucket();
     const ext = originalName.split('.').pop() || 'bin';
     const fileName = `partner/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
@@ -46,7 +83,7 @@ export class FileService {
   }
 
   async getUrl(fileName: string): Promise<string> {
-    return this.client.presignedGetObject(this.bucket, fileName, 60 * 60); // 1 hour
+    return this.publicClient.presignedGetObject(this.bucket, fileName, 60 * 60); // 1 hour
   }
 
   async delete(fileName: string): Promise<void> {

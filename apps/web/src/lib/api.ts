@@ -1,9 +1,11 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === 'production' ? '/api/v1' : 'http://localhost:3000/api/v1');
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     cache: 'no-store',
     headers: {
@@ -43,7 +45,7 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: async <T>(path: string, formData: FormData): Promise<T> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,

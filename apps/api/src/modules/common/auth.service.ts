@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
@@ -25,7 +25,16 @@ export class AuthService {
   }
 
   async register(data: { username: string; password: string; name: string; role?: string }) {
-    const user = await this.usersService.create(data);
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const publicRegistrationEnabled =
+      this.configService.get<string>('ALLOW_PUBLIC_REGISTRATION') === 'true';
+    if (isProduction && !publicRegistrationEnabled) {
+      throw new ForbiddenException('线上环境未开放用户自助注册');
+    }
+
+    // 自助注册永远只能创建普通用户，管理员和审批角色由系统管理员分配。
+    const { role: _ignoredRole, ...safeData } = data;
+    const user = await this.usersService.create(safeData);
     return this.generateTokens(user as any);
   }
 

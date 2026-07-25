@@ -1,0 +1,7 @@
+services:
+  nginx:
+    volumes:
+      - ./nginx/https.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "443:443"

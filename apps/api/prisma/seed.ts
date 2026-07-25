@@ -4,6 +4,15 @@ import * as bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  const seedPassword = (key: string, developmentDefault: string) => {
+    const value = process.env[key];
+    if (value) return value;
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(`线上执行种子数据前必须配置 ${key}`);
+    }
+    return developmentDefault;
+  };
+
   // ===== 内部企业（合作伙伴）=====
   const internalPartners = [
     { code: '100001', name: '嘉溢运营管理有限公司', shortName: '嘉溢' },
@@ -53,9 +62,9 @@ async function main() {
   const businessDept = hgyl ? await prisma.department.findFirst({ where: { companyId: hgyl.id, name: '业务运营部' } }) : null;
 
   // ===== 员工 + 用户 =====
-  const adminPwd = await bcrypt.hash('admin123', 10);
-  const approverPwd = await bcrypt.hash('approver123', 10);
-  const userPwd = await bcrypt.hash('user123', 10);
+  const adminPwd = await bcrypt.hash(seedPassword('SEED_ADMIN_PASSWORD', 'admin123'), 10);
+  const approverPwd = await bcrypt.hash(seedPassword('SEED_APPROVER_PASSWORD', 'approver123'), 10);
+  const userPwd = await bcrypt.hash(seedPassword('SEED_USER_PASSWORD', 'user123'), 10);
 
   // Admin employee
   let adminEmp = await prisma.employee.findFirst({ where: { companyId: hgyl?.id, departmentId: leadershipDept?.id, name: '系统管理员' } });

@@ -4,7 +4,13 @@ dist/
 coverage/
 .env
 .env.local
+.env.staging
 *.log
+*.tsbuildinfo
+
+# Deployment secrets and certificates
+deploy/.env.staging
+deploy/certs/
 
 # IDE
 .idea/
