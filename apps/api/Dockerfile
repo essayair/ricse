@@ -1,9 +1,15 @@
 FROM node:22-bookworm-slim AS build
 
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 ENV NODE_ENV=development
 
+RUN sed -i \
+  "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g; s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+  /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/* \
@@ -25,9 +31,15 @@ RUN pnpm --filter @ricse/api build
 
 FROM node:22-bookworm-slim AS runtime
 
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+
 ENV NODE_ENV=production
 ENV PORT=3000
 
+RUN sed -i \
+  "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g; s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+  /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/*

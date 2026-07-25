@@ -53,6 +53,9 @@ services:
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
+      args:
+        DEBIAN_MIRROR: http://mirrors.aliyun.com/debian
+        DEBIAN_SECURITY_MIRROR: http://mirrors.aliyun.com/debian-security
     restart: unless-stopped
     environment:
       NODE_ENV: production
