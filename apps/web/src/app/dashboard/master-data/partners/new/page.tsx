@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Eye, Save } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openLocalAttachment } from '@/lib/attachment-preview';
 
 /* ── 枚举配置 ── */
 
@@ -155,6 +156,14 @@ export default function PartnerNewPage() {
   };
 
   const removeFile = (idx: number) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+
+  const viewFile = (file: File) => {
+    try {
+      openLocalAttachment(file);
+    } catch (e: any) {
+      alert(e.message || '附件打开失败');
+    }
+  };
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -604,7 +613,8 @@ export default function PartnerNewPage() {
                     </span>
                     <span className="flex-1 truncate">{f.name}</span>
                     <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button onClick={() => removeFile(i)} className="text-destructive hover:bg-destructive/10 rounded px-1">×</button>
+                    <button type="button" title="预览" onClick={() => viewFile(f)} className="text-primary hover:bg-primary/10 rounded p-1"><Eye className="h-3.5 w-3.5" /></button>
+                    <button type="button" title="移除" onClick={() => removeFile(i)} className="text-destructive hover:bg-destructive/10 rounded px-1">×</button>
                   </div>
                 ))}
               </div>

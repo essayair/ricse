@@ -48,7 +48,7 @@ export class WaybillController {
 
   @Post(':id/attachments')
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   async uploadAttachment(@Param('id') waybillId: string, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('请选择文件');
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];

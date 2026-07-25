@@ -8,9 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   ArrowLeft, Building2, MapPin, Phone, CreditCard, Truck,
-  Landmark, Package, AlertTriangle, Loader2, ChevronDown,
+  Landmark, Package, AlertTriangle, Loader2, ChevronDown, Eye,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openStoredAttachment } from '@/lib/attachment-preview';
 
 /* ── Types ── */
 
@@ -160,6 +161,14 @@ export default function PartnerDetailPage() {
       alert(e.message || '状态更新失败');
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const viewAttachment = async (attachmentId: string) => {
+    try {
+      await openStoredAttachment(`/partners/attachments/${attachmentId}/view-url`);
+    } catch (e: any) {
+      alert(e.message || '附件打开失败');
     }
   };
 
@@ -554,6 +563,9 @@ export default function PartnerDetailPage() {
                       {a.category === 'BUSINESS_LICENSE' ? '营业执照' : a.category} · {(a.size / 1024).toFixed(0)} KB
                     </div>
                   </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void viewAttachment(a.id)}>
+                    <Eye className="mr-1 h-4 w-4" />查看
+                  </Button>
                 </div>
               ))}
             </div>

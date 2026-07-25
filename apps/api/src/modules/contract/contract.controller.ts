@@ -69,7 +69,7 @@ export class ContractController {
   @Post(':id/attachments')
   @ApiOperation({ summary: '上传合同附件' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   async uploadAttachment(
     @Param('id') contractId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -82,14 +82,19 @@ export class ContractController {
     await this.contractService.findOne(contractId);
     const originalName = (requestedName?.trim() || normalizeUploadFilename(file.originalname)).slice(0, 255);
     const result = await this.fileService.upload(file.buffer, originalName, file.mimetype);
-    return this.contractService.createAttachment({
-      contractId,
-      fileName: result.fileName,
-      originalName,
-      mimeType: file.mimetype,
-      size: result.size,
-      category: category || 'OTHER',
-    });
+    try {
+      return await this.contractService.createAttachment({
+        contractId,
+        fileName: result.fileName,
+        originalName,
+        mimeType: file.mimetype,
+        size: result.size,
+        category: category || 'OTHER',
+      });
+    } catch (error) {
+      try { await this.fileService.delete(result.fileName); } catch {}
+      throw error;
+    }
   }
 
   @Get('attachments/:id/view-url')

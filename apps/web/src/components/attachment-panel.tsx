@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Eye, Paperclip, Trash2, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openStoredAttachment } from '@/lib/attachment-preview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -64,8 +65,7 @@ export function AttachmentPanel({
 
   const view = async (id: string) => {
     try {
-      const { url } = await api.get<{ url: string }>(`${attachmentPath}/${id}/view-url`);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      await openStoredAttachment(`${attachmentPath}/${id}/view-url`);
     } catch (error: any) {
       alert(error.message || '附件打开失败');
     }

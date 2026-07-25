@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openStoredAttachment } from '@/lib/attachment-preview';
 import { unitLabel } from '@/lib/unit';
 
 interface Approval {
@@ -396,13 +397,9 @@ export default function ContractDetailPage() {
   };
 
   const viewAttachment = async (id: string) => {
-    const preview = window.open('about:blank', '_blank');
     try {
-      const { url } = await api.get<{ url: string }>(`/contracts/attachments/${id}/view-url`);
-      if (preview) preview.location.assign(url);
-      else window.location.assign(url);
+      await openStoredAttachment(`/contracts/attachments/${id}/view-url`);
     } catch (e: any) {
-      preview?.close();
       alert(e.message || '附件打开失败');
     }
   };

@@ -375,7 +375,16 @@ export class PartnerService {
   }
 
   async findAttachmentById(id: string) {
-    return this.prisma.attachment.findUnique({ where: { id } });
+    return this.prisma.attachment.findFirst({
+      where: { id, partnerId: { not: null } },
+    });
+  }
+
+  async renameAttachment(id: string, originalName: string) {
+    return this.prisma.attachment.update({
+      where: { id },
+      data: { originalName },
+    });
   }
 
   async deleteAttachment(id: string) {

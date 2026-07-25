@@ -159,11 +159,12 @@ export class PartnerController {
   @Post(':partnerId/attachments')
   @ApiOperation({ summary: '上传附件（营业执照等）' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   async uploadAttachment(
     @Param('partnerId') partnerId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('category') category: string,
+    @Body('originalName') requestedName?: string,
   ) {
     if (!file) throw new BadRequestException('请选择文件');
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -171,16 +172,22 @@ export class PartnerController {
       throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
     }
 
-    const originalName = normalizeUploadFilename(file.originalname);
+    await this.partnerService.findOne(partnerId);
+    const originalName = (requestedName?.trim() || normalizeUploadFilename(file.originalname)).slice(0, 255);
     const result = await this.fileService.upload(file.buffer, originalName, file.mimetype);
-    return this.partnerService.createAttachment({
-      partnerId,
-      fileName: result.fileName,
-      originalName,
-      mimeType: file.mimetype,
-      size: result.size,
-      category: category || 'OTHER',
-    });
+    try {
+      return await this.partnerService.createAttachment({
+        partnerId,
+        fileName: result.fileName,
+        originalName,
+        mimeType: file.mimetype,
+        size: result.size,
+        category: category || 'OTHER',
+      });
+    } catch (error) {
+      try { await this.fileService.delete(result.fileName); } catch {}
+      throw error;
+    }
   }
 
   @Get(':partnerId/attachments')
@@ -189,12 +196,39 @@ export class PartnerController {
     return this.partnerService.findAttachments(partnerId);
   }
 
+  @Get('attachments/:id/view-url')
+  @ApiOperation({ summary: '获取合作伙伴附件临时查看地址' })
+  async getAttachmentViewUrl(@Param('id') id: string) {
+    const attachment = await this.partnerService.findAttachmentById(id);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Patch('attachments/:id/name')
+  @ApiOperation({ summary: '修改合作伙伴附件名称' })
+  async renameAttachment(
+    @Param('id') id: string,
+    @Body('originalName') originalName?: string,
+  ) {
+    const name = originalName?.trim();
+    if (!name) throw new BadRequestException('附件名称不能为空');
+    if (name.length > 255) throw new BadRequestException('附件名称不能超过 255 个字符');
+    const attachment = await this.partnerService.findAttachmentById(id);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return this.partnerService.renameAttachment(id, name);
+  }
+
   @Delete('attachments/:id')
   @HttpCode(204)
   @ApiOperation({ summary: '删除附件' })
   async deleteAttachment(@Param('id') id: string) {
     const att = await this.partnerService.findAttachmentById(id);
-    if (att) await this.fileService.delete(att.fileName);
-    return this.partnerService.deleteAttachment(id);
+    if (!att) return;
+    try {
+      await this.fileService.delete(att.fileName);
+    } catch {
+      // 存储对象已丢失时仍清理数据库记录，避免附件永久无法删除。
+    }
+    await this.partnerService.deleteAttachment(id);
   }
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, FileText, FlaskConical, Link2, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openStoredAttachment } from '@/lib/attachment-preview';
 import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -77,7 +78,7 @@ export default function QualityInspectionDetailPage() {
     finally { setSaving(false); }
   };
   const viewAttachment = async (attachmentId: string) => {
-    try { const { url } = await api.get<{ url: string }>(`/quality-inspections/attachments/${attachmentId}/view-url`); window.open(url, '_blank', 'noopener,noreferrer'); }
+    try { await openStoredAttachment(`/quality-inspections/attachments/${attachmentId}/view-url`); }
     catch (error: any) { alert(error.message || '附件打开失败'); }
   };
   const removeAttachment = async (attachmentId: string) => {

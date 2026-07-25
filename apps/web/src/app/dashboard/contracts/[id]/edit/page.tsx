@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save, Plus, Trash2, Paperclip, Loader2, Pencil, X } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
+import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
 import { unitLabel } from '@/lib/unit';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -221,9 +222,11 @@ export default function ContractEditPage() {
   };
 
   const viewPendingAttachment = (file: File) => {
-    const url = URL.createObjectURL(file);
-    window.open(url, '_blank', 'noopener,noreferrer');
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    try {
+      openLocalAttachment(file);
+    } catch (e: any) {
+      alert(e.message || '附件打开失败');
+    }
   };
 
   const deleteAttachment = async (id: string) => {
@@ -248,13 +251,9 @@ export default function ContractEditPage() {
   };
 
   const viewStoredAttachment = async (id: string) => {
-    const preview = window.open('about:blank', '_blank');
     try {
-      const { url } = await api.get<{ url: string }>(`/contracts/attachments/${id}/view-url`);
-      if (preview) preview.location.assign(url);
-      else window.location.assign(url);
+      await openStoredAttachment(`/contracts/attachments/${id}/view-url`);
     } catch (e: any) {
-      preview?.close();
       alert(e.message || '附件打开失败');
     }
   };

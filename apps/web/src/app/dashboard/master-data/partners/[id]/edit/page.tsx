@@ -6,8 +6,9 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Save, Loader2, Lock, Upload, X } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Lock, Upload, X, Eye, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
 
 /* ── Constants ── */
 
@@ -151,6 +152,33 @@ export default function PartnerEditPage() {
       await api.delete(`/partners/attachments/${attId}`);
       setAttachments((prev) => prev.filter((a) => a.id !== attId));
     } catch (e: any) { alert(e.message || '删除失败'); }
+  };
+
+  const viewAttachment = async (attId: string) => {
+    try {
+      await openStoredAttachment(`/partners/attachments/${attId}/view-url`);
+    } catch (e: any) {
+      alert(e.message || '附件打开失败');
+    }
+  };
+
+  const renameAttachment = async (attachment: AttItem) => {
+    const originalName = prompt('请输入新的附件名称', attachment.originalName)?.trim();
+    if (!originalName || originalName === attachment.originalName) return;
+    try {
+      const updated = await api.patch<AttItem>(`/partners/attachments/${attachment.id}/name`, { originalName });
+      setAttachments((prev) => prev.map((item) => item.id === attachment.id ? updated : item));
+    } catch (e: any) {
+      alert(e.message || '修改附件名称失败');
+    }
+  };
+
+  const viewNewFile = (file: File) => {
+    try {
+      openLocalAttachment(file);
+    } catch (e: any) {
+      alert(e.message || '附件打开失败');
+    }
   };
 
   const uploadNewFiles = async () => {
@@ -369,7 +397,9 @@ export default function PartnerEditPage() {
                     <span>{a.mimeType.startsWith('image/') ? '🖼' : '📄'}</span>
                     <span className="flex-1 truncate">{a.originalName}</span>
                     <span className="text-xs text-muted-foreground">{a.category === 'BUSINESS_LICENSE' ? '营业执照' : ''} · {(a.size / 1024).toFixed(0)} KB</span>
-                    <button onClick={() => deleteAttachment(a.id)} className="text-destructive hover:bg-destructive/10 rounded px-1"><X className="h-3.5 w-3.5" /></button>
+                    <button type="button" title="查看" onClick={() => void viewAttachment(a.id)} className="text-primary hover:bg-primary/10 rounded p-1"><Eye className="h-3.5 w-3.5" /></button>
+                    <button type="button" title="修改名称" onClick={() => void renameAttachment(a)} className="text-muted-foreground hover:bg-muted rounded p-1"><Pencil className="h-3.5 w-3.5" /></button>
+                    <button type="button" title="删除" onClick={() => void deleteAttachment(a.id)} className="text-destructive hover:bg-destructive/10 rounded p-1"><X className="h-3.5 w-3.5" /></button>
                   </div>
                 ))}
               </div>
@@ -386,7 +416,8 @@ export default function PartnerEditPage() {
                   <div key={i} className="flex items-center gap-2 text-sm py-1 px-2 rounded bg-primary/5">
                     <span>{f.name}</span>
                     <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button onClick={() => setNewFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-auto text-destructive"><X className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => viewNewFile(f)} className="ml-auto text-primary"><Eye className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => setNewFiles((prev) => prev.filter((_, j) => j !== i))} className="text-destructive"><X className="h-3.5 w-3.5" /></button>
                   </div>
                 ))}
               </div>

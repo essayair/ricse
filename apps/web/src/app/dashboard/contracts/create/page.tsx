@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, TrendingDown, TrendingUp, Zap, Save } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
+import { openLocalAttachment } from '@/lib/attachment-preview';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -356,16 +357,14 @@ export default function ContractCreatePage() {
               {files.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
                   <button type="button" onClick={() => {
-                    const url = URL.createObjectURL(item.file);
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    try { openLocalAttachment(item.file); }
+                    catch (e: any) { alert(e.message || '附件打开失败'); }
                   }} className="shrink-0 text-primary hover:underline">查看</button>
                   <Input value={item.name} onChange={e => setFiles(current => current.map((entry, index) => index === i ? { ...entry, name: e.target.value } : entry))} placeholder="附件名称" />
                   <span className="shrink-0 text-xs text-muted-foreground">{(item.file.size / 1024).toFixed(0)} KB</span>
                   <button type="button" onClick={() => {
-                    const url = URL.createObjectURL(item.file);
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    try { openLocalAttachment(item.file); }
+                    catch (e: any) { alert(e.message || '附件打开失败'); }
                   }} className="text-primary text-xs">预览</button>
                   <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-destructive text-xs">×</button>
                 </div>

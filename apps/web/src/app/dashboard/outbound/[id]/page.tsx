@@ -6,6 +6,7 @@ import {
   ArrowLeft, CheckCircle2, FileText, PackageMinus, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openStoredAttachment } from '@/lib/attachment-preview';
 import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -79,8 +80,7 @@ export default function OutboundDetailPage() {
 
   const viewAttachment = async (attachment: any) => {
     try {
-      const result = await api.get<{ url: string }>(`/outbound-receipts/attachments/${attachment.id}/view-url`);
-      window.open(result.url, '_blank', 'noopener,noreferrer');
+      await openStoredAttachment(`/outbound-receipts/attachments/${attachment.id}/view-url`);
     } catch (error: any) {
       alert(error.message);
     }
