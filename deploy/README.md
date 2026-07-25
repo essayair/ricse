@@ -20,7 +20,7 @@ chmod +x deploy/deploy.sh
 mkdir -p deploy/certs
 # 放入 deploy/certs/fullchain.pem 和 deploy/certs/privkey.pem
 # 同时把 .env.staging 中的 PUBLIC_URL、MINIO_PUBLIC_PORT、
-# MINIO_PUBLIC_USE_SSL 改为 HTTPS 配置
+# MINIO_PUBLIC_USE_SSL 改为 HTTPS 配置，并设置 ENABLE_HTTPS=true
 
 ./deploy/deploy.sh --https
 ```
@@ -35,7 +35,8 @@ mkdir -p deploy/certs
 2. 构建任务执行 `./deploy/ci-package-source.sh`，上传 `dist/ricse-source-*.tgz`；
 3. 主机部署任务将制品下载到 `/home/admin/app`；
 4. 主机部署脚本解压到 `/opt/ricse/releases/<commit>`，复制现有
-   `/opt/ricse/deploy/.env.staging`，执行该版本的
+   `/opt/ricse/deploy/.env.staging`；启用 HTTPS 时还会从
+   `/opt/ricse/deploy/certs` 复制证书，执行该版本的
    `deploy/flow-host-deploy.sh`；
 5. 检查 `/api/v1/health` 和 `/login`。
 

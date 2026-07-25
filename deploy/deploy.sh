@@ -8,12 +8,12 @@ COMPOSE_ARGS=(
   --env-file "${ENV_FILE}"
   -f "${DEPLOY_DIR}/docker-compose.staging.yml"
 )
-ENABLE_HTTPS=false
+HTTPS_ARGUMENT=false
 RUN_SEED=false
 
 for argument in "$@"; do
   case "${argument}" in
-    --https) ENABLE_HTTPS=true ;;
+    --https) HTTPS_ARGUMENT=true ;;
     --seed) RUN_SEED=true ;;
     *)
       echo "未知参数：${argument}；仅支持 --https 和 --seed。" >&2
@@ -22,18 +22,28 @@ for argument in "$@"; do
   esac
 done
 
+if [[ ! -f "${ENV_FILE}" ]]; then
+  echo "缺少环境变量文件：${ENV_FILE}" >&2
+  echo "请复制 deploy/.env.staging.example 并填写真实配置。" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "${ENV_FILE}"
+set +a
+
+ENABLE_HTTPS="${ENABLE_HTTPS:-false}"
+if [[ "${HTTPS_ARGUMENT}" == "true" ]]; then
+  ENABLE_HTTPS=true
+fi
+
 if [[ "${ENABLE_HTTPS}" == "true" ]]; then
   if [[ ! -f "${DEPLOY_DIR}/certs/fullchain.pem" || ! -f "${DEPLOY_DIR}/certs/privkey.pem" ]]; then
     echo "缺少 HTTPS 证书：deploy/certs/fullchain.pem 或 deploy/certs/privkey.pem" >&2
     exit 1
   fi
   COMPOSE_ARGS+=(-f "${DEPLOY_DIR}/docker-compose.https.yml")
-fi
-
-if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "缺少环境变量文件：${ENV_FILE}" >&2
-  echo "请复制 deploy/.env.staging.example 并填写真实配置。" >&2
-  exit 1
 fi
 
 docker compose "${COMPOSE_ARGS[@]}" config >/dev/null

@@ -8,11 +8,11 @@ ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/.env.staging}"
 MANIFEST_FILE="${MANIFEST_FILE:-${DEPLOY_DIR}/.release-image.env}"
 STATE_DIR="${DEPLOY_DIR}/.release"
 BACKUP_DIR="${BACKUP_DIR:-${PROJECT_DIR}/backups/postgres}"
-ENABLE_HTTPS=false
+HTTPS_ARGUMENT=false
 
 for argument in "$@"; do
   case "${argument}" in
-    --https) ENABLE_HTTPS=true ;;
+    --https) HTTPS_ARGUMENT=true ;;
     *)
       echo "未知参数：${argument}；仅支持 --https。" >&2
       exit 1
@@ -36,6 +36,11 @@ source "${ENV_FILE}"
 # shellcheck disable=SC1090
 source "${MANIFEST_FILE}"
 set +a
+
+ENABLE_HTTPS="${ENABLE_HTTPS:-false}"
+if [[ "${HTTPS_ARGUMENT}" == "true" ]]; then
+  ENABLE_HTTPS=true
+fi
 
 : "${API_IMAGE:?镜像清单缺少 API_IMAGE}"
 : "${WEB_IMAGE:?镜像清单缺少 WEB_IMAGE}"
@@ -114,10 +119,18 @@ docker compose "${COMPOSE_ARGS[@]}" run --rm api \
 
 docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans
 
+HEALTH_URL="http://127.0.0.1"
+HEALTH_CURL_ARGS=()
+if [[ "${ENABLE_HTTPS}" == "true" ]]; then
+  : "${PUBLIC_HOST:?HTTPS 环境配置缺少 PUBLIC_HOST}"
+  HEALTH_URL="https://${PUBLIC_HOST}"
+  HEALTH_CURL_ARGS=(--resolve "${PUBLIC_HOST}:443:127.0.0.1")
+fi
+
 healthy=false
 for _ in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1/api/v1/health >/dev/null \
-    && curl -fsS http://127.0.0.1/login >/dev/null; then
+  if curl -fsS "${HEALTH_CURL_ARGS[@]}" "${HEALTH_URL}/api/v1/health" >/dev/null \
+    && curl -fsS "${HEALTH_CURL_ARGS[@]}" "${HEALTH_URL}/login" >/dev/null; then
     healthy=true
     break
   fi
