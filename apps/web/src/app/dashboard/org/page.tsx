@@ -396,7 +396,7 @@ function OrgPageInner() {
           {partnerLoading ? (
             <div className="py-4 text-center text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin inline mr-2" />加载合作伙伴列表...</div>
           ) : partnerList.length === 0 ? (
-            <div className="py-4 text-center text-muted-foreground text-sm">暂无可用的合作伙伴，请先在"主数据管理"中创建合作伙伴</div>
+            <div className="py-4 text-center text-muted-foreground text-sm">暂无可用的合作伙伴，请先在“主数据管理”中创建合作伙伴</div>
           ) : (
             <select
               value={selectedPartner?.id || ''}
@@ -532,7 +532,7 @@ function OrgPageInner() {
           {partnerLoading ? (
             <div className="py-4 text-center text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin inline mr-2" />加载合作伙伴列表...</div>
           ) : partnerList.length === 0 ? (
-            <div className="py-4 text-center text-muted-foreground text-sm">暂无可用的合作伙伴，请先在"主数据管理"中创建合作伙伴</div>
+            <div className="py-4 text-center text-muted-foreground text-sm">暂无可用的合作伙伴，请先在“主数据管理”中创建合作伙伴</div>
           ) : (
             <select
               value={selectedPartner?.id || ''}
@@ -596,7 +596,7 @@ function OrgPageInner() {
             {tab === 'dept' && (
               <div className="divide-y">
                 {companies.length === 0 ? (
-                  <div className="p-12 text-center text-muted-foreground text-sm">暂未创建企业，点击右上角"创建公司"开始</div>
+                  <div className="p-12 text-center text-muted-foreground text-sm">暂未创建企业，点击右上角“创建公司”开始</div>
                 ) : (
                   companies.map((company) => {
                     const isExpanded = expandedCompanies.has(company.id);

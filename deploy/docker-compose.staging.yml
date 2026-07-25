@@ -50,6 +50,7 @@ services:
       - backend
 
   api:
+    image: ${API_IMAGE:-ricse-staging-api}:${IMAGE_TAG:-local}
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
@@ -104,6 +105,7 @@ services:
       - backend
 
   web:
+    image: ${WEB_IMAGE:-ricse-staging-web}:${IMAGE_TAG:-local}
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
