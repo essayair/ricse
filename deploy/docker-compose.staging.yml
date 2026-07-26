@@ -80,6 +80,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET:-ricse-attachments}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
     depends_on:
       postgres:
         condition: service_healthy

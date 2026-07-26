@@ -12,6 +12,7 @@ export class FileService {
   constructor(private readonly configService: ConfigService) {
     const accessKey = this.configService.get<string>('MINIO_ACCESS_KEY') || 'ricse';
     const secretKey = this.configService.get<string>('MINIO_SECRET_KEY') || 'ricse_dev';
+    const region = this.configService.get<string>('MINIO_REGION') || 'us-east-1';
     const internalEndpoint = this.parseEndpoint(
       this.configService.get<string>('MINIO_ENDPOINT') || 'localhost',
       this.configService.get<string>('MINIO_PORT'),
@@ -29,7 +30,9 @@ export class FileService {
 
     this.bucket = this.configService.get<string>('MINIO_BUCKET') || 'ricse-attachments';
     this.client = new Minio.Client({ ...internalEndpoint, accessKey, secretKey });
-    this.publicClient = new Minio.Client({ ...publicEndpoint, accessKey, secretKey });
+    // 明确区域后，MinIO SDK 生成预签名地址时不再通过公网域名查询存储桶区域。
+    // 线上 API 位于 internal Docker 网络，不能依赖公网 DNS 完成这一步。
+    this.publicClient = new Minio.Client({ ...publicEndpoint, accessKey, secretKey, region });
     void this.ensureBucket();
   }
 
