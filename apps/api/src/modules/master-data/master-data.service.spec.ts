@@ -41,12 +41,66 @@ describe('MasterDataService', () => {
       prisma.materialCategory.create.mockResolvedValue(mockCategory as any);
       const result = await service.createCategory({ name: '萤石粉', sort: 1 });
       expect(result.name).toBe('萤石粉');
+      expect(prisma.materialCategory.create).toHaveBeenCalledWith({
+        data: { name: '萤石粉', parentId: null, sort: 1 },
+      });
+    });
+
+    it('只允许在一级分类下创建二级分类', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({
+        id: 'cat-2', parentId: 'cat-1',
+      } as any);
+
+      await expect(service.createCategory({
+        name: '三级分类',
+        parentId: 'cat-2',
+      })).rejects.toThrow('物料分类最多支持两级');
+    });
+
+    it('同级分类名称不能重复', async () => {
+      prisma.materialCategory.findFirst.mockResolvedValue({ id: 'cat-1' } as any);
+
+      await expect(service.createCategory({ name: '萤石粉' }))
+        .rejects.toThrow('同级分类名称已存在');
     });
 
     it('查询分类树（仅顶级）', async () => {
       prisma.materialCategory.findMany.mockResolvedValue([{ ...mockCategory, children: [] }] as any);
       const result = await service.findAllCategories();
       expect(result).toHaveLength(1);
+    });
+
+    it('分类被物料引用时禁止删除', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({
+        id: 'cat-1',
+        _count: { children: 0, materials: 2 },
+      } as any);
+
+      await expect(service.deleteCategory('cat-1'))
+        .rejects.toThrow('该分类已被物料引用，不能删除');
+      expect(prisma.materialCategory.delete).not.toHaveBeenCalled();
+    });
+
+    it('存在子分类时禁止删除一级分类', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({
+        id: 'cat-1',
+        _count: { children: 1, materials: 0 },
+      } as any);
+
+      await expect(service.deleteCategory('cat-1'))
+        .rejects.toThrow('该分类下仍有子分类，请先处理子分类');
+      expect(prisma.materialCategory.delete).not.toHaveBeenCalled();
+    });
+
+    it('无引用分类可以删除', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({
+        id: 'cat-1',
+        _count: { children: 0, materials: 0 },
+      } as any);
+      prisma.materialCategory.delete.mockResolvedValue(mockCategory as any);
+
+      const result = await service.deleteCategory('cat-1');
+      expect(result.id).toBe('cat-1');
     });
   });
 

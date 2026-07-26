@@ -57,6 +57,7 @@ function Breadcrumbs() {
     quality: '质检单管理',
     monitor: '监控录像',
     'master-data': '主数据管理',
+    'material-categories': '物料分类管理',
     org: '组织数据',
     system: '系统管理',
     approvals: '审批流程',

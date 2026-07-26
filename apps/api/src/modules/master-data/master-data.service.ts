@@ -9,14 +9,44 @@ export class MasterDataService {
   // ===== 物料分类 =====
 
   async createCategory(data: { name: string; parentId?: string; sort?: number }) {
-    return this.prisma.materialCategory.create({ data });
+    const name = data.name?.trim();
+    if (!name) throw new BadRequestException('分类名称不能为空');
+
+    if (data.parentId) {
+      const parent = await this.prisma.materialCategory.findUnique({
+        where: { id: data.parentId },
+        select: { id: true, parentId: true },
+      });
+      if (!parent) throw new NotFoundException('上级分类不存在');
+      if (parent.parentId) throw new BadRequestException('物料分类最多支持两级');
+    }
+
+    const duplicate = await this.prisma.materialCategory.findFirst({
+      where: { name, parentId: data.parentId || null },
+      select: { id: true },
+    });
+    if (duplicate) throw new BadRequestException('同级分类名称已存在');
+
+    return this.prisma.materialCategory.create({
+      data: {
+        name,
+        parentId: data.parentId || null,
+        sort: data.sort ?? 0,
+      },
+    });
   }
 
   async findAllCategories() {
     return this.prisma.materialCategory.findMany({
       where: { parentId: null },
-      include: { children: { orderBy: { sort: 'asc' } } },
-      orderBy: { sort: 'asc' },
+      include: {
+        _count: { select: { materials: true } },
+        children: {
+          include: { _count: { select: { materials: true } } },
+          orderBy: [{ sort: 'asc' }, { name: 'asc' }],
+        },
+      },
+      orderBy: [{ sort: 'asc' }, { name: 'asc' }],
     });
   }
 
@@ -196,11 +226,57 @@ export class MasterDataService {
 
   // ===== 物料分类 =====
 
-  async updateCategory(id: string, data: { name?: string; parentId?: string; sort?: number }) {
-    return this.prisma.materialCategory.update({ where: { id }, data });
+  async updateCategory(id: string, data: { name?: string; parentId?: string | null; sort?: number }) {
+    const category = await this.prisma.materialCategory.findUnique({
+      where: { id },
+      select: { id: true, name: true, parentId: true, _count: { select: { children: true } } },
+    });
+    if (!category) throw new NotFoundException('物料分类不存在');
+
+    const name = data.name === undefined ? category.name : data.name.trim();
+    if (!name) throw new BadRequestException('分类名称不能为空');
+    const parentId = data.parentId === undefined ? category.parentId : data.parentId;
+
+    if (parentId === id) throw new BadRequestException('分类不能选择自身作为上级分类');
+    if (parentId) {
+      const parent = await this.prisma.materialCategory.findUnique({
+        where: { id: parentId },
+        select: { id: true, parentId: true },
+      });
+      if (!parent) throw new NotFoundException('上级分类不存在');
+      if (parent.parentId) throw new BadRequestException('物料分类最多支持两级');
+      if (category._count.children > 0) {
+        throw new BadRequestException('含有下级分类的一级分类不能调整为二级分类');
+      }
+    }
+
+    const duplicate = await this.prisma.materialCategory.findFirst({
+      where: { id: { not: id }, name, parentId },
+      select: { id: true },
+    });
+    if (duplicate) throw new BadRequestException('同级分类名称已存在');
+
+    return this.prisma.materialCategory.update({
+      where: { id },
+      data: { name, parentId, sort: data.sort },
+    });
   }
 
   async deleteCategory(id: string) {
+    const category = await this.prisma.materialCategory.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        _count: { select: { children: true, materials: true } },
+      },
+    });
+    if (!category) throw new NotFoundException('物料分类不存在');
+    if (category._count.children > 0) {
+      throw new BadRequestException('该分类下仍有子分类，请先处理子分类');
+    }
+    if (category._count.materials > 0) {
+      throw new BadRequestException('该分类已被物料引用，不能删除');
+    }
     return this.prisma.materialCategory.delete({ where: { id } });
   }
 }

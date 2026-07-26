@@ -26,7 +26,7 @@ export class MasterDataController {
 
   @Patch('material-categories/:id')
   @ApiOperation({ summary: '更新物料分类' })
-  updateCategory(@Param('id') id: string, @Body() dto: { name?: string; parentId?: string; sort?: number }) {
+  updateCategory(@Param('id') id: string, @Body() dto: { name?: string; parentId?: string | null; sort?: number }) {
     return this.masterDataService.updateCategory(id, dto);
   }
 

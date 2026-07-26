@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Plus, Search, Truck, DollarSign,
-  Building2, Package, Warehouse, X, MapPin, ExternalLink,
+  Building2, Package, Warehouse, X, MapPin, ExternalLink, FolderTree,
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -215,11 +215,18 @@ function MasterDataPageInner() {
           </Link>
         )}
         {tab === 'materials' && (
-          <Link href="/dashboard/master-data/materials/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-1" />新建物料
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/dashboard/master-data/material-categories">
+              <Button variant="outline">
+                <FolderTree className="h-4 w-4 mr-1" />分类管理
+              </Button>
+            </Link>
+            <Link href="/dashboard/master-data/materials/new">
+              <Button>
+                <Plus className="h-4 w-4 mr-1" />新建物料
+              </Button>
+            </Link>
+          </div>
         )}
         {tab === 'warehouses' && (
           <Link href="/dashboard/master-data/warehouses/new">
