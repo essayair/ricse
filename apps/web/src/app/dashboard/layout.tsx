@@ -61,6 +61,7 @@ function Breadcrumbs() {
     org: '组织数据',
     system: '系统管理',
     approvals: '审批流程',
+    'access-control': '用户与权限',
     create: '新建',
     edit: '编辑',
   };

@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 
@@ -16,17 +16,62 @@ export class UsersService {
     if (existing) throw new ConflictException('用户名已存在');
 
     const hashed = await bcrypt.hash(data.password, 10);
-    return this.prisma.user.create({
-      data: {
-        username: data.username,
-        password: hashed,
-        name: data.name,
-        role: data.role || 'USER',
-        employeeId: data.employeeId,
-        companyId: data.companyId,
-        businessGroupId: data.businessGroupId,
-      },
-      select: { id: true, username: true, name: true, role: true, employeeId: true, companyId: true, businessGroupId: true, createdAt: true },
+    const roleCode = data.role || 'USER';
+    const [role, company, employee] = await Promise.all([
+      this.prisma.role.findUnique({ where: { code: roleCode } }),
+      data.companyId ? this.prisma.company.findUnique({ where: { id: data.companyId } }) : null,
+      data.employeeId ? this.prisma.employee.findUnique({ where: { id: data.employeeId } }) : null,
+    ]);
+    if (!role || role.status !== 'ACTIVE') throw new BadRequestException('指定角色不存在或已停用');
+    if (data.companyId && !company) throw new BadRequestException('所属企业不存在');
+    if (employee && data.companyId && employee.companyId !== data.companyId) {
+      throw new BadRequestException('员工与所属企业不一致');
+    }
+    if (company?.type === 'EXTERNAL') {
+      const externalAccountCount = await this.prisma.user.count({
+        where: { companyId: company.id, status: 'ACTIVE' },
+      });
+      if (externalAccountCount >= 6) {
+        throw new BadRequestException('一个外部企业最多开通 6 个有效账号');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          username: data.username,
+          password: hashed,
+          name: data.name,
+          role: roleCode,
+          employeeId: data.employeeId,
+          companyId: data.companyId,
+          businessGroupId: data.businessGroupId,
+        },
+      });
+      const assignment = await tx.userRoleAssignment.create({
+        data: {
+          userId: user.id,
+          roleId: role.id,
+          scopeType: company?.type === 'EXTERNAL' ? 'COMPANY' : 'ALL',
+        },
+      });
+      if (company?.type === 'EXTERNAL') {
+        await tx.userRoleScope.create({
+          data: {
+            assignmentId: assignment.id,
+            targetType: 'COMPANY',
+            targetId: company.id,
+          },
+        });
+      }
+      return tx.user.findUnique({
+        where: { id: user.id },
+        select: {
+          id: true, username: true, name: true, role: true,
+          employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
+          roleAssignments: { include: { role: true, scopes: true } },
+        },
+      });
     });
   }
 
@@ -40,7 +85,11 @@ export class UsersService {
         id: true, username: true, name: true, role: true, status: true,
         employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
         employee: { select: { id: true, name: true, department: { select: { name: true } } } },
-        company: { select: { id: true, code: true, name: true } },
+        company: { select: { id: true, code: true, name: true, type: true, partnerId: true } },
+        roleAssignments: {
+          where: { status: 'ACTIVE' },
+          include: { role: true, scopes: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -53,6 +102,11 @@ export class UsersService {
         id: true, username: true, name: true, role: true, status: true,
         employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
         employee: { select: { id: true, name: true, department: { select: { name: true } } } },
+        company: { select: { id: true, code: true, name: true, type: true, partnerId: true } },
+        roleAssignments: {
+          where: { status: 'ACTIVE' },
+          include: { role: true, scopes: true },
+        },
       },
     });
     if (!user) throw new NotFoundException('用户不存在');

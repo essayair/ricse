@@ -21,35 +21,39 @@ export class WaybillController {
   }
 
   @Get()
-  findAll(@Query('status') status?: string, @Query('search') search?: string) {
-    return this.service.findAll({ status, search });
+  findAll(@CurrentUser('id') userId: string, @Query('status') status?: string, @Query('search') search?: string) {
+    return this.service.findAll({ status, search }, userId);
   }
 
   @Get('dispatch-notices/:id/availability')
-  getAvailability(@Param('id') id: string) {
-    return this.service.getNoticeAvailability(id);
+  getAvailability(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.getNoticeAvailability(id, userId);
   }
 
   @Get('attachments/:id/view-url')
-  async getAttachmentViewUrl(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async getAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
   @Delete('attachments/:id')
   @HttpCode(204)
-  async deleteAttachment(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId, 'logistics.manage');
     if (!attachment) return;
-    await this.service.deleteAttachment(id);
+    await this.service.deleteAttachment(id, userId);
     try { await this.fileService.delete(attachment.fileName); } catch {}
   }
 
   @Post(':id/attachments')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
-  async uploadAttachment(@Param('id') waybillId: string, @UploadedFile() file: Express.Multer.File) {
+  async uploadAttachment(
+    @Param('id') waybillId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
     if (!file) throw new BadRequestException('请选择文件');
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
     if (!allowed.includes(file.mimetype)) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
@@ -59,7 +63,7 @@ export class WaybillController {
       return await this.service.createAttachment({
         waybillId, fileName: result.fileName, originalName,
         mimeType: file.mimetype, size: result.size,
-      });
+      }, userId);
     } catch (error) {
       try { await this.fileService.delete(result.fileName); } catch {}
       throw error;
@@ -67,8 +71,8 @@ export class WaybillController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.findOne(id, userId);
   }
 
   @Patch(':id/assignment')
@@ -76,17 +80,17 @@ export class WaybillController {
     freightMode?: string; vehicleId?: string; carrierPartnerId?: string; carrierName?: string;
     plateNo?: string; driverName?: string; driverPhone?: string;
     plannedDepartureAt?: string; plannedArrivalAt?: string;
-  }) {
-    return this.service.assign(id, data);
+  }, @CurrentUser('id') userId: string) {
+    return this.service.assign(id, data, userId);
   }
 
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.service.updateStatus(id, status);
+  updateStatus(@Param('id') id: string, @Body('status') status: string, @CurrentUser('id') userId: string) {
+    return this.service.updateStatus(id, status, userId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.remove(id, userId);
   }
 }

@@ -11,6 +11,7 @@ import { LogisticsModule } from './modules/logistics/logistics.module';
 import { WeighbridgeModule } from './modules/weighbridge/weighbridge.module';
 import { QualityModule } from './modules/quality/quality.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { AccessControlModule } from './modules/access-control/access-control.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     WeighbridgeModule,
     QualityModule,
     InventoryModule,
+    AccessControlModule,
   ],
 })
 export class AppModule {}

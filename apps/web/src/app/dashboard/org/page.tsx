@@ -16,7 +16,17 @@ interface CompanyItem { id: string; code: string; name: string; shortName?: stri
 interface DeptItem { id: string; name: string; companyId: string; sort: number; company?: { code: string; name: string }; parentId?: string }
 interface EmployeeItem { id: string; name: string; departmentId: string; companyId: string; position?: string; phone?: string; email?: string; status: string; department?: { name: string }; company?: { code: string; name: string }; user?: { id: string; username: string; status: string } | null }
 interface BusinessGroupItem { id: string; name: string; description?: string; companies?: { company: { id: string; code: string; name: string } }[] }
-interface UserItem { id: string; username: string; name: string; role: string; status: string; employeeId?: string; companyId?: string; businessGroupId?: string; employee?: { name: string; department?: { name: string } } | null; company?: { code: string; name: string } | null }
+interface UserItem {
+  id: string; username: string; name: string; role: string; status: string;
+  employeeId?: string; companyId?: string; businessGroupId?: string;
+  employee?: { name: string; department?: { name: string } } | null;
+  company?: { code: string; name: string; type?: string } | null;
+  roleAssignments?: Array<{
+    scopeType: string;
+    role: { id: string; code: string; name: string };
+    scopes: Array<{ targetType: string; targetId: string }>;
+  }>;
+}
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'company', label: '企业维护', icon: Building2 },
@@ -276,7 +286,18 @@ function OrgPageInner() {
   const renderUserRow = (u: UserItem) => (
     <tr key={u.id} className="border-b hover:bg-muted/50 transition-colors">
       <td className="px-4 py-2.5 font-mono text-sm">{u.username}</td>
-      <td className="px-4 py-2.5 font-medium"><div>{u.name}</div><div className="mt-1 text-xs font-normal text-muted-foreground">{u.role === 'ADMIN' ? '系统管理员' : u.role === 'MANAGER' ? '管理人员' : '普通用户'}</div></td>
+      <td className="px-4 py-2.5 font-medium">
+        <div>{u.name}</div>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {(u.roleAssignments?.length
+            ? u.roleAssignments.map((assignment) => assignment.role.name)
+            : [u.role === 'ADMIN' ? '系统管理员' : u.role === 'MANAGER' ? '管理人员' : '普通用户']
+          ).map((name) => <Badge key={name} variant="outline" className="text-[10px] font-normal">{name}</Badge>)}
+        </div>
+        {u.company?.type === 'EXTERNAL' && (
+          <div className="mt-1 text-[10px] font-normal text-blue-600">本企业全部关联数据</div>
+        )}
+      </td>
       <td className="px-4 py-2.5 text-muted-foreground text-xs">
         {u.employee ? <Link href={`/dashboard/org/employees/${u.employeeId}`} className="hover:text-primary hover:underline">{u.employee.name}</Link> : '—'}
       </td>

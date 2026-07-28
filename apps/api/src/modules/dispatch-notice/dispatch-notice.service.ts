@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateDispatchNoticeDto } from './dto/create-dispatch-notice.dto';
 
 @Injectable()
 export class DispatchNoticeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     order: {
@@ -40,9 +44,11 @@ export class DispatchNoticeService {
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async getOrderAvailability(orderId: string) {
+  async getOrderAvailability(orderId: string, userId: string, permission = 'execution.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getOrderScope(userId);
     const order = await this.prisma.order.findFirst({
-      where: { id: orderId, deletedAt: null },
+      where: { id: orderId, deletedAt: null, AND: [scope] },
       include: { lineItems: { orderBy: { createdAt: 'asc' } }, contract: true },
     });
     if (!order) throw new NotFoundException('执行批次不存在');
@@ -70,7 +76,7 @@ export class DispatchNoticeService {
   }
 
   async create(dto: CreateDispatchNoticeDto, userId: string) {
-    const availability = await this.getOrderAvailability(dto.orderId);
+    const availability = await this.getOrderAvailability(dto.orderId, userId, 'execution.manage');
     const order = availability.order;
     const mode = dto.mode || 'STANDARD';
     if (order.type === 'SALES' && mode === 'STANDARD' && !dto.warehouseId) {
@@ -120,8 +126,10 @@ export class DispatchNoticeService {
     });
   }
 
-  async findAll(params: { status?: string; type?: string; search?: string }) {
-    const where: Prisma.DispatchNoticeWhereInput = { deletedAt: null };
+  async findAll(params: { status?: string; type?: string; search?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'execution.view');
+    const scope = await this.accessControl.getDispatchNoticeScope(userId);
+    const where: Prisma.DispatchNoticeWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.type) where.type = params.type;
     if (params.search) {
@@ -138,16 +146,18 @@ export class DispatchNoticeService {
     return { items, total: items.length };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string, permission = 'execution.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getDispatchNoticeScope(userId);
     const notice = await this.prisma.dispatchNotice.findFirst({
-      where: { id, deletedAt: null }, include: this.include,
+      where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });
     if (!notice) throw new NotFoundException('执行通知不存在');
     return notice;
   }
 
-  async updateStatus(id: string, status: string) {
-    const notice = await this.findOne(id);
+  async updateStatus(id: string, status: string, userId: string) {
+    const notice = await this.findOne(id, userId, 'execution.manage');
     const allowed: Record<string, string[]> = {
       DRAFT: ['ISSUED', 'CANCELLED'],
       ISSUED: ['CANCELLED', 'COMPLETED'],
@@ -215,8 +225,8 @@ export class DispatchNoticeService {
     });
   }
 
-  async remove(id: string) {
-    const notice = await this.findOne(id);
+  async remove(id: string, userId: string) {
+    const notice = await this.findOne(id, userId, 'execution.manage');
     if (!['DRAFT', 'CANCELLED'].includes(notice.status)) {
       throw new BadRequestException('仅草稿或已取消执行通知可以删除');
     }

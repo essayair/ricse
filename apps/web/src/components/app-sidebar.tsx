@@ -108,6 +108,7 @@ const SYSTEM_ITEMS: NavGroup[] = [
     label: '系统管理',
     icon: Settings2,
     children: [
+      { href: '/dashboard/system/access-control', label: '用户与权限' },
       { href: '/dashboard/system/approvals', label: '审批流程' },
     ],
   },

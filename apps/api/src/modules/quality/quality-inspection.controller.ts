@@ -29,6 +29,7 @@ export class QualityInspectionController {
   @Get()
   @ApiOperation({ summary: '质检单分页检索' })
   findAll(
+    @CurrentUser('id') userId: string,
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
     @Query('search') search?: string, @Query('status') status?: string,
     @Query('conclusion') conclusion?: string, @Query('dateFrom') dateFrom?: string,
@@ -37,27 +38,27 @@ export class QualityInspectionController {
     return this.service.findAll({
       page: page ? Number(page) : undefined, pageSize: pageSize ? Number(pageSize) : undefined,
       search, status, conclusion, dateFrom, dateTo,
-    });
+    }, userId);
   }
 
   @Get('eligible-weigh-tickets')
-  eligibleWeighTickets() {
-    return this.service.eligibleWeighTickets();
+  eligibleWeighTickets(@CurrentUser('id') userId: string) {
+    return this.service.eligibleWeighTickets(userId);
   }
 
   @Get('attachments/:id/view-url')
-  async attachmentViewUrl(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async attachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
   @Delete('attachments/:id')
   @HttpCode(204)
-  async deleteAttachment(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId, 'quality.manage');
     if (!attachment) return;
-    await this.service.deleteAttachment(id);
+    await this.service.deleteAttachment(id, userId);
     try { await this.fileService.delete(attachment.fileName); } catch {}
   }
 
@@ -67,6 +68,7 @@ export class QualityInspectionController {
   async uploadAttachment(
     @Param('id') qualityInspectionId: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
     @Body('category') requestedCategory?: string,
   ) {
     if (!file) throw new BadRequestException('请选择文件');
@@ -81,7 +83,7 @@ export class QualityInspectionController {
     try {
       return await this.service.createAttachment({
         qualityInspectionId, fileName: result.fileName, originalName, mimeType, size: result.size, category,
-      });
+      }, userId);
     } catch (error) {
       try { await this.fileService.delete(result.fileName); } catch {}
       throw error;
@@ -89,8 +91,8 @@ export class QualityInspectionController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.findOne(id, userId);
   }
 
   @Patch(':id/status')

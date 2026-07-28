@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { WeighTicketService } from './weigh-ticket.service';
 import { attachmentMimeType } from './weigh-ticket.controller';
 
@@ -19,6 +20,11 @@ describe('磅单附件类型兼容', () => {
 
 describe('WeighTicketService', () => {
   const prisma = mockDeep<PrismaService>();
+  const accessControl = {
+    assertPermission: jest.fn().mockResolvedValue({}),
+    getWaybillScope: jest.fn().mockResolvedValue({}),
+    getWeighTicketScope: jest.fn().mockResolvedValue({}),
+  };
   let service: WeighTicketService;
 
   const waybill = {
@@ -53,7 +59,11 @@ describe('WeighTicketService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const module = await Test.createTestingModule({
-      providers: [WeighTicketService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        WeighTicketService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
+      ],
     }).compile();
     service = module.get(WeighTicketService);
     prisma.weighTicket.count.mockResolvedValue(0);

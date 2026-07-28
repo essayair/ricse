@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateOutboundReceiptDto } from './dto/create-outbound-receipt.dto';
 
 @Injectable()
 export class OutboundService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     warehouse: { select: { id: true, code: true, name: true } },
@@ -64,10 +68,13 @@ export class OutboundService {
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async eligibleWaybills() {
+  async eligibleWaybills(userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const scope = await this.accessControl.getWaybillScope(userId);
     return this.prisma.waybill.findMany({
       where: {
         deletedAt: null,
+        AND: [scope],
         status: 'PENDING',
         dispatchNotice: {
           type: 'SALES',
@@ -113,9 +120,11 @@ export class OutboundService {
     });
   }
 
-  async eligibleLots(waybillId: string) {
+  async eligibleLots(waybillId: string, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const waybillScope = await this.accessControl.getWaybillScope(userId);
     const waybill = await this.prisma.waybill.findFirst({
-      where: { id: waybillId, deletedAt: null },
+      where: { id: waybillId, deletedAt: null, AND: [waybillScope] },
       include: { lineItems: true, dispatchNotice: true },
     });
     if (!waybill) throw new NotFoundException('物流运单不存在');
@@ -125,8 +134,10 @@ export class OutboundService {
     if (!waybill.dispatchNotice.warehouseId) throw new BadRequestException('销售发货通知单缺少发货仓库');
     const materialIds = [...new Set(waybill.lineItems.map(item => item.materialId))];
     if (materialIds.length !== 1) throw new BadRequestException('首版销售出库只支持单一物料运单');
+    const lotScope = await this.accessControl.getInventoryLotScope(userId);
     return this.prisma.inventoryLot.findMany({
       where: {
+        AND: [lotScope],
         warehouseId: waybill.dispatchNotice.warehouseId,
         materialId: materialIds[0],
         status: 'AVAILABLE',
@@ -142,8 +153,10 @@ export class OutboundService {
   }
 
   async create(dto: CreateOutboundReceiptDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.manage');
+    const scope = await this.accessControl.getWaybillScope(userId);
     const waybill = await this.prisma.waybill.findFirst({
-      where: { id: dto.waybillId, deletedAt: null },
+      where: { id: dto.waybillId, deletedAt: null, AND: [scope] },
       include: {
         lineItems: { orderBy: { createdAt: 'asc' } },
         outboundReceipts: {
@@ -197,8 +210,9 @@ export class OutboundService {
     if (Math.abs(allocated - quantity) > 0.0005) {
       throw new BadRequestException(`批次分配数量 ${allocated} 吨必须等于出库重量 ${quantity} 吨`);
     }
+    const lotScope = await this.accessControl.getInventoryLotScope(userId);
     const lots = await this.prisma.inventoryLot.findMany({
-      where: { id: { in: [...allocationMap.keys()] } },
+      where: { id: { in: [...allocationMap.keys()] }, AND: [lotScope] },
     });
     if (lots.length !== allocationMap.size) throw new BadRequestException('选择的库存批次不存在');
     for (const lot of lots) {
@@ -237,8 +251,10 @@ export class OutboundService {
     });
   }
 
-  async findAll(params: { search?: string; status?: string }) {
-    const where: Prisma.OutboundReceiptWhereInput = { deletedAt: null };
+  async findAll(params: { search?: string; status?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const scope = await this.accessControl.getOutboundReceiptScope(userId);
+    const where: Prisma.OutboundReceiptWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.search) {
       where.OR = [
@@ -258,17 +274,19 @@ export class OutboundService {
     return { items, total: items.length };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string, permission = 'inventory.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getOutboundReceiptScope(userId);
     const receipt = await this.prisma.outboundReceipt.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deletedAt: null, AND: [scope] },
       include: this.include,
     });
     if (!receipt) throw new NotFoundException('物流出库单不存在');
     return receipt;
   }
 
-  async confirm(id: string) {
-    const receipt = await this.findOne(id);
+  async confirm(id: string, userId: string) {
+    const receipt = await this.findOne(id, userId, 'inventory.manage');
     if (receipt.status !== 'DRAFT') throw new BadRequestException('只有草稿物流出库单可以确认离场');
     return this.prisma.outboundReceipt.update({
       where: { id },
@@ -277,8 +295,8 @@ export class OutboundService {
     });
   }
 
-  async cancel(id: string) {
-    const receipt = await this.findOne(id);
+  async cancel(id: string, userId: string) {
+    const receipt = await this.findOne(id, userId, 'inventory.manage');
     if (receipt.status !== 'DRAFT') throw new BadRequestException('只有草稿物流出库单可以作废');
     return this.prisma.outboundReceipt.update({
       where: { id },
@@ -288,7 +306,7 @@ export class OutboundService {
   }
 
   async post(id: string, userId: string) {
-    const receipt = await this.findOne(id);
+    const receipt = await this.findOne(id, userId, 'inventory.manage');
     if (receipt.status !== 'DEPARTURE_CONFIRMED') throw new BadRequestException('确认货物离场后才能生成销售出库单');
     if (receipt.salesOutbound) throw new BadRequestException('该物流出库单已生成销售出库单');
     if (receipt.waybill.status !== 'PENDING') throw new BadRequestException('物流运单已发运或已取消，不能扣减库存');
@@ -357,27 +375,33 @@ export class OutboundService {
         data: { status: 'POSTED' },
       });
     });
-    return this.findOne(id);
+    return this.findOne(id, userId, 'inventory.manage');
   }
 
   async createAttachment(data: {
     outboundReceiptId: string; fileName: string; originalName: string;
     mimeType: string; size: number; category: string;
-  }) {
-    const receipt = await this.findOne(data.outboundReceiptId);
+  }, userId: string) {
+    const receipt = await this.findOne(data.outboundReceiptId, userId, 'inventory.manage');
     if (receipt.status !== 'DRAFT') throw new BadRequestException('只有草稿物流出库单可以上传附件');
     return this.prisma.attachment.create({ data });
   }
 
-  findAttachmentById(id: string) {
+  async findAttachmentById(id: string, userId: string, permission = 'inventory.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getOutboundReceiptScope(userId);
     return this.prisma.attachment.findFirst({
-      where: { id, outboundReceiptId: { not: null } },
+      where: {
+        id,
+        outboundReceiptId: { not: null },
+        outboundReceipt: { deletedAt: null, AND: [scope] },
+      },
       include: { outboundReceipt: { select: { status: true } } },
     });
   }
 
-  async deleteAttachment(id: string) {
-    const attachment = await this.findAttachmentById(id);
+  async deleteAttachment(id: string, userId: string) {
+    const attachment = await this.findAttachmentById(id, userId, 'inventory.manage');
     if (!attachment) return null;
     if (attachment.outboundReceipt?.status !== 'DRAFT') {
       throw new BadRequestException('只有草稿物流出库单可以删除附件');

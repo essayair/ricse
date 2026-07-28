@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { evaluateIndicator, QualityInspectionService } from './quality-inspection.service';
 
 describe('质检指标判定', () => {
@@ -17,12 +18,21 @@ describe('质检指标判定', () => {
 
 describe('QualityInspectionService', () => {
   const prisma = mockDeep<PrismaService>();
+  const accessControl = {
+    assertPermission: jest.fn().mockResolvedValue({}),
+    getWeighTicketScope: jest.fn().mockResolvedValue({}),
+    getQualityInspectionScope: jest.fn().mockResolvedValue({}),
+  };
   let service: QualityInspectionService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const module = await Test.createTestingModule({
-      providers: [QualityInspectionService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        QualityInspectionService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
+      ],
     }).compile();
     service = module.get(QualityInspectionService);
   });
@@ -31,7 +41,7 @@ describe('QualityInspectionService', () => {
     prisma.qualityInspection.findMany.mockResolvedValue([]);
     prisma.qualityInspection.count.mockResolvedValue(0);
 
-    await service.findAll({ search: 'QC-001', status: 'REPORTED', conclusion: 'PASS', dateFrom: '2026-07-01', dateTo: '2026-07-21' });
+    await service.findAll({ search: 'QC-001', status: 'REPORTED', conclusion: 'PASS', dateFrom: '2026-07-01', dateTo: '2026-07-21' }, 'user-1');
 
     expect(prisma.qualityInspection.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
@@ -44,7 +54,7 @@ describe('QualityInspectionService', () => {
     prisma.weighTicket.findMany.mockResolvedValue([]);
     prisma.material.findMany.mockResolvedValue([]);
 
-    await service.eligibleWeighTickets();
+    await service.eligibleWeighTickets('user-1');
 
     const where = prisma.weighTicket.findMany.mock.calls[0][0]?.where;
     expect(where).toEqual(expect.objectContaining({ status: { in: ['COMPLETED', 'REVIEWED'] } }));

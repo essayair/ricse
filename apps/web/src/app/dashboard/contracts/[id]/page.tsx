@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight } from 'lucide-react';
+import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { unitLabel } from '@/lib/unit';
@@ -39,7 +39,7 @@ interface ContractDetail {
   deliveryMethod?: string; deliveryLocation?: string;
   settlementBasis?: string; prepayPct?: string; paymentDays?: number; paymentMethod?: string;
   moistureRule?: string; impurityRule?: string;
-  creator: { name: string };
+  creator: { id: string; name: string };
   seller: { id: string; code: string; name: string; roles: string[] } | null;
   buyer: { id: string; code: string; name: string; roles: string[] } | null;
   attachments?: Array<{ id: string; originalName: string; mimeType: string; size: number; category: string }>;
@@ -97,7 +97,7 @@ const ROLE_ACTIONS: Record<string, Record<string, { next: string; label: string;
     SALESPERSON: [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
     MANAGER:     [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
     ADMIN:       [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    USER:        [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }],
+    USER:        [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
   },
   PENDING_APPROVAL: {
     APPROVER: [
@@ -107,22 +107,29 @@ const ROLE_ACTIONS: Record<string, Record<string, { next: string; label: string;
     ADMIN: [
       { next: 'APPROVED', label: '审核通过', variant: 'default', needsComment: true },
       { next: 'REJECTED', label: '驳回', variant: 'destructive', needsComment: true },
+      { next: 'VOIDED', label: '作废', variant: 'destructive' },
     ],
-    SALESPERSON: [{ next: 'DRAFT', label: '撤回', variant: 'outline' }],
-    MANAGER:     [{ next: 'DRAFT', label: '撤回', variant: 'outline' }],
+    SALESPERSON: [{ next: 'DRAFT', label: '撤回', variant: 'outline' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
+    MANAGER:     [{ next: 'DRAFT', label: '撤回', variant: 'outline' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
+    USER:        [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
   },
   REJECTED: {
-    SALESPERSON: [{ next: 'DRAFT', label: '修改重提', variant: 'default' }],
-    MANAGER:     [{ next: 'DRAFT', label: '修改重提', variant: 'default' }],
-    ADMIN:       [{ next: 'DRAFT', label: '修改重提', variant: 'default' }],
+    SALESPERSON: [{ next: 'DRAFT', label: '修改重提', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
+    MANAGER:     [{ next: 'DRAFT', label: '修改重提', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
+    ADMIN:       [{ next: 'DRAFT', label: '修改重提', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
+    USER:        [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
   },
   APPROVED: {
-    MANAGER: [{ next: 'EXECUTING', label: '开始执行', variant: 'default' }],
+    SALESPERSON: [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
+    MANAGER: [{ next: 'EXECUTING', label: '开始执行', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
     ADMIN:   [{ next: 'EXECUTING', label: '开始执行', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
+    USER: [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
   },
   EXECUTING: {
-    MANAGER: [{ next: 'COMPLETED', label: '标记完成', variant: 'default' }, { next: 'CLOSED', label: '关闭', variant: 'outline' }],
+    SALESPERSON: [{ next: 'VOIDED', label: '终止并作废', variant: 'destructive' }],
+    MANAGER: [{ next: 'COMPLETED', label: '标记完成', variant: 'default' }, { next: 'CLOSED', label: '关闭', variant: 'outline' }, { next: 'VOIDED', label: '终止并作废', variant: 'destructive' }],
     ADMIN:   [{ next: 'COMPLETED', label: '标记完成', variant: 'default' }, { next: 'CLOSED', label: '关闭', variant: 'outline' }, { next: 'VOIDED', label: '终止', variant: 'destructive' }],
+    USER: [{ next: 'VOIDED', label: '终止并作废', variant: 'destructive' }],
   },
   COMPLETED: {
     MANAGER: [{ next: 'CLOSED', label: '归档关闭', variant: 'outline' }],
@@ -387,8 +394,21 @@ export default function ContractDetailPage() {
     } catch (e: any) { alert(e.message || '操作失败'); }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`确定删除已作废合同“${contract?.contractNo || ''}”吗？删除后将不再出现在合同列表中。`)) return;
+    try {
+      await api.delete(`/contracts/${params.id}`);
+      router.push('/dashboard/contracts');
+    } catch (e: any) {
+      alert(e.message || '删除失败');
+    }
+  };
+
   const handleActionClick = (action: typeof pendingAction) => {
     if (!action) return;
+    if (action.next === 'VOIDED' && !window.confirm('确定作废此合同吗？作废后不能恢复，如需删除还必须由系统管理员操作。')) {
+      return;
+    }
     if (action.needsComment) {
       setPendingAction(action);
     } else {
@@ -412,9 +432,12 @@ export default function ContractDetailPage() {
   const userRole = currentUser?.role || 'USER';
   const roleActions = ROLE_ACTIONS[c.status]?.[userRole] || ROLE_ACTIONS[c.status]?.['USER'] || [];
   const currentPendingApproval = c.approvals?.find((approval) => approval.status === 'PENDING');
-  const actions = c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN' && userRole === 'APPROVER' && currentPendingApproval?.assignee.id !== currentUser?.id
+  let actions = c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN' && userRole === 'APPROVER' && currentPendingApproval?.assignee.id !== currentUser?.id
     ? []
     : roleActions;
+  if (c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN' && c.creator.id !== currentUser?.id) {
+    actions = actions.filter((action) => action.next !== 'DRAFT');
+  }
   const canEdit = ['DRAFT', 'REJECTED'].includes(c.status) && ['SALESPERSON', 'MANAGER', 'ADMIN', 'USER'].includes(userRole);
 
   return (
@@ -429,11 +452,18 @@ export default function ContractDetailPage() {
 
       <div className="flex items-center justify-between">
         <button onClick={() => router.push('/dashboard/contracts')} className="text-sm text-primary hover:underline">&larr; 返回合同列表</button>
-        {canEdit && (
-          <Link href={`/dashboard/contracts/${c.id}/edit`}>
-            <Button variant="outline" size="sm"><Edit3 className="h-4 w-4 mr-1" />编辑</Button>
-          </Link>
-        )}
+        <div className="flex gap-2">
+          {canEdit && (
+            <Link href={`/dashboard/contracts/${c.id}/edit`}>
+              <Button variant="outline" size="sm"><Edit3 className="h-4 w-4 mr-1" />编辑</Button>
+            </Link>
+          )}
+          {userRole === 'ADMIN' && c.status === 'VOIDED' && (
+            <Button variant="destructive" size="sm" onClick={() => void handleDelete()}>
+              <Trash2 className="h-4 w-4 mr-1" />删除合同
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Header */}

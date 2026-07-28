@@ -2,10 +2,16 @@ import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { WaybillService } from './waybill.service';
 
 describe('WaybillService', () => {
   const prisma = mockDeep<PrismaService>();
+  const accessControl = {
+    assertPermission: jest.fn().mockResolvedValue({}),
+    getDispatchNoticeScope: jest.fn().mockResolvedValue({}),
+    getWaybillScope: jest.fn().mockResolvedValue({}),
+  };
   let service: WaybillService;
   const notice = {
     id: 'notice-1', noticeNo: 'PI-20260717-0001', status: 'ISSUED',
@@ -17,7 +23,11 @@ describe('WaybillService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const module = await Test.createTestingModule({
-      providers: [WaybillService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        WaybillService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
+      ],
     }).compile();
     service = module.get(WaybillService);
     prisma.waybill.count.mockResolvedValue(0);
@@ -42,7 +52,7 @@ describe('WaybillService', () => {
       id: 'waybill-1', status: 'PENDING', plateNo: null, driverName: null,
       dispatchNotice: { id: notice.id, status: 'ISSUED' },
     } as any);
-    await expect(service.updateStatus('waybill-1', 'IN_TRANSIT')).rejects.toThrow(BadRequestException);
+    await expect(service.updateStatus('waybill-1', 'IN_TRANSIT', 'user-1')).rejects.toThrow(BadRequestException);
   });
 
   it('预计到达时间不能早于计划发运时间', async () => {
@@ -61,7 +71,7 @@ describe('WaybillService', () => {
       carrierName: null, plateNo: '甘A12345', driverName: '张师傅',
       dispatchNotice: { id: notice.id, status: 'ISSUED' },
     } as any);
-    await expect(service.updateStatus('waybill-1', 'IN_TRANSIT')).rejects.toThrow('必须填写承运单位');
+    await expect(service.updateStatus('waybill-1', 'IN_TRANSIT', 'user-1')).rejects.toThrow('必须填写承运单位');
   });
 
   it('确认签收前必须上传物流收货附件', async () => {
@@ -69,7 +79,7 @@ describe('WaybillService', () => {
       id: 'waybill-1', status: 'ARRIVED', attachments: [],
       dispatchNotice: { id: notice.id, status: 'IN_PROGRESS' },
     } as any);
-    await expect(service.updateStatus('waybill-1', 'SIGNED'))
+    await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1'))
       .rejects.toThrow('确认签收前必须上传至少一份物流收货附件');
   });
 
@@ -84,7 +94,7 @@ describe('WaybillService', () => {
       dispatchNotice: { id: 'notice-sales', type: 'SALES', mode: 'STANDARD', status: 'ISSUED' },
     } as any);
 
-    await expect(service.updateStatus('waybill-sales', 'IN_TRANSIT'))
+    await expect(service.updateStatus('waybill-sales', 'IN_TRANSIT', 'user-1'))
       .rejects.toThrow('必须先完成物流出库和库存扣减');
   });
 
@@ -96,7 +106,7 @@ describe('WaybillService', () => {
       dispatchNotice: { id: 'notice-sales', type: 'SALES', mode: 'STANDARD', status: 'ISSUED' },
     } as any);
 
-    await expect(service.updateStatus('waybill-sales', 'CANCELLED'))
+    await expect(service.updateStatus('waybill-sales', 'CANCELLED', 'user-1'))
       .rejects.toThrow('已有有效物流出库单');
   });
 });

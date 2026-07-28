@@ -23,29 +23,29 @@ export class OutboundReceiptController {
   ) {}
 
   @Get('eligible-waybills')
-  eligibleWaybills() {
-    return this.service.eligibleWaybills();
+  eligibleWaybills(@CurrentUser('id') userId: string) {
+    return this.service.eligibleWaybills(userId);
   }
 
   @Get('eligible-lots')
-  eligibleLots(@Query('waybillId') waybillId?: string) {
+  eligibleLots(@CurrentUser('id') userId: string, @Query('waybillId') waybillId?: string) {
     if (!waybillId) throw new BadRequestException('请选择物流运单');
-    return this.service.eligibleLots(waybillId);
+    return this.service.eligibleLots(waybillId, userId);
   }
 
   @Get('attachments/:id/view-url')
-  async attachmentViewUrl(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async attachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
   @Delete('attachments/:id')
   @HttpCode(204)
-  async deleteAttachment(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId, 'inventory.manage');
     if (!attachment) return;
-    await this.service.deleteAttachment(id);
+    await this.service.deleteAttachment(id, userId);
     try { await this.fileService.delete(attachment.fileName); } catch {}
   }
 
@@ -55,6 +55,7 @@ export class OutboundReceiptController {
   async uploadAttachment(
     @Param('id') outboundReceiptId: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
   ) {
     if (!file) throw new BadRequestException('请选择文件');
     const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
@@ -69,7 +70,7 @@ export class OutboundReceiptController {
         mimeType,
         size: result.size,
         category: 'OUTBOUND_EVIDENCE',
-      });
+      }, userId);
     } catch (error) {
       try { await this.fileService.delete(result.fileName); } catch {}
       throw error;
@@ -82,23 +83,23 @@ export class OutboundReceiptController {
   }
 
   @Get()
-  findAll(@Query('search') search?: string, @Query('status') status?: string) {
-    return this.service.findAll({ search, status });
+  findAll(@CurrentUser('id') userId: string, @Query('search') search?: string, @Query('status') status?: string) {
+    return this.service.findAll({ search, status }, userId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.findOne(id, userId);
   }
 
   @Patch(':id/confirm')
-  confirm(@Param('id') id: string) {
-    return this.service.confirm(id);
+  confirm(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.confirm(id, userId);
   }
 
   @Patch(':id/cancel')
-  cancel(@Param('id') id: string) {
-    return this.service.cancel(id);
+  cancel(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.cancel(id, userId);
   }
 
   @Post(':id/post')

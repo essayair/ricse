@@ -4,9 +4,10 @@ import { ContractService } from './contract.service';
 import { CommonModule } from '../common/common.module';
 import { ApprovalFlowController } from './approval-flow.controller';
 import { ApprovalFlowService } from './approval-flow.service';
+import { AccessControlModule } from '../access-control/access-control.module';
 
 @Module({
-  imports: [CommonModule],
+  imports: [CommonModule, AccessControlModule],
   controllers: [ContractController, ApprovalFlowController],
   providers: [ContractService, ApprovalFlowService],
   exports: [ContractService],

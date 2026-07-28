@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateInboundReceiptDto } from './dto/create-inbound-receipt.dto';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     warehouse: { select: { id: true, code: true, name: true } },
@@ -39,10 +43,13 @@ export class InventoryService {
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async eligibleWaybills() {
+  async eligibleWaybills(userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const scope = await this.accessControl.getWaybillScope(userId);
     return this.prisma.waybill.findMany({
       where: {
         deletedAt: null,
+        AND: [scope],
         status: { in: ['ARRIVED', 'SIGNED'] },
         dispatchNotice: { type: 'PURCHASE' },
         inboundReceipts: { none: { deletedAt: null, status: { not: 'CANCELLED' } } },
@@ -73,8 +80,10 @@ export class InventoryService {
   }
 
   async createReceipt(dto: CreateInboundReceiptDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.manage');
+    const scope = await this.accessControl.getWaybillScope(userId);
     const waybill = await this.prisma.waybill.findFirst({
-      where: { id: dto.waybillId, deletedAt: null },
+      where: { id: dto.waybillId, deletedAt: null, AND: [scope] },
       include: {
         inboundReceipts: { where: { deletedAt: null, status: { not: 'CANCELLED' } }, select: { receiptNo: true } },
         lineItems: { orderBy: { createdAt: 'asc' } },
@@ -113,8 +122,10 @@ export class InventoryService {
     });
   }
 
-  async findReceipts(params: { search?: string; status?: string }) {
-    const where: Prisma.InboundReceiptWhereInput = { deletedAt: null };
+  async findReceipts(params: { search?: string; status?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const scope = await this.accessControl.getInboundReceiptScope(userId);
+    const where: Prisma.InboundReceiptWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.search) where.OR = [
       { receiptNo: { contains: params.search, mode: 'insensitive' } },
@@ -129,20 +140,25 @@ export class InventoryService {
     return { items, total: items.length };
   }
 
-  async findReceipt(id: string) {
-    const item = await this.prisma.inboundReceipt.findFirst({ where: { id, deletedAt: null }, include: this.include });
+  async findReceipt(id: string, userId: string, permission = 'inventory.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getInboundReceiptScope(userId);
+    const item = await this.prisma.inboundReceipt.findFirst({
+      where: { id, deletedAt: null, AND: [scope] },
+      include: this.include,
+    });
     if (!item) throw new NotFoundException('物流入库单不存在');
     return item;
   }
 
-  async confirmReceipt(id: string) {
-    const item = await this.findReceipt(id);
+  async confirmReceipt(id: string, userId: string) {
+    const item = await this.findReceipt(id, userId, 'inventory.manage');
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿入库单可以确认收货');
     return this.prisma.inboundReceipt.update({ where: { id }, data: { status: 'RECEIVED' }, include: this.include });
   }
 
-  async cancelReceipt(id: string) {
-    const item = await this.findReceipt(id);
+  async cancelReceipt(id: string, userId: string) {
+    const item = await this.findReceipt(id, userId, 'inventory.manage');
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿入库单可以作废');
     return this.prisma.inboundReceipt.update({
       where: { id },
@@ -154,21 +170,27 @@ export class InventoryService {
   async createAttachment(data: {
     inboundReceiptId: string; fileName: string; originalName: string;
     mimeType: string; size: number; category: string;
-  }) {
-    const receipt = await this.findReceipt(data.inboundReceiptId);
+  }, userId: string) {
+    const receipt = await this.findReceipt(data.inboundReceiptId, userId, 'inventory.manage');
     if (receipt.status !== 'DRAFT') throw new BadRequestException('只有草稿入库单可以上传附件');
     return this.prisma.attachment.create({ data });
   }
 
-  findAttachmentById(id: string) {
+  async findAttachmentById(id: string, userId: string, permission = 'inventory.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getInboundReceiptScope(userId);
     return this.prisma.attachment.findFirst({
-      where: { id, inboundReceiptId: { not: null } },
+      where: {
+        id,
+        inboundReceiptId: { not: null },
+        inboundReceipt: { deletedAt: null, AND: [scope] },
+      },
       include: { inboundReceipt: { select: { status: true } } },
     });
   }
 
-  async deleteAttachment(id: string) {
-    const attachment = await this.findAttachmentById(id);
+  async deleteAttachment(id: string, userId: string) {
+    const attachment = await this.findAttachmentById(id, userId, 'inventory.manage');
     if (!attachment) return null;
     if (attachment.inboundReceipt?.status !== 'DRAFT') {
       throw new BadRequestException('只有草稿入库单可以删除附件');
@@ -177,7 +199,7 @@ export class InventoryService {
   }
 
   async postInventory(id: string, userId: string) {
-    const receipt = await this.findReceipt(id);
+    const receipt = await this.findReceipt(id, userId, 'inventory.manage');
     if (receipt.status !== 'RECEIVED') throw new BadRequestException('确认收货后才能生成业务入库单');
     if (receipt.businessInbound) throw new BadRequestException('该物流入库单已生成业务入库单');
     const line = receipt.waybill.lineItems[0];
@@ -210,11 +232,13 @@ export class InventoryService {
       });
       await tx.inboundReceipt.update({ where: { id: receipt.id }, data: { status: 'POSTED' } });
     });
-    return this.findReceipt(id);
+    return this.findReceipt(id, userId, 'inventory.manage');
   }
 
-  async inventoryOverview(params: { search?: string; warehouseId?: string }) {
-    const where: Prisma.InventoryLotWhereInput = {};
+  async inventoryOverview(params: { search?: string; warehouseId?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const scope = await this.accessControl.getInventoryLotScope(userId);
+    const where: Prisma.InventoryLotWhereInput = { AND: [scope] };
     if (params.warehouseId) where.warehouseId = params.warehouseId;
     if (params.search) where.OR = [
       { lotNo: { contains: params.search, mode: 'insensitive' } },
@@ -229,8 +253,11 @@ export class InventoryService {
     return { lots, summary: { lotCount: lots.length, materialCount: new Set(lots.map(item => item.materialId)).size, warehouseCount: new Set(lots.map(item => item.warehouseId)).size, totalQuantity } };
   }
 
-  async inventoryLedger() {
+  async inventoryLedger(userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const scope = await this.accessControl.getInventoryLedgerScope(userId);
     return this.prisma.inventoryLedger.findMany({
+      where: scope,
       include: { lot: { select: { lotNo: true } }, warehouse: { select: { name: true } }, material: { select: { name: true, unit: true } }, creator: { select: { name: true } } },
       orderBy: { createdAt: 'desc' }, take: 200,
     });

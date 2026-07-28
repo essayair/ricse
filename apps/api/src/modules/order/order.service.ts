@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 const TRANSITIONS: Record<string, string[]> = {
@@ -13,7 +14,10 @@ const TRANSITIONS: Record<string, string[]> = {
 
 @Injectable()
 export class OrderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     contract: {
@@ -53,10 +57,12 @@ export class OrderService {
   }
 
   async create(dto: CreateOrderDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'execution.manage');
+    const scope = await this.accessControl.getContractScope(userId);
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('请填写执行批次名称');
     const contract = await this.prisma.contract.findFirst({
-      where: { id: dto.contractId, deletedAt: null },
+      where: { id: dto.contractId, deletedAt: null, AND: [scope] },
       include: { lineItems: true },
     });
     if (!contract) throw new NotFoundException('合同不存在');
@@ -130,10 +136,12 @@ export class OrderService {
     });
   }
 
-  async findAll(params: { page?: number; pageSize?: number; status?: string; type?: string; search?: string }) {
+  async findAll(params: { page?: number; pageSize?: number; status?: string; type?: string; search?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'execution.view');
+    const scope = await this.accessControl.getOrderScope(userId);
     const page = params.page || 1;
     const pageSize = Math.min(params.pageSize || 20, 100);
-    const where: Prisma.OrderWhereInput = { deletedAt: null };
+    const where: Prisma.OrderWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.type) where.type = params.type;
     if (params.search) {
@@ -157,10 +165,12 @@ export class OrderService {
     return { items, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
 
-  async getContractAvailability(contractId: string, type: string, excludeOrderId?: string) {
+  async getContractAvailability(contractId: string, type: string, userId: string, excludeOrderId?: string) {
+    await this.accessControl.assertPermission(userId, 'execution.view');
+    const scope = await this.accessControl.getContractScope(userId);
     if (!['PURCHASE', 'SALES'].includes(type)) throw new BadRequestException('执行批次类型无效');
     const contract = await this.prisma.contract.findFirst({
-      where: { id: contractId, deletedAt: null },
+      where: { id: contractId, deletedAt: null, AND: [scope] },
       include: { lineItems: { orderBy: { createdAt: 'asc' } } },
     });
     if (!contract) throw new NotFoundException('合同不存在');
@@ -201,9 +211,11 @@ export class OrderService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string, permission = 'execution.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getOrderScope(userId);
     const order = await this.prisma.order.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deletedAt: null, AND: [scope] },
       include: this.include,
     });
     if (!order) throw new NotFoundException('执行批次不存在');
@@ -216,8 +228,8 @@ export class OrderService {
     deliveryLocation?: string;
     remarks?: string;
     lineItems?: Array<{ contractLineItemId: string; quantity: number }>;
-  }) {
-    const order = await this.findOne(id);
+  }, userId: string) {
+    const order = await this.findOne(id, userId, 'execution.manage');
     if (order.status !== 'DRAFT') throw new BadRequestException('仅草稿执行批次可以修改');
     const name = data.name === undefined ? undefined : data.name.trim();
     if (data.name !== undefined && !name) throw new BadRequestException('请填写执行批次名称');
@@ -295,8 +307,8 @@ export class OrderService {
     });
   }
 
-  async updateStatus(id: string, status: string) {
-    const order = await this.findOne(id);
+  async updateStatus(id: string, status: string, userId: string) {
+    const order = await this.findOne(id, userId, 'execution.manage');
     if (!(TRANSITIONS[order.status] || []).includes(status)) {
       throw new BadRequestException(`不能从 ${order.status} 变更为 ${status}`);
     }
@@ -311,8 +323,8 @@ export class OrderService {
     });
   }
 
-  async remove(id: string) {
-    const order = await this.findOne(id);
+  async remove(id: string, userId: string) {
+    const order = await this.findOne(id, userId, 'execution.manage');
     if (!['DRAFT', 'CANCELLED'].includes(order.status)) {
       throw new BadRequestException('仅草稿或已取消执行批次可以删除');
     }

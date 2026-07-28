@@ -3,13 +3,17 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateInventoryReversalDto } from './dto/create-inventory-reversal.dto';
 
 const ACTIVE_RESERVATION_STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'POSTED'];
 
 @Injectable()
 export class InventoryReversalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     creator: { select: { id: true, name: true, role: true } },
@@ -57,10 +61,13 @@ export class InventoryReversalService {
     return `${type === 'INBOUND' ? 'IRV' : 'ORV'}-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async eligibleSources(type: string, search?: string) {
+  async eligibleSources(type: string, userId: string, search?: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
     if (type === 'INBOUND') {
+      const scope = await this.accessControl.getBusinessInboundScope(userId);
       const items = await this.prisma.businessInbound.findMany({
         where: {
+          AND: [scope],
           status: { in: ['POSTED', 'PARTIALLY_REVERSED'] },
           ...(search ? {
             OR: [
@@ -98,8 +105,10 @@ export class InventoryReversalService {
     }
 
     if (type === 'OUTBOUND') {
+      const scope = await this.accessControl.getSalesOutboundScope(userId);
       const items = await this.prisma.salesOutbound.findMany({
         where: {
+          AND: [scope],
           status: { in: ['POSTED', 'PARTIALLY_REVERSED'] },
           ...(search ? {
             OR: [
@@ -149,6 +158,7 @@ export class InventoryReversalService {
   }
 
   async create(dto: CreateInventoryReversalDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.manage');
     if (!dto.reason.trim()) throw new BadRequestException('请填写冲销原因');
     const seenLots = new Set<string>();
     if (dto.lines.some(line => seenLots.has(line.inventoryLotId) || !seenLots.add(line.inventoryLotId))) {
@@ -156,8 +166,9 @@ export class InventoryReversalService {
     }
 
     if (dto.type === 'INBOUND') {
+      const scope = await this.accessControl.getBusinessInboundScope(userId);
       const source = await this.prisma.businessInbound.findFirst({
-        where: { id: dto.sourceId, status: { in: ['POSTED', 'PARTIALLY_REVERSED'] } },
+        where: { id: dto.sourceId, status: { in: ['POSTED', 'PARTIALLY_REVERSED'] }, AND: [scope] },
         include: { inventoryLot: true },
       });
       if (!source || !source.inventoryLot) throw new NotFoundException('可冲销业务入库单不存在');
@@ -194,8 +205,9 @@ export class InventoryReversalService {
     }
 
     if (dto.type === 'OUTBOUND') {
+      const scope = await this.accessControl.getSalesOutboundScope(userId);
       const source = await this.prisma.salesOutbound.findFirst({
-        where: { id: dto.sourceId, status: { in: ['POSTED', 'PARTIALLY_REVERSED'] } },
+        where: { id: dto.sourceId, status: { in: ['POSTED', 'PARTIALLY_REVERSED'] }, AND: [scope] },
         include: { lines: true },
       });
       if (!source) throw new NotFoundException('可冲销销售出库单不存在');
@@ -237,8 +249,10 @@ export class InventoryReversalService {
     throw new BadRequestException('冲销类型无效');
   }
 
-  async findAll(params: { search?: string; status?: string; type?: string }) {
-    const where: Prisma.InventoryReversalWhereInput = {};
+  async findAll(params: { search?: string; status?: string; type?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'inventory.view');
+    const scope = await this.accessControl.getInventoryReversalScope(userId);
+    const where: Prisma.InventoryReversalWhereInput = { AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.type) where.type = params.type;
     if (params.search) {
@@ -257,17 +271,19 @@ export class InventoryReversalService {
     return { items, total: items.length };
   }
 
-  async findOne(id: string) {
-    const item = await this.prisma.inventoryReversal.findUnique({
-      where: { id },
+  async findOne(id: string, userId: string, permission = 'inventory.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getInventoryReversalScope(userId);
+    const item = await this.prisma.inventoryReversal.findFirst({
+      where: { id, AND: [scope] },
       include: this.include,
     });
     if (!item) throw new NotFoundException('库存冲销单不存在');
     return item;
   }
 
-  async submit(id: string) {
-    const item = await this.findOne(id);
+  async submit(id: string, userId: string) {
+    const item = await this.findOne(id, userId, 'inventory.manage');
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿冲销单可以提交审批');
     await this.validateCapacity(item, true);
     return this.prisma.inventoryReversal.update({
@@ -278,7 +294,7 @@ export class InventoryReversalService {
   }
 
   async review(id: string, action: string, comment: string | undefined, userId: string) {
-    const item = await this.findOne(id);
+    const item = await this.findOne(id, userId, 'inventory.manage');
     if (item.status !== 'PENDING_APPROVAL') throw new BadRequestException('只有待审批冲销单可以审核');
     await this.assertReviewer(userId);
     if (action === 'REJECT') {
@@ -308,8 +324,8 @@ export class InventoryReversalService {
     });
   }
 
-  async cancel(id: string) {
-    const item = await this.findOne(id);
+  async cancel(id: string, userId: string) {
+    const item = await this.findOne(id, userId, 'inventory.manage');
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿冲销单可以取消');
     return this.prisma.inventoryReversal.update({
       where: { id },
@@ -319,7 +335,7 @@ export class InventoryReversalService {
   }
 
   async post(id: string, userId: string) {
-    const item = await this.findOne(id);
+    const item = await this.findOne(id, userId, 'inventory.manage');
     if (item.status !== 'APPROVED') throw new BadRequestException('审批通过后才能过账');
 
     await this.prisma.$transaction(async tx => {
@@ -444,27 +460,33 @@ export class InventoryReversalService {
         data: { status: 'POSTED', postedBy: userId, postedAt: new Date() },
       });
     });
-    return this.findOne(id);
+    return this.findOne(id, userId, 'inventory.manage');
   }
 
   async createAttachment(data: {
     inventoryReversalId: string; fileName: string; originalName: string;
     mimeType: string; size: number; category: string;
-  }) {
-    const item = await this.findOne(data.inventoryReversalId);
+  }, userId: string) {
+    const item = await this.findOne(data.inventoryReversalId, userId, 'inventory.manage');
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿冲销单可以上传附件');
     return this.prisma.attachment.create({ data });
   }
 
-  findAttachmentById(id: string) {
+  async findAttachmentById(id: string, userId: string, permission = 'inventory.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getInventoryReversalScope(userId);
     return this.prisma.attachment.findFirst({
-      where: { id, inventoryReversalId: { not: null } },
+      where: {
+        id,
+        inventoryReversalId: { not: null },
+        inventoryReversal: { AND: [scope] },
+      },
       include: { inventoryReversal: { select: { status: true } } },
     });
   }
 
-  async deleteAttachment(id: string) {
-    const attachment = await this.findAttachmentById(id);
+  async deleteAttachment(id: string, userId: string) {
+    const attachment = await this.findAttachmentById(id, userId, 'inventory.manage');
     if (!attachment) return null;
     if (attachment.inventoryReversal?.status !== 'DRAFT') {
       throw new BadRequestException('只有草稿冲销单可以删除附件');
@@ -527,8 +549,8 @@ export class InventoryReversalService {
   }
 
   private async assertReviewer(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (!user || !['ADMIN', 'APPROVER'].includes(user.role)) {
+    const context = await this.accessControl.getContext(userId);
+    if (!context.roleCodes.some(role => ['ADMIN', 'APPROVER'].includes(role))) {
       throw new ForbiddenException('仅系统管理员或审批人可以审核库存冲销');
     }
   }

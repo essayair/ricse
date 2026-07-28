@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AccessControlModule } from '../access-control/access-control.module';
 import { CommonModule } from '../common/common.module';
 import { InboundReceiptController, InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
@@ -8,7 +9,7 @@ import { OutboundReceiptController } from './outbound.controller';
 import { OutboundService } from './outbound.service';
 
 @Module({
-  imports: [CommonModule],
+  imports: [CommonModule, AccessControlModule],
   controllers: [
     InboundReceiptController,
     InventoryController,

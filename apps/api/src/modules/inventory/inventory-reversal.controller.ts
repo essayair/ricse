@@ -23,24 +23,24 @@ export class InventoryReversalController {
   ) {}
 
   @Get('eligible-sources')
-  eligibleSources(@Query('type') type?: string, @Query('search') search?: string) {
+  eligibleSources(@CurrentUser('id') userId: string, @Query('type') type?: string, @Query('search') search?: string) {
     if (!type) throw new BadRequestException('请选择冲销类型');
-    return this.service.eligibleSources(type, search);
+    return this.service.eligibleSources(type, userId, search);
   }
 
   @Get('attachments/:id/view-url')
-  async attachmentViewUrl(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async attachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
   @Delete('attachments/:id')
   @HttpCode(204)
-  async deleteAttachment(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId, 'inventory.manage');
     if (!attachment) return;
-    await this.service.deleteAttachment(id);
+    await this.service.deleteAttachment(id, userId);
     try { await this.fileService.delete(attachment.fileName); } catch {}
   }
 
@@ -50,6 +50,7 @@ export class InventoryReversalController {
   async uploadAttachment(
     @Param('id') inventoryReversalId: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
   ) {
     if (!file) throw new BadRequestException('请选择文件');
     const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
@@ -64,7 +65,7 @@ export class InventoryReversalController {
         mimeType,
         size: result.size,
         category: 'REVERSAL_EVIDENCE',
-      });
+      }, userId);
     } catch (error) {
       try { await this.fileService.delete(result.fileName); } catch {}
       throw error;
@@ -78,21 +79,22 @@ export class InventoryReversalController {
 
   @Get()
   findAll(
+    @CurrentUser('id') userId: string,
     @Query('search') search?: string,
     @Query('status') status?: string,
     @Query('type') type?: string,
   ) {
-    return this.service.findAll({ search, status, type });
+    return this.service.findAll({ search, status, type }, userId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.findOne(id, userId);
   }
 
   @Patch(':id/submit')
-  submit(@Param('id') id: string) {
-    return this.service.submit(id);
+  submit(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.submit(id, userId);
   }
 
   @Patch(':id/review')
@@ -106,8 +108,8 @@ export class InventoryReversalController {
   }
 
   @Patch(':id/cancel')
-  cancel(@Param('id') id: string) {
-    return this.service.cancel(id);
+  cancel(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.cancel(id, userId);
   }
 
   @Post(':id/post')

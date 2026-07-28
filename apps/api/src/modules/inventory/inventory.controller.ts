@@ -19,25 +19,29 @@ import { InventoryService } from './inventory.service';
 export class InboundReceiptController {
   constructor(private readonly service: InventoryService, private readonly fileService: FileService) {}
 
-  @Get('eligible-waybills') eligibleWaybills() { return this.service.eligibleWaybills(); }
+  @Get('eligible-waybills') eligibleWaybills(@CurrentUser('id') userId: string) { return this.service.eligibleWaybills(userId); }
   @Get('attachments/:id/view-url')
-  async attachmentViewUrl(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async attachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
   @Delete('attachments/:id')
   @HttpCode(204)
-  async deleteAttachment(@Param('id') id: string) {
-    const attachment = await this.service.findAttachmentById(id);
+  async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findAttachmentById(id, userId, 'inventory.manage');
     if (!attachment) return;
-    await this.service.deleteAttachment(id);
+    await this.service.deleteAttachment(id, userId);
     try { await this.fileService.delete(attachment.fileName); } catch {}
   }
   @Post(':id/attachments')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
-  async uploadAttachment(@Param('id') inboundReceiptId: string, @UploadedFile() file: Express.Multer.File) {
+  async uploadAttachment(
+    @Param('id') inboundReceiptId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
     if (!file) throw new BadRequestException('请选择文件');
     const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
     const mimeType = attachmentMimeType(originalName, file.mimetype);
@@ -47,17 +51,17 @@ export class InboundReceiptController {
       return await this.service.createAttachment({
         inboundReceiptId, fileName: result.fileName, originalName, mimeType,
         size: result.size, category: 'RECEIPT_EVIDENCE',
-      });
+      }, userId);
     } catch (error) {
       try { await this.fileService.delete(result.fileName); } catch {}
       throw error;
     }
   }
   @Post() create(@Body() dto: CreateInboundReceiptDto, @CurrentUser('id') userId: string) { return this.service.createReceipt(dto, userId); }
-  @Get() findAll(@Query('search') search?: string, @Query('status') status?: string) { return this.service.findReceipts({ search, status }); }
-  @Get(':id') findOne(@Param('id') id: string) { return this.service.findReceipt(id); }
-  @Patch(':id/confirm') confirm(@Param('id') id: string) { return this.service.confirmReceipt(id); }
-  @Patch(':id/cancel') cancel(@Param('id') id: string) { return this.service.cancelReceipt(id); }
+  @Get() findAll(@CurrentUser('id') userId: string, @Query('search') search?: string, @Query('status') status?: string) { return this.service.findReceipts({ search, status }, userId); }
+  @Get(':id') findOne(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.findReceipt(id, userId); }
+  @Patch(':id/confirm') confirm(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.confirmReceipt(id, userId); }
+  @Patch(':id/cancel') cancel(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.cancelReceipt(id, userId); }
   @Post(':id/post') post(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.postInventory(id, userId); }
 }
 
@@ -67,6 +71,6 @@ export class InboundReceiptController {
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly service: InventoryService) {}
-  @Get('overview') overview(@Query('search') search?: string, @Query('warehouseId') warehouseId?: string) { return this.service.inventoryOverview({ search, warehouseId }); }
-  @Get('ledger') ledger() { return this.service.inventoryLedger(); }
+  @Get('overview') overview(@CurrentUser('id') userId: string, @Query('search') search?: string, @Query('warehouseId') warehouseId?: string) { return this.service.inventoryOverview({ search, warehouseId }, userId); }
+  @Get('ledger') ledger(@CurrentUser('id') userId: string) { return this.service.inventoryLedger(userId); }
 }

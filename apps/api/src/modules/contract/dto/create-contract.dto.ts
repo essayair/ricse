@@ -7,6 +7,7 @@ import {
   ValidateNested,
   IsDateString,
   Min,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -48,6 +49,12 @@ class CreateContractLineItemDto {
 }
 
 export class CreateContractDto {
+  @ApiPropertyOptional({ description: '客户端请求标识，用于防止重复创建草稿' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  clientRequestId?: string;
+
   @ApiProperty({ description: '合同标题' })
   @IsString()
   title: string;

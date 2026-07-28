@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateWeighRecordDto } from './dto/create-weigh-record.dto';
 import { CreateWeighTicketDto } from './dto/create-weigh-ticket.dto';
 
@@ -8,7 +9,10 @@ const BASES = ['RECEIVING', 'SHIPPING', 'CUSTOMER', 'THIRD_PARTY', 'MANUAL'];
 
 @Injectable()
 export class WeighTicketService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     waybill: {
@@ -50,10 +54,13 @@ export class WeighTicketService {
     return `PD-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async eligibleWaybills() {
+  async eligibleWaybills(userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getWaybillScope(userId);
     return this.prisma.waybill.findMany({
       where: {
         deletedAt: null,
+        AND: [scope],
         OR: [
           { dispatchNotice: { type: 'PURCHASE' }, status: { in: ['ARRIVED', 'SIGNED'] } },
           { dispatchNotice: { type: 'SALES' }, status: 'PENDING' },
@@ -85,8 +92,10 @@ export class WeighTicketService {
   }
 
   async create(dto: CreateWeighTicketDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
+    const scope = await this.accessControl.getWaybillScope(userId);
     const waybill = await this.prisma.waybill.findFirst({
-      where: { id: dto.waybillId, deletedAt: null },
+      where: { id: dto.waybillId, deletedAt: null, AND: [scope] },
       include: {
         lineItems: { orderBy: { createdAt: 'asc' } },
         dispatchNotice: {
@@ -164,8 +173,10 @@ export class WeighTicketService {
     });
   }
 
-  async findAll(params: { status?: string; abnormal?: string; search?: string }) {
-    const where: Prisma.WeighTicketWhereInput = { deletedAt: null };
+  async findAll(params: { status?: string; abnormal?: string; search?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getWeighTicketScope(userId);
+    const where: Prisma.WeighTicketWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.abnormal === 'true') where.abnormal = true;
     if (params.search) {
@@ -187,16 +198,18 @@ export class WeighTicketService {
     return { items, total: items.length };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getWeighTicketScope(userId);
     const ticket = await this.prisma.weighTicket.findFirst({
-      where: { id, deletedAt: null }, include: this.include,
+      where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });
     if (!ticket) throw new NotFoundException('磅单不存在');
     return ticket;
   }
 
   async addRecord(id: string, dto: CreateWeighRecordDto, userId: string) {
-    const ticket = await this.findOne(id);
+    const ticket = await this.findOne(id, userId, 'quality.manage');
     if (!['PENDING', 'WEIGHING'].includes(ticket.status)) {
       throw new BadRequestException('仅待称重或称重中的磅单可以追加称重记录');
     }
@@ -230,8 +243,8 @@ export class WeighTicketService {
     });
   }
 
-  async selectEffectiveRecords(id: string, data: { grossRecordId: string; tareRecordId: string }) {
-    const ticket = await this.findOne(id);
+  async selectEffectiveRecords(id: string, data: { grossRecordId: string; tareRecordId: string }, userId: string) {
+    const ticket = await this.findOne(id, userId, 'quality.manage');
     if (!['PENDING', 'WEIGHING'].includes(ticket.status)) {
       throw new BadRequestException('已完成磅单不能更换有效称重记录');
     }
@@ -255,8 +268,8 @@ export class WeighTicketService {
     thirdPartyWeight?: number;
     manualWeight?: number;
     toleranceRate?: number;
-  }) {
-    const ticket = await this.findOne(id);
+  }, userId: string) {
+    const ticket = await this.findOne(id, userId, 'quality.manage');
     if (['REVIEWED', 'VOIDED'].includes(ticket.status)) throw new BadRequestException('已复核或已作废磅单不能修改结算口径');
     if (!BASES.includes(data.settlementBasis)) throw new BadRequestException('结算重量口径无效');
     this.validateBasisWeight(data.settlementBasis, { ...ticket, ...data });
@@ -278,7 +291,7 @@ export class WeighTicketService {
   }
 
   async updateStatus(id: string, status: string, userId: string, reviewRemark?: string) {
-    const ticket = await this.findOne(id);
+    const ticket = await this.findOne(id, userId, 'quality.manage');
     if (status === 'COMPLETED') {
       if (!['PENDING', 'WEIGHING'].includes(ticket.status)) throw new BadRequestException('当前磅单不能完成称重');
       if (!ticket.selectedGrossRecordId || !ticket.selectedTareRecordId || !ticket.netWeight) {
@@ -304,8 +317,8 @@ export class WeighTicketService {
     throw new BadRequestException('磅单状态无效');
   }
 
-  async markPrinted(id: string) {
-    await this.findOne(id);
+  async markPrinted(id: string, userId: string) {
+    await this.findOne(id, userId, 'quality.manage');
     return this.prisma.weighTicket.update({
       where: { id }, data: { printedAt: new Date() }, include: this.include,
     });
@@ -315,8 +328,8 @@ export class WeighTicketService {
     ticketDate: string; plateNo: string; materialName: string; materialSpec: string;
     shipperName: string; receiverName: string; packageCount: number;
     driverName: string; weighmasterName: string; remarks?: string;
-  }) {
-    const ticket = await this.findOne(id);
+  }, userId: string) {
+    const ticket = await this.findOne(id, userId, 'quality.manage');
     if (['REVIEWED', 'VOIDED'].includes(ticket.status)) {
       throw new BadRequestException('已复核或已作废磅单不能修改基本信息');
     }
@@ -344,23 +357,30 @@ export class WeighTicketService {
   async createAttachment(data: {
     weighTicketId: string; fileName: string; originalName: string;
     mimeType: string; size: number;
-  }) {
-    const ticket = await this.findOne(data.weighTicketId);
+  }, userId: string) {
+    const ticket = await this.findOne(data.weighTicketId, userId, 'quality.manage');
     if (['REVIEWED', 'VOIDED'].includes(ticket.status)) {
       throw new BadRequestException('已复核或已作废磅单不能上传附件');
     }
     return this.prisma.attachment.create({ data: { ...data, category: 'WEIGH_TICKET' } });
   }
 
-  findAttachmentById(id: string) {
+  async findAttachmentById(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getWeighTicketScope(userId);
     return this.prisma.attachment.findFirst({
-      where: { id, weighTicketId: { not: null }, category: 'WEIGH_TICKET' },
+      where: {
+        id,
+        weighTicketId: { not: null },
+        category: 'WEIGH_TICKET',
+        weighTicket: { deletedAt: null, AND: [scope] },
+      },
       include: { weighTicket: { select: { status: true } } },
     });
   }
 
-  async deleteAttachment(id: string) {
-    const attachment = await this.findAttachmentById(id);
+  async deleteAttachment(id: string, userId: string) {
+    const attachment = await this.findAttachmentById(id, userId, 'quality.manage');
     if (!attachment) return null;
     if (['COMPLETED', 'REVIEWED'].includes(attachment.weighTicket?.status || '')) {
       throw new BadRequestException('已完成称重的磅单附件不能删除');

@@ -21,6 +21,7 @@ export class OrderController {
   @Get()
   @ApiOperation({ summary: '执行批次列表' })
   findAll(
+    @CurrentUser('id') userId: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('status') status?: string,
@@ -33,7 +34,7 @@ export class OrderController {
       status,
       type,
       search,
-    });
+    }, userId);
   }
 
   @Get('contracts/:id/availability')
@@ -41,15 +42,16 @@ export class OrderController {
   getContractAvailability(
     @Param('id') id: string,
     @Query('type') type: string,
+    @CurrentUser('id') userId: string,
     @Query('excludeOrderId') excludeOrderId?: string,
   ) {
-    return this.service.getContractAvailability(id, type, excludeOrderId);
+    return this.service.getContractAvailability(id, type, userId, excludeOrderId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: '执行批次详情' })
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.findOne(id, userId);
   }
 
   @Patch(':id')
@@ -60,19 +62,19 @@ export class OrderController {
     deliveryLocation?: string;
     remarks?: string;
     lineItems?: Array<{ contractLineItemId: string; quantity: number }>;
-  }) {
-    return this.service.update(id, data);
+  }, @CurrentUser('id') userId: string) {
+    return this.service.update(id, data, userId);
   }
 
   @Patch(':id/status')
   @ApiOperation({ summary: '执行批次状态流转' })
-  updateStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.service.updateStatus(id, status);
+  updateStatus(@Param('id') id: string, @Body('status') status: string, @CurrentUser('id') userId: string) {
+    return this.service.updateStatus(id, status, userId);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: '删除草稿或已取消执行批次' })
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.remove(id, userId);
   }
 }

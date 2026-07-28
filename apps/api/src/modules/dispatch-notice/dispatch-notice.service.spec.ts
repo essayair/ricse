@@ -2,10 +2,16 @@ import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { DispatchNoticeService } from './dispatch-notice.service';
 
 describe('DispatchNoticeService', () => {
   const prisma = mockDeep<PrismaService>();
+  const accessControl = {
+    assertPermission: jest.fn().mockResolvedValue({}),
+    getOrderScope: jest.fn().mockResolvedValue({}),
+    getDispatchNoticeScope: jest.fn().mockResolvedValue({}),
+  };
   let service: DispatchNoticeService;
   const order = {
     id: 'order-1', orderNo: 'PC-001', type: 'PURCHASE', status: 'CONFIRMED',
@@ -17,7 +23,11 @@ describe('DispatchNoticeService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const module = await Test.createTestingModule({
-      providers: [DispatchNoticeService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        DispatchNoticeService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
+      ],
     }).compile();
     service = module.get(DispatchNoticeService);
     prisma.dispatchNotice.count.mockResolvedValue(0);

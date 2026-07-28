@@ -2,10 +2,16 @@ import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { OrderService } from './order.service';
 
 describe('OrderService', () => {
   const prisma = mockDeep<PrismaService>();
+  const accessControl = {
+    assertPermission: jest.fn().mockResolvedValue({}),
+    getContractScope: jest.fn().mockResolvedValue({}),
+    getOrderScope: jest.fn().mockResolvedValue({}),
+  };
   let service: OrderService;
 
   const contract = {
@@ -29,6 +35,7 @@ describe('OrderService', () => {
       providers: [
         OrderService,
         { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
       ],
     }).compile();
     service = module.get(OrderService);
@@ -103,13 +110,13 @@ describe('OrderService', () => {
       .mockResolvedValueOnce({ id: 'order-1', status: 'DISPATCHED' } as any)
       .mockResolvedValueOnce({ id: 'order-1', status: 'COMPLETED' } as any);
 
-    await expect(service.updateStatus('order-1', 'CONFIRMED')).resolves.toMatchObject({ status: 'CONFIRMED' });
-    await expect(service.updateStatus('order-1', 'DISPATCHED')).resolves.toMatchObject({ status: 'DISPATCHED' });
-    await expect(service.updateStatus('order-1', 'COMPLETED')).resolves.toMatchObject({ status: 'COMPLETED' });
+    await expect(service.updateStatus('order-1', 'CONFIRMED', 'user-1')).resolves.toMatchObject({ status: 'CONFIRMED' });
+    await expect(service.updateStatus('order-1', 'DISPATCHED', 'user-1')).resolves.toMatchObject({ status: 'DISPATCHED' });
+    await expect(service.updateStatus('order-1', 'COMPLETED', 'user-1')).resolves.toMatchObject({ status: 'COMPLETED' });
   });
 
   it('拒绝非法状态跳转', async () => {
     prisma.order.findFirst.mockResolvedValue({ id: 'order-1', status: 'DRAFT' } as any);
-    await expect(service.updateStatus('order-1', 'COMPLETED')).rejects.toThrow(BadRequestException);
+    await expect(service.updateStatus('order-1', 'COMPLETED', 'user-1')).rejects.toThrow(BadRequestException);
   });
 });

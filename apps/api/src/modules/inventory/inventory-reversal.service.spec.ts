@@ -2,16 +2,28 @@ import { ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryReversalService } from './inventory-reversal.service';
 
 describe('InventoryReversalService', () => {
   const prisma = mockDeep<PrismaService>();
+  const accessControl = {
+    assertPermission: jest.fn().mockResolvedValue({}),
+    getContext: jest.fn().mockResolvedValue({ roleCodes: ['USER'] }),
+    getBusinessInboundScope: jest.fn().mockResolvedValue({}),
+    getSalesOutboundScope: jest.fn().mockResolvedValue({}),
+    getInventoryReversalScope: jest.fn().mockResolvedValue({}),
+  };
   let service: InventoryReversalService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const module = await Test.createTestingModule({
-      providers: [InventoryReversalService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        InventoryReversalService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
+      ],
     }).compile();
     service = module.get(InventoryReversalService);
     prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
@@ -25,7 +37,7 @@ describe('InventoryReversalService', () => {
       reversals: [{ lines: [{ quantity: 20 }] }],
     }] as any);
 
-    const result = await service.eligibleSources('INBOUND') as any[];
+    const result = await service.eligibleSources('INBOUND', 'user-1') as any[];
 
     expect(result[0].reversedOrReservedQuantity).toBe(20);
     expect(result[0].reversibleQuantity).toBe(60);
@@ -52,7 +64,7 @@ describe('InventoryReversalService', () => {
         inventoryLot: { id: 'lot-1', lotNo: 'LOT-001' },
       }],
     };
-    prisma.inventoryReversal.findUnique.mockResolvedValue(reversal as any);
+    prisma.inventoryReversal.findFirst.mockResolvedValue(reversal as any);
     prisma.inventoryReversalLine.aggregate.mockResolvedValue({ _sum: { quantity: 0 } } as any);
     prisma.inventoryLot.updateMany.mockResolvedValue({ count: 1 });
     prisma.inventoryLot.findUniqueOrThrow.mockResolvedValue({
@@ -98,7 +110,7 @@ describe('InventoryReversalService', () => {
         inventoryLot: { id: 'lot-1', lotNo: 'LOT-001' },
       }],
     };
-    prisma.inventoryReversal.findUnique.mockResolvedValue(reversal as any);
+    prisma.inventoryReversal.findFirst.mockResolvedValue(reversal as any);
     prisma.inventoryReversalLine.aggregate.mockResolvedValue({ _sum: { quantity: 0 } } as any);
     prisma.inventoryLot.findUniqueOrThrow.mockResolvedValue({
       id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'material-1', availableQuantity: 80,
@@ -120,11 +132,9 @@ describe('InventoryReversalService', () => {
   });
 
   it('普通用户不能审批库存冲销', async () => {
-    prisma.inventoryReversal.findUnique.mockResolvedValue({
+    prisma.inventoryReversal.findFirst.mockResolvedValue({
       id: 'reversal-1', status: 'PENDING_APPROVAL', type: 'INBOUND', lines: [],
     } as any);
-    prisma.user.findUnique.mockResolvedValue({ role: 'USER' } as any);
-
     await expect(service.review('reversal-1', 'APPROVE', undefined, 'user-1'))
       .rejects.toThrow(ForbiddenException);
   });

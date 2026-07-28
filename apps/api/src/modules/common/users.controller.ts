@@ -2,8 +2,11 @@ import { Controller, Post, Get, Patch, Body, Param, UseGuards, BadRequestExcepti
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
+import { AdminGuard } from './admin.guard';
 
 @ApiTags('用户管理')
+@ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'), AdminGuard)
 @Controller('users')
 export class UsersController {
   constructor(private usersService: UsersService) {}
@@ -24,16 +27,12 @@ export class UsersController {
   }
 
   @Get()
-  @UseGuards(AuthGuard('jwt'))
-  @ApiBearerAuth()
   @ApiOperation({ summary: '用户列表' })
   findAll() {
     return this.usersService.findAll();
   }
 
   @Patch(':id')
-  @UseGuards(AuthGuard('jwt'))
-  @ApiBearerAuth()
   @ApiOperation({ summary: '更新用户（状态/名称/用户名）' })
   update(
     @Param('id') id: string,
@@ -48,8 +47,6 @@ export class UsersController {
   }
 
   @Patch(':id/password')
-  @UseGuards(AuthGuard('jwt'))
-  @ApiBearerAuth()
   @ApiOperation({ summary: '管理员重置用户密码' })
   async resetPassword(
     @Param('id') id: string,

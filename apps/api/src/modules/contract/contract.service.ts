@@ -4,6 +4,7 @@ import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractStatusDto } from './dto/update-status.dto';
 import { Prisma } from '@prisma/client';
 import { normalizeUploadFilename } from '../common/filename-encoding';
+import { AccessControlService } from '../access-control/access-control.service';
 
 type QuantityValue = { quantity: unknown; unit: string };
 
@@ -31,21 +32,12 @@ function sumAmounts(items: Array<{ totalAmount: unknown }>) {
   return items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
 }
 
-// 每个状态转换允许的角色
-const TRANSITION_ROLES: Record<string, string[]> = {
-  PENDING_APPROVAL: ['SALESPERSON', 'MANAGER', 'ADMIN'],  // 提交审批
-  APPROVED:         ['APPROVER', 'ADMIN'],                  // 审批通过
-  REJECTED:         ['APPROVER', 'ADMIN'],                  // 驳回
-  DRAFT:            ['SALESPERSON', 'MANAGER', 'ADMIN'],   // 撤回草稿
-  EXECUTING:        ['MANAGER', 'ADMIN'],                   // 开始执行
-  COMPLETED:        ['MANAGER', 'ADMIN'],                   // 完成
-  CLOSED:           ['MANAGER', 'ADMIN'],                   // 关闭
-  VOIDED:           ['ADMIN'],                              // 作废
-};
-
 @Injectable()
 export class ContractService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     lineItems: { orderBy: { createdAt: 'asc' as const } },
@@ -183,55 +175,93 @@ export class ContractService {
   }
 
   async create(dto: CreateContractDto, userId: string) {
+    const access = await this.accessControl.assertPermission(userId, 'contract.create');
+    if (
+      access.isExternal
+      && access.externalPartnerId
+      && ![dto.sellerId, dto.buyerId, dto.signingPartnerId].includes(access.externalPartnerId)
+    ) {
+      throw new ForbiddenException('外部企业只能创建本企业作为交易参与方的合同');
+    }
+
+    if (dto.clientRequestId) {
+      const existing = await this.prisma.contract.findFirst({
+        where: {
+          createdBy: userId,
+          clientRequestId: dto.clientRequestId,
+          deletedAt: null,
+        },
+        include: this.include,
+      });
+      if (existing) return this.withFulfillment(existing);
+    }
+
     await this.validateSigningPartner(dto.signingPartnerId, dto.type);
     this.validateContractParties(dto.signingPartnerId, dto.sellerId, dto.buyerId);
     const contractNo = await this.generateContractNo(dto.type);
 
-    return this.prisma.contract.create({
-      data: {
-        contractNo,
-        title: dto.title,
-        type: dto.type,
-        sellerId: dto.sellerId,
-        buyerId: dto.buyerId,
-        signingPartnerId: dto.signingPartnerId,
-        departmentId: dto.departmentId,
-        externalNo: dto.externalNo,
-        contactPerson: dto.contactPerson,
-        contactPhone: dto.contactPhone,
-        pricingType: dto.pricingType,
-        overfillPct: dto.overfillPct,
-        shortfallPct: dto.shortfallPct,
-        deliveryMethod: dto.deliveryMethod,
-        deliveryLocation: dto.deliveryLocation,
-        totalAmount: dto.totalAmount,
-        signedAt: dto.signedAt ? new Date(dto.signedAt) : null,
-        effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : null,
-        expireAt: dto.expireAt ? new Date(dto.expireAt) : null,
-        settlementMethod: dto.settlementMethod,
-        settlementBasis: dto.settlementBasis,
-        prepayPct: dto.prepayPct,
-        paymentDays: dto.paymentDays,
-        paymentMethod: dto.paymentMethod,
-        moistureRule: dto.moistureRule,
-        impurityRule: dto.impurityRule,
-        remarks: dto.remarks,
-        createdBy: userId,
-        lineItems: {
-          create: (dto.lineItems || []).map((item) => ({
-            materialId: item.materialId,
-            materialName: item.materialName,
-            quantity: item.quantity,
-            unit: item.unit || 'TON',
-            unitPrice: item.unitPrice,
-            totalPrice: Number(item.unitPrice) * Number(item.quantity),
-            deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
-            remarks: item.remarks,
-          })),
+    try {
+      return await this.prisma.contract.create({
+        data: {
+          contractNo,
+          clientRequestId: dto.clientRequestId,
+          title: dto.title,
+          type: dto.type,
+          sellerId: dto.sellerId,
+          buyerId: dto.buyerId,
+          signingPartnerId: dto.signingPartnerId,
+          departmentId: dto.departmentId,
+          externalNo: dto.externalNo,
+          contactPerson: dto.contactPerson,
+          contactPhone: dto.contactPhone,
+          pricingType: dto.pricingType,
+          overfillPct: dto.overfillPct,
+          shortfallPct: dto.shortfallPct,
+          deliveryMethod: dto.deliveryMethod,
+          deliveryLocation: dto.deliveryLocation,
+          totalAmount: dto.totalAmount,
+          signedAt: dto.signedAt ? new Date(dto.signedAt) : null,
+          effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : null,
+          expireAt: dto.expireAt ? new Date(dto.expireAt) : null,
+          settlementMethod: dto.settlementMethod,
+          settlementBasis: dto.settlementBasis,
+          prepayPct: dto.prepayPct,
+          paymentDays: dto.paymentDays,
+          paymentMethod: dto.paymentMethod,
+          moistureRule: dto.moistureRule,
+          impurityRule: dto.impurityRule,
+          remarks: dto.remarks,
+          createdBy: userId,
+          lineItems: {
+            create: (dto.lineItems || []).map((item) => ({
+              materialId: item.materialId,
+              materialName: item.materialName,
+              quantity: item.quantity,
+              unit: item.unit || 'TON',
+              unitPrice: item.unitPrice,
+              totalPrice: Number(item.unitPrice) * Number(item.quantity),
+              deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
+              remarks: item.remarks,
+            })),
+          },
         },
-      },
-      include: this.include,
-    });
+        include: this.include,
+      });
+    } catch (error: any) {
+      // 两次相同请求并发到达时，唯一约束只允许创建一份草稿。
+      if (dto.clientRequestId && error?.code === 'P2002') {
+        const existing = await this.prisma.contract.findFirst({
+          where: {
+            createdBy: userId,
+            clientRequestId: dto.clientRequestId,
+            deletedAt: null,
+          },
+          include: this.include,
+        });
+        if (existing) return this.withFulfillment(existing);
+      }
+      throw error;
+    }
   }
 
   async findAll(params: {
@@ -243,7 +273,7 @@ export class ContractService {
     sellerId?: string;
     dateFrom?: string;
     dateTo?: string;
-  }) {
+  }, userId?: string) {
     const page = params.page || 1;
     const pageSize = Math.min(params.pageSize || 20, 100);
     const skip = (page - 1) * pageSize;
@@ -276,6 +306,12 @@ export class ContractService {
         where.OR = searchCondition;
       }
     }
+    if (userId) {
+      await this.accessControl.assertPermission(userId, 'contract.view');
+      const scope = await this.accessControl.getContractScope(userId);
+      const existingAnd = Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : [];
+      where.AND = [...existingAnd, scope];
+    }
 
     const [items, total] = await Promise.all([
       this.prisma.contract.findMany({
@@ -294,12 +330,17 @@ export class ContractService {
     };
   }
 
-  async findOne(id: string) {
-    const contract = await this.prisma.contract.findUnique({
-      where: { id },
+  async findOne(id: string, userId?: string, permissionCode = 'contract.view') {
+    let scope: Prisma.ContractWhereInput = {};
+    if (userId) {
+      await this.accessControl.assertPermission(userId, permissionCode);
+      scope = await this.accessControl.getContractScope(userId);
+    }
+    const contract = await this.prisma.contract.findFirst({
+      where: { id, deletedAt: null, AND: [scope] },
       include: this.include,
     });
-    if (!contract) throw new NotFoundException('合同不存在');
+    if (!contract || contract.deletedAt) throw new NotFoundException('合同不存在');
     return this.withFulfillment({
       ...contract,
       attachments: (contract.attachments || []).map((attachment) => ({
@@ -310,107 +351,202 @@ export class ContractService {
   }
 
   async updateStatus(id: string, dto: UpdateContractStatusDto, user: { id: string; role: string }) {
-    const contract = await this.findOne(id);
     const { status, comment } = dto;
+    const permissionByStatus: Record<string, string> = {
+      PENDING_APPROVAL: 'contract.submit',
+      APPROVED: 'contract.approve',
+      REJECTED: 'contract.approve',
+      DRAFT: 'contract.submit',
+      EXECUTING: 'execution.manage',
+      COMPLETED: 'execution.manage',
+      CLOSED: 'execution.manage',
+      VOIDED: 'contract.void',
+    };
+    const access = await this.accessControl.assertPermission(
+      user.id,
+      permissionByStatus[status] || 'contract.edit',
+    );
+    const scope = await this.accessControl.getContractScope(user.id);
 
-    this.validateTransition(contract.status, status);
-
-    // 角色权限校验
-    const allowedRoles = TRANSITION_ROLES[status] || [];
-    if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
-      throw new ForbiddenException(`角色 ${user.role} 无权将合同状态变更为 ${status}`);
-    }
-
-    // 审批通过/驳回需要意见
-    if (['APPROVED', 'REJECTED'].includes(status)) {
-      if (!comment?.trim()) {
-        throw new BadRequestException('审批意见不能为空');
-      }
-      const pendingApproval = await this.prisma.approval.findFirst({
-        where: { contractId: id, status: 'PENDING' },
-        orderBy: [{ round: 'desc' }, { step: 'asc' }],
-      });
-      if (!pendingApproval) throw new BadRequestException('当前没有待处理的审批节点');
-      if (user.role !== 'ADMIN' && pendingApproval.assigneeId !== user.id) {
-        throw new ForbiddenException('当前审批节点未分配给该用户');
-      }
-
-      await this.prisma.approval.update({
-        where: { id: pendingApproval.id },
-        data: {
-          status: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
-          comment: comment.trim(),
-          actedAt: new Date(),
-          actedById: user.id,
+    return this.prisma.$transaction(async (tx) => {
+      const contract = await tx.contract.findFirst({
+        where: { id, deletedAt: null, AND: [scope] },
+        select: {
+          id: true,
+          status: true,
+          type: true,
+          totalAmount: true,
+          createdBy: true,
         },
       });
+      if (!contract) throw new NotFoundException('合同不存在');
 
-      if (status === 'REJECTED') {
-        await this.prisma.approval.updateMany({
-          where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
-          data: { status: 'CANCELLED' },
+      this.validateTransition(contract.status, status);
+
+      if (status === 'DRAFT' && contract.status === 'PENDING_APPROVAL' && !access.isAdmin && contract.createdBy !== user.id) {
+        throw new ForbiddenException('只有合同创建人或系统管理员可以撤回审批');
+      }
+
+      if (['APPROVED', 'REJECTED'].includes(status)) {
+        if (!comment?.trim()) throw new BadRequestException('审批意见不能为空');
+
+        const pendingApproval = await tx.approval.findFirst({
+          where: { contractId: id, status: 'PENDING' },
+          orderBy: [{ round: 'desc' }, { step: 'asc' }],
         });
-      } else {
-        const nextApproval = await this.prisma.approval.findFirst({
-          where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
-          orderBy: { step: 'asc' },
+        if (!pendingApproval) throw new BadRequestException('当前没有待处理的审批节点');
+        if (!access.isAdmin && pendingApproval.assigneeId !== user.id) {
+          throw new ForbiddenException('当前审批节点未分配给该用户');
+        }
+
+        const acted = await tx.approval.updateMany({
+          where: { id: pendingApproval.id, status: 'PENDING' },
+          data: {
+            status: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
+            comment: comment.trim(),
+            actedAt: new Date(),
+            actedById: user.id,
+          },
         });
-        if (nextApproval) {
-          await this.prisma.approval.update({
-            where: { id: nextApproval.id },
-            data: { status: 'PENDING' },
+        if (acted.count !== 1) throw new BadRequestException('当前审批节点已被处理，请刷新后重试');
+
+        if (status === 'REJECTED') {
+          await tx.approval.updateMany({
+            where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
+            data: { status: 'CANCELLED' },
           });
-          return this.prisma.contract.findUnique({ where: { id }, include: this.include });
+        } else {
+          const nextApproval = await tx.approval.findFirst({
+            where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
+            orderBy: { step: 'asc' },
+          });
+          if (nextApproval) {
+            await tx.approval.update({
+              where: { id: nextApproval.id },
+              data: { status: 'PENDING' },
+            });
+            return tx.contract.findUnique({ where: { id }, include: this.include });
+          }
         }
       }
-    }
 
-    // 提交审批时自动创建 Approval 记录
-    if (status === 'PENDING_APPROVAL') {
-      await this.autoAssignApprovals(id, contract.totalAmount);
-    }
+      if (status === 'PENDING_APPROVAL') {
+        const plan = await this.resolveApprovalPlan(tx, contract.type, contract.totalAmount);
+        await this.assignApprovals(tx, id, plan.nodes);
+      }
 
-    const updateData: Prisma.ContractUpdateInput = { status };
-    if (status === 'APPROVED') {
-      updateData.effectiveAt = new Date();
-    }
+      if (['VOIDED', 'DRAFT'].includes(status) && contract.status === 'PENDING_APPROVAL') {
+        await tx.approval.updateMany({
+          where: { contractId: id, status: { in: ['PENDING', 'WAITING'] } },
+          data: { status: 'CANCELLED' },
+        });
+      }
 
-    return this.prisma.contract.update({
-      where: { id },
-      data: updateData,
-      include: this.include,
+      const updateData: Prisma.ContractUpdateManyMutationInput = { status };
+      if (status === 'APPROVED') updateData.effectiveAt = new Date();
+
+      const changed = await tx.contract.updateMany({
+        where: { id, status: contract.status, deletedAt: null },
+        data: updateData,
+      });
+      if (changed.count !== 1) throw new BadRequestException('合同状态已发生变化，请刷新后重试');
+
+      return tx.contract.findUnique({ where: { id }, include: this.include });
     });
   }
 
-  private async autoAssignApprovals(contractId: string, totalAmount: any) {
-    await this.prisma.approval.updateMany({
+  async getApprovalReadiness(id: string, userId?: string) {
+    let scope: Prisma.ContractWhereInput = {};
+    if (userId) {
+      await this.accessControl.assertPermission(userId, 'contract.submit');
+      scope = await this.accessControl.getContractScope(userId);
+    }
+    const contract = await this.prisma.contract.findFirst({
+      where: { id, deletedAt: null, AND: [scope] },
+      select: { id: true, type: true, totalAmount: true, status: true },
+    });
+    if (!contract) throw new NotFoundException('合同不存在');
+    if (!['DRAFT', 'REJECTED'].includes(contract.status)) {
+      throw new BadRequestException('只有草稿或已驳回合同可以检查审批流程');
+    }
+
+    const plan = await this.resolveApprovalPlan(this.prisma, contract.type, contract.totalAmount);
+    return {
+      ready: true,
+      flowId: plan.flowId,
+      flowName: plan.flowName,
+      nodeCount: plan.nodes.length,
+      nodes: plan.nodes.map((node) => ({
+        nodeName: node.nodeName,
+        step: node.step,
+        assignee: node.assignee,
+      })),
+    };
+  }
+
+  private async resolveApprovalPlan(
+    client: Prisma.TransactionClient | PrismaService,
+    contractType: string,
+    totalAmount: unknown,
+  ) {
+    const flow = await client.approvalFlow.findUnique({
+      where: { contractType },
+      include: {
+        nodes: {
+          where: { enabled: true },
+          include: {
+            assignee: {
+              select: { id: true, name: true, username: true, role: true, status: true },
+            },
+          },
+          orderBy: { step: 'asc' },
+        },
+      },
+    });
+    if (!flow || flow.status !== 'ACTIVE') {
+      throw new BadRequestException('当前合同类型未启用审批流程，请联系系统管理员配置');
+    }
+
+    const threshold = Number(flow.amountThreshold || 0);
+    const activeNodes = flow.nodes.filter((node) =>
+      node.condition === 'ALWAYS'
+      || (node.condition === 'AMOUNT_GTE_THRESHOLD' && Number(totalAmount) >= threshold),
+    );
+    if (activeNodes.length === 0) {
+      throw new BadRequestException(`审批流程“${flow.name}”没有符合当前金额条件的审批节点`);
+    }
+
+    const invalidNodes = activeNodes.filter((node) =>
+      node.assignee.status !== 'ACTIVE'
+      || !['APPROVER', 'ADMIN'].includes(node.assignee.role),
+    );
+    if (invalidNodes.length > 0) {
+      throw new BadRequestException(
+        `审批流程存在无效审批人：${invalidNodes.map((node) => node.nodeName).join('、')}，请联系系统管理员调整`,
+      );
+    }
+
+    return { flowId: flow.id, flowName: flow.name, nodes: activeNodes };
+  }
+
+  private async assignApprovals(
+    client: Prisma.TransactionClient,
+    contractId: string,
+    nodes: Array<{ nodeName: string; assigneeId: string }>,
+  ) {
+    await client.approval.updateMany({
       where: { contractId, status: { in: ['PENDING', 'WAITING'] } },
       data: { status: 'CANCELLED' },
     });
 
-    const contract = await this.prisma.contract.findUnique({
-      where: { id: contractId },
-      select: { type: true },
-    });
-    if (!contract) throw new NotFoundException('合同不存在');
-
-    const flow = await this.prisma.approvalFlow.findUnique({
-      where: { contractType: contract.type },
-      include: { nodes: { where: { enabled: true }, orderBy: { step: 'asc' } } },
-    });
-    if (!flow || flow.status !== 'ACTIVE') throw new BadRequestException('当前合同类型未启用审批流程');
-    const threshold = Number(flow.amountThreshold || 0);
-    const activeNodes = flow.nodes.filter((node) => node.condition === 'ALWAYS' || Number(totalAmount) >= threshold);
-    if (activeNodes.length === 0) throw new BadRequestException('审批流程没有可用节点');
-
-    const latest = await this.prisma.approval.aggregate({
+    const latest = await client.approval.aggregate({
       where: { contractId },
       _max: { round: true },
     });
     const round = (latest._max.round || 0) + 1;
 
-    await this.prisma.approval.createMany({
-      data: activeNodes.map((node, index) => ({
+    await client.approval.createMany({
+      data: nodes.map((node, index) => ({
         contractId,
         assigneeId: node.assigneeId,
         nodeName: node.nodeName,
@@ -439,8 +575,9 @@ export class ContractService {
         unitPrice: number; deliveryDate?: string; remarks?: string;
       }>;
     },
+    userId?: string,
   ) {
-    const contract = await this.findOne(id);
+    const contract = await this.findOne(id, userId, 'contract.edit');
     if (contract.status !== 'DRAFT' && contract.status !== 'REJECTED') {
       throw new BadRequestException('仅草稿或已驳回状态的合同可以编辑');
     }
@@ -490,10 +627,14 @@ export class ContractService {
     });
   }
 
-  async remove(id: string) {
-    const contract = await this.findOne(id);
-    if (!['DRAFT', 'VOIDED'].includes(contract.status)) {
-      throw new BadRequestException('仅草稿或已作废的合同可以删除');
+  async remove(id: string, user: { id: string; role: string }) {
+    const access = await this.accessControl.assertPermission(user.id, 'contract.delete');
+    if (!access.isAdmin) {
+      throw new ForbiddenException('仅系统管理员可以删除合同');
+    }
+    const contract = await this.findOne(id, user.id, 'contract.delete');
+    if (contract.status !== 'VOIDED') {
+      throw new BadRequestException('合同必须先作废，才能删除');
     }
     return this.prisma.contract.update({
       where: { id },
@@ -504,10 +645,10 @@ export class ContractService {
   private validateTransition(current: string, next: string) {
     const transitions: Record<string, string[]> = {
       DRAFT:            ['PENDING_APPROVAL', 'VOIDED'],
-      PENDING_APPROVAL: ['APPROVED', 'REJECTED'],
+      PENDING_APPROVAL: ['APPROVED', 'REJECTED', 'DRAFT', 'VOIDED'],
       APPROVED:         ['EXECUTING', 'VOIDED'],
       EXECUTING:        ['COMPLETED', 'CLOSED', 'VOIDED'],
-      REJECTED:         ['DRAFT'],
+      REJECTED:         ['DRAFT', 'VOIDED'],
       COMPLETED:        ['CLOSED'],
       CLOSED:           [],
       VOIDED:           [],
@@ -523,8 +664,19 @@ export class ContractService {
     return this.prisma.attachment.create({ data });
   }
 
-  findAttachmentById(id: string) {
-    return this.prisma.attachment.findFirst({ where: { id, contractId: { not: null } } });
+  async findAttachmentById(id: string, userId?: string, permissionCode = 'contract.view') {
+    let contractScope: Prisma.ContractWhereInput = {};
+    if (userId) {
+      await this.accessControl.assertPermission(userId, permissionCode);
+      contractScope = await this.accessControl.getContractScope(userId);
+    }
+    return this.prisma.attachment.findFirst({
+      where: {
+        id,
+        contractId: { not: null },
+        contract: contractScope,
+      },
+    });
   }
 
   deleteAttachment(id: string) {

@@ -47,6 +47,7 @@ export class ContractController {
     @Query('sellerId') sellerId?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @CurrentUser('id') userId?: string,
   ) {
     return this.contractService.findAll({
       page: page ? Number(page) : undefined,
@@ -57,13 +58,19 @@ export class ContractController {
       sellerId,
       dateFrom,
       dateTo,
-    });
+    }, userId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: '合同详情' })
-  findOne(@Param('id') id: string) {
-    return this.contractService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.contractService.findOne(id, userId);
+  }
+
+  @Get(':id/approval-readiness')
+  @ApiOperation({ summary: '提交前检查合同审批流程是否可用' })
+  getApprovalReadiness(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.contractService.getApprovalReadiness(id, userId);
   }
 
   @Post(':id/attachments')
@@ -75,11 +82,12 @@ export class ContractController {
     @UploadedFile() file: Express.Multer.File,
     @Body('category') category?: string,
     @Body('originalName') requestedName?: string,
+    @CurrentUser('id') userId?: string,
   ) {
     if (!file) throw new BadRequestException('请选择文件');
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
     if (!allowed.includes(file.mimetype)) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
-    await this.contractService.findOne(contractId);
+    await this.contractService.findOne(contractId, userId, 'contract.edit');
     const originalName = (requestedName?.trim() || normalizeUploadFilename(file.originalname)).slice(0, 255);
     const result = await this.fileService.upload(file.buffer, originalName, file.mimetype);
     try {
@@ -99,8 +107,8 @@ export class ContractController {
 
   @Get('attachments/:id/view-url')
   @ApiOperation({ summary: '获取合同附件临时查看地址' })
-  async getAttachmentViewUrl(@Param('id') id: string) {
-    const attachment = await this.contractService.findAttachmentById(id);
+  async getAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.contractService.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
@@ -108,8 +116,8 @@ export class ContractController {
   @Delete('attachments/:id')
   @HttpCode(204)
   @ApiOperation({ summary: '删除合同附件' })
-  async deleteAttachment(@Param('id') id: string) {
-    const attachment = await this.contractService.findAttachmentById(id);
+  async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.contractService.findAttachmentById(id, userId, 'contract.edit');
     if (!attachment) return;
     try {
       await this.fileService.delete(attachment.fileName);
@@ -124,11 +132,12 @@ export class ContractController {
   async renameAttachment(
     @Param('id') id: string,
     @Body('originalName') originalName?: string,
+    @CurrentUser('id') userId?: string,
   ) {
     const name = originalName?.trim();
     if (!name) throw new BadRequestException('附件名称不能为空');
     if (name.length > 255) throw new BadRequestException('附件名称不能超过 255 个字符');
-    const attachment = await this.contractService.findAttachmentById(id);
+    const attachment = await this.contractService.findAttachmentById(id, userId, 'contract.edit');
     if (!attachment) throw new BadRequestException('附件不存在');
     return this.contractService.renameAttachment(id, name);
   }
@@ -163,13 +172,17 @@ export class ContractController {
         unitPrice: number; deliveryDate?: string; remarks?: string;
       }>;
     },
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.contractService.update(id, dto);
+    return this.contractService.update(id, dto, userId);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: '删除合同（软删除，仅草稿/已作废）' })
-  remove(@Param('id') id: string) {
-    return this.contractService.remove(id);
+  @ApiOperation({ summary: '删除合同（仅系统管理员可删除已作废合同）' })
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    return this.contractService.remove(id, user);
   }
 }

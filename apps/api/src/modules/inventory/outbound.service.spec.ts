@@ -1,16 +1,27 @@
 import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { OutboundService } from './outbound.service';
 
 describe('OutboundService', () => {
   const prisma = mockDeep<PrismaService>();
+  const accessControl = {
+    assertPermission: jest.fn().mockResolvedValue({}),
+    getWaybillScope: jest.fn().mockResolvedValue({}),
+    getInventoryLotScope: jest.fn().mockResolvedValue({}),
+    getOutboundReceiptScope: jest.fn().mockResolvedValue({}),
+  };
   let service: OutboundService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const module = await Test.createTestingModule({
-      providers: [OutboundService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        OutboundService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
+      ],
     }).compile();
     service = module.get(OutboundService);
   });
@@ -18,7 +29,7 @@ describe('OutboundService', () => {
   it('只选择待发运、常规销售且已有复核出库磅单的运单', async () => {
     prisma.waybill.findMany.mockResolvedValue([]);
 
-    await service.eligibleWaybills();
+    await service.eligibleWaybills('user-1');
 
     expect(prisma.waybill.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({

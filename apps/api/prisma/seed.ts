@@ -148,6 +148,44 @@ async function main() {
 
   console.log('✅ 管理员及固定审批链账号');
 
+  // Seed 直接写入用户表，需要同步建立多角色授权；业务接口新建用户时由 UsersService 自动完成。
+  const seededUsers = await prisma.user.findMany({
+    include: { company: { select: { id: true, type: true } } },
+  });
+  const seededRoles = await prisma.role.findMany();
+  const seededRoleByCode = new Map(seededRoles.map((role) => [role.code, role]));
+  for (const user of seededUsers) {
+    const role = seededRoleByCode.get(user.role) || seededRoleByCode.get('USER');
+    if (!role) continue;
+    const assignment = await prisma.userRoleAssignment.upsert({
+      where: { userId_roleId: { userId: user.id, roleId: role.id } },
+      update: {},
+      create: {
+        userId: user.id,
+        roleId: role.id,
+        scopeType: user.company?.type === 'EXTERNAL' ? 'COMPANY' : 'ALL',
+      },
+    });
+    if (user.company?.type === 'EXTERNAL') {
+      await prisma.userRoleScope.upsert({
+        where: {
+          assignmentId_targetType_targetId: {
+            assignmentId: assignment.id,
+            targetType: 'COMPANY',
+            targetId: user.company.id,
+          },
+        },
+        update: {},
+        create: {
+          assignmentId: assignment.id,
+          targetType: 'COMPANY',
+          targetId: user.company.id,
+        },
+      });
+    }
+  }
+  console.log('✅ 用户角色与数据范围');
+
   // ===== 合作伙伴（外部供应商/客户）=====
   const externalPartners = [
     {

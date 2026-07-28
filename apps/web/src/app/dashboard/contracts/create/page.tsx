@@ -28,6 +28,12 @@ function SelectField({ value, onChange, options, placeholder }: { value: string;
 
 export default function ContractCreatePage() {
   const router = useRouter();
+  const [clientRequestId] = useState(() => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `contract-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  });
   const [submitting, setSubmitting] = useState(false);
   const [partners, setPartners] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
@@ -120,7 +126,8 @@ export default function ContractCreatePage() {
   });
 
   const uploadAttachments = async (contractId: string) => {
-    for (const item of files) {
+    const pendingFiles = [...files];
+    for (const item of pendingFiles) {
       const fd = new FormData();
       fd.append('file', item.file);
       fd.append('category', 'OTHER');
@@ -132,17 +139,37 @@ export default function ContractCreatePage() {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.message || `附件 ${item.name} 上传失败`);
       }
+      // 上传成功后立即从待上传列表移除，后续重试不会重复上传。
+      setFiles(current => current.filter(entry => entry !== item));
     }
+  };
+
+  const ensureDraft = async () => {
+    const payload = buildPayload();
+    if (draftId) {
+      await api.patch(`/contracts/${draftId}`, payload);
+      return draftId;
+    }
+
+    const contract = await api.post<{ id: string }>('/contracts', {
+      ...payload,
+      clientRequestId,
+    });
+    // 合同一经创建立即记录 ID；后续上传或审批失败时只更新该草稿。
+    setDraftId(contract.id);
+    return contract.id;
   };
 
   const handleSaveDraft = async () => {
     setSubmitting(true);
     try {
-      const payload = buildPayload();
-      const c = await api.post<{ id: string }>('/contracts', payload);
-      if (files.length > 0) await uploadAttachments(c.id);
-      router.push(`/dashboard/contracts/${c.id}`);
-    } catch (e: any) { alert(e.message || '保存失败'); setSubmitting(false); }
+      const contractId = await ensureDraft();
+      if (files.length > 0) await uploadAttachments(contractId);
+      router.push(`/dashboard/contracts/${contractId}`);
+    } catch (e: any) {
+      alert(e.message || '保存失败');
+      setSubmitting(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -151,14 +178,21 @@ export default function ContractCreatePage() {
     if (!form.materialId || !form.quantity || !form.unitPrice) { alert('请完整填写货物信息（物料/数量/单价）'); return; }
     if (form.type === 'BILATERAL' && !form.buyerId) { alert('双边合同请选择销售对手方'); return; }
     setSubmitting(true);
+    let contractId = draftId;
     try {
-      const payload = buildPayload();
-      const c = await api.post<{ id: string }>('/contracts', payload);
-      // Submit for approval
-      await api.patch(`/contracts/${c.id}/status`, { status: 'PENDING_APPROVAL' });
-      if (files.length > 0) await uploadAttachments(c.id);
-      router.push(`/dashboard/contracts/${c.id}`);
-    } catch (e: any) { alert(e.message || '提交失败'); setSubmitting(false); }
+      contractId = await ensureDraft();
+      // 在上传附件前检查审批配置，避免附件上传完成后才发现流程不可用。
+      await api.get(`/contracts/${contractId}/approval-readiness`);
+      // 附件属于草稿内容，应在进入审批前完成；上传失败时合同仍可继续编辑。
+      if (files.length > 0) await uploadAttachments(contractId);
+      await api.patch(`/contracts/${contractId}/status`, { status: 'PENDING_APPROVAL' });
+      router.push(`/dashboard/contracts/${contractId}`);
+    } catch (e: any) {
+      alert(contractId
+        ? `合同已保存为草稿，不会重复创建。\n提交审批失败：${e.message || '请检查审批流程配置'}`
+        : e.message || '提交失败');
+      setSubmitting(false);
+    }
   };
 
   return (

@@ -3,10 +3,12 @@ import { ContractService } from './contract.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { mockDeep } from 'jest-mock-extended';
+import { AccessControlService } from '../access-control/access-control.service';
 
 describe('ContractService', () => {
   let service: ContractService;
   let prisma: ReturnType<typeof mockDeep<PrismaService>>;
+  let accessControl: ReturnType<typeof mockDeep<AccessControlService>>;
 
   const mockContract = {
     id: 'test-id',
@@ -30,11 +32,24 @@ describe('ContractService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    accessControl = mockDeep<AccessControlService>();
+    accessControl.assertPermission.mockImplementation(async (userId) => ({
+      isAdmin: userId === 'user-1',
+      isExternal: false,
+      externalPartnerId: null,
+      permissions: [],
+      roleCodes: userId === 'user-1' ? ['ADMIN'] : ['USER'],
+      assignments: [],
+      user: {},
+    } as any));
+    accessControl.getContractScope.mockResolvedValue({});
+    (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: PrismaService) => unknown) => callback(prisma));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractService,
         { provide: PrismaService, useValue: prisma },
+        { provide: AccessControlService, useValue: accessControl },
       ],
     }).compile();
 
@@ -61,6 +76,26 @@ describe('ContractService', () => {
           }),
         }),
       );
+    });
+
+    it('相同客户端请求标识重复提交时返回原草稿', async () => {
+      prisma.contract.findFirst.mockResolvedValue(mockContract as any);
+
+      const result = await service.create(
+        {
+          clientRequestId: 'request-1',
+          title: '测试合同',
+          type: 'PURCHASE',
+          signingPartnerId: 'internal-1',
+          sellerId: 'sup-1',
+          totalAmount: 100000,
+          lineItems: [],
+        },
+        'user-1',
+      );
+
+      expect(result.id).toBe('test-id');
+      expect(prisma.contract.create).not.toHaveBeenCalled();
     });
   });
 
@@ -99,20 +134,108 @@ describe('ContractService', () => {
       expect(summary.executedQuantity).toEqual([{ unit: 'TON', quantity: 20 }]);
       expect(summary.executedAmount).toBe(20000);
     });
+
+    it('外部企业合同列表应用企业参与方数据范围', async () => {
+      const externalScope = {
+        OR: [
+          { sellerId: 'partner-external' },
+          { buyerId: 'partner-external' },
+          { signingPartnerId: 'partner-external' },
+        ],
+      };
+      accessControl.getContractScope.mockResolvedValue(externalScope);
+      prisma.contract.findMany.mockResolvedValue([]);
+      prisma.contract.count.mockResolvedValue(0);
+
+      await service.findAll({}, 'external-user');
+
+      expect(prisma.contract.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([externalScope]),
+        }),
+      }));
+    });
   });
 
   describe('findOne', () => {
     it('存在时返回合同', async () => {
-      prisma.contract.findUnique.mockResolvedValue(mockContract as any);
+      prisma.contract.findFirst.mockResolvedValue(mockContract as any);
 
       const result = await service.findOne('test-id');
       expect(result.title).toBe('测试合同');
     });
 
     it('不存在时抛出 NotFoundException', async () => {
-      prisma.contract.findUnique.mockResolvedValue(null);
+      prisma.contract.findFirst.mockResolvedValue(null);
 
       await expect(service.findOne('nonexistent')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getApprovalReadiness', () => {
+    it('审批流程和审批人有效时返回可提交', async () => {
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        status: 'DRAFT',
+        type: 'PURCHASE',
+        totalAmount: '100000',
+      } as any);
+      prisma.approvalFlow.findUnique.mockResolvedValue({
+        id: 'flow-1',
+        name: '采购合同审批流',
+        status: 'ACTIVE',
+        amountThreshold: 1000000,
+        nodes: [{
+          id: 'node-1',
+          nodeName: '业务主管',
+          step: 1,
+          assigneeId: 'approver-1',
+          condition: 'ALWAYS',
+          assignee: {
+            id: 'approver-1',
+            name: '业务主管',
+            username: 'business_manager',
+            role: 'APPROVER',
+            status: 'ACTIVE',
+          },
+        }],
+      } as any);
+
+      await expect(service.getApprovalReadiness('test-id')).resolves.toEqual(
+        expect.objectContaining({ ready: true, flowId: 'flow-1', nodeCount: 1 }),
+      );
+    });
+
+    it('节点审批人停用时拒绝提交', async () => {
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        status: 'DRAFT',
+        type: 'PURCHASE',
+        totalAmount: '100000',
+      } as any);
+      prisma.approvalFlow.findUnique.mockResolvedValue({
+        id: 'flow-1',
+        name: '采购合同审批流',
+        status: 'ACTIVE',
+        amountThreshold: null,
+        nodes: [{
+          id: 'node-1',
+          nodeName: '业务主管',
+          step: 1,
+          assigneeId: 'approver-1',
+          condition: 'ALWAYS',
+          assignee: {
+            id: 'approver-1',
+            name: '业务主管',
+            username: 'business_manager',
+            role: 'APPROVER',
+            status: 'DISABLED',
+          },
+        }],
+      } as any);
+
+      await expect(service.getApprovalReadiness('test-id'))
+        .rejects.toThrow('审批流程存在无效审批人：业务主管');
     });
   });
 
@@ -120,8 +243,10 @@ describe('ContractService', () => {
     const adminUser = { id: 'user-1', role: 'ADMIN' };
 
     const setupContract = async (status: string) => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status } as any);
       prisma.contract.findUnique.mockResolvedValue({ ...mockContract, status } as any);
-      prisma.approval.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.contract.updateMany.mockResolvedValue({ count: 1 } as any);
+      prisma.approval.updateMany.mockResolvedValue({ count: 1 } as any);
       (prisma.user.findMany as jest.Mock).mockResolvedValue([
         { id: 'business-user', username: 'business_manager' },
         { id: 'risk-user', username: 'risk_manager' },
@@ -132,8 +257,24 @@ describe('ContractService', () => {
       prisma.approvalFlow.findUnique.mockResolvedValue({
         id: 'flow-1', contractType: 'PURCHASE', status: 'ACTIVE', amountThreshold: 1_000_000,
         nodes: [
-          { id: 'node-1', nodeName: '业务主管', step: 1, assigneeId: 'business-user', condition: 'ALWAYS', enabled: true },
-          { id: 'node-2', nodeName: '风控经理', step: 2, assigneeId: 'risk-user', condition: 'ALWAYS', enabled: true },
+          {
+            id: 'node-1',
+            nodeName: '业务主管',
+            step: 1,
+            assigneeId: 'business-user',
+            condition: 'ALWAYS',
+            enabled: true,
+            assignee: { id: 'business-user', name: '业务主管', username: 'business_manager', role: 'APPROVER', status: 'ACTIVE' },
+          },
+          {
+            id: 'node-2',
+            nodeName: '风控经理',
+            step: 2,
+            assigneeId: 'risk-user',
+            condition: 'ALWAYS',
+            enabled: true,
+            assignee: { id: 'risk-user', name: '风控经理', username: 'risk_manager', role: 'APPROVER', status: 'ACTIVE' },
+          },
         ],
       } as any);
     };
@@ -151,6 +292,32 @@ describe('ContractService', () => {
       await setupContract('DRAFT');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
       await expect(service.updateStatus('test-id', { status: 'VOIDED' }, adminUser)).resolves.toBeDefined();
+    });
+
+    it('普通业务用户可以作废草稿合同', async () => {
+      await setupContract('DRAFT');
+      prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
+      await expect(service.updateStatus(
+        'test-id',
+        { status: 'VOIDED' },
+        { id: 'user-2', role: 'USER' },
+      )).resolves.toBeDefined();
+    });
+
+    it('待审批合同作废时取消未处理审批任务', async () => {
+      await setupContract('PENDING_APPROVAL');
+      prisma.approval.updateMany.mockResolvedValue({ count: 2 } as any);
+      prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
+
+      await expect(service.updateStatus(
+        'test-id',
+        { status: 'VOIDED' },
+        { id: 'user-2', role: 'SALESPERSON' },
+      )).resolves.toBeDefined();
+      expect(prisma.approval.updateMany).toHaveBeenCalledWith({
+        where: { contractId: 'test-id', status: { in: ['PENDING', 'WAITING'] } },
+        data: { status: 'CANCELLED' },
+      });
     });
 
     it('PENDING_APPROVAL → APPROVED', async () => {
@@ -174,7 +341,7 @@ describe('ContractService', () => {
         { status: 'APPROVED', comment: '管理员代审批' },
         adminUser,
       )).resolves.toBeDefined();
-      expect(prisma.approval.update).toHaveBeenCalledWith(expect.objectContaining({
+      expect(prisma.approval.updateMany).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ actedById: adminUser.id }),
       }));
     });
@@ -244,9 +411,22 @@ describe('ContractService', () => {
       await expect(service.updateStatus('test-id', { status: 'EXECUTING' }, adminUser)).rejects.toThrow(BadRequestException);
     });
 
-    it('PENDING_APPROVAL → DRAFT 应拒绝', async () => {
+    it('合同创建人可以撤回待审批合同', async () => {
       await setupContract('PENDING_APPROVAL');
-      await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).resolves.toBeDefined();
+      expect(prisma.approval.updateMany).toHaveBeenCalledWith({
+        where: { contractId: 'test-id', status: { in: ['PENDING', 'WAITING'] } },
+        data: { status: 'CANCELLED' },
+      });
+    });
+
+    it('非创建人不能撤回他人的待审批合同', async () => {
+      await setupContract('PENDING_APPROVAL');
+      await expect(service.updateStatus(
+        'test-id',
+        { status: 'DRAFT' },
+        { id: 'other-user', role: 'SALESPERSON' },
+      )).rejects.toThrow(ForbiddenException);
     });
 
     it('PENDING_APPROVAL → EXECUTING 应拒绝', async () => {
@@ -268,6 +448,35 @@ describe('ContractService', () => {
     it('VOIDED 不再接受任何变更', async () => {
       await setupContract('VOIDED');
       await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('remove', () => {
+    it('仅管理员可以删除合同', async () => {
+      await expect(service.remove(
+        'test-id',
+        { id: 'user-2', role: 'SALESPERSON' },
+      )).rejects.toThrow(ForbiddenException);
+      expect(prisma.contract.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('管理员不能直接删除未作废合同', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'DRAFT' } as any);
+
+      await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' }))
+        .rejects.toThrow('合同必须先作废，才能删除');
+      expect(prisma.contract.update).not.toHaveBeenCalled();
+    });
+
+    it('管理员可以软删除已作废合同', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
+      prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED', deletedAt: new Date() } as any);
+
+      await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' })).resolves.toBeDefined();
+      expect(prisma.contract.update).toHaveBeenCalledWith({
+        where: { id: 'test-id' },
+        data: { deletedAt: expect.any(Date) },
+      });
     });
   });
 });

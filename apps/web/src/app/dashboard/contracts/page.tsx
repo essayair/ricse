@@ -65,6 +65,7 @@ export default function ContractsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [userRole, setUserRole] = useState('');
 
   const fetchContracts = async () => {
     setLoading(true);
@@ -83,13 +84,23 @@ export default function ContractsPage() {
     }
   };
 
-  const handleDelete = async (contractId: string) => {
-    if (!confirm('确定删除此合同？')) return;
+  const handleDelete = async (contract: Contract) => {
+    if (contract.status !== 'VOIDED') {
+      alert('合同必须先作废，才能删除');
+      return;
+    }
+    if (!confirm(`确定删除已作废合同“${contract.contractNo}”吗？删除后将不再出现在合同列表中。`)) return;
     try {
-      await api.delete(`/contracts/${contractId}`);
+      await api.delete(`/contracts/${contract.id}`);
       fetchContracts();
     } catch (e: any) { alert(e.message || '删除失败'); }
   };
+
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (!stored) return;
+    try { setUserRole(JSON.parse(stored).role || ''); } catch {}
+  }, []);
 
   useEffect(() => { fetchContracts(); }, [statusFilter, typeFilter, searchTerm]);
 
@@ -232,11 +243,13 @@ export default function ContractsPage() {
                     <div className="mt-1 text-muted-foreground">{formatDate(c.createdAt)}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
-                      className="text-destructive hover:bg-destructive/10 rounded p-1"
-                      title="删除">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {userRole === 'ADMIN' && c.status === 'VOIDED' ? (
+                      <button onClick={(e) => { e.stopPropagation(); void handleDelete(c); }}
+                        className="text-destructive hover:bg-destructive/10 rounded p-1"
+                        title="删除已作废合同">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    ) : <span className="text-muted-foreground">—</span>}
                   </td>
                 </tr>
               ))}

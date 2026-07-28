@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateWaybillDto } from './dto/create-waybill.dto';
 
 @Injectable()
 export class WaybillService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     dispatchNotice: {
@@ -64,9 +68,11 @@ export class WaybillService {
     return profile.partner;
   }
 
-  async getNoticeAvailability(dispatchNoticeId: string) {
+  async getNoticeAvailability(dispatchNoticeId: string, userId: string, permission = 'logistics.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getDispatchNoticeScope(userId);
     const notice = await this.prisma.dispatchNotice.findFirst({
-      where: { id: dispatchNoticeId, deletedAt: null },
+      where: { id: dispatchNoticeId, deletedAt: null, AND: [scope] },
       include: {
         lineItems: { orderBy: { createdAt: 'asc' } },
         order: { include: { contract: true } },
@@ -98,7 +104,7 @@ export class WaybillService {
   }
 
   async create(dto: CreateWaybillDto, userId: string) {
-    const availability = await this.getNoticeAvailability(dto.dispatchNoticeId);
+    const availability = await this.getNoticeAvailability(dto.dispatchNoticeId, userId, 'logistics.manage');
     const carrier = await this.resolveCarrier(dto.freightMode, dto.carrierPartnerId);
     if (!dto.lineItems.length) throw new BadRequestException('请至少填写一条运单明细');
     if (dto.plannedDepartureAt && dto.plannedArrivalAt
@@ -154,8 +160,10 @@ export class WaybillService {
     });
   }
 
-  async findAll(params: { status?: string; search?: string }) {
-    const where: Prisma.WaybillWhereInput = { deletedAt: null };
+  async findAll(params: { status?: string; search?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'logistics.view');
+    const scope = await this.accessControl.getWaybillScope(userId);
+    const where: Prisma.WaybillWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.search) {
       where.OR = [
@@ -171,9 +179,11 @@ export class WaybillService {
     return { items, total: items.length };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string, permission = 'logistics.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getWaybillScope(userId);
     const waybill = await this.prisma.waybill.findFirst({
-      where: { id, deletedAt: null }, include: this.include,
+      where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });
     if (!waybill) throw new NotFoundException('物流运单不存在');
     return waybill;
@@ -183,8 +193,8 @@ export class WaybillService {
     freightMode?: string; vehicleId?: string; carrierPartnerId?: string; carrierName?: string;
     plateNo?: string; driverName?: string; driverPhone?: string;
     plannedDepartureAt?: string; plannedArrivalAt?: string;
-  }) {
-    const waybill = await this.findOne(id);
+  }, userId: string) {
+    const waybill = await this.findOne(id, userId, 'logistics.manage');
     if (waybill.status !== 'PENDING') throw new BadRequestException('仅待发运的物流运单可以调整车辆');
     const departureAt = data.plannedDepartureAt ? new Date(data.plannedDepartureAt) : waybill.plannedDepartureAt;
     const arrivalAt = data.plannedArrivalAt ? new Date(data.plannedArrivalAt) : waybill.plannedArrivalAt;
@@ -220,8 +230,8 @@ export class WaybillService {
     });
   }
 
-  async updateStatus(id: string, status: string) {
-    const waybill = await this.findOne(id);
+  async updateStatus(id: string, status: string, userId: string) {
+    const waybill = await this.findOne(id, userId, 'logistics.manage');
     const allowed: Record<string, string[]> = {
       PENDING: ['IN_TRANSIT', 'CANCELLED'],
       IN_TRANSIT: ['ARRIVED'],
@@ -268,8 +278,8 @@ export class WaybillService {
     });
   }
 
-  async remove(id: string) {
-    const waybill = await this.findOne(id);
+  async remove(id: string, userId: string) {
+    const waybill = await this.findOne(id, userId, 'logistics.manage');
     if (!['PENDING', 'CANCELLED'].includes(waybill.status)) {
       throw new BadRequestException('仅待发运或已取消物流运单可以删除');
     }
@@ -279,23 +289,30 @@ export class WaybillService {
   async createAttachment(data: {
     waybillId: string; fileName: string; originalName: string;
     mimeType: string; size: number;
-  }) {
-    const waybill = await this.findOne(data.waybillId);
+  }, userId: string) {
+    const waybill = await this.findOne(data.waybillId, userId, 'logistics.manage');
     if (!['ARRIVED', 'SIGNED'].includes(waybill.status)) {
       throw new BadRequestException('物流收货附件只能在运单到达后上传');
     }
     return this.prisma.attachment.create({ data: { ...data, category: 'RECEIPT' } });
   }
 
-  findAttachmentById(id: string) {
+  async findAttachmentById(id: string, userId: string, permission = 'logistics.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getWaybillScope(userId);
     return this.prisma.attachment.findFirst({
-      where: { id, waybillId: { not: null }, category: 'RECEIPT' },
+      where: {
+        id,
+        waybillId: { not: null },
+        category: 'RECEIPT',
+        waybill: { deletedAt: null, AND: [scope] },
+      },
       include: { waybill: { select: { status: true } } },
     });
   }
 
-  async deleteAttachment(id: string) {
-    const attachment = await this.findAttachmentById(id);
+  async deleteAttachment(id: string, userId: string) {
+    const attachment = await this.findAttachmentById(id, userId, 'logistics.manage');
     if (!attachment) return null;
     if (attachment.waybill?.status === 'SIGNED') {
       throw new BadRequestException('已签收运单的收货附件不能删除');

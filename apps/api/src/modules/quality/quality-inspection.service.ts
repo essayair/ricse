@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 import { CreateQualityInspectionDto, QualityIndicatorDto } from './dto/create-quality-inspection.dto';
 
 @Injectable()
 export class QualityInspectionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   private readonly include = {
     creator: { select: { id: true, name: true } },
@@ -48,11 +52,14 @@ export class QualityInspectionService {
     return `QC-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async eligibleWeighTickets() {
+  async eligibleWeighTickets(userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getWeighTicketScope(userId);
     const tickets = await this.prisma.weighTicket.findMany({
       where: {
         deletedAt: null,
         status: { in: ['COMPLETED', 'REVIEWED'] },
+        AND: [scope],
       },
       include: {
         waybill: {
@@ -97,8 +104,10 @@ export class QualityInspectionService {
   }
 
   async create(dto: CreateQualityInspectionDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
+    const scope = await this.accessControl.getWeighTicketScope(userId);
     const ticket = await this.prisma.weighTicket.findFirst({
-      where: { id: dto.weighTicketId, deletedAt: null },
+      where: { id: dto.weighTicketId, deletedAt: null, AND: [scope] },
       include: {
         waybill: {
           include: {
@@ -194,10 +203,12 @@ export class QualityInspectionService {
     });
   }
 
-  async findAll(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }) {
+  async findAll(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getQualityInspectionScope(userId);
     const page = Math.max(1, params.page || 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize || 20));
-    const where: Prisma.QualityInspectionWhereInput = { deletedAt: null };
+    const where: Prisma.QualityInspectionWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.conclusion) where.conclusion = params.conclusion;
     if (params.dateFrom || params.dateTo) {
@@ -226,8 +237,13 @@ export class QualityInspectionService {
     return { items, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
 
-  async findOne(id: string) {
-    const item = await this.prisma.qualityInspection.findFirst({ where: { id, deletedAt: null }, include: this.include });
+  async findOne(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getQualityInspectionScope(userId);
+    const item = await this.prisma.qualityInspection.findFirst({
+      where: { id, deletedAt: null, AND: [scope] },
+      include: this.include,
+    });
     if (!item) throw new NotFoundException('质检单不存在');
     const relatedInspections = await this.prisma.qualityInspection.findMany({
       where: { weighTicketId: item.weighTicketId, deletedAt: null, id: { not: item.id } },
@@ -241,7 +257,7 @@ export class QualityInspectionService {
   }
 
   async updateStatus(id: string, status: string, userId: string, resolution?: string) {
-    const item = await this.findOne(id);
+    const item = await this.findOne(id, userId, 'quality.manage');
     const transitions: Record<string, string[]> = {
       DRAFT: ['TESTING', 'REPORTED', 'VOIDED'], TESTING: ['REPORTED', 'VOIDED'],
       REPORTED: ['CONFIRMED', 'VOIDED'], CONFIRMED: [], VOIDED: [],
@@ -261,24 +277,30 @@ export class QualityInspectionService {
         ...(resolution?.trim() ? { resolution: resolution.trim(), resolvedAt: new Date() } : {}),
       },
     });
-    return this.findOne(id);
+    return this.findOne(id, userId, 'quality.manage');
   }
 
-  async createAttachment(data: { qualityInspectionId: string; fileName: string; originalName: string; mimeType: string; size: number; category: string }) {
-    const inspection = await this.findOne(data.qualityInspectionId);
+  async createAttachment(data: { qualityInspectionId: string; fileName: string; originalName: string; mimeType: string; size: number; category: string }, userId: string) {
+    const inspection = await this.findOne(data.qualityInspectionId, userId, 'quality.manage');
     if (['CONFIRMED', 'VOIDED'].includes(inspection.status)) throw new BadRequestException('已确认或已作废质检单不能上传附件');
     return this.prisma.attachment.create({ data });
   }
 
-  findAttachmentById(id: string) {
+  async findAttachmentById(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getQualityInspectionScope(userId);
     return this.prisma.attachment.findFirst({
-      where: { id, qualityInspectionId: { not: null } },
+      where: {
+        id,
+        qualityInspectionId: { not: null },
+        qualityInspection: { deletedAt: null, AND: [scope] },
+      },
       include: { qualityInspection: { select: { status: true } } },
     });
   }
 
-  async deleteAttachment(id: string) {
-    const attachment = await this.findAttachmentById(id);
+  async deleteAttachment(id: string, userId: string) {
+    const attachment = await this.findAttachmentById(id, userId, 'quality.manage');
     if (!attachment) return null;
     if (['CONFIRMED', 'VOIDED'].includes(attachment.qualityInspection?.status || '')) {
       throw new BadRequestException('已确认或已作废质检单附件不能删除');

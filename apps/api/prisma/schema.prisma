@@ -27,6 +27,7 @@ model User {
 
   company                     Company?            @relation(fields: [companyId], references: [id])
   employee                    Employee?           @relation(fields: [employeeId], references: [id])
+  roleAssignments             UserRoleAssignment[]
   createdContracts            Contract[]          @relation("ContractCreator")
   createdPartners             Partner[]           @relation("PartnerCreator")
   approvalTasks               Approval[]          @relation("ApprovalAssignee")
@@ -143,6 +144,88 @@ model BusinessGroupCompany {
 
   @@id([businessGroupId, companyId])
   @@map("business_group_companies")
+}
+
+// ========== 角色、权限与数据范围 ==========
+
+model Role {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  type        String   @default("BUSINESS") // SYSTEM | MANAGEMENT | BUSINESS
+  status      String   @default("ACTIVE")
+  isSystem    Boolean  @default(false)
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  assignments UserRoleAssignment[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique // resource.action
+  name        String
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRoleAssignment {
+  id         String    @id @default(cuid())
+  userId     String
+  roleId     String
+  scopeType  String    @default("ALL") // SELF | DEPARTMENT | DEPARTMENT_AND_CHILDREN | COMPANY | SPECIFIED_COMPANIES | ALL
+  status     String    @default("ACTIVE")
+  effectiveAt DateTime @default(now())
+  expiresAt  DateTime?
+  assignedBy String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role            @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  scopes UserRoleScope[]
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@map("user_role_assignments")
+}
+
+model UserRoleScope {
+  id           String   @id @default(cuid())
+  assignmentId String
+  targetType   String   // COMPANY | DEPARTMENT | WAREHOUSE
+  targetId     String
+  createdAt    DateTime @default(now())
+
+  assignment UserRoleAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@map("user_role_scopes")
 }
 
 // ========== 主数据 ==========
@@ -390,6 +473,7 @@ model Warehouse {
 model Contract {
   id               String    @id @default(cuid())
   contractNo       String    @unique
+  clientRequestId  String? // 新建页面请求标识，用于防止网络重试产生重复草稿
   title            String
   type             String // PURCHASE | SALES | BILATERAL
   status           String    @default("DRAFT") // DRAFT|PENDING_APPROVAL|APPROVED|REJECTED|EXECUTING|COMPLETED|CLOSED|VOIDED
@@ -442,6 +526,7 @@ model Contract {
   @@index([status])
   @@index([sellerId])
   @@index([signingPartnerId])
+  @@unique([createdBy, clientRequestId])
   @@map("contracts")
 }
 
