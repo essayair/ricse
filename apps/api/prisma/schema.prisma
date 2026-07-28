@@ -32,7 +32,6 @@ model User {
   createdPartners             Partner[]           @relation("PartnerCreator")
   approvalTasks               Approval[]          @relation("ApprovalAssignee")
   actedApprovals              Approval[]          @relation("ApprovalActor")
-  approvalFlowNodes           ApprovalFlowNode[]
   createdOrders               Order[]             @relation("OrderCreator")
   createdDispatchNotices      DispatchNotice[]    @relation("DispatchNoticeCreator")
   createdWaybills             Waybill[]           @relation("WaybillCreator")
@@ -162,6 +161,7 @@ model Role {
 
   permissions RolePermission[]
   assignments UserRoleAssignment[]
+  approvalFlowNodes ApprovalFlowNode[]
 
   @@map("roles")
 }
@@ -1180,6 +1180,9 @@ model Approval {
   assigneeId String
   actedById  String?
   nodeName   String    @default("合同审批")
+  roleCode   String?
+  roleName   String?
+  approvalMode String  @default("ALL") // ALL | ANY
   step       Int       @default(1)
   round      Int       @default(1)
   status     String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | CANCELLED
@@ -1218,17 +1221,19 @@ model ApprovalFlowNode {
   flowId     String
   nodeName   String
   step       Int
-  assigneeId String
+  roleId     String
+  approvalMode String @default("ALL") // ALL（会签）| ANY（或签）
+  scopeType  String   @default("COMPANY") // DEPARTMENT | COMPANY | ALL
   condition  String   @default("ALWAYS") // ALWAYS | AMOUNT_GTE_THRESHOLD
   enabled    Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   flow     ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  assignee User         @relation(fields: [assigneeId], references: [id])
+  role     Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
   @@unique([flowId, step])
-  @@index([assigneeId])
+  @@index([roleId])
   @@map("approval_flow_nodes")
 }
 

@@ -7,8 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Building2, Users, Layers, Network, Plus, Loader2, ChevronDown, ChevronRight, Trash2, Check, X, Pencil, ArrowUp, ArrowDown, GripVertical } from 'lucide-react';
+import { Building2, Users, Layers, Network, Plus, Loader2, ChevronDown, ChevronRight, Trash2, Check, X, Pencil, ArrowUp, ArrowDown, GripVertical, Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
+
+const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 
 type TabKey = 'company' | 'dept' | 'employee' | 'business-group' | 'users';
 
@@ -86,6 +88,8 @@ function OrgPageInner() {
   const [newCompanyId, setNewCompanyId] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [newBgroupId, setNewBgroupId] = useState('');
   const [partnerLoading, setPartnerLoading] = useState(false);
 
@@ -266,11 +270,15 @@ function OrgPageInner() {
       }
       if (tab === 'users') {
         if (!newCompanyId || !newParent) { alert('请选择企业和员工'); return; }
-        if (!newUsername || !/^[a-zA-Z0-9]{3,}$/.test(newUsername)) { alert('用户名只能包含字母和数字，至少3位'); return; }
+        if (!newUsername || !USERNAME_PATTERN.test(newUsername.trim())) {
+          alert('用户名须以字母或数字开头，可包含字母、数字、点、下划线和短横线，长度3-50位');
+          return;
+        }
         if (!newPassword || newPassword.length < 6) { alert('密码至少6位'); return; }
+        if (newPassword !== confirmPassword) { alert('两次输入的密码不一致'); return; }
         const emp = employees.find((e) => e.id === newParent);
         await api.post('/users', {
-          username: newUsername, password: newPassword,
+          username: newUsername.trim(), password: newPassword,
           name: newName || emp?.name || newUsername,
           role: 'USER',
           employeeId: newParent,
@@ -278,7 +286,7 @@ function OrgPageInner() {
           businessGroupId: newBgroupId || undefined,
         });
       }
-      setShowCreate(false); setNewName(''); setNewCode(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setNewBgroupId(''); fetchAll();
+      setShowCreate(false); setNewName(''); setNewCode(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); fetchAll();
     } catch (e: any) { alert(e.message || '创建失败'); }
   };
 
@@ -392,7 +400,7 @@ function OrgPageInner() {
               } catch (e: any) { alert('加载合作伙伴失败: ' + (e.message || '未知错误')); return; }
               finally { setPartnerLoading(false); }
             }
-            setNewName(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setNewBgroupId('');
+            setNewName(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId('');
             setShowCreate(true); setSelectedPartner(null);
           }}><Plus className="h-4 w-4 mr-1" />新建</Button>
         )}
@@ -502,7 +510,15 @@ function OrgPageInner() {
                 {companies.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
               </select>
               {newCompanyId && (
-                <select value={newParent} onChange={(e) => setNewParent(e.target.value)}
+                <select value={newParent} onChange={(e) => {
+                  const employeeId = e.target.value;
+                  const employee = employees.find((item) => item.id === employeeId);
+                  const phoneSuggestion = (employee?.phone || '').replace(/[^a-zA-Z0-9._-]/g, '');
+                  setNewParent(employeeId);
+                  setNewUsername(phoneSuggestion.length >= 3 ? phoneSuggestion.slice(0, 50) : '');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">2. 选择关联员工（必选）</option>
                   {employees.filter((e) => e.companyId === newCompanyId && !users.some((u) => u.employeeId === e.id)).map((e) => (
@@ -512,11 +528,38 @@ function OrgPageInner() {
               )}
               {newParent && (
                 <>
-                  <div className="text-xs text-muted-foreground -mb-1 mt-1">仅限字母和数字，至少3位</div>
-                  <Input placeholder="3. 设置用户名（字母+数字）" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} autoFocus />
-                  <div className="text-xs text-muted-foreground -mb-1 mt-1">密码至少6位</div>
-                  <Input placeholder="4. 设置密码" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-                  <Input placeholder="5. 显示名称（可选，默认取员工姓名）" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                  <div className="text-xs text-muted-foreground -mb-1 mt-1">用户名须以字母或数字开头，支持字母、数字、点、下划线和短横线，3-50位</div>
+                  <Input placeholder="3. 设置登录用户名" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} maxLength={50} autoFocus />
+                  <div className="text-xs text-muted-foreground -mb-1 mt-1">登录密码至少6位，请输入两次确认</div>
+                  <div className="relative">
+                    <Input
+                      type={showNewPassword ? 'text' : 'password'}
+                      placeholder="4. 设置登录密码"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((current) => !current)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label={showNewPassword ? '隐藏密码' : '显示密码'}
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    placeholder="5. 再次输入登录密码"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  {confirmPassword && newPassword !== confirmPassword && (
+                    <div className="text-xs text-destructive">两次输入的密码不一致</div>
+                  )}
+                  <Input placeholder="6. 显示名称（可选，默认取员工姓名）" value={newName} onChange={(e) => setNewName(e.target.value)} />
                   <select value={newBgroupId} onChange={(e) => setNewBgroupId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                     <option value="">选择业务组（可选）</option>
                     {bgroups.map((bg) => <option key={bg.id} value={bg.id}>{bg.name}</option>)}
@@ -532,13 +575,21 @@ function OrgPageInner() {
           )}
 
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => { setShowCreate(false); setNewParent(''); setNewCompanyId(''); }}>取消</Button>
+            <Button variant="outline" onClick={() => {
+              setShowCreate(false);
+              setNewParent('');
+              setNewCompanyId('');
+              setNewUsername('');
+              setNewPassword('');
+              setConfirmPassword('');
+              setShowNewPassword(false);
+            }}>取消</Button>
             <Button
               onClick={handleCreate}
               disabled={
                 (tab === 'dept' && (!newCompanyId || !newName)) ||
                 (tab === 'employee' && (!newParent || !newName)) ||
-                (tab === 'users' && (!newCompanyId || !newParent || !newUsername || !newPassword)) ||
+                (tab === 'users' && (!newCompanyId || !newParent || !newUsername || !newPassword || !confirmPassword || newPassword !== confirmPassword)) ||
                 (tab === 'business-group' && !newName)
               }
             >确认</Button>

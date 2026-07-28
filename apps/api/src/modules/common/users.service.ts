@@ -2,6 +2,8 @@ import { Injectable, ConflictException, NotFoundException, BadRequestException }
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 
+const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
+
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
@@ -10,8 +12,15 @@ export class UsersService {
     username: string; password: string; name: string;
     role?: string; employeeId?: string; companyId?: string; businessGroupId?: string;
   }) {
+    const username = data.username.trim();
+    if (!USERNAME_PATTERN.test(username)) {
+      throw new BadRequestException('用户名须以字母或数字开头，可包含字母、数字、点、下划线和短横线，长度3-50位');
+    }
+    if (!data.password || data.password.length < 6) {
+      throw new BadRequestException('密码至少6位');
+    }
     const existing = await this.prisma.user.findUnique({
-      where: { username: data.username },
+      where: { username },
     });
     if (existing) throw new ConflictException('用户名已存在');
 
@@ -39,9 +48,9 @@ export class UsersService {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
-          username: data.username,
+          username,
           password: hashed,
-          name: data.name,
+          name: data.name.trim(),
           role: roleCode,
           employeeId: data.employeeId,
           companyId: data.companyId,
@@ -142,14 +151,23 @@ export class UsersService {
   }
 
   async update(id: string, data: { role?: string; status?: string; name?: string; username?: string; phone?: string; email?: string }) {
+    const username = data.username?.trim();
+    if (username !== undefined) {
+      if (!USERNAME_PATTERN.test(username)) {
+        throw new BadRequestException('用户名须以字母或数字开头，可包含字母、数字、点、下划线和短横线，长度3-50位');
+      }
+      const existing = await this.prisma.user.findUnique({ where: { username } });
+      if (existing && existing.id !== id) throw new ConflictException('用户名已存在');
+    }
     return this.prisma.user.update({
       where: { id },
-      data,
+      data: { ...data, username, name: data.name?.trim() },
       select: { id: true, username: true, name: true, role: true, status: true, phone: true, email: true, updatedAt: true },
     });
   }
 
   async resetPassword(id: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 6) throw new BadRequestException('密码至少6位');
     const hashed = await bcrypt.hash(newPassword, 10);
     return this.prisma.user.update({
       where: { id },

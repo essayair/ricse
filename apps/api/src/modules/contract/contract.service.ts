@@ -7,6 +7,13 @@ import { normalizeUploadFilename } from '../common/filename-encoding';
 import { AccessControlService } from '../access-control/access-control.service';
 
 type QuantityValue = { quantity: unknown; unit: string };
+type ApprovalContractContext = {
+  type: string;
+  totalAmount: unknown;
+  companyId?: string | null;
+  departmentId?: string | null;
+  createdBy: string;
+};
 
 function sumQuantities(lines: QuantityValue[]) {
   const totals = new Map<string, number>();
@@ -198,6 +205,15 @@ export class ContractService {
 
     await this.validateSigningPartner(dto.signingPartnerId, dto.type);
     this.validateContractParties(dto.signingPartnerId, dto.sellerId, dto.buyerId);
+    let companyId = access.user?.company?.id || null;
+    if (dto.departmentId) {
+      const department = await this.prisma.department.findUnique({
+        where: { id: dto.departmentId },
+        select: { companyId: true },
+      });
+      if (!department) throw new BadRequestException('业务部门不存在');
+      companyId = department.companyId;
+    }
     const contractNo = await this.generateContractNo(dto.type);
 
     try {
@@ -210,6 +226,7 @@ export class ContractService {
           sellerId: dto.sellerId,
           buyerId: dto.buyerId,
           signingPartnerId: dto.signingPartnerId,
+          companyId,
           departmentId: dto.departmentId,
           externalNo: dto.externalNo,
           contactPerson: dto.contactPerson,
@@ -376,6 +393,8 @@ export class ContractService {
           status: true,
           type: true,
           totalAmount: true,
+          companyId: true,
+          departmentId: true,
           createdBy: true,
         },
       });
@@ -390,39 +409,87 @@ export class ContractService {
       if (['APPROVED', 'REJECTED'].includes(status)) {
         if (!comment?.trim()) throw new BadRequestException('审批意见不能为空');
 
-        const pendingApproval = await tx.approval.findFirst({
+        const pendingApprovals = await tx.approval.findMany({
           where: { contractId: id, status: 'PENDING' },
           orderBy: [{ round: 'desc' }, { step: 'asc' }],
         });
-        if (!pendingApproval) throw new BadRequestException('当前没有待处理的审批节点');
-        if (!access.isAdmin && pendingApproval.assigneeId !== user.id) {
+        if (pendingApprovals.length === 0) throw new BadRequestException('当前没有待处理的审批节点');
+
+        const currentRound = pendingApprovals[0].round;
+        const currentStep = pendingApprovals
+          .filter((item) => item.round === currentRound)
+          .reduce((min, item) => Math.min(min, item.step), Number.MAX_SAFE_INTEGER);
+        const currentTasks = pendingApprovals.filter(
+          (item) => item.round === currentRound && item.step === currentStep,
+        );
+        const assignedTask = currentTasks.find((item) => item.assigneeId === user.id);
+        if (!access.isAdmin && !assignedTask) {
           throw new ForbiddenException('当前审批节点未分配给该用户');
         }
 
+        const taskToAct = assignedTask || currentTasks[0];
+        const actedAt = new Date();
+        const approvalMode = taskToAct.approvalMode || 'ALL';
         const acted = await tx.approval.updateMany({
-          where: { id: pendingApproval.id, status: 'PENDING' },
+          where: access.isAdmin && status === 'APPROVED'
+            ? { contractId: id, round: currentRound, step: currentStep, status: 'PENDING' }
+            : { id: taskToAct.id, status: 'PENDING' },
           data: {
             status: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
             comment: comment.trim(),
-            actedAt: new Date(),
+            actedAt,
             actedById: user.id,
           },
         });
-        if (acted.count !== 1) throw new BadRequestException('当前审批节点已被处理，请刷新后重试');
+        if (acted.count < 1) throw new BadRequestException('当前审批节点已被处理，请刷新后重试');
 
         if (status === 'REJECTED') {
           await tx.approval.updateMany({
-            where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
+            where: {
+              contractId: id,
+              round: currentRound,
+              id: { not: taskToAct.id },
+              status: { in: ['PENDING', 'WAITING'] },
+            },
             data: { status: 'CANCELLED' },
           });
         } else {
+          if (approvalMode === 'ANY' && !access.isAdmin) {
+            await tx.approval.updateMany({
+              where: {
+                contractId: id,
+                round: currentRound,
+                step: currentStep,
+                status: 'PENDING',
+              },
+              data: { status: 'CANCELLED' },
+            });
+          }
+
+          const remainingCurrentTasks = await tx.approval.count({
+            where: {
+              contractId: id,
+              round: currentRound,
+              step: currentStep,
+              status: 'PENDING',
+            },
+          });
+          if (remainingCurrentTasks > 0) {
+            return tx.contract.findUnique({ where: { id }, include: this.include });
+          }
+
           const nextApproval = await tx.approval.findFirst({
-            where: { contractId: id, round: pendingApproval.round, status: 'WAITING' },
+            where: { contractId: id, round: currentRound, status: 'WAITING' },
             orderBy: { step: 'asc' },
           });
           if (nextApproval) {
-            await tx.approval.update({
-              where: { id: nextApproval.id },
+            await tx.approval.updateMany({
+              where: {
+                contractId: id,
+                round: currentRound,
+                step: nextApproval.step,
+                status: 'WAITING',
+              },
               data: { status: 'PENDING' },
             });
             return tx.contract.findUnique({ where: { id }, include: this.include });
@@ -431,7 +498,7 @@ export class ContractService {
       }
 
       if (status === 'PENDING_APPROVAL') {
-        const plan = await this.resolveApprovalPlan(tx, contract.type, contract.totalAmount);
+        const plan = await this.resolveApprovalPlan(tx, contract);
         await this.assignApprovals(tx, id, plan.nodes);
       }
 
@@ -463,14 +530,22 @@ export class ContractService {
     }
     const contract = await this.prisma.contract.findFirst({
       where: { id, deletedAt: null, AND: [scope] },
-      select: { id: true, type: true, totalAmount: true, status: true },
+      select: {
+        id: true,
+        type: true,
+        totalAmount: true,
+        status: true,
+        companyId: true,
+        departmentId: true,
+        createdBy: true,
+      },
     });
     if (!contract) throw new NotFoundException('合同不存在');
     if (!['DRAFT', 'REJECTED'].includes(contract.status)) {
       throw new BadRequestException('只有草稿或已驳回合同可以检查审批流程');
     }
 
-    const plan = await this.resolveApprovalPlan(this.prisma, contract.type, contract.totalAmount);
+    const plan = await this.resolveApprovalPlan(this.prisma, contract);
     return {
       ready: true,
       flowId: plan.flowId,
@@ -479,24 +554,32 @@ export class ContractService {
       nodes: plan.nodes.map((node) => ({
         nodeName: node.nodeName,
         step: node.step,
-        assignee: node.assignee,
+        role: node.role,
+        approvalMode: node.approvalMode,
+        scopeType: node.scopeType,
+        assigneeCount: node.members.length,
+        assignees: node.members,
       })),
     };
   }
 
   private async resolveApprovalPlan(
     client: Prisma.TransactionClient | PrismaService,
-    contractType: string,
-    totalAmount: unknown,
+    contract: ApprovalContractContext,
   ) {
     const flow = await client.approvalFlow.findUnique({
-      where: { contractType },
+      where: { contractType: contract.type },
       include: {
         nodes: {
           where: { enabled: true },
           include: {
-            assignee: {
-              select: { id: true, name: true, username: true, role: true, status: true },
+            role: {
+              include: {
+                permissions: {
+                  where: { permission: { code: 'contract.approve' } },
+                  include: { permission: true },
+                },
+              },
             },
           },
           orderBy: { step: 'asc' },
@@ -510,29 +593,168 @@ export class ContractService {
     const threshold = Number(flow.amountThreshold || 0);
     const activeNodes = flow.nodes.filter((node) =>
       node.condition === 'ALWAYS'
-      || (node.condition === 'AMOUNT_GTE_THRESHOLD' && Number(totalAmount) >= threshold),
+      || (node.condition === 'AMOUNT_GTE_THRESHOLD' && Number(contract.totalAmount) >= threshold),
     );
     if (activeNodes.length === 0) {
       throw new BadRequestException(`审批流程“${flow.name}”没有符合当前金额条件的审批节点`);
     }
 
-    const invalidNodes = activeNodes.filter((node) =>
-      node.assignee.status !== 'ACTIVE'
-      || !['APPROVER', 'ADMIN'].includes(node.assignee.role),
+    const invalidNodes = activeNodes.filter(
+      (node) => node.role.status !== 'ACTIVE' || node.role.permissions.length === 0,
     );
     if (invalidNodes.length > 0) {
       throw new BadRequestException(
-        `审批流程存在无效审批人：${invalidNodes.map((node) => node.nodeName).join('、')}，请联系系统管理员调整`,
+        `审批流程存在无效节点角色：${invalidNodes.map((node) => node.nodeName).join('、')}，请联系系统管理员调整`,
       );
     }
 
-    return { flowId: flow.id, flowName: flow.name, nodes: activeNodes };
+    let companyId = contract.companyId || null;
+    let departmentId = contract.departmentId || null;
+    if (departmentId) {
+      const department = await client.department.findUnique({
+        where: { id: departmentId },
+        select: { id: true, companyId: true },
+      });
+      if (!department) throw new BadRequestException('合同业务部门不存在，无法确定审批人员范围');
+      companyId = companyId || department.companyId;
+    }
+    if (!companyId) {
+      const creator = await client.user.findUnique({
+        where: { id: contract.createdBy },
+        select: { companyId: true },
+      });
+      companyId = creator?.companyId || null;
+    }
+
+    const departments = activeNodes.some((node) => node.scopeType === 'DEPARTMENT')
+      ? await client.department.findMany({ select: { id: true, parentId: true, companyId: true } })
+      : [];
+    const departmentParent = new Map(departments.map((item) => [item.id, item.parentId]));
+    const isDepartmentOrChild = (targetId: string, ancestorId: string) => {
+      let currentId: string | null | undefined = targetId;
+      const visited = new Set<string>();
+      while (currentId && !visited.has(currentId)) {
+        if (currentId === ancestorId) return true;
+        visited.add(currentId);
+        currentId = departmentParent.get(currentId);
+      }
+      return false;
+    };
+
+    const resolvedNodes = [];
+    for (const node of activeNodes) {
+      if (node.scopeType === 'COMPANY' && !companyId) {
+        throw new BadRequestException(`审批节点“${node.nodeName}”需要合同所属企业`);
+      }
+      if (node.scopeType === 'DEPARTMENT' && !departmentId) {
+        throw new BadRequestException(`审批节点“${node.nodeName}”需要合同业务部门`);
+      }
+
+      const assignments = await client.userRoleAssignment.findMany({
+        where: {
+          roleId: node.roleId,
+          status: 'ACTIVE',
+          effectiveAt: { lte: new Date() },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          user: { status: 'ACTIVE' },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              name: true,
+              status: true,
+              companyId: true,
+              employee: { select: { departmentId: true } },
+            },
+          },
+          scopes: true,
+        },
+      });
+
+      const coversNodeScope = (assignment: typeof assignments[number]) => {
+        if (node.scopeType === 'ALL' || assignment.scopeType === 'ALL') return true;
+        const companyScopeIds = assignment.scopes
+          .filter((item) => item.targetType === 'COMPANY')
+          .map((item) => item.targetId);
+        const departmentScopeIds = assignment.scopes
+          .filter((item) => item.targetType === 'DEPARTMENT')
+          .map((item) => item.targetId);
+
+        if (node.scopeType === 'COMPANY') {
+          if (assignment.scopeType === 'COMPANY') {
+            return assignment.user.companyId === companyId || companyScopeIds.includes(companyId!);
+          }
+          if (assignment.scopeType === 'SPECIFIED_COMPANIES') {
+            return companyScopeIds.includes(companyId!);
+          }
+          if (assignment.scopeType === 'SELF') return assignment.user.id === contract.createdBy;
+          return false;
+        }
+
+        if (assignment.scopeType === 'COMPANY') {
+          return assignment.user.companyId === companyId || companyScopeIds.includes(companyId!);
+        }
+        if (assignment.scopeType === 'SPECIFIED_COMPANIES') {
+          return companyScopeIds.includes(companyId!);
+        }
+        if (assignment.scopeType === 'DEPARTMENT') {
+          return assignment.user.employee?.departmentId === departmentId
+            || departmentScopeIds.includes(departmentId!);
+        }
+        if (assignment.scopeType === 'DEPARTMENT_AND_CHILDREN') {
+          const ancestorIds = departmentScopeIds.length
+            ? departmentScopeIds
+            : assignment.user.employee?.departmentId
+              ? [assignment.user.employee.departmentId]
+              : [];
+          return ancestorIds.some((ancestorId) => isDepartmentOrChild(departmentId!, ancestorId));
+        }
+        if (assignment.scopeType === 'SELF') return assignment.user.id === contract.createdBy;
+        return false;
+      };
+
+      const members = Array.from(
+        new Map(
+          assignments
+            .filter(coversNodeScope)
+            .map((assignment) => [assignment.user.id, {
+              id: assignment.user.id,
+              username: assignment.user.username,
+              name: assignment.user.name,
+            }]),
+        ).values(),
+      );
+      if (members.length === 0) {
+        throw new BadRequestException(
+          `审批节点“${node.nodeName}”在当前合同范围内没有有效的“${node.role.name}”人员`,
+        );
+      }
+
+      resolvedNodes.push({
+        id: node.id,
+        nodeName: node.nodeName,
+        step: node.step,
+        approvalMode: node.approvalMode,
+        scopeType: node.scopeType,
+        role: { id: node.role.id, code: node.role.code, name: node.role.name },
+        members,
+      });
+    }
+
+    return { flowId: flow.id, flowName: flow.name, nodes: resolvedNodes };
   }
 
   private async assignApprovals(
     client: Prisma.TransactionClient,
     contractId: string,
-    nodes: Array<{ nodeName: string; assigneeId: string }>,
+    nodes: Array<{
+      nodeName: string;
+      approvalMode: string;
+      role: { code: string; name: string };
+      members: Array<{ id: string }>;
+    }>,
   ) {
     await client.approval.updateMany({
       where: { contractId, status: { in: ['PENDING', 'WAITING'] } },
@@ -546,14 +768,19 @@ export class ContractService {
     const round = (latest._max.round || 0) + 1;
 
     await client.approval.createMany({
-      data: nodes.map((node, index) => ({
-        contractId,
-        assigneeId: node.assigneeId,
-        nodeName: node.nodeName,
-        step: index + 1,
-        round,
-        status: index === 0 ? 'PENDING' : 'WAITING',
-      })),
+      data: nodes.flatMap((node, index) =>
+        node.members.map((member) => ({
+          contractId,
+          assigneeId: member.id,
+          nodeName: node.nodeName,
+          roleCode: node.role.code,
+          roleName: node.role.name,
+          approvalMode: node.approvalMode,
+          step: index + 1,
+          round,
+          status: index === 0 ? 'PENDING' : 'WAITING',
+        })),
+      ),
     });
   }
 
@@ -592,6 +819,15 @@ export class ContractService {
     );
 
     const { lineItems, signedAt, effectiveAt, expireAt, ...rest } = dto;
+    let resolvedCompanyId = rest.companyId;
+    if (dto.departmentId) {
+      const department = await this.prisma.department.findUnique({
+        where: { id: dto.departmentId },
+        select: { companyId: true },
+      });
+      if (!department) throw new BadRequestException('业务部门不存在');
+      resolvedCompanyId = department.companyId;
+    }
 
     return this.prisma.$transaction(async (tx) => {
       if (lineItems !== undefined) {
@@ -618,6 +854,7 @@ export class ContractService {
         where: { id },
         data: {
           ...rest,
+          companyId: resolvedCompanyId,
           signedAt: signedAt ? new Date(signedAt) : undefined,
           effectiveAt: effectiveAt ? new Date(effectiveAt) : undefined,
           expireAt: expireAt ? new Date(expireAt) : undefined,

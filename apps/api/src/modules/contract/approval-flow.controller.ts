@@ -25,7 +25,12 @@ export class ApprovalFlowController {
 
   @Patch('nodes/:id')
   @ApiOperation({ summary: '修改审批节点' })
-  updateNode(@Param('id') id: string, @Body() data: { assigneeId?: string; enabled?: boolean }) {
+  updateNode(@Param('id') id: string, @Body() data: {
+    roleId?: string;
+    approvalMode?: string;
+    scopeType?: string;
+    enabled?: boolean;
+  }) {
     return this.service.updateNode(id, data);
   }
 }

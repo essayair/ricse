@@ -6,10 +6,32 @@ export class ApprovalFlowService {
   constructor(private readonly prisma: PrismaService) {}
 
   findAll() {
+    const now = new Date();
     return this.prisma.approvalFlow.findMany({
       include: {
         nodes: {
-          include: { assignee: { select: { id: true, username: true, name: true, role: true } } },
+          include: {
+            role: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                status: true,
+                _count: {
+                  select: {
+                    assignments: {
+                      where: {
+                        status: 'ACTIVE',
+                        effectiveAt: { lte: now },
+                        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+                        user: { status: 'ACTIVE' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           orderBy: { step: 'asc' },
         },
       },
@@ -27,12 +49,29 @@ export class ApprovalFlowService {
     });
   }
 
-  async updateNode(id: string, data: { assigneeId?: string; enabled?: boolean }) {
+  async updateNode(id: string, data: {
+    roleId?: string;
+    approvalMode?: string;
+    scopeType?: string;
+    enabled?: boolean;
+  }) {
     const node = await this.prisma.approvalFlowNode.findUnique({ where: { id } });
     if (!node) throw new NotFoundException('审批节点不存在');
-    if (data.assigneeId) {
-      const user = await this.prisma.user.findFirst({ where: { id: data.assigneeId, role: { in: ['APPROVER', 'ADMIN'] }, status: 'ACTIVE' } });
-      if (!user) throw new BadRequestException('审批人必须是有效的审批员或管理员');
+    if (data.roleId) {
+      const role = await this.prisma.role.findFirst({
+        where: {
+          id: data.roleId,
+          status: 'ACTIVE',
+          permissions: { some: { permission: { code: 'contract.approve' } } },
+        },
+      });
+      if (!role) throw new BadRequestException('节点角色必须有效并拥有合同审批权限');
+    }
+    if (data.approvalMode && !['ALL', 'ANY'].includes(data.approvalMode)) {
+      throw new BadRequestException('审批方式仅支持会签或或签');
+    }
+    if (data.scopeType && !['DEPARTMENT', 'COMPANY', 'ALL'].includes(data.scopeType)) {
+      throw new BadRequestException('人员范围仅支持合同部门、合同企业或全平台');
     }
     return this.prisma.approvalFlowNode.update({ where: { id }, data });
   }

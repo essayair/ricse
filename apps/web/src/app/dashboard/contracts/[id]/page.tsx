@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,9 @@ interface Approval {
   id: string;
   status: string;
   nodeName: string;
+  roleCode: string | null;
+  roleName: string | null;
+  approvalMode: string;
   step: number;
   round: number;
   actedAt: string | null;
@@ -192,7 +195,12 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
               </div>
               <div className="pb-4 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">第 {a.step} 级 · {a.nodeName || '合同审批'} · {a.assignee?.name}</span>
+                  <span className="text-sm font-medium">
+                    第 {a.step} 级 · {a.nodeName || '合同审批'} · {a.roleName || '审批角色'} · {a.assignee?.name}
+                  </span>
+                  <Badge variant="outline" className="text-xs">
+                    {a.approvalMode === 'ANY' ? '或签' : '会签'}
+                  </Badge>
                   <Badge variant={a.status === 'APPROVED' ? 'default' : a.status === 'REJECTED' ? 'destructive' : 'secondary'} className="text-xs">
                     {a.status === 'APPROVED' ? '已通过' : a.status === 'REJECTED' ? '已驳回' : a.status === 'PENDING' ? '待审批' : a.status === 'WAITING' ? '等待中' : '已取消'}
                   </Badge>
@@ -376,15 +384,15 @@ export default function ContractDetailPage() {
     }
   }, []);
 
-  const fetchContract = async () => {
+  const fetchContract = useCallback(async () => {
     try {
       const data = await api.get<ContractDetail>(`/contracts/${params.id}`);
       setContract(data);
     } catch { console.error('Failed to load contract'); }
     finally { setLoading(false); }
-  };
+  }, [params.id]);
 
-  useEffect(() => { fetchContract(); }, [params.id]);
+  useEffect(() => { void fetchContract(); }, [fetchContract]);
 
   const handleStatusChange = async (status: string, comment?: string) => {
     try {
@@ -431,12 +439,20 @@ export default function ContractDetailPage() {
   const cfg = STATUS_MAP[c.status] || { label: c.status, variant: 'secondary' as const };
   const userRole = currentUser?.role || 'USER';
   const roleActions = ROLE_ACTIONS[c.status]?.[userRole] || ROLE_ACTIONS[c.status]?.['USER'] || [];
-  const currentPendingApproval = c.approvals?.find((approval) => approval.status === 'PENDING');
-  let actions = c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN' && userRole === 'APPROVER' && currentPendingApproval?.assignee.id !== currentUser?.id
-    ? []
-    : roleActions;
-  if (c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN' && c.creator.id !== currentUser?.id) {
-    actions = actions.filter((action) => action.next !== 'DRAFT');
+  const hasCurrentApprovalTask = c.approvals?.some(
+    (approval) => approval.status === 'PENDING' && approval.assignee.id === currentUser?.id,
+  );
+  let actions = roleActions;
+  if (c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN') {
+    const approvalActions = hasCurrentApprovalTask
+      ? ROLE_ACTIONS.PENDING_APPROVAL.APPROVER
+      : [];
+    const ownerActions = c.creator.id === currentUser?.id
+      ? roleActions.filter((action) => ['DRAFT', 'VOIDED'].includes(action.next))
+      : [];
+    actions = [...approvalActions, ...ownerActions].filter(
+      (action, index, items) => items.findIndex((item) => item.next === action.next) === index,
+    );
   }
   const canEdit = ['DRAFT', 'REJECTED'].includes(c.status) && ['SALESPERSON', 'MANAGER', 'ADMIN', 'USER'].includes(userRole);
 

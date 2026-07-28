@@ -94,10 +94,15 @@ async function main() {
   });
 
   const approvalAccounts = [
-    { username: 'business_manager', name: '业务主管', position: '业务主管', departmentId: businessDept?.id },
-    { username: 'risk_manager', name: '风控经理', position: '风控经理', departmentId: leadershipDept?.id },
-    { username: 'general_manager', name: '总经理', position: '总经理', departmentId: leadershipDept?.id },
+    { username: 'business_manager', name: '业务主管', position: '业务主管', departmentId: businessDept?.id, roleCode: 'BUSINESS_MANAGER', scopeType: 'DEPARTMENT' },
+    { username: 'risk_manager', name: '风控经理', position: '风控经理', departmentId: leadershipDept?.id, roleCode: 'RISK_MANAGER', scopeType: 'COMPANY' },
+    { username: 'general_manager', name: '总经理', position: '总经理', departmentId: leadershipDept?.id, roleCode: 'GENERAL_MANAGER', scopeType: 'COMPANY' },
   ];
+  const approvalRoleByCode = new Map(
+    (await prisma.role.findMany({
+      where: { code: { in: approvalAccounts.map((item) => item.roleCode) } },
+    })).map((role) => [role.code, role]),
+  );
   for (const account of approvalAccounts) {
     if (!hgyl || !account.departmentId) continue;
     let employee = await prisma.employee.findFirst({
@@ -108,17 +113,20 @@ async function main() {
         data: { name: account.name, companyId: hgyl.id, departmentId: account.departmentId, position: account.position },
       });
     }
-    await prisma.user.upsert({
+    const user = await prisma.user.upsert({
       where: { username: account.username },
-      update: { name: account.name, role: 'APPROVER', employeeId: employee.id, companyId: hgyl.id, status: 'ACTIVE' },
-      create: { username: account.username, password: approverPwd, name: account.name, role: 'APPROVER', employeeId: employee.id, companyId: hgyl.id },
+      update: { name: account.name, role: account.roleCode, employeeId: employee.id, companyId: hgyl.id, status: 'ACTIVE' },
+      create: { username: account.username, password: approverPwd, name: account.name, role: account.roleCode, employeeId: employee.id, companyId: hgyl.id },
     });
+    const role = approvalRoleByCode.get(account.roleCode);
+    if (role) {
+      await prisma.userRoleAssignment.upsert({
+        where: { userId_roleId: { userId: user.id, roleId: role.id } },
+        update: { scopeType: account.scopeType, status: 'ACTIVE', expiresAt: null },
+        create: { userId: user.id, roleId: role.id, scopeType: account.scopeType },
+      });
+    }
   }
-  const approvalUsers = await prisma.user.findMany({
-    where: { username: { in: approvalAccounts.map((item) => item.username) } },
-    select: { id: true, username: true },
-  });
-  const approvalUserByName = new Map(approvalUsers.map((item) => [item.username, item.id]));
   const flowDefinitions = [
     { contractType: 'PURCHASE', name: '采购合同审批流', amountThreshold: 1_000_000, includeGeneralManager: true },
     { contractType: 'SALES', name: '销售合同审批流', amountThreshold: null, includeGeneralManager: false },
@@ -131,22 +139,36 @@ async function main() {
       create: { name: definition.name, contractType: definition.contractType, amountThreshold: definition.amountThreshold, status: 'ACTIVE' },
     });
     const nodes = [
-      { step: 1, nodeName: '业务主管', username: 'business_manager', condition: 'ALWAYS' },
-      { step: 2, nodeName: '风控经理', username: 'risk_manager', condition: 'ALWAYS' },
-      ...(definition.includeGeneralManager ? [{ step: 3, nodeName: '总经理', username: 'general_manager', condition: definition.contractType === 'PURCHASE' ? 'AMOUNT_GTE_THRESHOLD' : 'ALWAYS' }] : []),
+      { step: 1, nodeName: '业务主管', roleCode: 'BUSINESS_MANAGER', scopeType: 'DEPARTMENT', condition: 'ALWAYS' },
+      { step: 2, nodeName: '风控经理', roleCode: 'RISK_MANAGER', scopeType: 'COMPANY', condition: 'ALWAYS' },
+      ...(definition.includeGeneralManager ? [{ step: 3, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'COMPANY', condition: definition.contractType === 'PURCHASE' ? 'AMOUNT_GTE_THRESHOLD' : 'ALWAYS' }] : []),
     ];
     for (const node of nodes) {
-      const assigneeId = approvalUserByName.get(node.username);
-      if (!assigneeId) continue;
+      const role = approvalRoleByCode.get(node.roleCode);
+      if (!role) continue;
       await prisma.approvalFlowNode.upsert({
         where: { flowId_step: { flowId: flow.id, step: node.step } },
-        update: { nodeName: node.nodeName },
-        create: { flowId: flow.id, step: node.step, nodeName: node.nodeName, assigneeId, condition: node.condition },
+        update: {
+          nodeName: node.nodeName,
+          roleId: role.id,
+          approvalMode: 'ALL',
+          scopeType: node.scopeType,
+          condition: node.condition,
+        },
+        create: {
+          flowId: flow.id,
+          step: node.step,
+          nodeName: node.nodeName,
+          roleId: role.id,
+          approvalMode: 'ALL',
+          scopeType: node.scopeType,
+          condition: node.condition,
+        },
       });
     }
   }
 
-  console.log('✅ 管理员及固定审批链账号');
+  console.log('✅ 管理员及角色会签审批链账号');
 
   // Seed 直接写入用户表，需要同步建立多角色授权；业务接口新建用户时由 UsersService 自动完成。
   const seededUsers = await prisma.user.findMany({
