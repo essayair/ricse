@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, FlaskConical, Plus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -21,7 +21,7 @@ interface Inspection {
 }
 
 const STATUS: Record<string, string> = { DRAFT: '草稿', TESTING: '化验中', REPORTED: '已出报告', CONFIRMED: '已确认', VOIDED: '已作废' };
-const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '扣款入库', FUSE: '熔断' };
+const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '熔断' };
 const INSTITUTION: Record<string, string> = { OUR: '我方', PARTNER: '合作方', THIRD_PARTY: '第三方', OTHER: '其他' };
 
 export default function QualityPage() {
@@ -35,7 +35,7 @@ export default function QualityPage() {
   const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set('search', search);
@@ -46,9 +46,9 @@ export default function QualityPage() {
     try { setData(await api.get(`/quality-inspections?${params}`)); }
     catch (error: any) { alert(error.message || '质检单加载失败'); }
     finally { setLoading(false); }
-  };
+  }, [conclusion, dateFrom, dateTo, search, status]);
 
-  useEffect(() => { void load(); }, [search, status, conclusion, dateFrom, dateTo]);
+  useEffect(() => { void load(); }, [load]);
   const items = data?.items || [];
 
   return <div className="space-y-6">
@@ -61,7 +61,7 @@ export default function QualityPage() {
       <Summary label="全部质检单" value={data?.pagination.total || 0} />
       <Summary label="化验中" value={items.filter(item => ['DRAFT', 'TESTING'].includes(item.status)).length} />
       <Summary label="合格" value={items.filter(item => item.conclusion === 'PASS').length} success />
-      <Summary label="扣款入库" value={items.filter(item => item.conclusion === 'DEDUCTION').length} />
+      <Summary label="超标扣款" value={items.filter(item => item.conclusion === 'DEDUCTION').length} />
       <Summary label="熔断" value={items.filter(item => item.conclusion === 'FUSE').length} danger />
     </div>
 

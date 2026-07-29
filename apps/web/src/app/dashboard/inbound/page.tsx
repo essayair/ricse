@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 
 const STATUS: Record<string, string> = { DRAFT: '草稿', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已取消' };
-const CONCLUSION: Record<string, string> = { PASS: '合格', DEDUCTION: '扣款入库' };
+const CONCLUSION: Record<string, string> = { PASS: '合格', DEDUCTION: '超标扣款（历史）' };
 
 export default function InboundPage() {
   const router = useRouter();

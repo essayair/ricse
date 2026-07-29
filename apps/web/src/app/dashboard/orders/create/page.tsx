@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -37,7 +37,7 @@ export default function CreateOrderPage() {
     }).catch(error => alert(error.message || '合同加载失败'));
   }, []);
 
-  const loadAvailability = async (detail: ContractDetail, orderType: string) => {
+  const loadAvailability = useCallback(async (detail: ContractDetail, orderType: string) => {
     const availability = await api.get<{
       lineItems: Array<{ contractLineItemId: string; availableQuantity: number }>;
     }>(`/orders/contracts/${detail.id}/availability?type=${orderType}`);
@@ -48,9 +48,9 @@ export default function CreateOrderPage() {
     };
     setContract(next);
     setQuantities(Object.fromEntries(next.lineItems.map(item => [item.id, item.availableQuantity || 0])));
-  };
+  }, []);
 
-  const selectContract = async (id: string) => {
+  const selectContract = useCallback(async (id: string) => {
     if (!id) {
       setContract(null);
       return;
@@ -65,14 +65,14 @@ export default function CreateOrderPage() {
     } catch (error: any) {
       alert(error.message || '合同详情加载失败');
     }
-  };
+  }, [loadAvailability]);
 
   useEffect(() => {
     const contractId = searchParams.get('contractId');
     if (contractId && !contract && contracts.some(item => item.id === contractId)) {
       void selectContract(contractId);
     }
-  }, [contracts, contract, searchParams]);
+  }, [contracts, contract, searchParams, selectContract]);
 
   const changeType = async (orderType: string) => {
     setType(orderType);

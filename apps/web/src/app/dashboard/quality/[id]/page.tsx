@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, FileText, FlaskConical, Link2, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -26,7 +26,7 @@ interface Inspection {
 }
 
 const STATUS: Record<string, string> = { DRAFT: '草稿', TESTING: '化验中', REPORTED: '已出报告', CONFIRMED: '已确认', VOIDED: '已作废' };
-const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '质检合格', DEDUCTION: '不合格（扣款入库）', FUSE: '质检熔断' };
+const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '质检合格', DEDUCTION: '不合格（超标扣款）', FUSE: '质检熔断' };
 const SOURCE: Record<string, string> = { MANUAL: '人工录入', DEVICE: '设备采集', OCR: '附件识别' };
 const INSTITUTION: Record<string, string> = { OUR: '我方检测机构', PARTNER: '合作方检测机构', THIRD_PARTY: '第三方检测机构', OTHER: '其他检测机构' };
 const CATEGORY: Record<string, string> = { REPORT: '检测报告', OUR_REPORT: '检测报告', PARTNER_REPORT: '检测报告', THIRD_REPORT: '检测报告', SAMPLE_PHOTO: '取样照片', OTHER: '其他附件' };
@@ -40,11 +40,11 @@ export default function QualityInspectionDetailPage() {
   const [saving, setSaving] = useState(false);
   const [uploadCategory, setUploadCategory] = useState('REPORT');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try { setItem(await api.get(`/quality-inspections/${id}`)); }
     catch (error: any) { alert(error.message || '质检单加载失败'); router.push('/dashboard/quality'); }
-  };
-  useEffect(() => { void load(); }, [id]);
+  }, [id, router]);
+  useEffect(() => { void load(); }, [load]);
 
   const transition = async (status: string) => {
     let resolution: string | undefined;
@@ -94,8 +94,8 @@ export default function QualityInspectionDetailPage() {
     <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{item.inspectionNo}</h1><Badge variant="outline">{STATUS[item.status]}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{item.materialName} · {item.plateNo || '无车牌'} · 创建人 {item.creator.name}</p></div></div><div className="flex gap-2">{item.status === 'REPORTED' && <Button disabled={saving} onClick={() => void transition('CONFIRMED')}>确认质检结论</Button>}{editable && <Button variant="destructive" disabled={saving} onClick={() => void transition('VOIDED')}>作废</Button>}</div></div>
 
     <Card className={`flex items-start gap-4 border-l-4 p-5 ${item.conclusion === 'FUSE' ? 'border-l-destructive bg-destructive/5' : item.conclusion === 'PASS' ? 'border-l-primary bg-primary/5' : 'border-l-amber-500 bg-amber-50/50'}`}>
-      {item.conclusion === 'FUSE' ? <AlertTriangle className="mt-1 h-7 w-7 text-destructive" /> : <CheckCircle2 className="mt-1 h-7 w-7 text-primary" />}
-      <div><div className="text-lg font-semibold">{CONCLUSION[item.conclusion]}</div><div className="mt-1 text-sm text-muted-foreground">{item.conclusion === 'PASS' ? '本检测机构报告的全部指标符合质量标准。' : item.conclusion === 'DEDUCTION' ? '本检测机构报告存在超标指标，按扣水扣杂结果调整结算重量和金额。' : item.conclusion === 'FUSE' ? item.fuseReason || '本检测机构报告达到拒收红线，后续业务已暂停。' : '等待补充检测数据。'}</div></div>
+      {item.conclusion === 'PASS' ? <CheckCircle2 className="mt-1 h-7 w-7 text-primary" /> : <AlertTriangle className="mt-1 h-7 w-7 text-destructive" />}
+      <div><div className="text-lg font-semibold">{CONCLUSION[item.conclusion]}</div><div className="mt-1 text-sm text-muted-foreground">{item.conclusion === 'PASS' ? '本检测机构报告的全部指标符合质量标准，可以作为入库依据。' : item.conclusion === 'DEDUCTION' ? '本检测机构报告存在超标指标，可记录扣款依据，但不能直接入库。' : item.conclusion === 'FUSE' ? item.fuseReason || '本检测机构报告达到拒收红线，后续业务已暂停。' : '等待补充检测数据，暂不能入库。'}</div></div>
     </Card>
 
     <div className="grid gap-6 lg:grid-cols-2">

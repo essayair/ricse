@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, CheckCircle2, FileText, PackageCheck, Trash2, Upload, XCircle,
@@ -23,8 +23,11 @@ export default function InboundDetail() {
   const [item, setItem] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = () => api.get(`/inbound-receipts/${id}`).then(setItem).catch((error: any) => alert(error.message));
-  useEffect(() => { void load(); }, [id]);
+  const load = useCallback(
+    () => api.get(`/inbound-receipts/${id}`).then(setItem).catch((error: any) => alert(error.message)),
+    [id],
+  );
+  useEffect(() => { void load(); }, [load]);
 
   const action = async (type: 'confirm' | 'post' | 'cancel') => {
     const prompts = {
@@ -81,6 +84,9 @@ export default function InboundDetail() {
   };
 
   if (!item) return <div className="py-20 text-center">加载中...</div>;
+  const qualityQualified = item.acceptanceConclusion === 'PASS'
+    && item.qualityInspection?.status === 'CONFIRMED'
+    && item.qualityInspection?.conclusion === 'PASS';
 
   return (
     <div className="space-y-6">
@@ -105,18 +111,26 @@ export default function InboundDetail() {
               <Button variant="outline" disabled={saving} onClick={() => void action('cancel')}>
                 <XCircle className="mr-2 h-4 w-4" />作废
               </Button>
-              <Button disabled={saving} onClick={() => void action('confirm')}>
-                <CheckCircle2 className="mr-2 h-4 w-4" />确认收货
-              </Button>
+              {qualityQualified && (
+                <Button disabled={saving} onClick={() => void action('confirm')}>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />确认收货
+                </Button>
+              )}
             </>
           )}
-          {item.status === 'RECEIVED' && (
+          {item.status === 'RECEIVED' && qualityQualified && (
             <Button disabled={saving} onClick={() => void action('post')}>
               <PackageCheck className="mr-2 h-4 w-4" />生成业务入库并入账
             </Button>
           )}
         </div>
       </div>
+
+      {!qualityQualified && item.status !== 'POSTED' && item.status !== 'CANCELLED' && (
+        <Card className="border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          当前验收依据不是已确认的合格质检单，不能确认入库或生成库存。请作废本单，完成复检并取得合格结论后重新创建入库单。
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="p-5">
@@ -138,7 +152,7 @@ export default function InboundDetail() {
             ['质检单', item.qualityInspection.inspectionNo],
             ['检测机构', item.qualityInspection.institutionName],
             ['报告编号', item.qualityInspection.reportNo || '-'],
-            ['验收结论', item.acceptanceConclusion === 'PASS' ? '合格' : '扣款入库'],
+            ['验收结论', item.acceptanceConclusion === 'PASS' ? '合格' : '超标扣款（不可入库）'],
             ['扣水', weight(item.moistureDeductionWeight)],
             ['扣杂', weight(item.impurityDeductionWeight)],
             ['预计扣款', `¥${Number(item.deductionAmount).toLocaleString()}`],
@@ -209,7 +223,9 @@ export default function InboundDetail() {
         </Card>
       ) : (
         <Card className="p-5 text-sm text-muted-foreground">
-          确认物流收货后，可生成业务入库单；系统将同时创建库存批次和第一条入库台账。
+          {qualityQualified
+            ? '确认物流收货后，可生成业务入库单；系统将同时创建库存批次和第一条入库台账。'
+            : '只有已确认且质检合格的货物才能生成业务入库单、库存批次和库存台账。'}
         </Card>
       )}
     </div>

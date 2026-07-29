@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2 } from 'lucide-react';
+import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { unitLabel } from '@/lib/unit';
@@ -287,7 +287,11 @@ function FulfillmentProgress({ contract }: { contract: ContractDetail }) {
                 <div className="text-xs text-muted-foreground">{activeOrders.length ? `${completedOrders}/${activeOrders.length} 已完成` : '暂无执行批次'}</div>
               </div>
               {['APPROVED', 'EXECUTING'].includes(contract.status) && (
-                <Link href={`/dashboard/orders/create?contractId=${contract.id}`} className="text-xs text-primary hover:underline">新建</Link>
+                <Link href={`/dashboard/orders/create?contractId=${contract.id}`}>
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
+                    <Plus className="mr-1 h-3.5 w-3.5" />新建
+                  </Button>
+                </Link>
               )}
             </div>
             {contract.orders?.length > 0 && (
@@ -469,6 +473,13 @@ export default function ContractDetailPage() {
       <div className="flex items-center justify-between">
         <button onClick={() => router.push('/dashboard/contracts')} className="text-sm text-primary hover:underline">&larr; 返回合同列表</button>
         <div className="flex gap-2">
+          {['APPROVED', 'EXECUTING'].includes(c.status) && (
+            <Link href={`/dashboard/orders/create?contractId=${c.id}`}>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-1" />新建执行批次
+              </Button>
+            </Link>
+          )}
           {canEdit && (
             <Link href={`/dashboard/contracts/${c.id}/edit`}>
               <Button variant="outline" size="sm"><Edit3 className="h-4 w-4 mr-1" />编辑</Button>

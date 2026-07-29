@@ -27,7 +27,7 @@ describe('InventoryService', () => {
     service = module.get(InventoryService);
   });
 
-  it('只选择已到货、已复核且存在非熔断确认质检单的采购运单', async () => {
+  it('只选择已到货、已复核且存在已确认合格质检单的采购运单', async () => {
     prisma.waybill.findMany.mockResolvedValue([]);
 
     await service.eligibleWaybills('user-1');
@@ -42,13 +42,67 @@ describe('InventoryService', () => {
             qualityInspections: {
               some: expect.objectContaining({
                 status: 'CONFIRMED',
-                conclusion: { in: ['PASS', 'DEDUCTION'] },
+                conclusion: 'PASS',
               }),
             },
           }),
         },
       }),
     }));
+  });
+
+  it('超标扣款质检单不能创建物流入库单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1',
+      status: 'ARRIVED',
+      dispatchNotice: { type: 'PURCHASE' },
+      inboundReceipts: [],
+      lineItems: [{ materialId: 'material-1' }],
+    } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue({
+      id: 'ticket-1',
+      status: 'REVIEWED',
+      settlementWeight: 100,
+    } as any);
+    prisma.qualityInspection.findFirst.mockResolvedValue({
+      id: 'quality-1',
+      status: 'CONFIRMED',
+      conclusion: 'DEDUCTION',
+    } as any);
+
+    await expect(service.createReceipt({
+      waybillId: 'waybill-1',
+      weighTicketId: 'ticket-1',
+      qualityInspectionId: 'quality-1',
+      warehouseId: 'warehouse-1',
+      receivedAt: new Date().toISOString(),
+      receiverName: '收货员',
+    }, 'user-1')).rejects.toThrow('只有质检结论为“合格”的货物才能入库');
+  });
+
+  it('历史超标扣款入库草稿不能确认收货', async () => {
+    jest.spyOn(service, 'findReceipt').mockResolvedValue({
+      status: 'DRAFT',
+      acceptanceConclusion: 'DEDUCTION',
+      qualityInspection: { status: 'CONFIRMED', conclusion: 'DEDUCTION' },
+    } as any);
+
+    await expect(service.confirmReceipt('receipt-1', 'user-1'))
+      .rejects.toThrow('只有已确认且质检合格的货物才能形成系统库存');
+    expect(prisma.inboundReceipt.update).not.toHaveBeenCalled();
+  });
+
+  it('历史超标扣款已收货单不能正式入账库存', async () => {
+    jest.spyOn(service, 'findReceipt').mockResolvedValue({
+      status: 'RECEIVED',
+      acceptanceConclusion: 'DEDUCTION',
+      qualityInspection: { status: 'CONFIRMED', conclusion: 'DEDUCTION' },
+      businessInbound: null,
+    } as any);
+
+    await expect(service.postInventory('receipt-1', 'user-1'))
+      .rejects.toThrow('只有已确认且质检合格的货物才能形成系统库存');
+    expect(prisma.businessInbound.create).not.toHaveBeenCalled();
   });
 
   it('库存总览按批次汇总可用数量、物料数和仓库数', async () => {

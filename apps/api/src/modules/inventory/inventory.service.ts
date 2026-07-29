@@ -18,7 +18,7 @@ export class InventoryService {
     qualityInspection: {
       select: {
         id: true, inspectionNo: true, institutionType: true, institutionName: true,
-        reportNo: true, conclusion: true, settlementWeight: true,
+        reportNo: true, status: true, conclusion: true, settlementWeight: true,
         moistureDeductionWeight: true, impurityDeductionWeight: true, deductionAmount: true,
       },
     },
@@ -56,7 +56,7 @@ export class InventoryService {
         weighTickets: {
           some: {
             deletedAt: null, status: 'REVIEWED',
-            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', conclusion: { in: ['PASS', 'DEDUCTION'] } } },
+            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS' } },
           },
         },
       },
@@ -67,7 +67,7 @@ export class InventoryService {
           where: { deletedAt: null, status: 'REVIEWED' },
           include: {
             qualityInspections: {
-              where: { deletedAt: null, status: 'CONFIRMED', conclusion: { in: ['PASS', 'DEDUCTION'] } },
+              where: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS' },
               orderBy: { testedAt: 'desc' },
             },
           },
@@ -99,7 +99,9 @@ export class InventoryService {
     if (!weighTicket || weighTicket.status !== 'REVIEWED') throw new BadRequestException('请选择该运单已复核的磅单');
     const quality = await this.prisma.qualityInspection.findFirst({ where: { id: dto.qualityInspectionId, weighTicketId: weighTicket.id, deletedAt: null } });
     if (!quality || quality.status !== 'CONFIRMED') throw new BadRequestException('请选择该磅单已确认的质检单');
-    if (!['PASS', 'DEDUCTION'].includes(quality.conclusion)) throw new BadRequestException('质检熔断或待判定时不能入库');
+    if (quality.conclusion !== 'PASS') {
+      throw new BadRequestException('只有质检结论为“合格”的货物才能入库；超标扣款、熔断或待判定货物不能入库');
+    }
     const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, status: 'ACTIVE', deletedAt: null } });
     if (!warehouse) throw new BadRequestException('入库仓库不存在或已停用');
     if (!dto.receiverName.trim()) throw new BadRequestException('请填写收货人');
@@ -154,6 +156,7 @@ export class InventoryService {
   async confirmReceipt(id: string, userId: string) {
     const item = await this.findReceipt(id, userId, 'inventory.manage');
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿入库单可以确认收货');
+    this.assertQualifiedForInventory(item);
     return this.prisma.inboundReceipt.update({ where: { id }, data: { status: 'RECEIVED' }, include: this.include });
   }
 
@@ -201,6 +204,7 @@ export class InventoryService {
   async postInventory(id: string, userId: string) {
     const receipt = await this.findReceipt(id, userId, 'inventory.manage');
     if (receipt.status !== 'RECEIVED') throw new BadRequestException('确认收货后才能生成业务入库单');
+    this.assertQualifiedForInventory(receipt);
     if (receipt.businessInbound) throw new BadRequestException('该物流入库单已生成业务入库单');
     const line = receipt.waybill.lineItems[0];
     if (!line) throw new BadRequestException('运单缺少物料明细');
@@ -233,6 +237,19 @@ export class InventoryService {
       await tx.inboundReceipt.update({ where: { id: receipt.id }, data: { status: 'POSTED' } });
     });
     return this.findReceipt(id, userId, 'inventory.manage');
+  }
+
+  private assertQualifiedForInventory(receipt: {
+    acceptanceConclusion: string;
+    qualityInspection?: { status: string; conclusion: string } | null;
+  }) {
+    if (
+      receipt.acceptanceConclusion !== 'PASS'
+      || receipt.qualityInspection?.status !== 'CONFIRMED'
+      || receipt.qualityInspection.conclusion !== 'PASS'
+    ) {
+      throw new BadRequestException('只有已确认且质检合格的货物才能形成系统库存');
+    }
   }
 
   async inventoryOverview(params: { search?: string; warehouseId?: string }, userId: string) {

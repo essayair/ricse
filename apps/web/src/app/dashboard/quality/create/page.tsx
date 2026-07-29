@@ -67,7 +67,7 @@ export default function CreateQualityInspectionPage() {
     api.get<{ items: InstitutionProfile[] }>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE&pageSize=200')
       .then(result => setInstitutions(result.items || []))
       .catch(error => alert(error.message || '质检机构主数据加载失败'));
-  }, []);
+  }, [searchParams]);
 
   const ticket = tickets.find(item => item.id === weighTicketId);
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function CreateQualityInspectionPage() {
     const specs = ticket.materials.flatMap(material => Array.isArray(material.specs) ? material.specs : []);
     if (specs.length) setIndicators(specs.map((spec, index) => indicator(`spec-${index + 1}`, spec.name, operatorCode(spec.operator), String(spec.value ?? ''), defaultFuse(spec.name, spec.operator, Number(spec.value)))));
     else setIndicators(DEFAULT_INDICATORS.map(item => ({ ...item, key: `${item.key}-${ticket.id}` })));
-  }, [weighTicketId]);
+  }, [ticket]);
 
   const conclusion = useMemo(() => calculateConclusion(indicators), [indicators]);
   const deductions = useMemo(() => calculateDeductions(Number(ticket?.settlementWeight || ticket?.netWeight || 0), indicators), [ticket, indicators]);
@@ -192,4 +192,4 @@ function qualityWeight(value: string | null) { return value === null ? '-' : `${
 function SectionTitle({ title, noMargin = false }: { title: string; noMargin?: boolean }) { return <h2 className={`font-semibold ${noMargin ? '' : 'border-b pb-2'}`}>{title}</h2>; }
 function Field({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) { return <div className={wide ? 'md:col-span-3' : ''}><label className="mb-1 block text-sm font-medium">{label}</label>{children}</div>; }
 function Info({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-sm font-medium">{value}</div></div>; }
-function Conclusion({ value }: { value: string }) { const labels: Record<string, string> = { PENDING: '待补充数据', PASS: '合格', DEDUCTION: '不合格（扣款入库）', FUSE: '熔断' }; return <div className={`mt-1 font-semibold ${value === 'FUSE' ? 'text-destructive' : value === 'PASS' ? 'text-primary' : value === 'DEDUCTION' ? 'text-amber-600' : ''}`}>{labels[value]}</div>; }
+function Conclusion({ value }: { value: string }) { const labels: Record<string, string> = { PENDING: '待补充数据', PASS: '合格', DEDUCTION: '不合格（超标扣款）', FUSE: '熔断' }; return <div className={`mt-1 font-semibold ${value === 'FUSE' ? 'text-destructive' : value === 'PASS' ? 'text-primary' : value === 'DEDUCTION' ? 'text-amber-600' : ''}`}>{labels[value]}</div>; }

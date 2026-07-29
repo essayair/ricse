@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -67,7 +67,7 @@ export default function ContractsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [userRole, setUserRole] = useState('');
 
-  const fetchContracts = async () => {
+  const fetchContracts = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -82,7 +82,7 @@ export default function ContractsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, statusFilter, typeFilter]);
 
   const handleDelete = async (contract: Contract) => {
     if (contract.status !== 'VOIDED') {
@@ -102,7 +102,7 @@ export default function ContractsPage() {
     try { setUserRole(JSON.parse(stored).role || ''); } catch {}
   }, []);
 
-  useEffect(() => { fetchContracts(); }, [statusFilter, typeFilter, searchTerm]);
+  useEffect(() => { void fetchContracts(); }, [fetchContracts]);
 
   // Summary stats computed from contract data
   const contractItems = data?.items ?? [];
@@ -121,6 +121,9 @@ export default function ContractsPage() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => {}}>
             <FileText className="h-4 w-4 mr-1" />导出
+          </Button>
+          <Button variant="outline" onClick={() => router.push('/dashboard/orders/create')}>
+            <Package className="h-4 w-4 mr-1" />新建执行批次
           </Button>
           <Button onClick={() => router.push('/dashboard/contracts/create')}>
             <Plus className="h-4 w-4 mr-1" />新建合同
@@ -243,7 +246,18 @@ export default function ContractsPage() {
                     <div className="mt-1 text-muted-foreground">{formatDate(c.createdAt)}</div>
                   </td>
                   <td className="px-4 py-3">
-                    {userRole === 'ADMIN' && c.status === 'VOIDED' ? (
+                    {['APPROVED', 'EXECUTING'].includes(c.status) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          router.push(`/dashboard/orders/create?contractId=${c.id}`);
+                        }}
+                      >
+                        <Package className="mr-1 h-3.5 w-3.5" />新建执行批次
+                      </Button>
+                    ) : userRole === 'ADMIN' && c.status === 'VOIDED' ? (
                       <button onClick={(e) => { e.stopPropagation(); void handleDelete(c); }}
                         className="text-destructive hover:bg-destructive/10 rounded p-1"
                         title="删除已作废合同">
