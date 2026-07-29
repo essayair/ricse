@@ -35,6 +35,18 @@ interface LineItem {
   remarks: string;
 }
 
+interface DepartmentItem {
+  id: string;
+  name: string;
+  companyId: string;
+  company?: { id: string; name: string };
+}
+
+interface CurrentUserProfile {
+  companyId?: string | null;
+  employee?: { departmentId?: string | null } | null;
+}
+
 export default function ContractEditPage() {
   const router = useRouter();
   const params = useParams();
@@ -47,13 +59,14 @@ export default function ContractEditPage() {
   const [internalPartners, setInternalPartners] = useState<any[]>([]);
   const [supplierPartners, setSupplierPartners] = useState<any[]>([]);
   const [customerPartners, setCustomerPartners] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ file: File; name: string }>>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
 
   const [form, setForm] = useState({
     type: 'PURCHASE', title: '',
-    signingPartnerId: '', externalNo: '',
+    signingPartnerId: '', departmentId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     pricingType: 'FIXED', overfillPct: '5', shortfallPct: '5',
     deliveryMethod: '', deliveryLocation: '',
@@ -77,21 +90,28 @@ export default function ContractEditPage() {
       api.get<{ items: any[] }>('/partners?role=CUSTOMER'),
       api.get<{ items: any[] }>('/partners'),
       api.get<{ items: any[] }>('/master-data/materials'),
-    ]).then(([contract, supplierData, customerData, allData, materialData]) => {
+      api.get<DepartmentItem[]>('/org/departments'),
+      api.get<CurrentUserProfile>('/auth/profile'),
+    ]).then(([contract, supplierData, customerData, allData, materialData, departmentItems, profile]) => {
       const suppliers = supplierData.items || [];
       const customers = customerData.items || [];
       const all = allData.items || [];
+      const companyId = contract.companyId || profile.companyId;
       setPartners(all);
       setSupplierPartners(suppliers);
       setCustomerPartners(customers);
       setInternalPartners(all.filter((p: any) => p.isInternal));
       setMaterials(materialData.items || []);
+      setDepartments(companyId
+        ? departmentItems.filter((item) => item.companyId === companyId)
+        : departmentItems);
       setAttachments(contract.attachments || []);
 
       setForm({
         type: contract.type || 'PURCHASE',
         title: contract.title || '',
         signingPartnerId: contract.signingPartnerId || '',
+        departmentId: contract.departmentId || profile.employee?.departmentId || '',
         externalNo: contract.externalNo || '',
         sellerId: contract.sellerId || '',
         buyerId: contract.buyerId || '',
@@ -130,7 +150,7 @@ export default function ContractEditPage() {
       alert('加载失败：' + e.message);
       router.push(`/dashboard/contracts/${contractId}`);
     }).finally(() => setLoading(false));
-  }, [contractId]);
+  }, [contractId, router]);
 
   const updateLineItem = (idx: number, key: keyof LineItem, value: string) => {
     setLineItems(prev => {
@@ -160,6 +180,7 @@ export default function ContractEditPage() {
 
   const handleSave = async () => {
     if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
+    if (!form.departmentId) { alert('请选择业务部门，审批流程将据此匹配业务主管'); return; }
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     const validItems = lineItems.filter(i => i.materialId && i.quantity && i.unitPrice);
     if (validItems.length === 0) { alert('请至少填写一条货物信息（物料/数量/单价）'); return; }
@@ -313,6 +334,17 @@ export default function ContractEditPage() {
                     return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
                   })}
               </select>
+            </FormField>
+            <FormField label="业务部门" required>
+              <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} className={SELECT_CLS}>
+                <option value="">请选择业务部门</option>
+                {departments.map(department => (
+                  <option key={department.id} value={department.id}>
+                    {department.company?.name ? `${department.company.name} / ` : ''}{department.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-muted-foreground">用于匹配业务主管等按部门配置的审批节点</span>
             </FormField>
           </div>
 

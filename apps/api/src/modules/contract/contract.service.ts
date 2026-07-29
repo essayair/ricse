@@ -205,10 +205,11 @@ export class ContractService {
 
     await this.validateSigningPartner(dto.signingPartnerId, dto.type);
     this.validateContractParties(dto.signingPartnerId, dto.sellerId, dto.buyerId);
+    const departmentId = dto.departmentId || access.user?.employee?.departmentId || null;
     let companyId = access.user?.company?.id || null;
-    if (dto.departmentId) {
+    if (departmentId) {
       const department = await this.prisma.department.findUnique({
-        where: { id: dto.departmentId },
+        where: { id: departmentId },
         select: { companyId: true },
       });
       if (!department) throw new BadRequestException('业务部门不存在');
@@ -227,7 +228,7 @@ export class ContractService {
           buyerId: dto.buyerId,
           signingPartnerId: dto.signingPartnerId,
           companyId,
-          departmentId: dto.departmentId,
+          departmentId,
           externalNo: dto.externalNo,
           contactPerson: dto.contactPerson,
           contactPhone: dto.contactPhone,
@@ -497,8 +498,10 @@ export class ContractService {
         }
       }
 
+      let approvalScope: { companyId: string | null; departmentId: string | null } | null = null;
       if (status === 'PENDING_APPROVAL') {
         const plan = await this.resolveApprovalPlan(tx, contract);
+        approvalScope = { companyId: plan.companyId, departmentId: plan.departmentId };
         await this.assignApprovals(tx, id, plan.nodes);
       }
 
@@ -509,8 +512,12 @@ export class ContractService {
         });
       }
 
-      const updateData: Prisma.ContractUpdateManyMutationInput = { status };
+      const updateData: Prisma.ContractUncheckedUpdateManyInput = { status };
       if (status === 'APPROVED') updateData.effectiveAt = new Date();
+      if (approvalScope) {
+        updateData.companyId = approvalScope.companyId;
+        updateData.departmentId = approvalScope.departmentId;
+      }
 
       const changed = await tx.contract.updateMany({
         where: { id, status: contract.status, deletedAt: null },
@@ -610,20 +617,24 @@ export class ContractService {
 
     let companyId = contract.companyId || null;
     let departmentId = contract.departmentId || null;
+    if (!companyId || !departmentId) {
+      const creator = await client.user.findUnique({
+        where: { id: contract.createdBy },
+        select: {
+          companyId: true,
+          employee: { select: { departmentId: true } },
+        },
+      });
+      companyId = companyId || creator?.companyId || null;
+      departmentId = departmentId || creator?.employee?.departmentId || null;
+    }
     if (departmentId) {
       const department = await client.department.findUnique({
         where: { id: departmentId },
         select: { id: true, companyId: true },
       });
       if (!department) throw new BadRequestException('合同业务部门不存在，无法确定审批人员范围');
-      companyId = companyId || department.companyId;
-    }
-    if (!companyId) {
-      const creator = await client.user.findUnique({
-        where: { id: contract.createdBy },
-        select: { companyId: true },
-      });
-      companyId = creator?.companyId || null;
+      companyId = department.companyId;
     }
 
     const departments = activeNodes.some((node) => node.scopeType === 'DEPARTMENT')
@@ -647,7 +658,7 @@ export class ContractService {
         throw new BadRequestException(`审批节点“${node.nodeName}”需要合同所属企业`);
       }
       if (node.scopeType === 'DEPARTMENT' && !departmentId) {
-        throw new BadRequestException(`审批节点“${node.nodeName}”需要合同业务部门`);
+        throw new BadRequestException(`审批节点“${node.nodeName}”需要合同业务部门，请编辑合同并选择业务部门`);
       }
 
       const assignments = await client.userRoleAssignment.findMany({
@@ -743,7 +754,13 @@ export class ContractService {
       });
     }
 
-    return { flowId: flow.id, flowName: flow.name, nodes: resolvedNodes };
+    return {
+      flowId: flow.id,
+      flowName: flow.name,
+      companyId,
+      departmentId,
+      nodes: resolvedNodes,
+    };
   }
 
   private async assignApprovals(

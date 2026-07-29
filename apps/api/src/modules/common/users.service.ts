@@ -93,7 +93,14 @@ export class UsersService {
       select: {
         id: true, username: true, name: true, role: true, status: true,
         employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
-        employee: { select: { id: true, name: true, department: { select: { name: true } } } },
+        employee: {
+          select: {
+            id: true,
+            name: true,
+            departmentId: true,
+            department: { select: { id: true, name: true, companyId: true } },
+          },
+        },
         company: { select: { id: true, code: true, name: true, type: true, partnerId: true } },
         roleAssignments: {
           where: { status: 'ACTIVE' },
@@ -110,7 +117,14 @@ export class UsersService {
       select: {
         id: true, username: true, name: true, role: true, status: true,
         employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
-        employee: { select: { id: true, name: true, department: { select: { name: true } } } },
+        employee: {
+          select: {
+            id: true,
+            name: true,
+            departmentId: true,
+            department: { select: { id: true, name: true, companyId: true } },
+          },
+        },
         company: { select: { id: true, code: true, name: true, type: true, partnerId: true } },
         roleAssignments: {
           where: { status: 'ACTIVE' },

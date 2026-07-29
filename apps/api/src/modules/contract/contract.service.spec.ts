@@ -97,6 +97,37 @@ describe('ContractService', () => {
       expect(result.id).toBe('test-id');
       expect(prisma.contract.create).not.toHaveBeenCalled();
     });
+
+    it('未显式选择业务部门时默认使用当前员工所属部门', async () => {
+      accessControl.assertPermission.mockResolvedValue({
+        isAdmin: false,
+        isExternal: false,
+        externalPartnerId: null,
+        permissions: ['contract.create'],
+        roleCodes: ['USER'],
+        assignments: [],
+        user: {
+          company: { id: 'company-1' },
+          employee: { departmentId: 'dept-1' },
+        },
+      } as any);
+      prisma.partner.findFirst.mockResolvedValue({ roles: ['CUSTOMER'] } as any);
+      prisma.department.findUnique.mockResolvedValue({ companyId: 'company-1' } as any);
+      prisma.contract.count.mockResolvedValue(0);
+      prisma.contract.create.mockResolvedValue(mockContract as any);
+
+      await service.create(
+        { title: '测试合同', type: 'PURCHASE', signingPartnerId: 'internal-1', sellerId: 'sup-1', totalAmount: 100000, lineItems: [] },
+        'business-user',
+      );
+
+      expect(prisma.contract.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          companyId: 'company-1',
+          departmentId: 'dept-1',
+        }),
+      }));
+    });
   });
 
   describe('findAll', () => {
@@ -227,6 +258,66 @@ describe('ContractService', () => {
               assigneeCount: 1,
             }),
           ],
+        }),
+      );
+    });
+
+    it('历史草稿缺少业务部门时使用创建人所属部门解析审批人', async () => {
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        status: 'DRAFT',
+        type: 'PURCHASE',
+        totalAmount: '100000',
+        companyId: null,
+        departmentId: null,
+      } as any);
+      prisma.user.findUnique.mockResolvedValue({
+        companyId: 'company-1',
+        employee: { departmentId: 'dept-1' },
+      } as any);
+      prisma.department.findUnique.mockResolvedValue({ id: 'dept-1', companyId: 'company-1' } as any);
+      prisma.department.findMany.mockResolvedValue([
+        { id: 'dept-1', parentId: null, companyId: 'company-1' },
+      ] as any);
+      prisma.approvalFlow.findUnique.mockResolvedValue({
+        id: 'flow-1',
+        name: '采购合同审批流',
+        status: 'ACTIVE',
+        amountThreshold: null,
+        nodes: [{
+          id: 'node-1',
+          nodeName: '业务主管',
+          step: 1,
+          roleId: 'role-business',
+          approvalMode: 'ALL',
+          scopeType: 'DEPARTMENT',
+          condition: 'ALWAYS',
+          role: {
+            id: 'role-business',
+            code: 'BUSINESS_MANAGER',
+            name: '业务主管',
+            status: 'ACTIVE',
+            permissions: [{ permission: { code: 'contract.approve' } }],
+          },
+        }],
+      } as any);
+      prisma.userRoleAssignment.findMany.mockResolvedValue([{
+        scopeType: 'DEPARTMENT',
+        user: {
+          id: 'approver-1',
+          name: '业务主管甲',
+          username: 'business_manager_1',
+          status: 'ACTIVE',
+          companyId: 'company-1',
+          employee: { departmentId: 'dept-1' },
+        },
+        scopes: [],
+      }] as any);
+
+      await expect(service.getApprovalReadiness('test-id')).resolves.toEqual(
+        expect.objectContaining({
+          ready: true,
+          nodes: [expect.objectContaining({ assigneeCount: 1 })],
         }),
       );
     });
@@ -414,6 +505,30 @@ describe('ContractService', () => {
           }),
         ],
       });
+    });
+
+    it('历史草稿提交审批时补写创建人的业务部门', async () => {
+      await setupContract('DRAFT');
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        status: 'DRAFT',
+        companyId: null,
+        departmentId: null,
+      } as any);
+      prisma.user.findUnique.mockResolvedValue({
+        companyId: 'company-1',
+        employee: { departmentId: 'dept-business' },
+      } as any);
+
+      await service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, adminUser);
+
+      expect(prisma.contract.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'PENDING_APPROVAL',
+          companyId: 'company-1',
+          departmentId: 'dept-business',
+        }),
+      }));
     });
 
     it('DRAFT → VOIDED', async () => {

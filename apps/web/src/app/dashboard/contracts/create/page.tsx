@@ -26,6 +26,18 @@ function SelectField({ value, onChange, options, placeholder }: { value: string;
   );
 }
 
+interface DepartmentItem {
+  id: string;
+  name: string;
+  companyId: string;
+  company?: { id: string; name: string };
+}
+
+interface CurrentUserProfile {
+  companyId?: string | null;
+  employee?: { departmentId?: string | null } | null;
+}
+
 export default function ContractCreatePage() {
   const router = useRouter();
   const [clientRequestId] = useState(() => {
@@ -41,12 +53,13 @@ export default function ContractCreatePage() {
   const [supplierPartners, setSupplierPartners] = useState<any[]>([]);
   const [customerPartners, setCustomerPartners] = useState<any[]>([]);
   const [allPartners, setAllPartners] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [files, setFiles] = useState<Array<{ file: File; name: string }>>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     type: 'PURCHASE' as string, title: '',
-    signingPartnerId: '', externalNo: '',
+    signingPartnerId: '', departmentId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
     pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '5', shortfallPct: '5',
@@ -76,6 +89,19 @@ export default function ContractCreatePage() {
       setInternalPartners(all.filter((p: any) => p.isInternal));
     }).catch(() => {});
     api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(()=>{});
+    Promise.all([
+      api.get<DepartmentItem[]>('/org/departments'),
+      api.get<CurrentUserProfile>('/auth/profile'),
+    ]).then(([departmentItems, profile]) => {
+      const visibleDepartments = profile.companyId
+        ? departmentItems.filter((item) => item.companyId === profile.companyId)
+        : departmentItems;
+      setDepartments(visibleDepartments);
+      setForm(current => ({
+        ...current,
+        departmentId: current.departmentId || profile.employee?.departmentId || '',
+      }));
+    }).catch(() => {});
   }, []);
 
   const qty = Number(form.quantity || 0);
@@ -103,6 +129,7 @@ export default function ContractCreatePage() {
     type: form.type, title: form.title || `${form.type==='PURCHASE'?'采购':form.type==='SALES'?'销售':'双边'}合同`,
     sellerId: form.sellerId, totalAmount,
     signingPartnerId: form.signingPartnerId || undefined,
+    departmentId: form.departmentId || undefined,
     externalNo: form.externalNo || undefined,
     contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
     pricingType: form.pricingType, overfillPct: Number(form.overfillPct) || undefined, shortfallPct: Number(form.shortfallPct) || undefined,
@@ -174,6 +201,7 @@ export default function ContractCreatePage() {
 
   const handleSubmit = async () => {
     if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
+    if (!form.departmentId) { alert('请选择业务部门，审批流程将据此匹配业务主管'); return; }
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     if (!form.materialId || !form.quantity || !form.unitPrice) { alert('请完整填写货物信息（物料/数量/单价）'); return; }
     if (form.type === 'BILATERAL' && !form.buyerId) { alert('双边合同请选择销售对手方'); return; }
@@ -237,6 +265,17 @@ export default function ContractCreatePage() {
                     return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
                   })}
               </select>
+            </FormField>
+            <FormField label="业务部门" required>
+              <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">请选择业务部门</option>
+                {departments.map(department => (
+                  <option key={department.id} value={department.id}>
+                    {department.company?.name ? `${department.company.name} / ` : ''}{department.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-muted-foreground">用于匹配业务主管等按部门配置的审批节点</span>
             </FormField>
             <FormField label="外部合同号"><Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="对手方合同号，方便对账" /></FormField>
           </div>
