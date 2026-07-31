@@ -105,7 +105,7 @@ model Employee {
   departmentId String
   companyId    String
   position     String? // 岗位
-  phone        String?
+  phone        String?  @unique // 11位中国大陆登录手机号；新建员工必填，历史数据可为空
   email        String?
   status       String   @default("ACTIVE")
   createdAt    DateTime @default(now())
@@ -890,21 +890,22 @@ model InboundReceipt {
   id                      String    @id @default(cuid())
   receiptNo               String    @unique
   waybillId               String
-  weighTicketId           String
-  qualityInspectionId     String
-  warehouseId             String
-  status                  String    @default("DRAFT") // DRAFT | RECEIVED | POSTED | CANCELLED
-  acceptanceConclusion    String // PASS | DEDUCTION
+  weighTicketId           String?
+  qualityInspectionId     String?
+  warehouseId             String?
+  status                  String    @default("PENDING") // PENDING | RECEIVED | POSTED | CANCELLED
+  acceptanceConclusion    String? // PASS；最终验收质检单确认前为空
   materialName            String
   materialSpec            String?
   supplierName            String?
   plateNo                 String?
-  receivedQuantity        Decimal   @db.Decimal(15, 3)
+  plannedQuantity         Decimal   @default(0) @db.Decimal(15, 3)
+  receivedQuantity        Decimal?  @db.Decimal(15, 3)
   moistureDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
   impurityDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
   deductionAmount         Decimal   @default(0) @db.Decimal(15, 2)
-  receivedAt              DateTime
-  receiverName            String
+  receivedAt              DateTime?
+  receiverName            String?
   remarks                 String?
   createdBy               String
   createdAt               DateTime  @default(now())
@@ -912,9 +913,9 @@ model InboundReceipt {
   deletedAt               DateTime?
 
   waybill           Waybill           @relation(fields: [waybillId], references: [id])
-  weighTicket       WeighTicket       @relation(fields: [weighTicketId], references: [id])
-  qualityInspection QualityInspection @relation(fields: [qualityInspectionId], references: [id])
-  warehouse         Warehouse         @relation(fields: [warehouseId], references: [id])
+  weighTicket       WeighTicket?       @relation(fields: [weighTicketId], references: [id])
+  qualityInspection QualityInspection? @relation(fields: [qualityInspectionId], references: [id])
+  warehouse         Warehouse?        @relation(fields: [warehouseId], references: [id])
   creator           User              @relation("InboundReceiptCreator", fields: [createdBy], references: [id])
   businessInbound   BusinessInbound?
   attachments       Attachment[]
@@ -1185,7 +1186,7 @@ model Approval {
   approvalMode String  @default("ALL") // ALL | ANY
   step       Int       @default(1)
   round      Int       @default(1)
-  status     String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | CANCELLED
+  status     String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | OTHERS_APPROVED | OTHERS_REJECTED | CANCELLED
   comment    String?
   actedAt    DateTime?
   createdAt  DateTime  @default(now())

@@ -44,11 +44,13 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">用户名</label>
+            <label className="block text-sm font-medium text-foreground mb-1">用户名或手机号</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              placeholder="请输入用户名或员工手机号"
+              autoComplete="username"
               className="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
               required
             />

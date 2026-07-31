@@ -10,6 +10,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { FileService } from './file.service';
 import { AdminGuard } from './admin.guard';
 import { HealthController } from './health.controller';
+import { PermissionGuard } from './permission.guard';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { HealthController } from './health.controller';
     }),
   ],
   controllers: [UsersController, AuthController, HealthController],
-  providers: [UsersService, AuthService, JwtStrategy, FileService, AdminGuard],
-  exports: [UsersService, AuthService, FileService, AdminGuard],
+  providers: [UsersService, AuthService, JwtStrategy, FileService, AdminGuard, PermissionGuard],
+  exports: [UsersService, AuthService, FileService, AdminGuard, PermissionGuard],
 })
 export class CommonModule {}

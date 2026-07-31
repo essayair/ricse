@@ -15,6 +15,7 @@
     "db:migrate:deploy": "pnpm --filter @ricse/api prisma:migrate:deploy",
     "db:studio": "pnpm --filter @ricse/api prisma:studio",
     "db:seed": "pnpm --filter @ricse/api prisma:seed",
+    "db:seed:blank": "pnpm --filter @ricse/api prisma:seed:blank",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "setup": "pnpm install && pnpm docker:up && pnpm db:migrate && pnpm db:seed"

@@ -156,6 +156,54 @@ describe('WeighTicketService', () => {
     }));
   });
 
+  it('按提交顺序批量保存称重记录并分别选用最新毛重和皮重', async () => {
+    prisma.weighTicket.findFirst.mockResolvedValue({
+      ...ticket, direction: 'OUTBOUND', status: 'PENDING',
+    } as any);
+    prisma.weighRecord.aggregate.mockResolvedValue({ _max: { sequence: null } } as any);
+    prisma.weighRecord.create
+      .mockResolvedValueOnce({
+        id: 'tare-1', weighTicketId: ticket.id, weighingType: 'TARE', sequence: 1, weight: 20,
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'gross-1', weighTicketId: ticket.id, weighingType: 'GROSS', sequence: 2, weight: 120,
+      } as any);
+    prisma.weighTicket.findUniqueOrThrow
+      .mockResolvedValueOnce({
+        ...ticket,
+        plannedQuantity: 100,
+        toleranceRate: 0.5,
+        settlementBasis: 'RECEIVING',
+        selectedGrossRecordId: 'gross-1',
+        selectedTareRecordId: 'tare-1',
+        records: [
+          { id: 'tare-1', weight: 20 },
+          { id: 'gross-1', weight: 120 },
+        ],
+      } as any)
+      .mockResolvedValueOnce({
+        ...ticket, selectedGrossRecordId: 'gross-1', selectedTareRecordId: 'tare-1',
+      } as any);
+
+    await service.addRecords(ticket.id, [
+      { weighingType: 'TARE', weight: 20 },
+      { weighingType: 'GROSS', weight: 120 },
+    ], 'user-1');
+
+    expect(prisma.weighRecord.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      data: expect.objectContaining({ sequence: 1, weighingType: 'TARE' }),
+    }));
+    expect(prisma.weighRecord.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      data: expect.objectContaining({ sequence: 2, weighingType: 'GROSS' }),
+    }));
+    expect(prisma.weighTicket.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        selectedGrossRecordId: 'gross-1',
+        selectedTareRecordId: 'tare-1',
+      }),
+    }));
+  });
+
   it('未完成毛重和皮重时不能完成称重', async () => {
     prisma.weighTicket.findFirst.mockResolvedValue({
       ...ticket, selectedTareRecordId: null, netWeight: null, settlementWeight: null,

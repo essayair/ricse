@@ -253,7 +253,9 @@ export default function AccessControlPage() {
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="font-semibold">{selectedRole?.name || '角色'}权限</h2>
-                <p className="mt-1 text-sm text-muted-foreground">勾选该角色允许执行的功能操作</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {selectedRole?.description || '勾选该角色允许执行的功能操作'}
+                </p>
               </div>
               <Button onClick={saveRolePermissions} disabled={saving || adminRoleLocked}><Save className="mr-2 h-4 w-4" />保存权限</Button>
             </div>

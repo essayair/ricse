@@ -445,11 +445,24 @@ export class ContractService {
         if (acted.count < 1) throw new BadRequestException('当前审批节点已被处理，请刷新后重试');
 
         if (status === 'REJECTED') {
+          if (approvalMode === 'ANY') {
+            await tx.approval.updateMany({
+              where: {
+                contractId: id,
+                round: currentRound,
+                step: currentStep,
+                id: { not: taskToAct.id },
+                status: 'PENDING',
+              },
+              data: { status: 'OTHERS_REJECTED' },
+            });
+          }
           await tx.approval.updateMany({
             where: {
               contractId: id,
               round: currentRound,
               id: { not: taskToAct.id },
+              ...(approvalMode === 'ANY' && { step: { not: currentStep } }),
               status: { in: ['PENDING', 'WAITING'] },
             },
             data: { status: 'CANCELLED' },
@@ -463,7 +476,7 @@ export class ContractService {
                 step: currentStep,
                 status: 'PENDING',
               },
-              data: { status: 'CANCELLED' },
+              data: { status: 'OTHERS_APPROVED' },
             });
           }
 

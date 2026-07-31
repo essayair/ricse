@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { CreateWeighRecordDto } from './dto/create-weigh-record.dto';
+import { CreateWeighRecordsDto } from './dto/create-weigh-records.dto';
 import { CreateWeighTicketDto } from './dto/create-weigh-ticket.dto';
 import { WeighTicketService } from './weigh-ticket.service';
 
@@ -80,6 +81,12 @@ export class WeighTicketController {
   @Post(':id/records')
   addRecord(@Param('id') id: string, @Body() dto: CreateWeighRecordDto, @CurrentUser('id') userId: string) {
     return this.service.addRecord(id, dto, userId);
+  }
+
+  @Post(':id/records/batch')
+  @ApiOperation({ summary: '批量追加称重记录（按数组顺序生成称重序次）' })
+  addRecords(@Param('id') id: string, @Body() dto: CreateWeighRecordsDto, @CurrentUser('id') userId: string) {
+    return this.service.addRecords(id, dto.records, userId);
   }
 
   @Patch(':id/effective-records')

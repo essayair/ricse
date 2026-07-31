@@ -17,6 +17,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed:blank": "tsx prisma/seed-blank.ts",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },

@@ -671,7 +671,7 @@ describe('ContractService', () => {
       expect(prisma.contract.updateMany).not.toHaveBeenCalled();
     });
 
-    it('或签节点任一成员通过后取消同节点其他任务并继续流程', async () => {
+    it('或签节点任一成员通过后将同节点其他任务标记为他人已审批并继续流程', async () => {
       await setupContract('PENDING_APPROVAL');
       prisma.approval.findMany.mockResolvedValue([
         { id: 'approval-1', contractId: 'test-id', assigneeId: 'approver-user', status: 'PENDING', round: 1, step: 1, approvalMode: 'ANY' },
@@ -694,11 +694,36 @@ describe('ContractService', () => {
           step: 1,
           status: 'PENDING',
         },
-        data: { status: 'CANCELLED' },
+        data: { status: 'OTHERS_APPROVED' },
       });
       expect(prisma.contract.updateMany).toHaveBeenCalledWith({
         where: expect.objectContaining({ id: 'test-id', status: 'PENDING_APPROVAL' }),
         data: expect.objectContaining({ status: 'APPROVED' }),
+      });
+    });
+
+    it('或签节点任一成员驳回后将同节点其他任务标记为他人已驳回', async () => {
+      await setupContract('PENDING_APPROVAL');
+      prisma.approval.findMany.mockResolvedValue([
+        { id: 'approval-1', contractId: 'test-id', assigneeId: 'approver-user', status: 'PENDING', round: 1, step: 1, approvalMode: 'ANY' },
+        { id: 'approval-2', contractId: 'test-id', assigneeId: 'approver-user-2', status: 'PENDING', round: 1, step: 1, approvalMode: 'ANY' },
+      ] as any);
+
+      await expect(service.updateStatus(
+        'test-id',
+        { status: 'REJECTED', comment: '任一成员驳回' },
+        { id: 'approver-user', role: 'BUSINESS_MANAGER' },
+      )).resolves.toBeDefined();
+
+      expect(prisma.approval.updateMany).toHaveBeenCalledWith({
+        where: {
+          contractId: 'test-id',
+          round: 1,
+          step: 1,
+          id: { not: 'approval-1' },
+          status: 'PENDING',
+        },
+        data: { status: 'OTHERS_REJECTED' },
       });
     });
 

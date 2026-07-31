@@ -19,9 +19,7 @@ export class UsersService {
     if (!data.password || data.password.length < 6) {
       throw new BadRequestException('密码至少6位');
     }
-    const existing = await this.prisma.user.findUnique({
-      where: { username },
-    });
+    const existing = await this.prisma.user.findUnique({ where: { username } });
     if (existing) throw new ConflictException('用户名已存在');
 
     const hashed = await bcrypt.hash(data.password, 10);
@@ -35,6 +33,13 @@ export class UsersService {
     if (data.companyId && !company) throw new BadRequestException('所属企业不存在');
     if (employee && data.companyId && employee.companyId !== data.companyId) {
       throw new BadRequestException('员工与所属企业不一致');
+    }
+    const phoneOwner = await this.prisma.employee.findFirst({
+      where: { phone: username },
+      select: { id: true },
+    });
+    if (phoneOwner && phoneOwner.id !== data.employeeId) {
+      throw new ConflictException('用户名已被其他员工手机号占用');
     }
     if (company?.type === 'EXTERNAL') {
       const externalAccountCount = await this.prisma.user.count({
@@ -86,6 +91,17 @@ export class UsersService {
 
   async findByUsername(username: string) {
     return this.prisma.user.findUnique({ where: { username } });
+  }
+
+  async findByLoginIdentifier(identifier: string) {
+    const normalized = identifier.trim();
+    const user = await this.prisma.user.findUnique({ where: { username: normalized } });
+    if (user) return user;
+
+    const phone = normalized;
+    return this.prisma.user.findFirst({
+      where: { employee: { is: { phone } } },
+    });
   }
 
   async findAll() {
@@ -172,6 +188,13 @@ export class UsersService {
       }
       const existing = await this.prisma.user.findUnique({ where: { username } });
       if (existing && existing.id !== id) throw new ConflictException('用户名已存在');
+      const [currentUser, phoneOwner] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id }, select: { employeeId: true } }),
+        this.prisma.employee.findFirst({ where: { phone: username }, select: { id: true } }),
+      ]);
+      if (phoneOwner && phoneOwner.id !== currentUser?.employeeId) {
+        throw new ConflictException('用户名已被其他员工手机号占用');
+      }
     }
     return this.prisma.user.update({
       where: { id },

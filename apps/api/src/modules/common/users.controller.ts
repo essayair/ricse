@@ -2,13 +2,15 @@ import { Controller, Post, Get, Patch, Body, Param, UseGuards, BadRequestExcepti
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
-import { AdminGuard } from './admin.guard';
+import { PermissionGuard } from './permission.guard';
+import { RequirePermission } from './require-permission.decorator';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 
 @ApiTags('用户管理')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), AdminGuard)
+@UseGuards(AuthGuard('jwt'), PermissionGuard)
+@RequirePermission('system.user.manage')
 @Controller('users')
 export class UsersController {
   constructor(private usersService: UsersService) {}

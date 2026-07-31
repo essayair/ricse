@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Printer, Scale, Truck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Plus, Printer, Scale, Trash2, Truck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,16 @@ interface WeighRecord {
   weighedAt: string;
   remarks: string | null;
   operator: { id: string; name: string };
+}
+
+interface WeighRecordDraft {
+  key: string;
+  weighingType: 'GROSS' | 'TARE';
+  weight: string;
+  dataSource: string;
+  weighedAt: string;
+  remarks: string;
+  base: boolean;
 }
 
 interface WeighTicket {
@@ -99,15 +109,32 @@ const BASIS: Array<[string, string]> = [
 ];
 const BASIS_LABEL = Object.fromEntries(BASIS);
 
+function createRecordDraft(weighingType: 'GROSS' | 'TARE', base = false): WeighRecordDraft {
+  return {
+    key: `record-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    weighingType,
+    weight: '',
+    dataSource: 'MANUAL',
+    weighedAt: toLocalDateTimeInput(),
+    remarks: '',
+    base,
+  };
+}
+
+function baseRecordDrafts(ticket: WeighTicket): WeighRecordDraft[] {
+  const order: Array<'GROSS' | 'TARE'> = ticket.direction === 'INBOUND'
+    ? ['GROSS', 'TARE']
+    : ['TARE', 'GROSS'];
+  return order
+    .filter(type => !ticket.records.some(record => record.weighingType === type))
+    .map(type => createRecordDraft(type, true));
+}
+
 export default function WeighTicketDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [ticket, setTicket] = useState<WeighTicket | null>(null);
-  const [recordType, setRecordType] = useState<'GROSS' | 'TARE'>('GROSS');
-  const [recordWeight, setRecordWeight] = useState('');
-  const [recordSource, setRecordSource] = useState('MANUAL');
-  const [weighedAt, setWeighedAt] = useState('');
-  const [recordRemarks, setRecordRemarks] = useState('');
+  const [recordDrafts, setRecordDrafts] = useState<WeighRecordDraft[]>([]);
   const [grossRecordId, setGrossRecordId] = useState('');
   const [tareRecordId, setTareRecordId] = useState('');
   const [basis, setBasis] = useState('RECEIVING');
@@ -121,8 +148,9 @@ export default function WeighTicketDetailPage() {
   const [infoForm, setInfoForm] = useState({ ticketDate: '', plateNo: '', materialName: '', materialSpec: '', shipperName: '', receiverName: '', packageCount: '0', driverName: '', weighmasterName: '', remarks: '' });
   const [saving, setSaving] = useState(false);
 
-  const applyTicket = (data: WeighTicket) => {
+  const applyTicket = (data: WeighTicket, resetRecordDrafts = false) => {
     setTicket(data);
+    if (resetRecordDrafts) setRecordDrafts(baseRecordDrafts(data));
     setGrossRecordId(data.selectedGrossRecordId || '');
     setTareRecordId(data.selectedTareRecordId || '');
     setBasis(data.settlementBasis);
@@ -143,34 +171,49 @@ export default function WeighTicketDetailPage() {
 
   const load = async () => {
     try {
-      applyTicket(await api.get<WeighTicket>(`/weigh-tickets/${id}`));
+      applyTicket(await api.get<WeighTicket>(`/weigh-tickets/${id}`), true);
     } catch (error: any) {
       alert(error.message || '磅单加载失败');
       router.push('/dashboard/weighbridge');
     }
   };
   useEffect(() => { void load(); }, [id]);
-  useEffect(() => { setWeighedAt(toLocalDateTimeInput()); }, []);
 
-  const addRecord = async () => {
-    if (Number(recordWeight) <= 0) return alert('请输入有效的称重重量');
+  const saveRecordDrafts = async () => {
+    const filled = recordDrafts.filter(record => record.weight.trim() !== '');
+    if (!filled.length) return alert('请至少填写一条称重记录');
+    if (filled.some(record => Number(record.weight) <= 0)) return alert('称重重量必须大于 0');
     setSaving(true);
     try {
-      applyTicket(await api.post<WeighTicket>(`/weigh-tickets/${id}/records`, {
-        weighingType: recordType,
-        weight: Number(recordWeight),
-        dataSource: recordSource,
-        weighedAt: weighedAt || undefined,
-        remarks: recordRemarks || undefined,
-      }));
-      setRecordWeight('');
-      setRecordRemarks('');
-      setWeighedAt(toLocalDateTimeInput());
+      applyTicket(await api.post<WeighTicket>(`/weigh-tickets/${id}/records/batch`, {
+        records: filled.map(record => ({
+          weighingType: record.weighingType,
+          weight: Number(record.weight),
+          dataSource: record.dataSource,
+          weighedAt: record.weighedAt || undefined,
+          remarks: record.remarks.trim() || undefined,
+        })),
+      }), true);
     } catch (error: any) {
       alert(error.message || '称重记录保存失败');
     } finally {
       setSaving(false);
     }
+  };
+
+  const updateRecordDraft = (key: string, changes: Partial<WeighRecordDraft>) => {
+    setRecordDrafts(current => current.map(record =>
+      record.key === key ? { ...record, ...changes } : record,
+    ));
+  };
+
+  const appendRecordDraft = () => {
+    if (!ticket) return;
+    const order: Array<'GROSS' | 'TARE'> = ticket.direction === 'INBOUND'
+      ? ['GROSS', 'TARE']
+      : ['TARE', 'GROSS'];
+    const nextType = order[(ticket.records.length + recordDrafts.length) % order.length];
+    setRecordDrafts(current => [...current, createRecordDraft(nextType)]);
   };
 
   const saveEffectiveRecords = async () => {
@@ -311,15 +354,88 @@ export default function WeighTicketDetailPage() {
         </Card>
 
         {editable && <Card className="space-y-4 p-5">
-          <div><h2 className="font-semibold">新增称重记录</h2><p className="mt-1 text-xs text-muted-foreground">新增同类型记录即为复磅，并自动作为该类型的最新有效记录，仍可在上方重新选择</p></div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <FieldSelect label="称重类型" value={recordType} onChange={value => setRecordType(value as 'GROSS' | 'TARE')} options={[['GROSS', '毛重'], ['TARE', '皮重']]} />
-            <div><label className="mb-1 block text-sm">重量（吨）*</label><Input type="number" min="0" step="0.001" value={recordWeight} onChange={event => setRecordWeight(event.target.value)} /></div>
-            <FieldSelect label="数据来源" value={recordSource} onChange={setRecordSource} options={[['MANUAL', '人工录入'], ['DEVICE', '设备采集'], ['IMPORTED', '导入']]} />
-            <div><label className="mb-1 block text-sm">称重时间（精确到秒）</label><Input type="datetime-local" step="1" value={weighedAt} onChange={event => setWeighedAt(event.target.value)} /><p className="mt-1 text-xs text-muted-foreground">依次选择日期、小时、分钟和秒</p></div>
-            <div className="md:col-span-2"><label className="mb-1 block text-sm">备注</label><Input value={recordRemarks} onChange={event => setRecordRemarks(event.target.value)} placeholder="复磅原因、设备编号等" /></div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">新增称重记录</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {ticket.direction === 'INBOUND'
+                  ? '采购入场默认顺序：先毛重、后皮重'
+                  : '销售出场默认顺序：先皮重、后毛重'}
+                ；可只保存当前已称记录，也可追加复磅
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={appendRecordDraft}>
+              <Plus className="mr-1 h-4 w-4" />追加称重记录
+            </Button>
           </div>
-          <div className="flex justify-end"><Button disabled={saving || Number(recordWeight) <= 0} onClick={() => void addRecord()}>{saving ? '保存中...' : '保存称重记录'}</Button></div>
+
+          {recordDrafts.length ? (
+            <div className="space-y-3">
+              {recordDrafts.map((record, index) => (
+                <div key={record.key} className="rounded-lg border p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={record.base ? 'secondary' : 'outline'}>
+                        {record.base ? '基础称重' : '追加复磅'}
+                      </Badge>
+                      <span className="text-sm font-medium">第 {ticket.records.length + index + 1} 次称重</span>
+                    </div>
+                    {!record.base && (
+                      <Button variant="ghost" size="icon" onClick={() => setRecordDrafts(current => current.filter(item => item.key !== record.key))}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <FieldSelect
+                      label="称重类型"
+                      value={record.weighingType}
+                      disabled={record.base}
+                      onChange={value => updateRecordDraft(record.key, { weighingType: value as 'GROSS' | 'TARE' })}
+                      options={[['GROSS', '毛重'], ['TARE', '皮重']]}
+                    />
+                    <div>
+                      <label className="mb-1 block text-sm">重量（吨）</label>
+                      <Input type="number" min="0" step="0.001" value={record.weight}
+                        onChange={event => updateRecordDraft(record.key, { weight: event.target.value })} />
+                    </div>
+                    <FieldSelect
+                      label="数据来源"
+                      value={record.dataSource}
+                      onChange={value => updateRecordDraft(record.key, { dataSource: value })}
+                      options={[['MANUAL', '人工录入'], ['DEVICE', '设备采集'], ['IMPORTED', '导入']]}
+                    />
+                    <div>
+                      <label className="mb-1 block text-sm">称重时间</label>
+                      <Input type="datetime-local" step="1" value={record.weighedAt}
+                        onChange={event => updateRecordDraft(record.key, { weighedAt: event.target.value })} />
+                      <p className="mt-1 text-xs text-muted-foreground">精确到秒</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-sm">备注</label>
+                      <Input value={record.remarks}
+                        onChange={event => updateRecordDraft(record.key, { remarks: event.target.value })}
+                        placeholder={record.base ? '设备编号等' : '复磅原因、设备编号等'} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">
+              基础毛重和皮重均已录入；如需复磅，请点击“追加称重记录”
+            </div>
+          )}
+
+          {recordDrafts.length > 0 && (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">未填写重量的行不会保存；保存后最新同类型记录自动设为有效记录</p>
+              <Button disabled={saving || !recordDrafts.some(record => Number(record.weight) > 0)}
+                onClick={() => void saveRecordDrafts()}>
+                {saving ? '保存中...' : '保存已填写记录'}
+              </Button>
+            </div>
+          )}
         </Card>}
         <AttachmentPanel
           title="磅单附件"

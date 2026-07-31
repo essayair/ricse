@@ -10,6 +10,7 @@ import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
 import { CreateInboundReceiptDto } from './dto/create-inbound-receipt.dto';
+import { UpdatePendingInboundReceiptDto } from './dto/update-pending-inbound-receipt.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('入库与库存')
@@ -60,6 +61,19 @@ export class InboundReceiptController {
   @Post() create(@Body() dto: CreateInboundReceiptDto, @CurrentUser('id') userId: string) { return this.service.createReceipt(dto, userId); }
   @Get() findAll(@CurrentUser('id') userId: string, @Query('search') search?: string, @Query('status') status?: string) { return this.service.findReceipts({ search, status }, userId); }
   @Get(':id') findOne(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.findReceipt(id, userId); }
+  @Patch(':id') updatePending(
+    @Param('id') id: string,
+    @Body() dto: UpdatePendingInboundReceiptDto,
+    @CurrentUser('id') userId: string,
+  ) { return this.service.updatePendingReceipt(id, dto, userId); }
+  @Patch(':id/acceptance-quality') selectAcceptanceQuality(
+    @Param('id') id: string,
+    @Body('qualityInspectionId') qualityInspectionId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!qualityInspectionId) throw new BadRequestException('请选择最终验收质检单');
+    return this.service.selectAcceptanceQuality(id, qualityInspectionId, userId);
+  }
   @Patch(':id/confirm') confirm(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.confirmReceipt(id, userId); }
   @Patch(':id/cancel') cancel(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.cancelReceipt(id, userId); }
   @Post(':id/post') post(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.postInventory(id, userId); }

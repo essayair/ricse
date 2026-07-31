@@ -1,27 +1,41 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { api } from '@/lib/api';
-import { toLocalDateTimeInput } from '@/lib/date-time';
-import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, CircleCheckBig } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 
-export default function CreateInboundPage() {
-  const router = useRouter(); const [waybills, setWaybills] = useState<any[]>([]); const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [waybillId, setWaybillId] = useState(''); const [weighTicketId, setWeighTicketId] = useState(''); const [qualityId, setQualityId] = useState(''); const [warehouseId, setWarehouseId] = useState('');
-  const [receivedAt, setReceivedAt] = useState(''); const [receiverName, setReceiverName] = useState(''); const [remarks, setRemarks] = useState(''); const [saving, setSaving] = useState(false);
-  useEffect(() => { setReceivedAt(toLocalDateTimeInput()); const u = localStorage.getItem('user'); if (u) try { setReceiverName(JSON.parse(u).name || ''); } catch {} Promise.all([api.get<any[]>('/inbound-receipts/eligible-waybills'), api.get<any[]>('/master-data/warehouses')]).then(([w, h]) => { setWaybills(w); setWarehouses(h.filter(x => x.status === 'ACTIVE')); }).catch(e => alert(e.message)); }, []);
-  const waybill = waybills.find(x => x.id === waybillId); const tickets = waybill?.weighTickets || []; const ticket = tickets.find((x: any) => x.id === weighTicketId); const qualities = ticket?.qualityInspections || []; const quality = qualities.find((x: any) => x.id === qualityId);
-  useEffect(() => { setWeighTicketId(''); setQualityId(''); }, [waybillId]); useEffect(() => setQualityId(''), [weighTicketId]);
-  const quantity = useMemo(() => Number(quality?.settlementWeight || ticket?.settlementWeight || 0), [quality, ticket]);
-  const submit = async () => { if (!waybillId || !weighTicketId || !qualityId || !warehouseId || !receivedAt || !receiverName.trim()) return alert('请完整选择运单、磅单、验收质检单、仓库并填写收货信息'); setSaving(true); try { const created = await api.post<any>('/inbound-receipts', { waybillId, weighTicketId, qualityInspectionId: qualityId, warehouseId, receivedAt, receiverName, remarks: remarks || undefined }); router.push(`/dashboard/inbound/${created.id}`); } catch (e: any) { alert(e.message || '创建失败'); } finally { setSaving(false); } };
-  return <div className="mx-auto max-w-6xl space-y-6"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/inbound')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">新建物流入库单</h1><p className="mt-1 text-sm text-muted-foreground">选择采购到货运单、已复核磅单和最终验收依据质检单</p></div></div>
-    <Card className="space-y-4 p-6"><h2 className="font-semibold">选择到货运单</h2>{!waybills.length ? <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">暂无符合条件的采购到货运单：运单需已到达、磅单已复核，且至少存在一张已确认并判定合格的质检单。</div> : <div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">选择</th><th className="p-3">运单</th><th className="p-3">执行批次</th><th className="p-3">物料</th><th className="p-3">车牌</th><th className="p-3">到达时间</th></tr></thead><tbody>{waybills.map(w => <tr key={w.id} className={`cursor-pointer border-b ${w.id === waybillId ? 'bg-primary/10' : 'hover:bg-muted/50'}`} onClick={() => setWaybillId(w.id)}><td className="p-3"><input type="radio" checked={w.id === waybillId} readOnly /></td><td className="p-3 font-mono text-primary">{w.waybillNo}</td><td className="p-3">{w.dispatchNotice.order.name}</td><td className="p-3">{w.lineItems.map((l:any) => l.materialName).join('、')}</td><td className="p-3">{w.plateNo || '-'}</td><td className="p-3">{w.arrivedAt ? new Date(w.arrivedAt).toLocaleString('zh-CN') : '-'}</td></tr>)}</tbody></table></div>}</Card>
-    <Card className="space-y-5 p-6"><h2 className="font-semibold">验收依据与收货信息</h2><div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">只有已确认且结论为“合格”的质检单可以作为入库依据。超标扣款、熔断或待判定货物不能形成系统库存。</div><div className="grid gap-4 md:grid-cols-2"><Field label="已复核磅单 *"><select value={weighTicketId} onChange={e => setWeighTicketId(e.target.value)} className="h-10 w-full rounded-md border bg-background px-3"><option value="">请选择</option>{tickets.map((t:any) => <option key={t.id} value={t.id}>{t.ticketNo} · 结算重量 {Number(t.settlementWeight || 0)} 吨</option>)}</select></Field><Field label="验收依据质检单 *"><select value={qualityId} onChange={e => setQualityId(e.target.value)} className="h-10 w-full rounded-md border bg-background px-3"><option value="">请选择已确认合格质检单</option>{qualities.map((q:any) => <option key={q.id} value={q.id}>{q.inspectionNo} · {q.institutionName} · 合格</option>)}</select></Field><Field label="入库仓库 *"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="h-10 w-full rounded-md border bg-background px-3"><option value="">请选择</option>{warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}</select></Field><Field label="收货时间 *"><Input type="datetime-local" step="1" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} /></Field><Field label="收货人 *"><Input value={receiverName} onChange={e => setReceiverName(e.target.value)} /></Field><Field label="备注"><Input value={remarks} onChange={e => setRemarks(e.target.value)} /></Field></div>{quality && <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-4"><Info label="验收结论" value="合格" /><Info label="检测机构" value={quality.institutionName} /><Info label="质检后重量" value={`${quantity} 吨`} /><Info label="预计扣款" value={`¥${Number(quality.deductionAmount).toLocaleString()}`} /></div>}</Card>
-    <div className="flex justify-end"><Button disabled={saving} onClick={() => void submit()}><CheckCircle2 className="mr-2 h-4 w-4" />{saving ? '创建中...' : '创建物流入库单'}</Button></div></div>;
+export default function AutomaticInboundNoticePage() {
+  const router = useRouter();
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/inbound')}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold">入库作业单由系统自动生成</h1>
+          <p className="mt-1 text-sm text-muted-foreground">主业务流程不手工新建，避免同一采购运单重复建单</p>
+        </div>
+      </div>
+      <Card className="space-y-5 p-6">
+        <div className="flex items-start gap-3">
+          <CircleCheckBig className="mt-0.5 h-6 w-6 text-primary" />
+          <div>
+            <h2 className="font-semibold">自动生成条件</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              采购物流运单确认发运、进入在途时，系统会自动生成状态为“待到货”的入库作业单；
+              运单确认到达时还会再次检查并补生成漏单。
+            </p>
+          </div>
+        </div>
+        <div className="rounded-md border bg-muted/30 p-4 text-sm leading-6">
+          请返回入库单列表跟踪运输到达、签收、过磅和质检进度。最终验收质检确认合格后，
+          仓管核对入库仓库，并补齐实际收货时间、收货人和现场附件后确认收货。
+        </div>
+        <Button onClick={() => router.push('/dashboard/inbound')}>返回入库单管理</Button>
+      </Card>
+    </div>
+  );
 }
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div><label className="mb-1 block text-sm font-medium">{label}</label>{children}</div>; } function Info({ label, value }: { label:string; value:string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 font-medium">{value}</div></div>; }

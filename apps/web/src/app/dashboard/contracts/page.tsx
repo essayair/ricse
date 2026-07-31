@@ -58,6 +58,12 @@ const TYPE_MAP: Record<string, string> = {
   BILATERAL: '双边合同',
 };
 
+const TYPE_TEXT_CLASS: Record<string, string> = {
+  PURCHASE: 'font-semibold text-amber-800',
+  SALES: 'font-semibold text-blue-800',
+  BILATERAL: 'font-semibold text-indigo-700',
+};
+
 export default function ContractsPage() {
   const router = useRouter();
   const [data, setData] = useState<{ items: Contract[]; pagination: any } | null>(null);
@@ -224,7 +230,9 @@ export default function ContractsPage() {
                     <div className="mt-1 truncate text-xs text-muted-foreground">对手方：{counterpartyName(c)}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="mb-1 text-xs text-muted-foreground">{TYPE_MAP[c.type] || c.type}</div>
+                    <div className={`mb-1 text-xs ${TYPE_TEXT_CLASS[c.type] || 'font-medium text-muted-foreground'}`}>
+                      {TYPE_MAP[c.type] || c.type}
+                    </div>
                     <Badge variant={(STATUS_MAP[c.status]?.variant as any) || 'secondary'}>
                       {STATUS_MAP[c.status]?.label || c.status}
                     </Badge>

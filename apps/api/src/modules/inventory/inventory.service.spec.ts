@@ -80,15 +80,174 @@ describe('InventoryService', () => {
     }, 'user-1')).rejects.toThrow('只有质检结论为“合格”的货物才能入库');
   });
 
-  it('历史超标扣款入库草稿不能确认收货', async () => {
+  it('历史漏单场景下确认合格质检可兜底生成入库作业单', async () => {
+    prisma.qualityInspection.findFirst.mockResolvedValue({
+      id: 'quality-1',
+      inspectionNo: 'QC-001',
+      status: 'CONFIRMED',
+      conclusion: 'PASS',
+      materialName: '铁矿石',
+      materialSpec: '粉矿',
+      supplierName: '供应商A',
+      plateNo: '沪A12345',
+      settlementWeight: 98,
+      moistureDeductionWeight: 1,
+      impurityDeductionWeight: 1,
+      deductionAmount: 0,
+      weighTicket: {
+        id: 'ticket-1',
+        status: 'REVIEWED',
+        settlementWeight: 100,
+        waybill: {
+          id: 'waybill-1',
+          status: 'ARRIVED',
+          arrivedAt: new Date('2026-07-30T08:00:00Z'),
+          signedAt: null,
+          plateNo: '沪A12345',
+          inboundReceipts: [],
+          dispatchNotice: { type: 'PURCHASE', warehouseId: 'warehouse-1' },
+        },
+      },
+    } as any);
+    prisma.inboundReceipt.count.mockResolvedValue(0);
+    prisma.inboundReceipt.create.mockResolvedValue({ id: 'receipt-1', status: 'PENDING' } as any);
+
+    await service.createPendingReceiptForConfirmedQuality('quality-1', 'user-1');
+
+    expect(prisma.inboundReceipt.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        waybillId: 'waybill-1',
+        qualityInspectionId: 'quality-1',
+        warehouseId: 'warehouse-1',
+        status: 'PENDING',
+        receiverName: null,
+      }),
+    }));
+  });
+
+  it('采购运单进入在途后提前生成待到货入库作业单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1', waybillNo: 'WB-001', status: 'IN_TRANSIT', totalQuantity: 100,
+      plateNo: '沪A12345', inboundReceipts: [],
+      lineItems: [{ materialId: 'material-1', materialName: '铁矿石' }],
+      dispatchNotice: {
+        type: 'PURCHASE', warehouseId: 'warehouse-1',
+        order: { contract: { seller: { id: 'supplier-1', name: '供应商A' } } },
+      },
+    } as any);
+    prisma.inboundReceipt.count.mockResolvedValue(0);
+    prisma.inboundReceipt.create.mockResolvedValue({
+      id: 'receipt-1', status: 'PENDING', waybill: { status: 'IN_TRANSIT', weighTickets: [] },
+    } as any);
+
+    await service.ensurePendingReceiptForWaybill('waybill-1', 'user-1');
+
+    expect(prisma.inboundReceipt.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        waybillId: 'waybill-1',
+        plannedQuantity: 100,
+        weighTicketId: null,
+        qualityInspectionId: null,
+        receivedQuantity: null,
+        status: 'PENDING',
+      }),
+    }));
+  });
+
+  it('质检合格后补齐已提前生成入库作业单的验收依据', async () => {
+    const existing = {
+      id: 'receipt-1', receiptNo: 'LIR-001', status: 'PENDING',
+      qualityInspectionId: null, waybill: { status: 'ARRIVED', weighTickets: [] },
+    };
+    prisma.qualityInspection.findFirst.mockResolvedValue({
+      id: 'quality-2', materialName: '铁矿石', materialSpec: '粉矿', supplierName: '供应商A',
+      settlementWeight: 98, moistureDeductionWeight: 1, impurityDeductionWeight: 1, deductionAmount: 0,
+      status: 'CONFIRMED',
+      conclusion: 'PASS',
+      weighTicket: {
+        id: 'ticket-1', settlementWeight: 100,
+        status: 'REVIEWED',
+        waybill: {
+          id: 'waybill-1', status: 'ARRIVED',
+          inboundReceipts: [existing],
+          dispatchNotice: { type: 'PURCHASE' },
+        },
+      },
+    } as any);
+    prisma.inboundReceipt.update.mockResolvedValue({
+      ...existing,
+      qualityInspectionId: 'quality-2',
+      acceptanceConclusion: 'PASS',
+      qualityInspection: { status: 'CONFIRMED', conclusion: 'PASS' },
+    } as any);
+
+    await service.createPendingReceiptForConfirmedQuality('quality-2', 'user-1');
+
+    expect(prisma.inboundReceipt.create).not.toHaveBeenCalled();
+    expect(prisma.inboundReceipt.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'receipt-1' },
+      data: expect.objectContaining({
+        weighTicketId: 'ticket-1',
+        qualityInspectionId: 'quality-2',
+        receivedQuantity: 98,
+      }),
+    }));
+  });
+
+  it('仓管可以改选同一运单下已确认合格质检单作为最终验收依据', async () => {
     jest.spyOn(service, 'findReceipt').mockResolvedValue({
-      status: 'DRAFT',
+      id: 'receipt-1', waybillId: 'waybill-1', status: 'PENDING', plateNo: '沪A12345',
+    } as any);
+    prisma.qualityInspection.findFirst.mockResolvedValue({
+      id: 'quality-2', weighTicketId: 'ticket-2', materialName: '铁矿石', materialSpec: '粉矿',
+      supplierName: '供应商A', plateNo: '沪A12345', settlementWeight: 97.5,
+      moistureDeductionWeight: 1, impurityDeductionWeight: 0.5, deductionAmount: 0,
+      weighTicket: { id: 'ticket-2', status: 'REVIEWED', settlementWeight: 99 },
+    } as any);
+    prisma.inboundReceipt.update.mockResolvedValue({
+      id: 'receipt-1', status: 'PENDING', qualityInspectionId: 'quality-2',
+      acceptanceConclusion: 'PASS', qualityInspection: { status: 'CONFIRMED', conclusion: 'PASS' },
+      waybill: { status: 'ARRIVED', weighTickets: [] },
+    } as any);
+
+    await service.selectAcceptanceQuality('receipt-1', 'quality-2', 'user-1');
+
+    expect(prisma.qualityInspection.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 'quality-2', status: 'CONFIRMED', conclusion: 'PASS',
+        weighTicket: expect.objectContaining({ waybillId: 'waybill-1', status: 'REVIEWED' }),
+      }),
+    }));
+    expect(prisma.inboundReceipt.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        weighTicketId: 'ticket-2', qualityInspectionId: 'quality-2', receivedQuantity: 97.5,
+      }),
+    }));
+  });
+
+  it('历史超标扣款待入库单不能确认收货', async () => {
+    jest.spyOn(service, 'findReceipt').mockResolvedValue({
+      status: 'PENDING',
       acceptanceConclusion: 'DEDUCTION',
       qualityInspection: { status: 'CONFIRMED', conclusion: 'DEDUCTION' },
     } as any);
 
     await expect(service.confirmReceipt('receipt-1', 'user-1'))
       .rejects.toThrow('只有已确认且质检合格的货物才能形成系统库存');
+    expect(prisma.inboundReceipt.update).not.toHaveBeenCalled();
+  });
+
+  it('待入库单补齐仓库、时间和收货人后才能确认', async () => {
+    jest.spyOn(service, 'findReceipt').mockResolvedValue({
+      status: 'PENDING',
+      warehouseId: null,
+      receivedAt: null,
+      receiverName: null,
+      acceptanceConclusion: 'PASS',
+      qualityInspection: { status: 'CONFIRMED', conclusion: 'PASS' },
+    } as any);
+
+    await expect(service.confirmReceipt('receipt-1', 'user-1')).rejects.toThrow('请先选择入库仓库');
     expect(prisma.inboundReceipt.update).not.toHaveBeenCalled();
   });
 

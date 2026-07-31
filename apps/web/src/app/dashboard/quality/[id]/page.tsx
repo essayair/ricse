@@ -21,6 +21,7 @@ interface Inspection {
   moistureDeductionWeight: string; impurityDeductionWeight: string; settlementWeight: string | null; deductionAmount: string;
   fuseReason: string | null; resolution: string | null; resolvedAt: string | null; remarks: string | null;
   confirmedAt: string | null; creator: { name: string }; confirmer: { name: string } | null; indicators: Indicator[]; attachments: Attachment[];
+  inboundReceipts: Array<{ id: string; receiptNo: string; status: string }>;
   relatedInspections: RelatedInspection[];
   weighTicket: { id: string; ticketNo: string; netWeight: string | null; settlementWeight: string | null; waybill: { id: string; waybillNo: string; dispatchNotice: { noticeNo: string; order: { id: string; name: string; orderNo: string; contract: { contractNo: string; title: string } } } } };
 }
@@ -97,6 +98,18 @@ export default function QualityInspectionDetailPage() {
       {item.conclusion === 'PASS' ? <CheckCircle2 className="mt-1 h-7 w-7 text-primary" /> : <AlertTriangle className="mt-1 h-7 w-7 text-destructive" />}
       <div><div className="text-lg font-semibold">{CONCLUSION[item.conclusion]}</div><div className="mt-1 text-sm text-muted-foreground">{item.conclusion === 'PASS' ? '本检测机构报告的全部指标符合质量标准，可以作为入库依据。' : item.conclusion === 'DEDUCTION' ? '本检测机构报告存在超标指标，可记录扣款依据，但不能直接入库。' : item.conclusion === 'FUSE' ? item.fuseReason || '本检测机构报告达到拒收红线，后续业务已暂停。' : '等待补充检测数据，暂不能入库。'}</div></div>
     </Card>
+
+    {item.inboundReceipts?.length > 0 && (
+      <Card className="flex flex-wrap items-center justify-between gap-3 border-primary/30 bg-primary/5 p-4">
+        <div>
+          <div className="font-semibold">已关联入库作业单</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {item.inboundReceipts[0].receiptNo} · {item.inboundReceipts[0].status === 'PENDING' ? '作业中' : item.inboundReceipts[0].status}
+          </div>
+        </div>
+        <Button variant="outline" onClick={() => router.push(`/dashboard/inbound/${item.inboundReceipts[0].id}`)}>查看入库单</Button>
+      </Card>
+    )}
 
     <div className="grid gap-6 lg:grid-cols-2">
       <Card className="p-5"><Title>基本与关联信息</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="取样时间" value={formatDateTimeToSecond(item.sampledAt)} /><Info label="取样人" value={item.samplerName} /><Info label="取样方法" value={item.samplingMethod || '-'} /><Info label="数据来源" value={SOURCE[item.dataSource] || item.dataSource} /><Info label="物料/规格" value={`${item.materialName}${item.materialSpec ? ` / ${item.materialSpec}` : ''}`} /><Info label="供应商" value={item.supplierName || '-'} /><Info label="车牌号" value={item.plateNo || '-'} /><Info label="留样编号" value={[item.sampleNo1, item.sampleNo2, item.sampleNo3].filter(Boolean).join(' / ') || '-'} /></div><div className="mt-5 grid gap-2 border-t pt-4 sm:grid-cols-2"><BusinessLink label="合同" value={`${item.weighTicket.waybill.dispatchNotice.order.contract.contractNo} · ${item.weighTicket.waybill.dispatchNotice.order.contract.title}`} /><BusinessLink label="执行批次" value={`${item.weighTicket.waybill.dispatchNotice.order.name} · ${item.weighTicket.waybill.dispatchNotice.order.orderNo}`} href={`/dashboard/orders/${item.weighTicket.waybill.dispatchNotice.order.id}`} /><BusinessLink label="物流运单" value={item.weighTicket.waybill.waybillNo} href={`/dashboard/waybills/${item.weighTicket.waybill.id}`} /><BusinessLink label="磅单" value={item.weighTicket.ticketNo} href={`/dashboard/weighbridge/${item.weighTicket.id}`} /></div></Card>

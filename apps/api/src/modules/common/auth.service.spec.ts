@@ -31,6 +31,7 @@ describe('AuthService', () => {
 
     const mockUsersService = {
       findByUsername: jest.fn(),
+      findByLoginIdentifier: jest.fn(),
       findById: jest.fn(),
       create: jest.fn(),
       findByRefreshToken: jest.fn(),
@@ -71,7 +72,7 @@ describe('AuthService', () => {
 
   describe('login', () => {
     it('正确凭据应登录成功并返回 JWT', async () => {
-      usersService.findByUsername.mockResolvedValue(mockUser as any);
+      usersService.findByLoginIdentifier.mockResolvedValue(mockUser as any);
       usersService.setRefreshToken.mockResolvedValue({} as any);
 
       const result = await service.login('testuser', 'correct-password');
@@ -87,17 +88,27 @@ describe('AuthService', () => {
     });
 
     it('密码错误应抛出 UnauthorizedException', async () => {
-      usersService.findByUsername.mockResolvedValue(mockUser as any);
+      usersService.findByLoginIdentifier.mockResolvedValue(mockUser as any);
 
       await expect(service.login('testuser', 'wrong-password'))
         .rejects.toThrow(UnauthorizedException);
     });
 
     it('用户不存在应抛出 UnauthorizedException', async () => {
-      usersService.findByUsername.mockResolvedValue(null);
+      usersService.findByLoginIdentifier.mockResolvedValue(null);
 
       await expect(service.login('nonexistent', 'any-password'))
         .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('手机号凭据应使用统一登录查询并返回账号身份', async () => {
+      usersService.findByLoginIdentifier.mockResolvedValue(mockUser as any);
+      usersService.setRefreshToken.mockResolvedValue({} as any);
+
+      const result = await service.login('13800138000', 'correct-password');
+
+      expect(usersService.findByLoginIdentifier).toHaveBeenCalledWith('13800138000');
+      expect(result.username).toBe('testuser');
     });
   });
 

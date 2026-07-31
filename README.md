@@ -23,6 +23,14 @@ pnpm db:seed
 pnpm dev
 ```
 
+如需从零进行业务测试，可在重建数据库并执行迁移后运行：
+
+```bash
+pnpm db:seed:blank
+```
+
+空白初始化只创建系统内置权限、默认审批模板和唯一的 `admin` 管理员，不创建企业、部门、员工、合作伙伴、物料或业务单据。
+
 - **前端**: http://localhost:3001
 - **API**: http://localhost:3000/api/v1
 - **API 文档**: http://localhost:3000/api/docs (Swagger)

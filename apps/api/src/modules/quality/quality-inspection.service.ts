@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { CreateQualityInspectionDto, QualityIndicatorDto } from './dto/create-quality-inspection.dto';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class QualityInspectionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   private readonly include = {
@@ -16,6 +18,11 @@ export class QualityInspectionService {
     confirmer: { select: { id: true, name: true } },
     indicators: { orderBy: { sort: 'asc' as const } },
     attachments: { orderBy: { createdAt: 'desc' as const } },
+    inboundReceipts: {
+      where: { deletedAt: null, status: { not: 'CANCELLED' } },
+      select: { id: true, receiptNo: true, status: true },
+      orderBy: { createdAt: 'desc' as const },
+    },
     weighTicket: {
       include: {
         waybill: {
@@ -269,6 +276,18 @@ export class QualityInspectionService {
     if (status === 'CONFIRMED' && item.conclusion === 'FUSE' && !resolution?.trim()) {
       throw new BadRequestException('熔断质检单确认时必须填写处理方案');
     }
+    if (
+      status === 'CONFIRMED'
+      && item.conclusion === 'PASS'
+      && item.weighTicket.waybill.dispatchNotice.type === 'PURCHASE'
+    ) {
+      if (item.weighTicket.status !== 'REVIEWED') {
+        throw new BadRequestException('采购磅单复核后才能确认质检合格并补齐入库作业单验收依据');
+      }
+      if (!['ARRIVED', 'SIGNED'].includes(item.weighTicket.waybill.status)) {
+        throw new BadRequestException('采购物流运单到达后才能确认质检合格并补齐入库作业单验收依据');
+      }
+    }
     await this.prisma.qualityInspection.update({
       where: { id },
       data: {
@@ -277,6 +296,9 @@ export class QualityInspectionService {
         ...(resolution?.trim() ? { resolution: resolution.trim(), resolvedAt: new Date() } : {}),
       },
     });
+    if (status === 'CONFIRMED' && item.conclusion === 'PASS') {
+      await this.inventoryService.createPendingReceiptForConfirmedQuality(id, userId);
+    }
     return this.findOne(id, userId, 'quality.manage');
   }
 

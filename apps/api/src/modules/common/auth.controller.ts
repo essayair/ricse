@@ -13,7 +13,7 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('login')
-  @ApiOperation({ summary: '用户登录' })
+  @ApiOperation({ summary: '使用用户名或员工手机号登录' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto.username, dto.password);
   }

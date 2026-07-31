@@ -11,6 +11,7 @@ import { Building2, Users, Layers, Network, Plus, Loader2, ChevronDown, ChevronR
 import { api } from '@/lib/api';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
+const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
 
 type TabKey = 'company' | 'dept' | 'employee' | 'business-group' | 'users';
 
@@ -44,6 +45,7 @@ function OrgPageInner() {
   const tabFromUrl = searchParams.get('tab') as TabKey | null;
   const [tab, setTabState] = useState<TabKey>(tabFromUrl || 'company');
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const setTab = (t: TabKey) => {
     setTabState(t);
@@ -83,6 +85,10 @@ function OrgPageInner() {
   // Generic create form
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newPosition, setNewPosition] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newEmployeeStatus, setNewEmployeeStatus] = useState('ACTIVE');
   const [newCode, setNewCode] = useState('');
   const [newParent, setNewParent] = useState('');
   const [newCompanyId, setNewCompanyId] = useState('');
@@ -251,31 +257,68 @@ function OrgPageInner() {
   };
 
   const handleCreate = async () => {
+    if (creating) return;
+
+    const trimmedName = newName.trim();
+    const trimmedPhone = newPhone.trim();
+
+    if (tab === 'company' && !selectedPartner) {
+      alert('请先选择一个合作伙伴');
+      return;
+    }
+    if (tab === 'dept' && (!newCompanyId || !trimmedName)) {
+      alert('请选择企业并填写部门名称');
+      return;
+    }
+    if (tab === 'employee') {
+      if (!newCompanyId) { alert('请选择所属企业'); return; }
+      if (!newParent) { alert('请选择所属部门'); return; }
+      if (!trimmedName) { alert('请填写员工姓名'); return; }
+      if (!trimmedPhone) { alert('请填写员工手机号'); return; }
+      if (!EMPLOYEE_PHONE_PATTERN.test(trimmedPhone)) {
+        alert('员工手机号必须为11位中国大陆手机号');
+        return;
+      }
+    }
+    if (tab === 'business-group' && !trimmedName) {
+      alert('请填写业务组名称');
+      return;
+    }
+    if (tab === 'users') {
+      if (!newCompanyId || !newParent) { alert('请选择企业和员工'); return; }
+      if (!newUsername || !USERNAME_PATTERN.test(newUsername.trim())) {
+        alert('用户名须以字母或数字开头，可包含字母、数字、点、下划线和短横线，长度3-50位');
+        return;
+      }
+      if (!newPassword || newPassword.length < 6) { alert('密码至少6位'); return; }
+      if (newPassword !== confirmPassword) { alert('两次输入的密码不一致'); return; }
+    }
+
+    setCreating(true);
     try {
       if (tab === 'company') {
-        if (!selectedPartner) { alert('请先选择一个合作伙伴'); return; }
+        // Validation above guarantees a partner has been selected.
+        if (!selectedPartner) return;
         await api.post('/org/companies', { partnerId: selectedPartner.id, parentId: newParent || undefined });
       }
       if (tab === 'dept') {
-        if (!newName || !newCompanyId) { alert('请选择企业并填写部门名称'); return; }
-        await api.post('/org/departments', { name: newName, companyId: newCompanyId });
+        await api.post('/org/departments', { name: trimmedName, companyId: newCompanyId });
       }
       if (tab === 'employee') {
-        if (!newName || !newParent) { alert('请选择部门和填写员工姓名'); return; }
-        await api.post('/org/employees', { name: newName, companyId: newCompanyId, departmentId: newParent });
+        await api.post('/org/employees', {
+          name: trimmedName,
+          phone: trimmedPhone,
+          position: newPosition.trim() || undefined,
+          email: newEmail.trim() || undefined,
+          status: newEmployeeStatus,
+          companyId: newCompanyId,
+          departmentId: newParent,
+        });
       }
       if (tab === 'business-group') {
-        if (!newName) { alert('请填写业务组名称'); return; }
-        await api.post('/org/business-groups', { name: newName });
+        await api.post('/org/business-groups', { name: trimmedName });
       }
       if (tab === 'users') {
-        if (!newCompanyId || !newParent) { alert('请选择企业和员工'); return; }
-        if (!newUsername || !USERNAME_PATTERN.test(newUsername.trim())) {
-          alert('用户名须以字母或数字开头，可包含字母、数字、点、下划线和短横线，长度3-50位');
-          return;
-        }
-        if (!newPassword || newPassword.length < 6) { alert('密码至少6位'); return; }
-        if (newPassword !== confirmPassword) { alert('两次输入的密码不一致'); return; }
         const emp = employees.find((e) => e.id === newParent);
         await api.post('/users', {
           username: newUsername.trim(), password: newPassword,
@@ -286,8 +329,12 @@ function OrgPageInner() {
           businessGroupId: newBgroupId || undefined,
         });
       }
-      setShowCreate(false); setNewName(''); setNewCode(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); fetchAll();
-    } catch (e: any) { alert(e.message || '创建失败'); }
+      setShowCreate(false); setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewCode(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); await fetchAll();
+    } catch (e: any) {
+      alert(e.message || '创建失败');
+    } finally {
+      setCreating(false);
+    }
   };
 
   // User row renderer (used in company-grouped view)
@@ -400,7 +447,7 @@ function OrgPageInner() {
               } catch (e: any) { alert('加载合作伙伴失败: ' + (e.message || '未知错误')); return; }
               finally { setPartnerLoading(false); }
             }
-            setNewName(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId('');
+            setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId('');
             setShowCreate(true); setSelectedPartner(null);
           }}><Plus className="h-4 w-4 mr-1" />新建</Button>
         )}
@@ -483,28 +530,75 @@ function OrgPageInner() {
           {/* employee: company first, then dept, then name */}
           {tab === 'employee' && (
             <>
-              <select value={newCompanyId} onChange={(e) => { setNewCompanyId(e.target.value); setNewParent(''); setNewName(''); }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">1. 选择所属企业</option>
-                {companies.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
-              </select>
-              {newCompanyId && (
-                <select value={newParent} onChange={(e) => setNewParent(e.target.value)}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">所属企业 *</label>
+                <select value={newCompanyId} onChange={(e) => { setNewCompanyId(e.target.value); setNewParent(''); }}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="">2. 选择所属部门</option>
+                  <option value="">选择所属企业</option>
+                  {companies.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">所属部门 *</label>
+                <select value={newParent} onChange={(e) => setNewParent(e.target.value)}
+                  disabled={!newCompanyId}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+                  <option value="">选择所属部门</option>
                   {depts.filter((d) => d.companyId === newCompanyId).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
-              )}
-              {newParent && (
-                <Input placeholder="3. 输入员工姓名" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
-              )}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">员工姓名 *</label>
+                <Input placeholder="输入员工姓名" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">手机号 *</label>
+                <Input
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="输入11位中国大陆手机号"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  maxLength={11}
+                />
+                <div className={`mt-1 text-xs ${newPhone && !EMPLOYEE_PHONE_PATTERN.test(newPhone) ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  {newPhone && !EMPLOYEE_PHONE_PATTERN.test(newPhone)
+                    ? '请输入完整的11位中国大陆手机号'
+                    : '手机号必须为11位，保存时会校验是否重复'}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">岗位</label>
+                <Input placeholder="输入岗位" value={newPosition} onChange={(e) => setNewPosition(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">邮箱</label>
+                <Input type="email" placeholder="输入邮箱" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">员工状态</label>
+                <select value={newEmployeeStatus} onChange={(e) => setNewEmployeeStatus(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="ACTIVE">在职</option>
+                  <option value="DISABLED">停用</option>
+                </select>
+              </div>
+              <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                手机号和登录用户名独立保存，均可用于登录；开通账号时会用手机号预填用户名，管理员可以修改。
+              </div>
             </>
           )}
 
           {/* users: company → employee → username + password */}
           {tab === 'users' && (
             <>
-              <select value={newCompanyId} onChange={(e) => { setNewCompanyId(e.target.value); setNewParent(''); }}
+              <select value={newCompanyId} onChange={(e) => {
+                setNewCompanyId(e.target.value);
+                setNewParent('');
+                setNewUsername('');
+                setNewPassword('');
+                setConfirmPassword('');
+              }}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">1. 选择所属企业</option>
                 {companies.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
@@ -522,12 +616,17 @@ function OrgPageInner() {
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">2. 选择关联员工（必选）</option>
                   {employees.filter((e) => e.companyId === newCompanyId && !users.some((u) => u.employeeId === e.id)).map((e) => (
-                    <option key={e.id} value={e.id}>{e.name} {e.department?.name ? `· ${e.department.name}` : ''}</option>
+                    <option key={e.id} value={e.id}>
+                      {e.name} {e.phone ? `· ${e.phone}` : ''} {e.department?.name ? `· ${e.department.name}` : ''}
+                    </option>
                   ))}
                 </select>
               )}
               {newParent && (
                 <>
+                  <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    已根据员工手机号预填登录用户名，可按需修改
+                  </div>
                   <div className="text-xs text-muted-foreground -mb-1 mt-1">用户名须以字母或数字开头，支持字母、数字、点、下划线和短横线，3-50位</div>
                   <Input placeholder="3. 设置登录用户名" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} maxLength={50} autoFocus />
                   <div className="text-xs text-muted-foreground -mb-1 mt-1">登录密码至少6位，请输入两次确认</div>
@@ -579,6 +678,10 @@ function OrgPageInner() {
               setShowCreate(false);
               setNewParent('');
               setNewCompanyId('');
+              setNewPhone('');
+              setNewPosition('');
+              setNewEmail('');
+              setNewEmployeeStatus('ACTIVE');
               setNewUsername('');
               setNewPassword('');
               setConfirmPassword('');
@@ -586,13 +689,11 @@ function OrgPageInner() {
             }}>取消</Button>
             <Button
               onClick={handleCreate}
-              disabled={
-                (tab === 'dept' && (!newCompanyId || !newName)) ||
-                (tab === 'employee' && (!newParent || !newName)) ||
-                (tab === 'users' && (!newCompanyId || !newParent || !newUsername || !newPassword || !confirmPassword || newPassword !== confirmPassword)) ||
-                (tab === 'business-group' && !newName)
-              }
-            >确认</Button>
+              disabled={creating}
+            >
+              {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {creating ? '创建中...' : '确认'}
+            </Button>
           </div>
         </Card>
       )}

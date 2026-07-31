@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { WaybillService } from './waybill.service';
 
 describe('WaybillService', () => {
@@ -11,6 +12,9 @@ describe('WaybillService', () => {
     assertPermission: jest.fn().mockResolvedValue({}),
     getDispatchNoticeScope: jest.fn().mockResolvedValue({}),
     getWaybillScope: jest.fn().mockResolvedValue({}),
+  };
+  const inventoryService = {
+    ensurePendingReceiptForWaybill: jest.fn().mockResolvedValue({ id: 'receipt-1' }),
   };
   let service: WaybillService;
   const notice = {
@@ -27,6 +31,7 @@ describe('WaybillService', () => {
         WaybillService,
         { provide: PrismaService, useValue: prisma },
         { provide: AccessControlService, useValue: accessControl },
+        { provide: InventoryService, useValue: inventoryService },
       ],
     }).compile();
     service = module.get(WaybillService);
@@ -72,6 +77,34 @@ describe('WaybillService', () => {
       dispatchNotice: { id: notice.id, status: 'ISSUED' },
     } as any);
     await expect(service.updateStatus('waybill-1', 'IN_TRANSIT', 'user-1')).rejects.toThrow('必须填写承运单位');
+  });
+
+  it('采购运单确认发运后自动生成入库作业单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-purchase', status: 'PENDING', freightMode: 'SELF',
+      plateNo: '甘A12345', driverName: '张师傅', outboundReceipts: [],
+      dispatchNotice: { id: notice.id, type: 'PURCHASE', status: 'ISSUED' },
+    } as any);
+    prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
+    prisma.waybill.update.mockResolvedValue({ id: 'waybill-purchase', status: 'IN_TRANSIT' } as any);
+
+    await service.updateStatus('waybill-purchase', 'IN_TRANSIT', 'user-1');
+
+    expect(inventoryService.ensurePendingReceiptForWaybill).toHaveBeenCalledWith('waybill-purchase', 'user-1');
+  });
+
+  it('采购运单确认到达时幂等补生成入库作业单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-purchase', status: 'IN_TRANSIT', freightMode: 'SELF',
+      plateNo: '甘A12345', driverName: '张师傅', outboundReceipts: [],
+      dispatchNotice: { id: notice.id, type: 'PURCHASE', status: 'IN_PROGRESS' },
+    } as any);
+    prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
+    prisma.waybill.update.mockResolvedValue({ id: 'waybill-purchase', status: 'ARRIVED' } as any);
+
+    await service.updateStatus('waybill-purchase', 'ARRIVED', 'user-1');
+
+    expect(inventoryService.ensurePendingReceiptForWaybill).toHaveBeenCalledWith('waybill-purchase', 'user-1');
   });
 
   it('确认签收前必须上传物流收货附件', async () => {

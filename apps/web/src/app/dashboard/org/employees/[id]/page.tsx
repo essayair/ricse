@@ -10,6 +10,7 @@ import { ArrowLeft, User, Building2, Layers, Phone, Mail, Briefcase, Key, Eye, E
 import { api } from '@/lib/api';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
+const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
 
 interface EmployeeDetail {
   id: string; name: string; position?: string; phone?: string; email?: string;
@@ -38,6 +39,10 @@ export default function EmployeeDetailPage() {
   const [editingUsername, setEditingUsername] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [usernameMsg, setUsernameMsg] = useState('');
+  // Employee phone edit
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [newPhone, setNewPhone] = useState('');
+  const [phoneMsg, setPhoneMsg] = useState('');
 
   useEffect(() => {
     api.get<EmployeeDetail>(`/org/employees/${id}`)
@@ -92,6 +97,21 @@ export default function EmployeeDetailPage() {
     finally { setPwdLoading(false); }
   };
 
+  const handleUpdatePhone = async () => {
+    if (!EMPLOYEE_PHONE_PATTERN.test(newPhone)) {
+      setPhoneMsg('员工手机号必须为11位中国大陆手机号');
+      return;
+    }
+    try {
+      const updated = await api.patch<EmployeeDetail>(`/org/employees/${id}`, { phone: newPhone.trim() });
+      setEmp(updated);
+      setEditingPhone(false);
+      setPhoneMsg('');
+    } catch (e: any) {
+      setPhoneMsg(e.message || '手机号修改失败');
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>;
   if (error || !emp) return <div className="p-8 text-center text-muted-foreground">{error || '员工不存在'}</div>;
 
@@ -124,7 +144,53 @@ export default function EmployeeDetailPage() {
             <InfoRow icon={Building2} label="所属企业" value={`${emp.company?.code || ''} ${emp.company?.name || '—'}`} />
             <InfoRow icon={Layers} label="所属部门" value={emp.department?.name || '—'} />
             <InfoRow icon={Briefcase} label="岗位" value={emp.position || '—'} />
-            <InfoRow icon={Phone} label="电话" value={emp.phone || '—'} />
+            <div>
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">手机号</span>
+              {editingPhone ? (
+                <div className="mt-1">
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      type="tel"
+                      inputMode="numeric"
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                      placeholder="输入11位中国大陆手机号"
+                      maxLength={11}
+                      className="h-8 w-56 text-sm"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleUpdatePhone();
+                        if (e.key === 'Escape') setEditingPhone(false);
+                      }}
+                    />
+                    <button onClick={handleUpdatePhone} className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600">
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button onClick={() => setEditingPhone(false)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {phoneMsg && <p className="ml-6 mt-1 text-xs text-destructive">{phoneMsg}</p>}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mt-1">
+                  <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm">{emp.phone || '—'}</span>
+                  <button
+                    onClick={() => {
+                      setNewPhone(emp.phone || '');
+                      setPhoneMsg('');
+                      setEditingPhone(true);
+                    }}
+                    className="text-muted-foreground hover:text-foreground ml-1"
+                    aria-label="修改手机号"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
             <InfoRow icon={Mail} label="邮箱" value={emp.email || '—'} />
           </div>
         </Card>
@@ -246,7 +312,7 @@ export default function EmployeeDetailPage() {
               {!showPwdInput ? (
                 <Button variant="outline" size="sm" onClick={() => {
                   const phoneSuggestion = (emp.phone || '').replace(/[^a-zA-Z0-9._-]/g, '');
-                  setNewUsername(phoneSuggestion.length >= 3 ? phoneSuggestion.slice(0, 50) : `emp${id.slice(0, 8)}`);
+                  setNewUsername(phoneSuggestion.length >= 3 ? phoneSuggestion.slice(0, 50) : '');
                   setNewPassword('');
                   setConfirmPassword('');
                   setShowPassword(false);
@@ -267,7 +333,7 @@ export default function EmployeeDetailPage() {
                       className="h-8 text-sm"
                       autoFocus
                     />
-                    <p className="mt-1 text-xs text-muted-foreground">支持字母、数字、点、下划线和短横线</p>
+                    <p className="mt-1 text-xs text-muted-foreground">已默认带入员工手机号，可修改；支持字母、数字、点、下划线和短横线</p>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium">登录密码</label>

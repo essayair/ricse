@@ -209,33 +209,45 @@ export class WeighTicketService {
   }
 
   async addRecord(id: string, dto: CreateWeighRecordDto, userId: string) {
+    return this.addRecords(id, [dto], userId);
+  }
+
+  async addRecords(id: string, records: CreateWeighRecordDto[], userId: string) {
     const ticket = await this.findOne(id, userId, 'quality.manage');
     if (!['PENDING', 'WEIGHING'].includes(ticket.status)) {
       throw new BadRequestException('仅待称重或称重中的磅单可以追加称重记录');
     }
-    const max = await this.prisma.weighRecord.aggregate({
-      where: { weighTicketId: id }, _max: { sequence: true },
-    });
+    if (!records.length || records.length > 20) {
+      throw new BadRequestException('每次需要提交 1 至 20 条称重记录');
+    }
     return this.prisma.$transaction(async tx => {
-      const record = await tx.weighRecord.create({
-        data: {
-          weighTicketId: id,
-          weighingType: dto.weighingType,
-          sequence: (max._max.sequence || 0) + 1,
-          weight: dto.weight,
-          dataSource: dto.dataSource || 'MANUAL',
-          weighedAt: dto.weighedAt ? new Date(dto.weighedAt) : new Date(),
-          operatorId: userId,
-          remarks: dto.remarks,
-        },
+      const max = await tx.weighRecord.aggregate({
+        where: { weighTicketId: id }, _max: { sequence: true },
       });
+      let selectedGrossRecordId: string | undefined;
+      let selectedTareRecordId: string | undefined;
+      for (const [index, dto] of records.entries()) {
+        const record = await tx.weighRecord.create({
+          data: {
+            weighTicketId: id,
+            weighingType: dto.weighingType,
+            sequence: (max._max.sequence || 0) + index + 1,
+            weight: dto.weight,
+            dataSource: dto.dataSource || 'MANUAL',
+            weighedAt: dto.weighedAt ? new Date(dto.weighedAt) : new Date(),
+            operatorId: userId,
+            remarks: dto.remarks,
+          },
+        });
+        if (dto.weighingType === 'GROSS') selectedGrossRecordId = record.id;
+        if (dto.weighingType === 'TARE') selectedTareRecordId = record.id;
+      }
       await tx.weighTicket.update({
         where: { id },
         data: {
           status: 'WEIGHING',
-          ...(dto.weighingType === 'GROSS'
-            ? { selectedGrossRecordId: record.id }
-            : { selectedTareRecordId: record.id }),
+          ...(selectedGrossRecordId ? { selectedGrossRecordId } : {}),
+          ...(selectedTareRecordId ? { selectedTareRecordId } : {}),
         },
       });
       await this.recalculate(tx, id);

@@ -10,10 +10,12 @@ import { PartnerService } from './partner.service';
 import { FileService } from '../common/file.service';
 import { CurrentUser } from '../common/current-user.decorator';
 import { normalizeUploadFilename } from '../common/filename-encoding';
+import { PermissionGuard } from '../common/permission.guard';
+import { RequirePermission } from '../common/require-permission.decorator';
 
 @ApiTags('合作伙伴')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), PermissionGuard)
 @Controller('partners')
 export class PartnerController {
   constructor(
@@ -23,12 +25,14 @@ export class PartnerController {
 
 
   @Get('next-code')
+  @RequirePermission('master_data.view')
   @ApiOperation({ summary: '获取下一个外部编码' })
   getNextCode() {
     return this.partnerService.generateNextExternalCode();
   }
 
   @Post()
+  @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建合作伙伴' })
   create(@Body() dto: {
     code?: string; name: string; shortName?: string; shortCode?: string;
@@ -50,6 +54,7 @@ export class PartnerController {
   }
 
   @Get()
+  @RequirePermission('master_data.view')
   @ApiOperation({ summary: '合作伙伴列表（分页）' })
   findAll(
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
@@ -65,6 +70,7 @@ export class PartnerController {
 
   // 静态单段路由必须放在 :id 之前，避免 vehicles 被当作合作伙伴 ID。
   @Get('vehicles')
+  @RequirePermission('master_data.view')
   @ApiOperation({ summary: '车辆列表（分页）' })
   findAllVehicles(
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
@@ -78,12 +84,14 @@ export class PartnerController {
   }
 
   @Get(':id')
+  @RequirePermission('master_data.view')
   @ApiOperation({ summary: '合作伙伴详情（含银行账户/车辆/仓库）' })
   findOne(@Param('id') id: string) {
     return this.partnerService.findOne(id);
   }
 
   @Patch(':id')
+  @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '更新合作伙伴（code/taxId/isInternal 不可修改）' })
   update(@Param('id') id: string, @Body() dto: {
     name?: string; shortName?: string; shortCode?: string;
@@ -106,6 +114,7 @@ export class PartnerController {
   }
 
   @Delete(':id')
+  @RequirePermission('master_data.manage')
   @HttpCode(204)
   @ApiOperation({ summary: '删除合作伙伴（软删除）' })
   remove(@Param('id') id: string) {
@@ -115,6 +124,7 @@ export class PartnerController {
   // ========== 银行账户 ==========
 
   @Post(':partnerId/bank-accounts')
+  @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '添加银行账户' })
   createBankAccount(
     @Param('partnerId') partnerId: string,
@@ -124,12 +134,14 @@ export class PartnerController {
   }
 
   @Get(':partnerId/bank-accounts')
+  @RequirePermission('master_data.view')
   @ApiOperation({ summary: '银行账户列表' })
   findBankAccounts(@Param('partnerId') partnerId: string) {
     return this.partnerService.findBankAccounts(partnerId);
   }
 
   @Delete('bank-accounts/:id')
+  @RequirePermission('master_data.manage')
   @HttpCode(204)
   @ApiOperation({ summary: '删除银行账户' })
   deleteBankAccount(@Param('id') id: string) {
@@ -139,6 +151,7 @@ export class PartnerController {
   // ========== 车辆 ==========
 
   @Post('vehicles')
+  @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建车辆' })
   createVehicle(@Body() dto: {
     plateNo: string; vehicleType: string; brand?: string; loadCapacity: number;
@@ -148,6 +161,7 @@ export class PartnerController {
   }
 
   @Delete('vehicles/:id')
+  @RequirePermission('master_data.manage')
   @HttpCode(204)
   @ApiOperation({ summary: '删除车辆' })
   deleteVehicle(@Param('id') id: string) {
@@ -157,6 +171,7 @@ export class PartnerController {
   // ========== 附件/影像 ==========
 
   @Post(':partnerId/attachments')
+  @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '上传附件（营业执照等）' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
@@ -191,12 +206,14 @@ export class PartnerController {
   }
 
   @Get(':partnerId/attachments')
+  @RequirePermission('master_data.view')
   @ApiOperation({ summary: '附件列表' })
   findAttachments(@Param('partnerId') partnerId: string) {
     return this.partnerService.findAttachments(partnerId);
   }
 
   @Get('attachments/:id/view-url')
+  @RequirePermission('master_data.view')
   @ApiOperation({ summary: '获取合作伙伴附件临时查看地址' })
   async getAttachmentViewUrl(@Param('id') id: string) {
     const attachment = await this.partnerService.findAttachmentById(id);
@@ -205,6 +222,7 @@ export class PartnerController {
   }
 
   @Patch('attachments/:id/name')
+  @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '修改合作伙伴附件名称' })
   async renameAttachment(
     @Param('id') id: string,
@@ -219,6 +237,7 @@ export class PartnerController {
   }
 
   @Delete('attachments/:id')
+  @RequirePermission('master_data.manage')
   @HttpCode(204)
   @ApiOperation({ summary: '删除附件' })
   async deleteAttachment(@Param('id') id: string) {

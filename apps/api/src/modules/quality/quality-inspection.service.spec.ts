@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { evaluateIndicator, QualityInspectionService } from './quality-inspection.service';
 
 describe('质检指标判定', () => {
@@ -23,6 +24,9 @@ describe('QualityInspectionService', () => {
     getWeighTicketScope: jest.fn().mockResolvedValue({}),
     getQualityInspectionScope: jest.fn().mockResolvedValue({}),
   };
+  const inventoryService = {
+    createPendingReceiptForConfirmedQuality: jest.fn().mockResolvedValue({ id: 'receipt-1', status: 'PENDING' }),
+  };
   let service: QualityInspectionService;
 
   beforeEach(async () => {
@@ -32,6 +36,7 @@ describe('QualityInspectionService', () => {
         QualityInspectionService,
         { provide: PrismaService, useValue: prisma },
         { provide: AccessControlService, useValue: accessControl },
+        { provide: InventoryService, useValue: inventoryService },
       ],
     }).compile();
     service = module.get(QualityInspectionService);
@@ -59,5 +64,28 @@ describe('QualityInspectionService', () => {
     const where = prisma.weighTicket.findMany.mock.calls[0][0]?.where;
     expect(where).toEqual(expect.objectContaining({ status: { in: ['COMPLETED', 'REVIEWED'] } }));
     expect(where).not.toHaveProperty('qualityInspections');
+  });
+
+  it('采购质检确认合格后补齐入库作业单验收依据', async () => {
+    const item = {
+      id: 'quality-1',
+      status: 'REPORTED',
+      conclusion: 'PASS',
+      indicators: [{ measuredValue: 1 }],
+      weighTicket: {
+        status: 'REVIEWED',
+        waybill: {
+          status: 'ARRIVED',
+          dispatchNotice: { type: 'PURCHASE' },
+        },
+      },
+    };
+    jest.spyOn(service, 'findOne').mockResolvedValue(item as any);
+    prisma.qualityInspection.update.mockResolvedValue({} as any);
+
+    await service.updateStatus('quality-1', 'CONFIRMED', 'user-1');
+
+    expect(inventoryService.createPendingReceiptForConfirmedQuality)
+      .toHaveBeenCalledWith('quality-1', 'user-1');
   });
 });

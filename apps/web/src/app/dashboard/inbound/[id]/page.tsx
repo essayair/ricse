@@ -3,17 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, CheckCircle2, FileText, PackageCheck, Trash2, Upload, XCircle,
+  ArrowLeft, CheckCircle2, Circle, FileText, PackageCheck, Save, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
-import { formatDateTimeToSecond } from '@/lib/date-time';
+import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 const STATUS: Record<string, string> = {
-  DRAFT: '草稿', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已作废',
+  PENDING: '作业中', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已作废',
 };
 
 export default function InboundDetail() {
@@ -21,13 +22,53 @@ export default function InboundDetail() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [item, setItem] = useState<any>(null);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [receiptForm, setReceiptForm] = useState({
+    warehouseId: '', receivedAt: '', receiverName: '', remarks: '',
+  });
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(
-    () => api.get(`/inbound-receipts/${id}`).then(setItem).catch((error: any) => alert(error.message)),
-    [id],
-  );
+  const load = useCallback(async () => {
+    try {
+      const result: any = await api.get(`/inbound-receipts/${id}`);
+      setItem(result);
+      setReceiptForm({
+        warehouseId: result.warehouseId || '',
+        receivedAt: result.receivedAt ? toLocalDateTimeInput(new Date(result.receivedAt)) : '',
+        receiverName: result.receiverName || '',
+        remarks: result.remarks || '',
+      });
+    } catch (error: any) {
+      alert(error.message);
+    }
+  }, [id]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    api.get<any[]>('/master-data/warehouses')
+      .then(result => setWarehouses(result.filter(warehouse => warehouse.status === 'ACTIVE')))
+      .catch((error: any) => alert(error.message));
+  }, []);
+
+  const pendingPayload = () => ({
+    warehouseId: receiptForm.warehouseId || undefined,
+    receivedAt: receiptForm.receivedAt || undefined,
+    receiverName: receiptForm.receiverName,
+    remarks: receiptForm.remarks,
+  });
+
+  const savePending = async () => {
+    setSaving(true);
+    try {
+      const result = await api.patch(`/inbound-receipts/${id}`, pendingPayload());
+      setItem(result);
+      return result;
+    } catch (error: any) {
+      alert(error.message);
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const action = async (type: 'confirm' | 'post' | 'cancel') => {
     const prompts = {
@@ -35,9 +76,14 @@ export default function InboundDetail() {
       post: '确认生成业务入库单、库存批次并增加库存？',
       cancel: '确认作废该物流入库单？',
     };
+    if (type === 'confirm' && (!receiptForm.warehouseId || !receiptForm.receivedAt || !receiptForm.receiverName.trim())) {
+      alert('请先选择入库仓库，并填写实际收货时间和收货人');
+      return;
+    }
     if (!confirm(prompts[type])) return;
     setSaving(true);
     try {
+      if (type === 'confirm') await api.patch(`/inbound-receipts/${id}`, pendingPayload());
       const result = type === 'post'
         ? await api.post(`/inbound-receipts/${id}/post`, {})
         : await api.patch(`/inbound-receipts/${id}/${type}`, {});
@@ -83,10 +129,26 @@ export default function InboundDetail() {
     }
   };
 
+  const selectAcceptanceQuality = async (qualityInspectionId: string) => {
+    if (!confirm('确认将这张合格质检单设为最终入库验收依据？最终入库数量和扣减数据将同步更新。')) return;
+    setSaving(true);
+    try {
+      const result = await api.patch(`/inbound-receipts/${id}/acceptance-quality`, { qualityInspectionId });
+      setItem(result);
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!item) return <div className="py-20 text-center">加载中...</div>;
   const qualityQualified = item.acceptanceConclusion === 'PASS'
     && item.qualityInspection?.status === 'CONFIRMED'
     && item.qualityInspection?.conclusion === 'PASS';
+  const inspections = (item.waybill?.weighTickets || [])
+    .flatMap((ticket: any) => (ticket.qualityInspections || []).map((inspection: any) => ({ ...inspection, ticket })));
+  const workflow = item.workflow || {};
 
   return (
     <div className="space-y-6">
@@ -98,15 +160,15 @@ export default function InboundDetail() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{item.receiptNo}</h1>
-              <Badge>{STATUS[item.status]}</Badge>
+              <Badge variant="outline" className={stageClass(workflow.tone)}>{workflow.stageLabel || STATUS[item.status]}</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {item.materialName} · {item.plateNo || '-'} · {item.warehouse.name}
+              {item.materialName} · {item.plateNo || '-'} · {item.warehouse?.name || '待选择仓库'}
             </p>
           </div>
         </div>
         <div className="flex gap-2">
-          {item.status === 'DRAFT' && (
+          {item.status === 'PENDING' && (
             <>
               <Button variant="outline" disabled={saving} onClick={() => void action('cancel')}>
                 <XCircle className="mr-2 h-4 w-4" />作废
@@ -126,43 +188,121 @@ export default function InboundDetail() {
         </div>
       </div>
 
-      {!qualityQualified && item.status !== 'POSTED' && item.status !== 'CANCELLED' && (
-        <Card className="border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          当前验收依据不是已确认的合格质检单，不能确认入库或生成库存。请作废本单，完成复检并取得合格结论后重新创建入库单。
+      {item.status !== 'POSTED' && item.status !== 'CANCELLED' && (
+        <Card className={`p-4 text-sm ${workflow.tone === 'danger' ? 'border-destructive/40 bg-destructive/5 text-destructive' : 'border-primary/20 bg-primary/5'}`}>
+          <div className="font-medium">当前阶段：{workflow.stageLabel || STATUS[item.status]}</div>
+          <div className="mt-1 text-muted-foreground">{workflow.blocker || '等待后续作业处理'}</div>
         </Card>
       )}
+
+      <Card className="p-5">
+        <Title>入库作业进度</Title>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <ProgressStep title="运输到达" milestone={workflow.milestones?.transport} />
+          <ProgressStep title="物流签收" milestone={workflow.milestones?.signed} />
+          <ProgressStep title="过磅复核" milestone={workflow.milestones?.weigh} />
+          <ProgressStep title="质量验收" milestone={workflow.milestones?.quality} />
+          <ProgressStep title="收货入账" milestone={workflow.milestones?.inbound} />
+        </div>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="p-5">
           <Title>物流收货信息</Title>
-          <Grid items={[
-            ['物流运单', item.waybill.waybillNo],
-            ['磅单', item.weighTicket.ticketNo],
-            ['车牌', item.plateNo || '-'],
-            ['收货仓库', `${item.warehouse.code} · ${item.warehouse.name}`],
-            ['收货时间', formatDateTimeToSecond(item.receivedAt)],
-            ['收货人', item.receiverName],
-            ['物料', `${item.materialName}${item.materialSpec ? ` / ${item.materialSpec}` : ''}`],
-            ['供应商', item.supplierName || '-'],
-          ]} />
+          {item.status === 'PENDING' ? (
+            <div className="space-y-4">
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+                本单由采购运单确认发运后自动生成。可以提前核对目标仓库；车辆到达并完成过磅、质检后，再补齐实际收货信息。
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="入库仓库 *">
+                  <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={receiptForm.warehouseId} onChange={event => setReceiptForm(current => ({ ...current, warehouseId: event.target.value }))}>
+                    <option value="">请选择仓库</option>
+                    {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="实际收货时间 *"><Input type="datetime-local" step="1" value={receiptForm.receivedAt} onChange={event => setReceiptForm(current => ({ ...current, receivedAt: event.target.value }))} /></Field>
+                <Field label="收货人 *"><Input value={receiptForm.receiverName} onChange={event => setReceiptForm(current => ({ ...current, receiverName: event.target.value }))} /></Field>
+                <Field label="备注"><Input value={receiptForm.remarks} onChange={event => setReceiptForm(current => ({ ...current, remarks: event.target.value }))} /></Field>
+              </div>
+              <Button variant="outline" disabled={saving} onClick={() => void savePending()}><Save className="mr-2 h-4 w-4" />保存收货信息</Button>
+            </div>
+          ) : (
+            <Grid items={[
+              ['物流运单', item.waybill?.waybillNo || '-'],
+              ['磅单', item.weighTicket?.ticketNo || '待过磅'],
+              ['车牌', item.plateNo || '-'],
+              ['收货仓库', item.warehouse ? `${item.warehouse.code} · ${item.warehouse.name}` : '-'],
+              ['收货时间', formatDateTimeToSecond(item.receivedAt)],
+              ['收货人', item.receiverName || '-'],
+              ['物料', `${item.materialName}${item.materialSpec ? ` / ${item.materialSpec}` : ''}`],
+              ['供应商', item.supplierName || '-'],
+            ]} />
+          )}
         </Card>
         <Card className="p-5">
           <Title>质量验收依据</Title>
-          <Grid items={[
-            ['质检单', item.qualityInspection.inspectionNo],
-            ['检测机构', item.qualityInspection.institutionName],
-            ['报告编号', item.qualityInspection.reportNo || '-'],
-            ['验收结论', item.acceptanceConclusion === 'PASS' ? '合格' : '超标扣款（不可入库）'],
-            ['扣水', weight(item.moistureDeductionWeight)],
-            ['扣杂', weight(item.impurityDeductionWeight)],
-            ['预计扣款', `¥${Number(item.deductionAmount).toLocaleString()}`],
-            ['最终入库数量', weight(item.receivedQuantity)],
-          ]} />
-          <Button className="mt-4" variant="outline" onClick={() => router.push(`/dashboard/quality/${item.qualityInspection.id}`)}>
-            查看质检单
-          </Button>
+          {item.qualityInspection ? (
+            <>
+              <Grid items={[
+                ['最终验收质检单', item.qualityInspection.inspectionNo],
+                ['检测机构', item.qualityInspection.institutionName],
+                ['报告编号', item.qualityInspection.reportNo || '-'],
+                ['验收结论', item.acceptanceConclusion === 'PASS' ? '合格' : '待确认'],
+                ['扣水', weight(item.moistureDeductionWeight)],
+                ['扣杂', weight(item.impurityDeductionWeight)],
+                ['预计扣款', `¥${Number(item.deductionAmount).toLocaleString()}`],
+                ['最终入库数量', weight(item.receivedQuantity)],
+              ]} />
+              <Button className="mt-4" variant="outline" onClick={() => router.push(`/dashboard/quality/${item.qualityInspection.id}`)}>
+                查看最终验收质检单
+              </Button>
+            </>
+          ) : (
+            <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
+              尚未指定最终验收质检单。磅单复核后可以创建一张或多张独立质检单；已确认且合格的质检单可设为最终验收依据。
+            </div>
+          )}
         </Card>
       </div>
+
+      <Card className="p-5">
+        <div className="mb-4">
+          <h2 className="font-semibold">关联质检记录</h2>
+          <p className="mt-1 text-xs text-muted-foreground">同一车辆可以关联多张质检单，仅一张已确认且合格的质检单作为最终入库验收依据。</p>
+        </div>
+        {!inspections.length ? (
+          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无质检记录</div>
+        ) : (
+          <div className="space-y-2">
+            {inspections.map((inspection: any) => {
+              const selected = item.qualityInspectionId === inspection.id;
+              const selectable = item.status === 'PENDING' && inspection.status === 'CONFIRMED' && inspection.conclusion === 'PASS';
+              return (
+                <div key={inspection.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 ${selected ? 'border-success/40 bg-success-bg' : ''}`}>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button className="font-mono text-sm font-medium text-primary hover:underline" onClick={() => router.push(`/dashboard/quality/${inspection.id}`)}>
+                        {inspection.inspectionNo}
+                      </button>
+                      {selected && <Badge className="bg-success text-success-foreground">最终验收依据</Badge>}
+                      <Badge variant="outline">{qualityStatus(inspection)}</Badge>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {inspection.institutionName} · 磅单 {inspection.ticket.ticketNo}
+                    </div>
+                  </div>
+                  {selectable && !selected && (
+                    <Button variant="outline" size="sm" disabled={saving} onClick={() => void selectAcceptanceQuality(inspection.id)}>
+                      设为最终验收依据
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       <Card className="p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -170,7 +310,7 @@ export default function InboundDetail() {
             <h2 className="font-semibold">收货附件</h2>
             <p className="mt-1 text-xs text-muted-foreground">支持现场照片、签收凭证和 PDF，单个文件不超过 20MB。</p>
           </div>
-          {item.status === 'DRAFT' && (
+          {item.status === 'PENDING' && (
             <>
               <input
                 ref={fileRef}
@@ -197,7 +337,7 @@ export default function InboundDetail() {
                 </button>
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</span>
-                  {item.status === 'DRAFT' && (
+                  {item.status === 'PENDING' && (
                     <Button variant="ghost" size="icon" onClick={() => void removeAttachment(attachment)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
@@ -242,7 +382,46 @@ function Grid({ items }: { items: string[][] }) {
   ))}</div>;
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label><span className="mb-1 block text-xs text-muted-foreground">{label}</span>{children}</label>;
+}
+
+function ProgressStep({ title, milestone }: { title: string; milestone?: { label: string; complete: boolean } }) {
+  return (
+    <div className={`rounded-md border p-3 ${milestone?.complete ? 'border-success/30 bg-success-bg' : 'bg-muted/20'}`}>
+      <div className="flex items-center gap-2">
+        {milestone?.complete
+          ? <CheckCircle2 className="h-4 w-4 text-success" />
+          : <Circle className="h-4 w-4 text-muted-foreground" />}
+        <span className="text-xs text-muted-foreground">{title}</span>
+      </div>
+      <div className={`mt-2 text-sm font-medium ${milestone?.complete ? 'text-success' : ''}`}>{milestone?.label || '待处理'}</div>
+    </div>
+  );
+}
+
+function stageClass(tone?: string) {
+  if (tone === 'success') return 'border-success/30 bg-success-bg text-success';
+  if (tone === 'danger') return 'border-destructive/30 bg-destructive/5 text-destructive';
+  if (tone === 'warning') return 'border-warning/30 bg-warning-bg text-warning';
+  if (tone === 'info') return 'border-info/30 bg-info-bg text-info';
+  return 'text-muted-foreground';
+}
+
+function qualityStatus(inspection: any) {
+  if (inspection.status !== 'CONFIRMED') {
+    return inspection.status === 'DRAFT' ? '草稿'
+      : inspection.status === 'TESTING' ? '检测中'
+        : inspection.status === 'REPORTED' ? '待确认'
+          : inspection.status === 'VOIDED' ? '已作废' : inspection.status;
+  }
+  return inspection.conclusion === 'PASS' ? '已确认·合格'
+    : inspection.conclusion === 'DEDUCTION' ? '已确认·超标扣款'
+      : inspection.conclusion === 'FUSE' ? '已确认·熔断' : '已确认·待判定';
+}
+
 function weight(value: any) {
+  if (value === null || value === undefined) return '待确认';
   return `${Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} 吨`;
 }
 

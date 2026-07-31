@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { CreateInboundReceiptDto } from './dto/create-inbound-receipt.dto';
+import { UpdatePendingInboundReceiptDto } from './dto/update-pending-inbound-receipt.dto';
 
 @Injectable()
 export class InventoryService {
@@ -14,7 +15,12 @@ export class InventoryService {
   private readonly include = {
     warehouse: { select: { id: true, code: true, name: true } },
     creator: { select: { id: true, name: true } },
-    weighTicket: { select: { id: true, ticketNo: true, settlementWeight: true, netWeight: true } },
+    weighTicket: {
+      select: {
+        id: true, ticketNo: true, status: true, settlementWeight: true, netWeight: true,
+        abnormal: true, reviewedAt: true,
+      },
+    },
     qualityInspection: {
       select: {
         id: true, inspectionNo: true, institutionType: true, institutionName: true,
@@ -25,7 +31,36 @@ export class InventoryService {
     waybill: {
       include: {
         lineItems: { orderBy: { createdAt: 'asc' as const } },
-        dispatchNotice: { include: { order: { include: { contract: { select: { id: true, contractNo: true, title: true } } } } } },
+        weighTickets: {
+          where: { deletedAt: null },
+          select: {
+            id: true, ticketNo: true, status: true, abnormal: true, reviewedAt: true,
+            settlementWeight: true, netWeight: true,
+            qualityInspections: {
+              where: { deletedAt: null },
+              select: {
+                id: true, inspectionNo: true, institutionName: true, reportNo: true,
+                status: true, conclusion: true, testedAt: true, confirmedAt: true,
+              },
+              orderBy: { testedAt: 'desc' as const },
+            },
+          },
+          orderBy: { createdAt: 'desc' as const },
+        },
+        dispatchNotice: {
+          include: {
+            order: {
+              include: {
+                contract: {
+                  select: {
+                    id: true, contractNo: true, title: true,
+                    seller: { select: { id: true, name: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     businessInbound: { include: { inventoryLot: true } },
@@ -41,6 +76,153 @@ export class InventoryService {
       ? await this.prisma.inboundReceipt.count({ where: { createdAt: { gte: start, lt: end } } })
       : await this.prisma.businessInbound.count({ where: { createdAt: { gte: start, lt: end } } });
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  private decorateReceipt<T>(receipt: T): T & { workflow: ReturnType<InventoryService['buildWorkflow']> } {
+    return { ...receipt, workflow: this.buildWorkflow(receipt as any) };
+  }
+
+  private buildWorkflow(receipt: any) {
+    const waybill = receipt.waybill || {};
+    const tickets = waybill.weighTickets || [];
+    const activeTickets = tickets.filter((ticket: any) => ticket.status !== 'VOIDED');
+    const reviewedTickets = activeTickets.filter((ticket: any) => ticket.status === 'REVIEWED');
+    const inspections = reviewedTickets.flatMap((ticket: any) => ticket.qualityInspections || []);
+    const confirmedPass = inspections.find((inspection: any) => inspection.status === 'CONFIRMED' && inspection.conclusion === 'PASS');
+    const inProgressQuality = inspections.some((inspection: any) => ['DRAFT', 'TESTING', 'REPORTED'].includes(inspection.status));
+    const confirmedException = inspections.find((inspection: any) => (
+      inspection.status === 'CONFIRMED' && ['DEDUCTION', 'FUSE'].includes(inspection.conclusion)
+    ));
+
+    let stage = 'WAITING_ARRIVAL';
+    let stageLabel = '待到货';
+    let blocker = '采购运单在途，等待车辆到达';
+    let tone = 'info';
+
+    if (receipt.status === 'CANCELLED') {
+      stage = 'CANCELLED'; stageLabel = '已作废'; blocker = '入库作业单已作废'; tone = 'muted';
+    } else if (receipt.status === 'POSTED') {
+      stage = 'POSTED'; stageLabel = '已入账'; blocker = '业务入库、库存批次和库存台账均已生成'; tone = 'success';
+    } else if (receipt.status === 'RECEIVED') {
+      stage = 'RECEIVED_WAIT_POSTING'; stageLabel = '已收货待入账'; blocker = '现场收货已确认，等待生成业务入库并入账'; tone = 'warning';
+    } else if (!['ARRIVED', 'SIGNED'].includes(waybill.status)) {
+      stage = 'WAITING_ARRIVAL'; stageLabel = waybill.status === 'PENDING' ? '待发运' : '待到货';
+      blocker = waybill.status === 'PENDING' ? '物流运单尚未确认发运' : '采购运单在途，等待车辆到达';
+    } else if (!activeTickets.length) {
+      stage = 'WAITING_WEIGH'; stageLabel = '已到达待过磅'; blocker = '车辆已到达，尚未创建磅单'; tone = 'warning';
+    } else if (!reviewedTickets.length) {
+      const weighing = activeTickets.some((ticket: any) => ['PENDING', 'WEIGHING'].includes(ticket.status));
+      stage = weighing ? 'WEIGHING' : 'WAITING_WEIGH_REVIEW';
+      stageLabel = weighing ? '过磅处理中' : '待磅单复核';
+      blocker = weighing ? '磅单已创建，等待完成有效称重并复核' : '称重已完成，等待复核磅单';
+      tone = 'warning';
+    } else if (receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS') {
+      stage = 'READY_TO_RECEIVE'; stageLabel = '合格待收货'; blocker = '最终验收质检已合格，可以补齐收货信息并确认收货'; tone = 'success';
+    } else if (!inspections.length) {
+      stage = 'WAITING_QUALITY'; stageLabel = '已过磅待质检'; blocker = '磅单已复核，尚未创建质检单'; tone = 'warning';
+    } else if (inProgressQuality) {
+      stage = 'QUALITY_IN_PROGRESS'; stageLabel = '质检处理中'; blocker = '质检单尚未确认，等待检测或报告确认'; tone = 'warning';
+    } else if (confirmedPass) {
+      stage = 'WAITING_ACCEPTANCE_SELECTION'; stageLabel = '待确认验收依据'; blocker = '已有合格质检单，请指定最终验收质检单'; tone = 'warning';
+    } else if (confirmedException) {
+      stage = 'QUALITY_EXCEPTION'; stageLabel = '质检异常';
+      blocker = confirmedException.conclusion === 'FUSE' ? '质检结果触发熔断，禁止入库' : '质检结果为超标扣款，当前规则禁止入库';
+      tone = 'danger';
+    } else {
+      stage = 'WAITING_QUALITY'; stageLabel = '等待质检结论'; blocker = '尚无已确认的最终质检结果'; tone = 'warning';
+    }
+
+    const transportLabel = waybill.status === 'SIGNED' ? '已签收' : waybill.status === 'ARRIVED' ? '已到达待签收' : waybill.status === 'IN_TRANSIT' ? '运输在途' : '待发运';
+    const weighLabel = !activeTickets.length
+      ? '未过磅'
+      : reviewedTickets.length
+        ? `${reviewedTickets.length} 张已复核`
+        : activeTickets.some((ticket: any) => ticket.status === 'COMPLETED') ? '待复核' : '称重中';
+    const qualityLabel = receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS'
+      ? '最终验收合格'
+      : inspections.length
+        ? `${inspections.length} 张质检单`
+        : '未质检';
+
+    return {
+      stage, stageLabel, blocker, tone,
+      milestones: {
+        transport: { label: transportLabel, complete: ['ARRIVED', 'SIGNED'].includes(waybill.status) },
+        signed: { label: waybill.status === 'SIGNED' ? '已签收' : '待签收', complete: waybill.status === 'SIGNED' },
+        weigh: { label: weighLabel, complete: reviewedTickets.length > 0 },
+        quality: { label: qualityLabel, complete: Boolean(receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS') },
+        inbound: { label: receipt.status === 'POSTED' ? '已入账' : receipt.status === 'RECEIVED' ? '已收货' : '待入库', complete: receipt.status === 'POSTED' },
+      },
+    };
+  }
+
+  /**
+   * 采购运单确认发运时创建入库作业单；确认到达时再次调用作为幂等兜底。
+   * 此阶段不要求磅单、质检单和实际入库数量，后续作业逐步补齐。
+   */
+  async ensurePendingReceiptForWaybill(waybillId: string, userId: string) {
+    const waybill = await this.prisma.waybill.findFirst({
+      where: { id: waybillId, deletedAt: null },
+      include: {
+        inboundReceipts: {
+          where: { deletedAt: null, status: { not: 'CANCELLED' } },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          include: this.include,
+        },
+        lineItems: { orderBy: { createdAt: 'asc' } },
+        dispatchNotice: {
+          include: {
+            order: {
+              include: {
+                contract: { include: { seller: { select: { id: true, name: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!waybill || waybill.dispatchNotice.type !== 'PURCHASE') return null;
+    if (!['IN_TRANSIT', 'ARRIVED', 'SIGNED'].includes(waybill.status)) return null;
+    if (waybill.inboundReceipts.length) return this.decorateReceipt(waybill.inboundReceipts[0]);
+
+    const firstLine = waybill.lineItems[0];
+    if (!firstLine) throw new BadRequestException('采购运单缺少物料明细，无法生成入库作业单');
+
+    try {
+      const receipt = await this.prisma.inboundReceipt.create({
+        data: {
+          receiptNo: await this.nextNo('LIR', 'inboundReceipt'),
+          waybillId: waybill.id,
+          weighTicketId: null,
+          qualityInspectionId: null,
+          warehouseId: waybill.dispatchNotice.warehouseId,
+          status: 'PENDING',
+          acceptanceConclusion: null,
+          materialName: firstLine.materialName || '未命名物料',
+          materialSpec: null,
+          supplierName: waybill.dispatchNotice.order.contract.seller?.name || null,
+          plateNo: waybill.plateNo,
+          plannedQuantity: waybill.totalQuantity,
+          receivedQuantity: null,
+          receivedAt: null,
+          receiverName: null,
+          remarks: `由采购运单 ${waybill.waybillNo} 确认发运后自动创建`,
+          createdBy: userId,
+        },
+        include: this.include,
+      });
+      return this.decorateReceipt(receipt);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await this.prisma.inboundReceipt.findFirst({
+          where: { waybillId: waybill.id, deletedAt: null, status: { not: 'CANCELLED' } },
+          include: this.include,
+        });
+        if (existing) return this.decorateReceipt(existing);
+      }
+      throw error;
+    }
   }
 
   async eligibleWaybills(userId: string) {
@@ -108,13 +290,16 @@ export class InventoryService {
     const quantity = Number(quality.settlementWeight || weighTicket.settlementWeight || 0);
     if (quantity <= 0) throw new BadRequestException('质检后结算重量必须大于 0');
 
-    return this.prisma.inboundReceipt.create({
+    const receipt = await this.prisma.inboundReceipt.create({
       data: {
         receiptNo: await this.nextNo('LIR', 'inboundReceipt'), waybillId: waybill.id,
         weighTicketId: weighTicket.id, qualityInspectionId: quality.id, warehouseId: warehouse.id,
+        status: 'PENDING',
         acceptanceConclusion: quality.conclusion, materialName: quality.materialName,
         materialSpec: quality.materialSpec, supplierName: quality.supplierName,
-        plateNo: quality.plateNo || waybill.plateNo, receivedQuantity: quantity,
+        plateNo: quality.plateNo || waybill.plateNo,
+        plannedQuantity: waybill.totalQuantity,
+        receivedQuantity: quantity,
         moistureDeductionWeight: quality.moistureDeductionWeight,
         impurityDeductionWeight: quality.impurityDeductionWeight,
         deductionAmount: quality.deductionAmount, receivedAt: new Date(dto.receivedAt),
@@ -122,6 +307,156 @@ export class InventoryService {
       },
       include: this.include,
     });
+    return this.decorateReceipt(receipt);
+  }
+
+  async createPendingReceiptForConfirmedQuality(qualityInspectionId: string, userId: string) {
+    const quality = await this.prisma.qualityInspection.findFirst({
+      where: {
+        id: qualityInspectionId,
+        deletedAt: null,
+        status: 'CONFIRMED',
+        conclusion: 'PASS',
+      },
+      include: {
+        weighTicket: {
+          include: {
+            waybill: {
+              include: {
+                inboundReceipts: {
+                  where: { deletedAt: null, status: { not: 'CANCELLED' } },
+                  orderBy: { createdAt: 'asc' },
+                  take: 1,
+                  include: this.include,
+                },
+                dispatchNotice: {
+                  include: {
+                    order: {
+                      include: {
+                        contract: { include: { seller: { select: { id: true, name: true } } } },
+                      },
+                    },
+                  },
+                },
+                lineItems: { orderBy: { createdAt: 'asc' } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!quality) throw new BadRequestException('只有已确认且质检合格的质检单才能补齐入库作业单验收依据');
+
+    const ticket = quality.weighTicket;
+    const waybill = ticket.waybill;
+    if (waybill.dispatchNotice.type !== 'PURCHASE') return null;
+    if (ticket.status !== 'REVIEWED') throw new BadRequestException('磅单复核后才能确认合格并补齐入库作业单验收依据');
+    if (!['ARRIVED', 'SIGNED'].includes(waybill.status)) {
+      throw new BadRequestException('采购物流运单到达后才能确认合格并补齐入库作业单验收依据');
+    }
+
+    const quantity = Number(quality.settlementWeight || ticket.settlementWeight || 0);
+    if (quantity <= 0) throw new BadRequestException('质检后结算重量必须大于 0');
+
+    const existing = waybill.inboundReceipts[0];
+    if (existing) {
+      // 第一张已确认合格的质检单自动成为最终验收依据；后续可在入库详情中人工切换。
+      if (existing.qualityInspectionId || existing.status !== 'PENDING') {
+        return this.decorateReceipt(existing);
+      }
+      const updated = await this.prisma.inboundReceipt.update({
+        where: { id: existing.id },
+        data: {
+          weighTicketId: ticket.id,
+          qualityInspectionId: quality.id,
+          acceptanceConclusion: 'PASS',
+          materialName: quality.materialName,
+          materialSpec: quality.materialSpec,
+          supplierName: quality.supplierName,
+          plateNo: quality.plateNo || waybill.plateNo,
+          receivedQuantity: quantity,
+          moistureDeductionWeight: quality.moistureDeductionWeight,
+          impurityDeductionWeight: quality.impurityDeductionWeight,
+          deductionAmount: quality.deductionAmount,
+        },
+        include: this.include,
+      });
+      return this.decorateReceipt(updated);
+    }
+
+    try {
+      const receipt = await this.prisma.inboundReceipt.create({
+        data: {
+          receiptNo: await this.nextNo('LIR', 'inboundReceipt'),
+          waybillId: waybill.id,
+          weighTicketId: ticket.id,
+          qualityInspectionId: quality.id,
+          warehouseId: waybill.dispatchNotice.warehouseId,
+          status: 'PENDING',
+          acceptanceConclusion: quality.conclusion,
+          materialName: quality.materialName,
+          materialSpec: quality.materialSpec,
+          supplierName: quality.supplierName,
+          plateNo: quality.plateNo || waybill.plateNo,
+          plannedQuantity: waybill.totalQuantity,
+          receivedQuantity: quantity,
+          moistureDeductionWeight: quality.moistureDeductionWeight,
+          impurityDeductionWeight: quality.impurityDeductionWeight,
+          deductionAmount: quality.deductionAmount,
+          receivedAt: null,
+          receiverName: null,
+          remarks: `历史或异常漏单：由质检单 ${quality.inspectionNo} 确认合格后兜底创建`,
+          createdBy: userId,
+        },
+        include: this.include,
+      });
+      return this.decorateReceipt(receipt);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await this.prisma.inboundReceipt.findFirst({
+          where: { waybillId: waybill.id, deletedAt: null, status: { not: 'CANCELLED' } },
+          include: this.include,
+        });
+        if (existing) return this.decorateReceipt(existing);
+      }
+      throw error;
+    }
+  }
+
+  async selectAcceptanceQuality(id: string, qualityInspectionId: string, userId: string) {
+    const receipt = await this.findReceipt(id, userId, 'inventory.manage');
+    if (receipt.status !== 'PENDING') throw new BadRequestException('只有待入库作业单可以调整最终验收质检单');
+    const quality = await this.prisma.qualityInspection.findFirst({
+      where: {
+        id: qualityInspectionId,
+        deletedAt: null,
+        status: 'CONFIRMED',
+        conclusion: 'PASS',
+        weighTicket: { waybillId: receipt.waybillId, deletedAt: null, status: 'REVIEWED' },
+      },
+      include: { weighTicket: true },
+    });
+    if (!quality) throw new BadRequestException('只能选择本运单已复核磅单下、已确认且合格的质检单');
+    const quantity = Number(quality.settlementWeight || quality.weighTicket.settlementWeight || 0);
+    if (quantity <= 0) throw new BadRequestException('质检后结算重量必须大于 0');
+    const updated = await this.prisma.inboundReceipt.update({
+      where: { id },
+      data: {
+        weighTicketId: quality.weighTicketId,
+        qualityInspectionId: quality.id,
+        acceptanceConclusion: 'PASS',
+        materialName: quality.materialName,
+        materialSpec: quality.materialSpec,
+        supplierName: quality.supplierName,
+        plateNo: quality.plateNo || receipt.plateNo,
+        receivedQuantity: quantity,
+        moistureDeductionWeight: quality.moistureDeductionWeight,
+        impurityDeductionWeight: quality.impurityDeductionWeight,
+        deductionAmount: quality.deductionAmount,
+      },
+      include: this.include,
+    });
+    return this.decorateReceipt(updated);
   }
 
   async findReceipts(params: { search?: string; status?: string }, userId: string) {
@@ -135,11 +470,15 @@ export class InventoryService {
       { supplierName: { contains: params.search, mode: 'insensitive' } },
       { plateNo: { contains: params.search, mode: 'insensitive' } },
       { waybill: { waybillNo: { contains: params.search, mode: 'insensitive' } } },
-      { weighTicket: { ticketNo: { contains: params.search, mode: 'insensitive' } } },
-      { qualityInspection: { inspectionNo: { contains: params.search, mode: 'insensitive' } } },
+      { waybill: { dispatchNotice: { order: { name: { contains: params.search, mode: 'insensitive' } } } } },
+      { waybill: { dispatchNotice: { order: { contract: { contractNo: { contains: params.search, mode: 'insensitive' } } } } } },
+      { waybill: { weighTickets: { some: { ticketNo: { contains: params.search, mode: 'insensitive' } } } } },
+      { waybill: { weighTickets: { some: { qualityInspections: { some: { inspectionNo: { contains: params.search, mode: 'insensitive' } } } } } } },
+      { weighTicket: { is: { ticketNo: { contains: params.search, mode: 'insensitive' } } } },
+      { qualityInspection: { is: { inspectionNo: { contains: params.search, mode: 'insensitive' } } } },
     ];
     const items = await this.prisma.inboundReceipt.findMany({ where, include: this.include, orderBy: { createdAt: 'desc' } });
-    return { items, total: items.length };
+    return { items: items.map(item => this.decorateReceipt(item)), total: items.length };
   }
 
   async findReceipt(id: string, userId: string, permission = 'inventory.view') {
@@ -150,24 +489,53 @@ export class InventoryService {
       include: this.include,
     });
     if (!item) throw new NotFoundException('物流入库单不存在');
-    return item;
+    return this.decorateReceipt(item);
+  }
+
+  async updatePendingReceipt(id: string, dto: UpdatePendingInboundReceiptDto, userId: string) {
+    const item = await this.findReceipt(id, userId, 'inventory.manage');
+    if (item.status !== 'PENDING') throw new BadRequestException('只有待入库单可以补充收货信息');
+
+    if (dto.warehouseId) {
+      const warehouse = await this.prisma.warehouse.findFirst({
+        where: { id: dto.warehouseId, status: 'ACTIVE', deletedAt: null },
+      });
+      if (!warehouse) throw new BadRequestException('入库仓库不存在或已停用');
+    }
+
+    const updated = await this.prisma.inboundReceipt.update({
+      where: { id },
+      data: {
+        ...(dto.warehouseId ? { warehouseId: dto.warehouseId } : {}),
+        ...(dto.receivedAt ? { receivedAt: new Date(dto.receivedAt) } : {}),
+        ...(dto.receiverName !== undefined ? { receiverName: dto.receiverName.trim() || null } : {}),
+        ...(dto.remarks !== undefined ? { remarks: dto.remarks.trim() || null } : {}),
+      },
+      include: this.include,
+    });
+    return this.decorateReceipt(updated);
   }
 
   async confirmReceipt(id: string, userId: string) {
     const item = await this.findReceipt(id, userId, 'inventory.manage');
-    if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿入库单可以确认收货');
+    if (item.status !== 'PENDING') throw new BadRequestException('只有待入库单可以确认收货');
     this.assertQualifiedForInventory(item);
-    return this.prisma.inboundReceipt.update({ where: { id }, data: { status: 'RECEIVED' }, include: this.include });
+    if (!item.warehouseId) throw new BadRequestException('请先选择入库仓库');
+    if (!item.receivedAt) throw new BadRequestException('请先填写实际收货时间');
+    if (!item.receiverName?.trim()) throw new BadRequestException('请先填写收货人');
+    const updated = await this.prisma.inboundReceipt.update({ where: { id }, data: { status: 'RECEIVED' }, include: this.include });
+    return this.decorateReceipt(updated);
   }
 
   async cancelReceipt(id: string, userId: string) {
     const item = await this.findReceipt(id, userId, 'inventory.manage');
-    if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿入库单可以作废');
-    return this.prisma.inboundReceipt.update({
+    if (item.status !== 'PENDING') throw new BadRequestException('只有待入库单可以作废');
+    const updated = await this.prisma.inboundReceipt.update({
       where: { id },
       data: { status: 'CANCELLED' },
       include: this.include,
     });
+    return this.decorateReceipt(updated);
   }
 
   async createAttachment(data: {
@@ -175,7 +543,7 @@ export class InventoryService {
     mimeType: string; size: number; category: string;
   }, userId: string) {
     const receipt = await this.findReceipt(data.inboundReceiptId, userId, 'inventory.manage');
-    if (receipt.status !== 'DRAFT') throw new BadRequestException('只有草稿入库单可以上传附件');
+    if (receipt.status !== 'PENDING') throw new BadRequestException('只有待入库单可以上传附件');
     return this.prisma.attachment.create({ data });
   }
 
@@ -195,8 +563,8 @@ export class InventoryService {
   async deleteAttachment(id: string, userId: string) {
     const attachment = await this.findAttachmentById(id, userId, 'inventory.manage');
     if (!attachment) return null;
-    if (attachment.inboundReceipt?.status !== 'DRAFT') {
-      throw new BadRequestException('只有草稿入库单可以删除附件');
+    if (attachment.inboundReceipt?.status !== 'PENDING') {
+      throw new BadRequestException('只有待入库单可以删除附件');
     }
     return this.prisma.attachment.delete({ where: { id } });
   }
@@ -206,30 +574,33 @@ export class InventoryService {
     if (receipt.status !== 'RECEIVED') throw new BadRequestException('确认收货后才能生成业务入库单');
     this.assertQualifiedForInventory(receipt);
     if (receipt.businessInbound) throw new BadRequestException('该物流入库单已生成业务入库单');
+    if (!receipt.warehouseId) throw new BadRequestException('入库单缺少入库仓库');
+    const warehouseId = receipt.warehouseId;
     const line = receipt.waybill.lineItems[0];
     if (!line) throw new BadRequestException('运单缺少物料明细');
-    const quantity = Number(receipt.receivedQuantity);
+    const quantity = Number(receipt.receivedQuantity || 0);
+    if (quantity <= 0) throw new BadRequestException('最终入库数量必须大于 0');
     const inboundNo = await this.nextNo('BIN', 'businessInbound');
     const lotNo = `LOT-${inboundNo.replace('BIN-', '')}`;
     await this.prisma.$transaction(async tx => {
       const inbound = await tx.businessInbound.create({
         data: {
-          inboundNo, receiptId: receipt.id, warehouseId: receipt.warehouseId,
+          inboundNo, receiptId: receipt.id, warehouseId,
           materialId: line.materialId, materialName: receipt.materialName,
           supplierName: receipt.supplierName, quantity, lotNo, createdBy: userId,
         },
       });
       const lot = await tx.inventoryLot.create({
         data: {
-          lotNo, businessInboundId: inbound.id, warehouseId: receipt.warehouseId,
+          lotNo, businessInboundId: inbound.id, warehouseId,
           materialId: line.materialId, materialName: receipt.materialName,
           supplierName: receipt.supplierName, initialQuantity: quantity,
-          availableQuantity: quantity, qualityConclusion: receipt.acceptanceConclusion,
+          availableQuantity: quantity, qualityConclusion: receipt.acceptanceConclusion!,
         },
       });
       await tx.inventoryLedger.create({
         data: {
-          lotId: lot.id, warehouseId: receipt.warehouseId, materialId: line.materialId,
+          lotId: lot.id, warehouseId, materialId: line.materialId,
           businessType: 'INBOUND', businessNo: inboundNo, quantityChange: quantity,
           balanceAfter: quantity, remarks: `由物流入库单 ${receipt.receiptNo} 生成`, createdBy: userId,
         },
@@ -240,7 +611,7 @@ export class InventoryService {
   }
 
   private assertQualifiedForInventory(receipt: {
-    acceptanceConclusion: string;
+    acceptanceConclusion: string | null;
     qualityInspection?: { status: string; conclusion: string } | null;
   }) {
     if (

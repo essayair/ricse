@@ -1,9 +1,22 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
 
 @Injectable()
 export class OrgService {
   constructor(private prisma: PrismaService) {}
+
+  private normalizeEmployeePhone(phone: string) {
+    const normalized = phone?.trim();
+    if (!normalized) {
+      throw new BadRequestException('请填写员工手机号');
+    }
+    if (!EMPLOYEE_PHONE_PATTERN.test(normalized)) {
+      throw new BadRequestException('员工手机号必须为11位中国大陆手机号');
+    }
+    return normalized;
+  }
 
   // ========== 企业 ==========
 
@@ -128,9 +141,25 @@ export class OrgService {
 
   async createEmployee(data: {
     name: string; departmentId: string; companyId: string;
-    position?: string; phone?: string; email?: string;
+    phone: string; position?: string; email?: string; status?: string;
   }) {
-    return this.prisma.employee.create({ data });
+    const phone = this.normalizeEmployeePhone(data.phone);
+    const [existingEmployee, conflictingUser] = await Promise.all([
+      this.prisma.employee.findFirst({ where: { phone }, select: { id: true } }),
+      this.prisma.user.findFirst({ where: { username: phone }, select: { employeeId: true } }),
+    ]);
+    if (existingEmployee) throw new ConflictException('员工手机号已存在');
+    if (conflictingUser) throw new ConflictException('该手机号已被其他登录用户名占用');
+
+    return this.prisma.employee.create({
+      data: {
+        ...data,
+        name: data.name.trim(),
+        phone,
+        position: data.position?.trim() || undefined,
+        email: data.email?.trim() || undefined,
+      },
+    });
   }
 
   async findAllEmployees(companyId?: string, departmentId?: string) {
@@ -159,6 +188,43 @@ export class OrgService {
     });
     if (!emp) throw new NotFoundException('员工不存在');
     return emp;
+  }
+
+  async updateEmployee(id: string, data: {
+    name?: string; departmentId?: string; companyId?: string;
+    phone?: string; position?: string; email?: string; status?: string;
+  }) {
+    await this.findEmployeeById(id);
+    const phone = data.phone === undefined ? undefined : this.normalizeEmployeePhone(data.phone);
+    if (phone !== undefined) {
+      const [existingEmployee, conflictingUser] = await Promise.all([
+        this.prisma.employee.findFirst({
+          where: { phone, id: { not: id } },
+          select: { id: true },
+        }),
+        this.prisma.user.findFirst({
+          where: { username: phone, employeeId: { not: id } },
+          select: { id: true },
+        }),
+      ]);
+      if (existingEmployee) throw new ConflictException('员工手机号已存在');
+      if (conflictingUser) throw new ConflictException('该手机号已被其他登录用户名占用');
+    }
+    return this.prisma.employee.update({
+      where: { id },
+      data: {
+        ...data,
+        name: data.name?.trim(),
+        phone,
+        position: data.position === undefined ? undefined : data.position.trim() || null,
+        email: data.email === undefined ? undefined : data.email.trim() || null,
+      },
+      include: {
+        company: { select: { id: true, code: true, name: true } },
+        department: { select: { id: true, name: true } },
+        user: { select: { id: true, username: true, status: true, role: true, createdAt: true } },
+      },
+    });
   }
 
   async deleteEmployee(id: string) {

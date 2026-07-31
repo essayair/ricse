@@ -275,7 +275,7 @@ export default function ContractCreatePage() {
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-muted-foreground">用于匹配业务主管等按部门配置的审批节点</span>
+              <span className="text-xs text-muted-foreground">默认带入当前发起人员工档案中的所属部门，可按实际业务调整；同时用于匹配按部门配置的审批节点</span>
             </FormField>
             <FormField label="外部合同号"><Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="对手方合同号，方便对账" /></FormField>
           </div>

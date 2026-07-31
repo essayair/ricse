@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { CreateWaybillDto } from './dto/create-waybill.dto';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class WaybillService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   private readonly include = {
@@ -260,7 +262,7 @@ export class WaybillService {
     if (status === 'SIGNED' && !(waybill.attachments || []).some(item => item.category === 'RECEIPT')) {
       throw new BadRequestException('确认签收前必须上传至少一份物流收货附件');
     }
-    return this.prisma.$transaction(async tx => {
+    const updated = await this.prisma.$transaction(async tx => {
       const updated = await tx.waybill.update({
         where: { id },
         data: {
@@ -276,6 +278,13 @@ export class WaybillService {
       }
       return updated;
     });
+    if (
+      waybill.dispatchNotice.type === 'PURCHASE'
+      && ['IN_TRANSIT', 'ARRIVED', 'SIGNED'].includes(status)
+    ) {
+      await this.inventoryService.ensurePendingReceiptForWaybill(id, userId);
+    }
+    return updated;
   }
 
   async remove(id: string, userId: string) {

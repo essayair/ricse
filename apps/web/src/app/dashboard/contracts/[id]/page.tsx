@@ -174,6 +174,15 @@ function ApprovalModal({ onConfirm, onCancel, action }: {
 
 function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
   if (!approvals || approvals.length === 0) return null;
+  const statusLabel: Record<string, string> = {
+    APPROVED: '已通过',
+    REJECTED: '已驳回',
+    PENDING: '待审批',
+    WAITING: '等待中',
+    OTHERS_APPROVED: '他人已审批',
+    OTHERS_REJECTED: '他人已驳回',
+    CANCELLED: '已取消',
+  };
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">审批记录</CardTitle></CardHeader>
@@ -183,12 +192,12 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
             <div key={a.id} className="flex gap-3">
               <div className="flex flex-col items-center">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  a.status === 'APPROVED' ? 'bg-green-100 text-green-600' :
-                  a.status === 'REJECTED' ? 'bg-red-100 text-red-600' :
+                  ['APPROVED', 'OTHERS_APPROVED'].includes(a.status) ? 'bg-green-100 text-green-600' :
+                  ['REJECTED', 'OTHERS_REJECTED'].includes(a.status) ? 'bg-red-100 text-red-600' :
                   'bg-muted text-muted-foreground'
                 }`}>
-                  {a.status === 'APPROVED' ? <CheckCircle2 className="h-4 w-4" /> :
-                   a.status === 'REJECTED' ? <XCircle className="h-4 w-4" /> :
+                  {['APPROVED', 'OTHERS_APPROVED'].includes(a.status) ? <CheckCircle2 className="h-4 w-4" /> :
+                   ['REJECTED', 'OTHERS_REJECTED'].includes(a.status) ? <XCircle className="h-4 w-4" /> :
                    <Clock className="h-4 w-4" />}
                 </div>
                 {idx < approvals.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
@@ -201,8 +210,11 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
                   <Badge variant="outline" className="text-xs">
                     {a.approvalMode === 'ANY' ? '或签' : '会签'}
                   </Badge>
-                  <Badge variant={a.status === 'APPROVED' ? 'default' : a.status === 'REJECTED' ? 'destructive' : 'secondary'} className="text-xs">
-                    {a.status === 'APPROVED' ? '已通过' : a.status === 'REJECTED' ? '已驳回' : a.status === 'PENDING' ? '待审批' : a.status === 'WAITING' ? '等待中' : '已取消'}
+                  <Badge
+                    variant={['APPROVED', 'OTHERS_APPROVED'].includes(a.status) ? 'default' : ['REJECTED', 'OTHERS_REJECTED'].includes(a.status) ? 'destructive' : 'secondary'}
+                    className="text-xs"
+                  >
+                    {statusLabel[a.status] || a.status}
                   </Badge>
                   <span className="text-xs text-muted-foreground ml-auto">
                     {new Date(a.actedAt || a.createdAt).toLocaleString('zh-CN')}
