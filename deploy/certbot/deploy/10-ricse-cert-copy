@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+RICSE_LINEAGE="/etc/letsencrypt/live/ricse.hgyunlian.com"
+if [[ "${RENEWED_LINEAGE:-}" != "${RICSE_LINEAGE}" ]]; then
+  exit 0
+fi
+
+install -d -m 700 /opt/ricse/deploy/certs
+install -m 600 "${RICSE_LINEAGE}/fullchain.pem" /opt/ricse/deploy/certs/fullchain.pem
+install -m 600 "${RICSE_LINEAGE}/privkey.pem" /opt/ricse/deploy/certs/privkey.pem
+docker exec ricse-staging-nginx-1 nginx -s reload >/dev/null 2>&1 || true

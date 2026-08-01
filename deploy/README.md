@@ -25,6 +25,13 @@ mkdir -p deploy/certs
 ./deploy/deploy.sh --https
 ```
 
+生产/测试服务器由主机 Nginx 统一接管公网 80/443 端口。RICSE 容器默认只绑定
+`127.0.0.1:8080` 和 `127.0.0.1:8443`，避免覆盖同一台 ECS 上的官网及其他子域名。
+云效主机发布会根据 `deploy/nginx/host-edge.conf.template` 安装
+`/etc/nginx/conf.d/ricse.conf`，再启动主机 Nginx。服务器需预先安装 Nginx。
+发布还会同步 `deploy/certbot` 中的续期钩子；证书续期时会临时停止主机 Nginx，
+更新 RICSE 共享证书后再恢复服务。
+
 `--seed` 只用于初始化测试数据，不应在每次发布时重复执行。
 
 系统必需的默认审批流程由 Prisma 数据迁移初始化，云效常规发布执行

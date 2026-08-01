@@ -16,6 +16,10 @@ SHARED_CERT_DIR="${SHARED_CERT_DIR:-${DEPLOY_ROOT}/deploy/certs}"
 TARGET_CERT_DIR="${RELEASE_DIR}/deploy/certs"
 BACKUP_DIR="${BACKUP_DIR:-${DEPLOY_ROOT}/backups/postgres}"
 STATE_DIR="${DEPLOY_ROOT}/releases"
+HOST_NGINX_TEMPLATE="${RELEASE_DIR}/deploy/nginx/host-edge.conf.template"
+HOST_NGINX_CONFIG="${HOST_NGINX_CONFIG:-/etc/nginx/conf.d/ricse.conf}"
+CERTBOT_HOOK_SOURCE="${RELEASE_DIR}/deploy/certbot"
+HOST_NGINX_BACKUP_DIR="${DEPLOY_ROOT}/backups/nginx"
 
 if [[ ! -f "${SHARED_ENV}" ]]; then
   echo "缺少服务器环境配置：${SHARED_ENV}" >&2
@@ -43,6 +47,33 @@ if [[ "${ENABLE_HTTPS}" == "true" ]]; then
   install -d -m 700 "${TARGET_CERT_DIR}"
   install -m 600 "${SHARED_CERT_DIR}/fullchain.pem" "${TARGET_CERT_DIR}/fullchain.pem"
   install -m 600 "${SHARED_CERT_DIR}/privkey.pem" "${TARGET_CERT_DIR}/privkey.pem"
+
+  if [[ ! -f "${HOST_NGINX_TEMPLATE}" ]]; then
+    echo "缺少主机 Nginx 配置模板：${HOST_NGINX_TEMPLATE}" >&2
+    exit 1
+  fi
+  if [[ ! "${PUBLIC_HOST}" =~ ^[A-Za-z0-9.-]+$ ]]; then
+    echo "PUBLIC_HOST 格式无效：${PUBLIC_HOST}" >&2
+    exit 1
+  fi
+  install -d -m 700 "${HOST_NGINX_BACKUP_DIR}"
+  if [[ -f "${HOST_NGINX_CONFIG}" ]]; then
+    cp -p "${HOST_NGINX_CONFIG}" \
+      "${HOST_NGINX_BACKUP_DIR}/ricse.conf.$(date -u +%Y%m%dT%H%M%SZ)"
+  fi
+  sed "s/__PUBLIC_HOST__/${PUBLIC_HOST}/g" \
+    "${HOST_NGINX_TEMPLATE}" >"${HOST_NGINX_CONFIG}"
+  install -d -m 755 \
+    /etc/letsencrypt/renewal-hooks/pre \
+    /etc/letsencrypt/renewal-hooks/deploy \
+    /etc/letsencrypt/renewal-hooks/post
+  install -m 755 "${CERTBOT_HOOK_SOURCE}/pre/10-ricse-nginx-stop" \
+    /etc/letsencrypt/renewal-hooks/pre/10-ricse-nginx-stop
+  install -m 755 "${CERTBOT_HOOK_SOURCE}/deploy/10-ricse-cert-copy" \
+    /etc/letsencrypt/renewal-hooks/deploy/10-ricse-cert-copy
+  install -m 755 "${CERTBOT_HOOK_SOURCE}/post/10-ricse-nginx-start" \
+    /etc/letsencrypt/renewal-hooks/post/10-ricse-nginx-start
+  nginx -t
 fi
 
 COMPOSE_ARGS=(
@@ -63,6 +94,11 @@ fi
 
 cd "${RELEASE_DIR}"
 IMAGE_TAG="${SOURCE_TAG}" ./deploy/deploy.sh
+
+if [[ "${ENABLE_HTTPS}" == "true" ]]; then
+  systemctl enable nginx
+  systemctl restart nginx
+fi
 
 HEALTH_URL="http://127.0.0.1"
 HEALTH_CURL_ARGS=()

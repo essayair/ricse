@@ -119,7 +119,7 @@ docker compose "${COMPOSE_ARGS[@]}" run --rm api \
 
 docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans
 
-HEALTH_URL="http://127.0.0.1"
+HEALTH_URL="http://127.0.0.1:8080"
 HEALTH_CURL_ARGS=()
 if [[ "${ENABLE_HTTPS}" == "true" ]]; then
   : "${PUBLIC_HOST:?HTTPS 环境配置缺少 PUBLIC_HOST}"

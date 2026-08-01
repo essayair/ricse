@@ -145,7 +145,7 @@ services:
     volumes:
       - ./nginx/http.conf.template:/etc/nginx/templates/default.conf.template:ro
     ports:
-      - "80:80"
+      - "${RICSE_HTTP_BIND:-127.0.0.1:8080}:80"
     depends_on:
       api:
         condition: service_healthy
