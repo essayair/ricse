@@ -4,6 +4,7 @@ import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { OutboundService } from '../inventory/outbound.service';
 import { WaybillService } from './waybill.service';
 
 describe('WaybillService', () => {
@@ -15,6 +16,9 @@ describe('WaybillService', () => {
   };
   const inventoryService = {
     ensurePendingReceiptForWaybill: jest.fn().mockResolvedValue({ id: 'receipt-1' }),
+  };
+  const outboundService = {
+    ensureReceiptForWaybill: jest.fn().mockResolvedValue({ id: 'outbound-receipt-1' }),
   };
   let service: WaybillService;
   const notice = {
@@ -32,6 +36,7 @@ describe('WaybillService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AccessControlService, useValue: accessControl },
         { provide: InventoryService, useValue: inventoryService },
+        { provide: OutboundService, useValue: outboundService },
       ],
     }).compile();
     service = module.get(WaybillService);
@@ -131,15 +136,20 @@ describe('WaybillService', () => {
       .rejects.toThrow('必须先完成物流出库和库存扣减');
   });
 
-  it('已有有效物流出库单时不能取消运单', async () => {
+  it('取消未出库运单时同步取消自动生成的车次作业', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-sales',
       status: 'PENDING',
-      outboundReceipts: [{ id: 'out-1', status: 'DRAFT' }],
+      outboundReceipts: [{ id: 'out-1', status: 'PENDING' }],
       dispatchNotice: { id: 'notice-sales', type: 'SALES', mode: 'STANDARD', status: 'ISSUED' },
     } as any);
+    prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
+    prisma.waybill.update.mockResolvedValue({ id: 'waybill-sales', status: 'CANCELLED' } as any);
 
-    await expect(service.updateStatus('waybill-sales', 'CANCELLED', 'user-1'))
-      .rejects.toThrow('已有有效物流出库单');
+    await service.updateStatus('waybill-sales', 'CANCELLED', 'user-1');
+
+    expect(prisma.outboundReceipt.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['out-1'] } }, data: { status: 'CANCELLED' },
+    });
   });
 });

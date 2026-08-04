@@ -1,316 +1,145 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  AlertTriangle, Box, ChevronRight, ClipboardList, FileText, FlaskConical,
+  Package, RefreshCw, Scale, Truck, Warehouse,
+} from 'lucide-react';
+import { api } from '@/lib/api';
+import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  FileText,
-  Truck,
-  Package,
-  AlertTriangle,
-  ArrowUpRight,
-  ArrowDownRight,
-  Minus,
-  ClipboardList,
-  Scale,
-  FlaskConical,
-  Monitor,
-  DollarSign,
-  Camera,
-  Box,
-  ChevronRight,
-} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-const STATS = [
-  { label: '本月采购量', value: '2,450', unit: '吨', icon: Package, color: 'blue', trend: 'up', note: '较上月 +12.3%' },
-  { label: '当前在途车辆', value: '12', unit: '辆', icon: Truck, color: 'amber', trend: 'neutral', note: '今日新增 3 辆发车' },
-  { label: '当前库存总量', value: '890', unit: '吨', icon: Box, color: 'green', trend: 'down', note: '较昨日 -45 吨' },
-  { label: '待处理告警', value: '3', unit: '条', icon: AlertTriangle, color: 'red', trend: 'warn', note: '磅差 2 · 质检熔断 1' },
-];
-
-const STAT_COLORS: Record<string, { bg: string; icon: string }> = {
-  blue: { bg: 'bg-primary-bg', icon: 'text-primary' },
-  amber: { bg: 'bg-warning-bg', icon: 'text-warning' },
-  green: { bg: 'bg-success-bg', icon: 'text-success' },
-  red: { bg: 'bg-destructive-bg', icon: 'text-destructive' },
-};
-
-const FLOW_STEPS = [
-  { icon: ClipboardList, label: '合同执行批次', desc: '5 个执行中', color: 'blue' },
-  { icon: Truck, label: '物流运输', desc: '12 车在途', color: 'orange' },
-  { icon: Scale, label: '过磅称重', desc: '今日 8 次', color: 'green' },
-  { icon: FlaskConical, label: '质检化验', desc: '3 批待检', color: 'purple' },
-  { icon: Package, label: '入库存储', desc: '890 吨在库', color: 'green' },
-  { icon: DollarSign, label: '价款结算', desc: '2 单待审', color: 'yellow' },
-];
-
-const FLOW_COLORS: Record<string, { bg: string; text: string }> = {
-  blue: { bg: 'bg-primary-bg', text: 'text-primary' },
-  orange: { bg: 'bg-warning-bg', text: 'text-warning' },
-  green: { bg: 'bg-success-bg', text: 'text-success' },
-  purple: { bg: 'bg-purple-50', text: 'text-purple-600' },
-  yellow: { bg: 'bg-warning-bg', text: 'text-warning' },
-};
-
-const FLOW_DESC_COLORS: Record<string, string> = {
-  blue: 'text-primary',       // 执行批次
-  orange: 'text-warning',     // 物流运输
-  green: 'text-muted-foreground', // 过磅称重
-  purple: 'text-warning',     // 质检化验
-  yellow: 'text-muted-foreground', // 价款结算
-};
-
-const MODULES: Array<{
-  name: string;
-  desc: string;
-  icon: any;
+type Activity = {
+  id: string;
+  occurredAt: string;
+  title: string;
+  subtitle: string;
   href: string;
-  color: string;
-  stats: Array<{ label: string; value: string; danger?: boolean; warning?: boolean; success?: boolean }>;
-}> = [
-  {
-    name: '采销管理',
-    desc: '合同 / 执行批次 / 结算',
-    icon: FileText,
-    href: '/dashboard/contracts',
-    color: 'bg-primary-bg text-primary',
-    stats: [
-      { label: '合同执行中', value: '8' },
-      { label: '待开始执行', value: '5' },
-    ],
-  },
-  {
-    name: '物流管理',
-    desc: '调度 / 运单 / 结算',
-    icon: Truck,
-    href: '/dashboard/dispatch',
-    color: 'bg-warning-bg text-warning',
-    stats: [
-      { label: '在途', value: '12' },
-      { label: '超时告警', value: '1', danger: true },
-    ],
-  },
-  {
-    name: '库存管理',
-    desc: '批次 / 库位 / 盘点',
-    icon: Package,
-    href: '/dashboard/inventory',
-    color: 'bg-success-bg text-success',
-    stats: [
-      { label: '吨在库', value: '890' },
-      { label: '批次', value: '14' },
-    ],
-  },
-  {
-    name: '质检化验',
-    desc: '取样 / 报告 / 熔断',
-    icon: FlaskConical,
-    href: '/dashboard/quality',
-    color: 'bg-purple-50 text-purple-600',
-    stats: [
-      { label: '待检', value: '3', warning: true },
-      { label: '熔断处理', value: '1', danger: true },
-    ],
-  },
-  {
-    name: '地磅管理',
-    desc: '磅单 / 防作弊',
-    icon: Scale,
-    href: '/dashboard/weighbridge',
-    color: 'bg-primary-bg text-primary',
-    stats: [
-      { label: '今日磅单', value: '8' },
-      { label: '磅差异常', value: '2', danger: true },
-    ],
-  },
-  {
-    name: '监控录像',
-    desc: '实时 / 存证',
-    icon: Camera,
-    href: '/dashboard/monitor',
-    color: 'bg-muted text-muted-foreground',
-    stats: [
-      { label: '在线摄像头', value: '6' },
-      { label: '系统状态', value: '正常', success: true },
-    ],
-  },
-];
+  type: 'error' | 'warning' | 'success' | 'info';
+};
 
-const TIMELINE = [
-  { time: '09:28', text: '🚨 甘A·12345 磅差超限，净重偏差 0.8%', sub: '地磅管理 · 需要人工复核', type: 'error' },
-  { time: '08:55', text: '⚠ HT-2026003 质检熔断，水分超标 0.3%', sub: '质检化验 · 待采销协商处理', type: 'warning' },
-  { time: '08:30', text: '✅ 批次 PC-0610-03 完成入库，净重 68.5 吨', sub: '库存管理 · 玉门堆场 A-03 库位', type: 'done' },
-  { time: '08:12', text: '✅ 甘B·88890 完成过磅，净重 72.4 吨', sub: '地磅管理 · 关联运单 WB-20260610-06', type: 'done' },
-  { time: '07:45', text: '📋 合同 HT-2026007 审核通过，已生成采购执行批次', sub: '采销系统 · 玉门众鑫矿业 · 萤石粉97% · 200吨', type: 'info' },
-  { time: '07:20', text: '🚛 3 辆车从玉门出发，预计 14:00 到达巨化', sub: '物流管理 · 销售执行批次 SO-20260610-002', type: 'done' },
-  { time: '18:30', text: '💰 结算单 STL-2026-019 财务审核完成', sub: '结算中心 · 合同 HT-2026002 · 金额 ¥326,500', type: 'done' },
-];
+type Overview = {
+  generatedAt: string;
+  permissions: Record<string, boolean>;
+  metrics: Record<string, number>;
+  alerts: Activity[];
+  activities: Activity[];
+};
 
-const TIMELINE_DOTS: Record<string, string> = {
-  error: 'bg-destructive',
-  warning: 'bg-warning',
-  done: 'bg-success',
-  info: 'bg-primary',
+const EMPTY: Overview = {
+  generatedAt: '', permissions: {}, metrics: {}, alerts: [], activities: [],
+};
+
+const COLOR = {
+  blue: { bg: 'bg-primary-bg', text: 'text-primary' },
+  amber: { bg: 'bg-warning-bg', text: 'text-warning' },
+  green: { bg: 'bg-success-bg', text: 'text-success' },
+  red: { bg: 'bg-destructive-bg', text: 'text-destructive' },
+  purple: { bg: 'bg-purple-50', text: 'text-purple-600' },
 };
 
 export default function DashboardPage() {
-  const renderTrend = (trend: string, note: string) => {
-    if (trend === 'up') return <span className="flex items-center gap-0.5 text-xs text-success"><ArrowUpRight className="h-3 w-3" />{note}</span>;
-    if (trend === 'down') return <span className="flex items-center gap-0.5 text-xs text-destructive"><ArrowDownRight className="h-3 w-3" />{note}</span>;
-    if (trend === 'warn') return <span className="flex items-center gap-0.5 text-xs text-warning"><Minus className="h-3 w-3" />{note}</span>;
-    return <span className="text-xs text-muted-foreground">{note}</span>;
+  const [data, setData] = useState<Overview>(EMPTY);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setData(await api.get<Overview>('/dashboard/overview'));
+    } catch (err: any) {
+      setError(err.message || '系统总览加载失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">系统总览</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            2026年7月1日 · 数据更新于 14:00 | 玉门运营基地
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/dashboard/contracts"><FileText className="h-4 w-4 mr-1" />查看合同</Link>
-          </Button>
-          <Button asChild>
-            <Link href="/dashboard/contracts/create">+ 新建合同</Link>
-          </Button>
-        </div>
+  useEffect(() => { void load(); }, []);
+
+  const m = data.metrics;
+  const stats = [
+    { label: '本月采购入库量', value: metric(data.permissions.inventory, m.monthlyPurchaseQuantity, 3), unit: '吨', note: '本月已过账采购入库', icon: Package, color: 'blue' as const },
+    { label: '当前在途车辆', value: metric(data.permissions.logistics, m.inTransitVehicles), unit: '辆', note: '状态为运输中的运单', icon: Truck, color: 'amber' as const },
+    { label: '当前账面库存', value: metric(data.permissions.inventory, m.inventoryPhysicalQuantity, 3), unit: '吨', note: `${metric(data.permissions.inventory, m.inventoryLotCount)} 个有效库存批次`, icon: Box, color: 'green' as const },
+    { label: '待处理异常', value: number(m.alertCount), unit: '条', note: `磅差 ${number(m.abnormalWeighTickets)} · 质检熔断 ${number(m.fuseQualityInspections)} · 运单超时 ${number(m.overdueWaybills)}`, icon: AlertTriangle, color: 'red' as const },
+  ];
+  const flowSteps = [
+    { label: '执行批次', value: m.activeOrders, suffix: '个执行中', href: '/dashboard/orders', permission: data.permissions.execution, icon: ClipboardList, color: 'blue' as const },
+    { label: '物流运输', value: m.inTransitVehicles, suffix: '车在途', href: '/dashboard/waybills', permission: data.permissions.logistics, icon: Truck, color: 'amber' as const },
+    { label: '过磅称重', value: m.todayWeighTickets, suffix: '张今日磅单', href: '/dashboard/weighbridge', permission: data.permissions.quality, icon: Scale, color: 'green' as const },
+    { label: '质检化验', value: m.pendingQualityInspections, suffix: '张待完成', href: '/dashboard/quality', permission: data.permissions.quality, icon: FlaskConical, color: 'purple' as const },
+    { label: '入库作业', value: m.pendingInboundReceipts, suffix: '单待入账', href: '/dashboard/inbound', permission: data.permissions.inventory, icon: Warehouse, color: 'green' as const },
+    { label: '出库作业', value: m.pendingOutboundOrders, suffix: '单待完成', href: '/dashboard/outbound', permission: data.permissions.inventory, icon: Package, color: 'amber' as const },
+  ];
+  const modules = [
+    { name: '采销管理', desc: '合同 / 执行批次 / 执行通知', href: '/dashboard/contracts', icon: FileText, color: 'blue' as const, permission: data.permissions.contracts, stats: [['执行中合同', m.activeContracts], ['待审批合同', m.pendingApprovalContracts]] },
+    { name: '物流管理', desc: '通知 / 调度 / 运单', href: '/dashboard/waybills', icon: Truck, color: 'amber' as const, permission: data.permissions.logistics, stats: [['当前在途', m.inTransitVehicles], ['超时运单', m.overdueWaybills]] },
+    { name: '库存管理', desc: '库存主体 / 仓库 / 批次', href: '/dashboard/inventory', icon: Box, color: 'green' as const, permission: data.permissions.inventory, stats: [['账面库存(吨)', decimal(m.inventoryPhysicalQuantity)], ['有效批次', m.inventoryLotCount]] },
+    { name: '质检化验', desc: '多机构检测 / 报告 / 熔断', href: '/dashboard/quality', icon: FlaskConical, color: 'purple' as const, permission: data.permissions.quality, stats: [['待完成', m.pendingQualityInspections], ['熔断质检', m.fuseQualityInspections]] },
+    { name: '地磅管理', desc: '称重 / 复磅 / 偏差复核', href: '/dashboard/weighbridge', icon: Scale, color: 'blue' as const, permission: data.permissions.quality, stats: [['今日磅单', m.todayWeighTickets], ['偏差异常', m.abnormalWeighTickets]] },
+    { name: '出入库作业', desc: '到货入库 / 销售出库', href: '/dashboard/inbound', icon: Warehouse, color: 'green' as const, permission: data.permissions.inventory, stats: [['待入库', m.pendingInboundReceipts], ['待出库', m.pendingOutboundOrders]] },
+  ];
+
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-bold">系统总览</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{data.generatedAt ? `数据更新于 ${formatDateTimeToSecond(data.generatedAt)}` : '正在读取系统数据'} · 统计受当前账号数据范围限制</p>
       </div>
-
-      {/* Alert */}
-      <div className="flex items-start gap-3 rounded-lg border border-destructive-border bg-destructive-bg p-4 text-sm">
-        <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
-        <div>
-          <strong className="text-destructive">待处理告警 3 条：</strong>
-          <span className="text-destructive/80 ml-2">甘A·12345 磅差超限（进出差 0.8%）· HT-2026003 质检熔断待协商 · 甘B·66789 在途超时 2.5 小时</span>
-          <span className="text-primary ml-2 cursor-pointer hover:underline">立即处理 →</span>
-        </div>
-      </div>
-
-      {/* Stat Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        {STATS.map((stat) => {
-          const colors = STAT_COLORS[stat.color] || STAT_COLORS.blue;
-          return (
-            <Card key={stat.label}>
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between">
-                  <div className={`rounded-lg p-2.5 ${colors.bg} ${colors.icon}`}>
-                    <stat.icon className="h-5 w-5" />
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <div className="text-xs text-muted-foreground">{stat.label}</div>
-                  <div className="mt-1 flex items-baseline gap-1">
-                    <span className="text-2xl font-bold">{stat.value}</span>
-                    <span className="text-xs text-muted-foreground">{stat.unit}</span>
-                  </div>
-                  <div className="mt-1">{renderTrend(stat.trend, stat.note)}</div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Business Flow */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">业务主流程 — 今日进度</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            {FLOW_STEPS.map((step, i) => {
-              const flowColors = FLOW_COLORS[step.color] || FLOW_COLORS.blue;
-              const descColor = FLOW_DESC_COLORS[step.color] || 'text-muted-foreground';
-              return (
-                <div key={step.label} className="flex items-center">
-                  <div className="flex flex-col items-center gap-1.5">
-                    <div className={`rounded-full p-2.5 ${flowColors.bg}`}>
-                      <step.icon className={`h-4 w-4 ${flowColors.text}`} />
-                    </div>
-                    <span className="text-xs font-medium">{step.label}</span>
-                    <span className={`text-[10px] ${descColor} font-medium`}>{step.desc}</span>
-                  </div>
-                  {i < FLOW_STEPS.length - 1 && <ChevronRight className="h-5 w-5 text-muted-foreground mx-2 mt-[-1.5rem]" />}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Module Status + Timeline */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Module Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">模块状态</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {MODULES.map((mod) => (
-                <Link key={mod.name} href={mod.href}>
-                  <div className="rounded-lg border p-4 hover:shadow-sm transition-shadow">
-                    <div className="flex items-start gap-3">
-                      <div className={`rounded-lg p-2 ${mod.color}`}>
-                        <mod.icon className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium">{mod.name}</div>
-                        <div className="text-[11px] text-muted-foreground">{mod.desc}</div>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex gap-4">
-                      {mod.stats.map((stat) => {
-                        const valClass = stat.danger ? 'text-destructive' : stat.warning ? 'text-warning' : stat.success ? 'text-success' : '';
-                        return (
-                          <div key={stat.label}>
-                            <div className={`text-sm font-bold ${valClass}`}>
-                              {stat.value}
-                            </div>
-                            <div className="text-[10px] text-muted-foreground">{stat.label}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Timeline */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">最近动态</CardTitle>
-            <span className="text-xs text-primary cursor-pointer hover:underline">全部 →</span>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {TIMELINE.map((item) => (
-                <div key={item.time} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className={`h-2 w-2 rounded-full mt-1.5 ${TIMELINE_DOTS[item.type] || 'bg-muted-foreground'}`} />
-                    <div className="w-px flex-1 bg-border mt-1" />
-                  </div>
-                  <div className="pb-4">
-                    <div className="text-xs text-muted-foreground">{item.time}</div>
-                    <div className="text-sm mt-0.5">{item.text}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{item.sub}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex gap-2">
+        <Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新数据</Button>
+        {data.permissions.contracts && <Button asChild><Link href="/dashboard/contracts/create">+新建合同</Link></Button>}
       </div>
     </div>
-  );
+
+    {error && <div className="rounded-lg border border-destructive-border bg-destructive-bg p-4 text-sm text-destructive">{error}</div>}
+    {!loading && !error && (data.alerts.length ? <Card className="border-destructive-border bg-destructive-bg">
+      <CardContent className="p-4">
+        <div className="mb-3 flex items-center gap-2 font-medium text-destructive"><AlertTriangle className="h-5 w-5" />待处理异常 {data.metrics.alertCount} 条</div>
+        <div className="grid gap-2 md:grid-cols-2">{data.alerts.slice(0, 4).map(item => <Link key={item.id} href={item.href} className="rounded-md border border-destructive-border bg-background/70 p-3 text-sm hover:bg-background"><div className="font-medium">{item.title}</div><div className="mt-1 text-xs text-muted-foreground">{item.subtitle}</div></Link>)}</div>
+      </CardContent>
+    </Card> : <div className="rounded-lg border border-success/20 bg-success-bg p-4 text-sm text-success">当前数据范围内没有磅差异常、质检熔断或运单超时。</div>)}
+
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{stats.map(stat => {
+      const colors = COLOR[stat.color];
+      return <Card key={stat.label}><CardContent className="p-5"><div className={`w-fit rounded-lg p-2.5 ${colors.bg} ${colors.text}`}><stat.icon className="h-5 w-5" /></div><div className="mt-3 text-xs text-muted-foreground">{stat.label}</div><div className="mt-1 flex items-baseline gap-1"><span className="text-2xl font-bold">{stat.value}</span><span className="text-xs text-muted-foreground">{stat.value === '—' ? '' : stat.unit}</span></div><div className="mt-1 text-xs text-muted-foreground">{stat.note}</div></CardContent></Card>;
+    })}</div>
+
+    <Card><CardHeader className="pb-3"><CardTitle className="text-base">业务主流程当前进度</CardTitle></CardHeader><CardContent><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">{flowSteps.map((step, index) => {
+      const colors = COLOR[step.color];
+      const content = <div className="flex h-full items-center gap-3 rounded-lg border p-3"><div className={`rounded-full p-2 ${colors.bg}`}><step.icon className={`h-4 w-4 ${colors.text}`} /></div><div><div className="text-sm font-medium">{step.label}</div><div className="mt-0.5 text-xs text-muted-foreground">{step.permission ? `${number(step.value)} ${step.suffix}` : '无查看权限'}</div></div>{index < flowSteps.length - 1 && <ChevronRight className="ml-auto hidden h-4 w-4 text-muted-foreground xl:block" />}</div>;
+      return step.permission ? <Link key={step.label} href={step.href}>{content}</Link> : <div key={step.label}>{content}</div>;
+    })}</div></CardContent></Card>
+
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card><CardHeader><CardTitle className="text-base">模块状态</CardTitle></CardHeader><CardContent><div className="grid gap-3 sm:grid-cols-2">{modules.map(mod => {
+        const colors = COLOR[mod.color];
+        const content = <div className="rounded-lg border p-4 transition-shadow hover:shadow-sm"><div className="flex items-start gap-3"><div className={`rounded-lg p-2 ${colors.bg} ${colors.text}`}><mod.icon className="h-4 w-4" /></div><div><div className="text-sm font-medium">{mod.name}</div><div className="text-[11px] text-muted-foreground">{mod.desc}</div></div></div>{mod.permission ? <div className="mt-3 flex gap-5">{mod.stats.map(([label, value]) => <div key={String(label)}><div className="text-sm font-bold">{number(value as number)}</div><div className="text-[10px] text-muted-foreground">{label}</div></div>)}</div> : <div className="mt-3 text-xs text-muted-foreground">当前账号无该模块查看权限</div>}</div>;
+        return mod.permission ? <Link key={mod.name} href={mod.href}>{content}</Link> : <div key={mod.name}>{content}</div>;
+      })}</div></CardContent></Card>
+
+      <Card><CardHeader><CardTitle className="text-base">最近业务动态</CardTitle></CardHeader><CardContent>{data.activities.length ? <div className="space-y-1">{data.activities.map(item => <Link key={item.id} href={item.href} className="flex gap-3 rounded-md p-2 hover:bg-muted/60"><span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${activityColor(item.type)}`} /><div className="min-w-0"><div className="text-xs text-muted-foreground">{formatDateTimeToSecond(item.occurredAt)}</div><div className="mt-0.5 truncate text-sm">{item.title}</div><div className="truncate text-xs text-muted-foreground">{item.subtitle}</div></div></Link>)}</div> : <div className="py-12 text-center text-sm text-muted-foreground">{loading ? '正在加载业务动态…' : '当前数据范围内暂无业务动态'}</div>}</CardContent></Card>
+    </div>
+    <div className="text-center text-xs text-muted-foreground">结算与监控模块尚未形成业务数据，本页不再展示模拟数字。</div>
+  </div>;
+}
+
+function decimal(value: number | undefined, maximumFractionDigits = 3) {
+  return Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits });
+}
+
+function number(value: number | undefined) {
+  return Number(value || 0).toLocaleString('zh-CN');
+}
+
+function metric(allowed: boolean | undefined, value: number | undefined, digits = 0) {
+  return allowed ? decimal(value, digits) : '—';
+}
+
+function activityColor(type: Activity['type']) {
+  return { error: 'bg-destructive', warning: 'bg-warning', success: 'bg-success', info: 'bg-primary' }[type];
 }

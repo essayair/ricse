@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MasterDataService } from './master-data.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { mockDeep } from 'jest-mock-extended';
+import { Prisma } from '@prisma/client';
 
 describe('MasterDataService', () => {
   let service: MasterDataService;
@@ -106,11 +107,46 @@ describe('MasterDataService', () => {
 
   describe('Materials', () => {
     it('创建物料', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
       prisma.material.create.mockResolvedValue({ ...mockMaterial, category: mockCategory } as any);
       const result = await service.createMaterial({
         code: 'MT-000001', name: '萤石粉', categoryId: 'cat-1', grade: 'CaF₂≥97%',
       });
       expect(result.name).toBe('萤石粉');
+    });
+
+    it('系统编码重复时自动重新分配，不返回 500', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
+      prisma.material.findMany.mockResolvedValue([{ code: 'MAT0001' }] as any);
+      prisma.material.create
+        .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('编码重复', {
+          code: 'P2002', clientVersion: '5.22.0', meta: { target: ['code'] },
+        }))
+        .mockResolvedValueOnce({ ...mockMaterial, code: 'MAT0002', category: mockCategory } as any);
+
+      const result = await service.createMaterial({
+        code: 'MAT0001', name: '萤石粉', categoryId: 'cat-1',
+      });
+
+      expect(result.code).toBe('MAT0002');
+      expect(prisma.material.create).toHaveBeenLastCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ code: 'MAT0002' }),
+      }));
+    });
+
+    it('物料大类不存在时返回明确业务错误', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue(null);
+      await expect(service.createMaterial({
+        code: 'MAT0001', name: '萤石粉', categoryId: 'missing-category',
+      })).rejects.toThrow('所选物料大类不存在或已被删除');
+      expect(prisma.material.create).not.toHaveBeenCalled();
+    });
+
+    it('下一个物料编码按全部 MAT 数字编码最大值生成', async () => {
+      prisma.material.findMany.mockResolvedValue([
+        { code: 'MAT0009' }, { code: 'MAT-0012' }, { code: 'MAT-ZZ' },
+      ] as any);
+      await expect(service.generateNextMaterialCode()).resolves.toBe('MAT0013');
     });
 
     it('查询物料列表（分页）', async () => {

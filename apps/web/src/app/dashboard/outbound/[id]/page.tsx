@@ -1,290 +1,134 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import {
-  ArrowLeft, CheckCircle2, FileText, PackageMinus, Trash2, Upload, XCircle,
-} from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, PackageMinus, RefreshCw, Scale, Truck } from 'lucide-react';
 import { api } from '@/lib/api';
-import { openStoredAttachment } from '@/lib/attachment-preview';
 import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 const STATUS: Record<string, string> = {
-  DRAFT: '草稿',
-  DEPARTURE_CONFIRMED: '已确认离场',
-  POSTED: '已扣减库存',
-  CANCELLED: '已作废',
+  PENDING: '待称重/拣配', READY: '待放行', VARIANCE_PENDING: '待差异处理', POSTED: '已出库', CANCELLED: '已取消',
+};
+const WAYBILL_STATUS: Record<string, string> = {
+  PENDING: '待发运', IN_TRANSIT: '运输中', ARRIVED: '已到达', SIGNED: '已签收', CANCELLED: '已取消',
 };
 
-export default function OutboundDetailPage() {
+export default function OutboundOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [item, setItem] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [variance, setVariance] = useState<Record<string, { decision: string; reason: string }>>({});
 
-  const load = () => api.get(`/outbound-receipts/${id}`)
-    .then(setItem)
-    .catch((error: any) => alert(error.message));
-
+  const load = () => api.get(`/outbound-receipts/orders/${id}`).then(setItem).catch((error: any) => alert(error.message));
   useEffect(() => { void load(); }, [id]);
 
-  const action = async (type: 'confirm' | 'post' | 'cancel') => {
-    const prompts = {
-      confirm: '确认货物已完成装车并离场？确认后附件和批次分配将锁定。',
-      post: '确认生成销售出库单并扣减各库存批次？',
-      cancel: '确认作废该物流出库单？',
-    };
-    if (!confirm(prompts[type])) return;
+  const refreshReservation = async () => {
+    setSaving(true);
+    try { setItem(await api.patch(`/outbound-receipts/orders/${id}/refresh-reservation`, {})); }
+    catch (error: any) { alert(error.message); }
+    finally { setSaving(false); }
+  };
+
+  const resolveVariance = async (receipt: any) => {
+    const form = variance[receipt.id] || { decision: '', reason: '' };
+    if (!form.decision || !form.reason.trim()) return alert('请选择处理方式并填写原因');
     setSaving(true);
     try {
-      const result = type === 'post'
-        ? await api.post(`/outbound-receipts/${id}/post`, {})
-        : await api.patch(`/outbound-receipts/${id}/${type}`, {});
-      setItem(result);
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      setSaving(false);
-    }
+      await api.patch(`/outbound-receipts/${receipt.id}/variance`, form);
+      await load();
+    } catch (error: any) { alert(error.message); }
+    finally { setSaving(false); }
   };
 
-  const upload = async (file?: File) => {
-    if (!file) return;
+  const release = async (receipt: any) => {
+    if (!confirm(`确认车辆 ${receipt.plateNo || receipt.waybill.waybillNo} 放行？系统将按实际重量扣减库存、生成销售出库单并将运单置为在途。`)) return;
     setSaving(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      await api.upload(`/outbound-receipts/${id}/attachments`, formData);
+      await api.post(`/outbound-receipts/${receipt.id}/post`, {});
       await load();
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      if (fileRef.current) fileRef.current.value = '';
-      setSaving(false);
-    }
-  };
-
-  const removeAttachment = async (attachment: any) => {
-    if (!confirm(`确认删除附件“${attachment.originalName}”？`)) return;
-    try {
-      await api.delete(`/outbound-receipts/attachments/${attachment.id}`);
-      await load();
-    } catch (error: any) {
-      alert(error.message);
-    }
-  };
-
-  const viewAttachment = async (attachment: any) => {
-    try {
-      await openStoredAttachment(`/outbound-receipts/attachments/${attachment.id}/view-url`);
-    } catch (error: any) {
-      alert(error.message);
-    }
+    } catch (error: any) { alert(error.message); }
+    finally { setSaving(false); }
   };
 
   if (!item) return <div className="py-20 text-center">加载中...</div>;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/outbound')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{item.receiptNo}</h1>
-              <Badge>{STATUS[item.status]}</Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {item.materialName} · {item.plateNo || '-'} · {item.warehouse.name}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {item.status === 'DRAFT' && (
-            <>
-              <Button variant="outline" disabled={saving} onClick={() => void action('cancel')}>
-                <XCircle className="mr-2 h-4 w-4" />作废
-              </Button>
-              <Button disabled={saving} onClick={() => void action('confirm')}>
-                <CheckCircle2 className="mr-2 h-4 w-4" />确认货物离场
-              </Button>
-            </>
-          )}
-          {item.status === 'DEPARTURE_CONFIRMED' && (
-            <Button disabled={saving} onClick={() => void action('post')}>
-              <PackageMinus className="mr-2 h-4 w-4" />生成销售出库并扣减库存
-            </Button>
-          )}
-        </div>
+  const isDirect = item.dispatchNotice.mode === 'DIRECT';
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/outbound')}><ArrowLeft className="h-4 w-4" /></Button>
+        <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{item.orderNo}</h1><Badge>{item.stageLabel}</Badge></div>
+          <p className="mt-1 text-sm text-muted-foreground">销售发货通知 {item.dispatchNotice.noticeNo} · {isDirect ? '直拨发运' : item.warehouse.name}</p></div>
       </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-5">
-          <Title>物流出库信息</Title>
-          <Grid items={[
-            ['物流运单', item.waybill.waybillNo],
-            ['销售发货通知', item.waybill.dispatchNotice.noticeNo],
-            ['合同', item.waybill.dispatchNotice.order.contract.contractNo],
-            ['执行批次', `${item.waybill.dispatchNotice.order.orderNo} · ${item.waybill.dispatchNotice.order.name}`],
-            ['车牌', item.plateNo || '-'],
-            ['发货仓库', `${item.warehouse.code} · ${item.warehouse.name}`],
-            ['离场时间', formatDateTimeToSecond(item.departedAt)],
-            ['出库操作人', item.operatorName],
-          ]} />
-        </Card>
-        <Card className="p-5">
-          <Title>出库数量依据</Title>
-          <Grid items={[
-            ['出库磅单', item.weighTicket.ticketNo],
-            ['磅单方向', '出库'],
-            ['结算口径', basis(item.weighTicket.settlementBasis)],
-            ['磅单净重', weight(item.weighTicket.netWeight)],
-            ['最终出库数量', weight(item.outboundQuantity)],
-            ['物料', item.materialName],
-            ['客户', item.customerName || '-'],
-            ['备注', item.remarks || '-'],
-          ]} />
-          <Button className="mt-4" variant="outline" onClick={() => router.push(`/dashboard/weighbridge/${item.weighTicket.id}`)}>
-            查看出库磅单
-          </Button>
-        </Card>
-      </div>
-
-      <Card className="p-5">
-        <Title>库存批次拣配</Title>
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[850px] text-sm">
-            <thead className="border-b bg-muted/50 text-left">
-              <tr>
-                <th className="p-3">库存批次</th>
-                <th className="p-3">业务入库单</th>
-                <th className="p-3">供应商</th>
-                <th className="p-3 text-right">出库前可用</th>
-                <th className="p-3 text-right">本次分配</th>
-                <th className="p-3 text-right">出库后余额</th>
-              </tr>
-            </thead>
-            <tbody>
-              {item.allocations.map((allocation: any) => {
-                const postedLine = item.salesOutbound?.lines.find((line: any) => line.inventoryLotId === allocation.inventoryLotId);
-                const before = postedLine
-                  ? Number(postedLine.balanceAfter) + Number(postedLine.quantity)
-                  : Number(allocation.inventoryLot.availableQuantity);
-                return (
-                  <tr key={allocation.id} className="border-b">
-                    <td className="p-3 font-mono text-primary">{allocation.inventoryLot.lotNo}</td>
-                    <td className="p-3 font-mono text-xs">{allocation.inventoryLot.businessInbound.inboundNo}</td>
-                    <td className="p-3">{allocation.inventoryLot.supplierName || '-'}</td>
-                    <td className="p-3 text-right">{weight(before)}</td>
-                    <td className="p-3 text-right font-medium">{weight(allocation.quantity)}</td>
-                    <td className="p-3 text-right">{postedLine ? weight(postedLine.balanceAfter) : '待扣减'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">出库附件</h2>
-            <p className="mt-1 text-xs text-muted-foreground">支持装车照片、门岗放行凭证和 PDF，单个文件不超过 20MB。</p>
-          </div>
-          {item.status === 'DRAFT' && (
-            <>
-              <input
-                ref={fileRef}
-                className="hidden"
-                type="file"
-                accept=".jpg,.jpeg,.png,.webp,.pdf"
-                onChange={(event) => void upload(event.target.files?.[0])}
-              />
-              <Button variant="outline" disabled={saving} onClick={() => fileRef.current?.click()}>
-                <Upload className="mr-2 h-4 w-4" />上传附件
-              </Button>
-            </>
-          )}
-        </div>
-        {!item.attachments?.length ? (
-          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无出库附件</div>
-        ) : (
-          <div className="divide-y rounded-md border">
-            {item.attachments.map((attachment: any) => (
-              <div key={attachment.id} className="flex items-center justify-between gap-3 p-3">
-                <button className="flex min-w-0 items-center gap-2 text-left hover:text-primary" onClick={() => void viewAttachment(attachment)}>
-                  <FileText className="h-4 w-4 shrink-0" />
-                  <span className="truncate text-sm">{attachment.originalName}</span>
-                </button>
-                <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</span>
-                  {item.status === 'DRAFT' && (
-                    <Button variant="ghost" size="icon" onClick={() => void removeAttachment(attachment)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {item.salesOutbound ? (
-        <Card className="border-primary/30 bg-primary/5 p-5">
-          <Title>销售出库与扣减结果</Title>
-          <Grid items={[
-            ['销售出库单', item.salesOutbound.outboundNo],
-            ['出库数量', weight(item.salesOutbound.quantity)],
-            ['扣减批次', `${item.salesOutbound.lines.length} 个`],
-            ['入账时间', formatDateTimeToSecond(item.salesOutbound.postedAt)],
-            ['状态', '已扣减库存'],
-          ]} />
-        </Card>
-      ) : (
-        <Card className="p-5 text-sm text-muted-foreground">
-          确认货物离场后，可生成销售出库单；系统将在一个事务中扣减所有已选批次并写入出库台账。
-        </Card>
-      )}
+      {!isDirect && ['PENDING', 'PARTIAL'].includes(item.status) && <Button variant="outline" disabled={saving} onClick={() => void refreshReservation()}><RefreshCw className="mr-2 h-4 w-4" />刷新库存预留</Button>}
     </div>
-  );
-}
 
-function Title({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-4 font-semibold">{children}</h2>;
-}
+    <Card className={`p-5 ${!isDirect && Number(item.shortageQuantity) > 0 ? 'border-destructive/40' : ''}`}>
+      <div className="flex items-start gap-3">{isDirect ? <Truck className="mt-0.5 h-5 w-5 text-primary" /> : Number(item.shortageQuantity) > 0 ? <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-primary" />}
+        <div><h2 className="font-semibold">{item.stageLabel}</h2><p className="mt-1 text-sm text-muted-foreground">{item.blocker}</p></div></div>
+      {isDirect && <div className="mt-4 rounded-md bg-muted/60 p-3 text-sm text-muted-foreground">直拨货物由上游供应方直接发往下游客户。本占位单用于跟踪物流、磅单、质检和签收，不冻结或扣减我方库存。</div>}
+    </Card>
 
-function Grid({ items }: { items: string[][] }) {
-  return <div className="grid gap-4 sm:grid-cols-2">{items.map(([label, value]) => (
-    <div key={label}>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-medium">{value}</div>
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card className="p-5"><Title>上游业务依据</Title><Grid items={[
+        ['销售发货通知', item.dispatchNotice.noticeNo], ['执行批次', `${item.dispatchNotice.order.orderNo} · ${item.dispatchNotice.order.name}`],
+        ['销售合同', `${item.dispatchNotice.order.contract.contractNo} · ${item.dispatchNotice.order.contract.title}`], ['计划发货日期', date(item.dispatchNotice.plannedDate)],
+        ['发货仓库', isDirect ? '直拨，不经过我方仓库' : `${item.warehouse.code} · ${item.warehouse.name}`], ['通知状态', item.dispatchNotice.status],
+      ]} /></Card>
+      <Card className="p-5"><Title>{isDirect ? '直拨履约进度' : '库存预留与履约'}</Title><Grid items={[
+        ['通知计划数量', weight(item.plannedQuantity)], ['待出库冻结', isDirect ? '不适用' : weight(item.reservedQuantity)], ['库存缺口', isDirect ? '不适用' : weight(item.shortageQuantity)],
+        ['累计实际出库', weight(item.actualQuantity)], ['物流车次', `${item.dispatchNotice.waybills.length} 个`], ['当前阶段', item.stageLabel],
+      ]} /></Card>
     </div>
-  ))}</div>;
+
+    <Card className="p-5"><Title>{isDirect ? '直拨物料明细' : '物料库存预留明细'}</Title><div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[850px] text-sm">
+      <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">物料</th><th className="p-3">单位</th><th className="p-3 text-right">通知数量</th><th className="p-3 text-right">冻结数量</th><th className="p-3 text-right">实际出库</th><th className="p-3 text-right">待补库存</th></tr></thead>
+      <tbody>{item.lineItems.map((line: any) => <tr key={line.id} className="border-b"><td className="p-3 font-medium">{line.materialName || line.materialId}</td><td className="p-3">吨</td><td className="p-3 text-right">{weight(line.plannedQuantity)}</td><td className="p-3 text-right text-primary">{isDirect ? '-' : weight(line.reservedQuantity)}</td><td className="p-3 text-right">{weight(line.actualQuantity)}</td><td className="p-3 text-right text-destructive">{isDirect ? '-' : weight(Math.max(0, Number(line.plannedQuantity) - Number(line.reservedQuantity)))}</td></tr>)}</tbody>
+    </table></div></Card>
+
+    <Card className="p-5"><div className="mb-4"><h2 className="font-semibold">{isDirect ? '直拨物流与业务凭证' : '物流车次与出库作业'}</h2><p className="mt-1 text-xs text-muted-foreground">运单关联销售发货通知后自动归入；磅单通过物流运单自动回显，质检默认非必填。</p></div>
+      {isDirect ? (!item.dispatchNotice.waybills.length ? <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">尚未创建直拨物流运单</div> : <div className="space-y-4">{item.dispatchNotice.waybills.map((waybill: any) => {
+        const tickets = waybill.weighTickets || [];
+        const qualities = tickets.flatMap((ticket: any) => ticket.qualityInspections || []);
+        return <div key={waybill.id} className="rounded-lg border p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Truck className="h-4 w-4" /><span className="font-mono font-medium">{waybill.waybillNo}</span><Badge variant="outline">{WAYBILL_STATUS[waybill.status] || waybill.status}</Badge></div>
+            <div className="mt-2 text-sm text-muted-foreground">{waybill.plateNo || '待派车'} · 计划 {weight(waybill.totalQuantity)}</div></div>
+            <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/waybills/${waybill.id}`)}>查看运单</Button>{tickets[0] && <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/weighbridge/${tickets[0].id}`)}><Scale className="mr-1 h-4 w-4" />查看磅单</Button>}</div></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Small label="物流状态" value={WAYBILL_STATUS[waybill.status] || waybill.status} /><Small label="磅单" value={tickets.map((ticket: any) => ticket.ticketNo).join('、') || '待创建'} /><Small label="质检单" value={qualities.map((quality: any) => quality.inspectionNo).join('、') || '非必填'} /><Small label="库存处理" value="不经过我方库存" /></div>
+        </div>;
+      })}</div>) : (!item.receipts.length ? <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">尚未创建物流运单</div> : <div className="space-y-4">{item.receipts.map((receipt: any) => {
+        const fullWaybill = item.dispatchNotice.waybills.find((value: any) => value.id === receipt.waybillId);
+        const ticket = fullWaybill?.weighTickets?.find((value: any) => value.id === receipt.weighTicketId)
+          || fullWaybill?.weighTickets?.find((value: any) => value.status === 'REVIEWED')
+          || receipt.weighTicket;
+        const form = variance[receipt.id] || { decision: '', reason: '' };
+        return <div key={receipt.id} className={`rounded-lg border p-4 ${receipt.status === 'VARIANCE_PENDING' ? 'border-destructive/40 bg-destructive/5' : ''}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Truck className="h-4 w-4" /><span className="font-mono font-medium">{receipt.waybill.waybillNo}</span><Badge variant="outline">{STATUS[receipt.status] || receipt.status}</Badge></div>
+            <div className="mt-2 text-sm text-muted-foreground">{receipt.plateNo || receipt.waybill.plateNo || '待派车'} · 计划 {weight(receipt.plannedQuantity)} · 实际 {weight(receipt.outboundQuantity)}</div></div>
+            <div className="flex flex-wrap gap-2">
+              {ticket && <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/weighbridge/${ticket.id}`)}><Scale className="mr-1 h-4 w-4" />查看磅单</Button>}
+              {receipt.status === 'PENDING' && ticket?.status === 'REVIEWED' && <Button size="sm" onClick={() => router.push(`/dashboard/outbound/create?waybillId=${receipt.waybillId}&orderId=${item.id}`)}>拣配库存</Button>}
+              {receipt.status === 'READY' && <Button size="sm" disabled={saving} onClick={() => void release(receipt)}><PackageMinus className="mr-1 h-4 w-4" />确认放行</Button>}
+            </div></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Small label="车次作业单" value={receipt.receiptNo} /><Small label="磅单" value={ticket?.ticketNo || '待创建/复核'} /><Small label="库存批次" value={receipt.allocations?.map((a: any) => a.inventoryLot.lotNo).join('、') || '待拣配'} /><Small label="销售出库单" value={receipt.salesOutbound?.outboundNo || '待生成'} /></div>
+          {ticket?.qualityInspections?.length > 0 && <div className="mt-3 text-xs text-muted-foreground">关联质检：{ticket.qualityInspections.map((quality: any) => `${quality.inspectionNo}（${quality.conclusion}）`).join('、')}</div>}
+          {receipt.status === 'VARIANCE_PENDING' && <div className="mt-4 space-y-3 border-t pt-4"><div className="text-sm font-medium text-destructive">实际与计划偏差 {signedWeight(receipt.varianceQuantity)}（{number(receipt.varianceRate)}%），请完成差异处理后再放行。</div>
+            <div className="grid gap-3 md:grid-cols-3"><select className="h-10 rounded-md border bg-background px-3 text-sm" value={form.decision} onChange={event => setVariance(current => ({ ...current, [receipt.id]: { ...form, decision: event.target.value } }))}><option value="">选择处理方式</option>{Number(receipt.varianceQuantity) > 0 ? <option value="OVERAGE_APPROVED">确认溢装并按实际出库</option> : <><option value="SHORT_CONTINUE">短装，剩余后续补发</option><option value="SHORT_CLOSE">短装，本车差额关闭</option></>}</select><Input className="md:col-span-2" placeholder="差异原因和处理意见" value={form.reason} onChange={event => setVariance(current => ({ ...current, [receipt.id]: { ...form, reason: event.target.value } }))} /></div>
+            <div className="flex justify-end"><Button size="sm" disabled={saving} onClick={() => void resolveVariance(receipt)}>提交差异处理</Button></div></div>}
+        </div>;
+      })}</div>)}
+    </Card>
+  </div>;
 }
 
-function weight(value: any) {
-  if (value === null || value === undefined) return '-';
-  return `${Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} 吨`;
-}
-
-function formatFileSize(size: number) {
-  return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(size / 1024)} KB`;
-}
-
-function basis(value: string) {
-  return {
-    RECEIVING: '本次称重净重',
-    SHIPPING: '发货重量',
-    CUSTOMER: '客户重量',
-    THIRD_PARTY: '第三方重量',
-    MANUAL: '人工确认重量',
-  }[value] || value;
-}
+function Title({ children }: { children: React.ReactNode }) { return <h2 className="mb-4 font-semibold">{children}</h2>; }
+function Grid({ items }: { items: string[][] }) { return <div className="grid gap-4 sm:grid-cols-2">{items.map(([label, value]) => <Small key={label} label={label} value={value} />)}</div>; }
+function Small({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-sm font-medium">{value}</div></div>; }
+function weight(value: any) { return value === null || value === undefined ? '-' : `${Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} 吨`; }
+function signedWeight(value: any) { const numberValue = Number(value || 0); return `${numberValue > 0 ? '+' : ''}${weight(numberValue)}`; }
+function number(value: any) { return Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 4 }); }
+function date(value: any) { return value ? formatDateTimeToSecond(value) : '-'; }

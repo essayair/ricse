@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { OutboundService } from '../inventory/outbound.service';
 import { DispatchNoticeService } from './dispatch-notice.service';
 
 describe('DispatchNoticeService', () => {
@@ -13,6 +14,7 @@ describe('DispatchNoticeService', () => {
     getDispatchNoticeScope: jest.fn().mockResolvedValue({}),
   };
   let service: DispatchNoticeService;
+  const outboundService = { ensureOrderForNotice: jest.fn().mockResolvedValue({ id: 'outbound-order-1' }) };
   const order = {
     id: 'order-1', orderNo: 'PC-001', type: 'PURCHASE', status: 'CONFIRMED',
     deliveryLocation: '目的地',
@@ -27,6 +29,7 @@ describe('DispatchNoticeService', () => {
         DispatchNoticeService,
         { provide: PrismaService, useValue: prisma },
         { provide: AccessControlService, useValue: accessControl },
+        { provide: OutboundService, useValue: outboundService },
       ],
     }).compile();
     service = module.get(DispatchNoticeService);

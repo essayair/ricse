@@ -12,6 +12,7 @@ import { WeighbridgeModule } from './modules/weighbridge/weighbridge.module';
 import { QualityModule } from './modules/quality/quality.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { AccessControlModule } from './modules/access-control/access-control.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AccessControlModule } from './modules/access-control/access-control.mod
     QualityModule,
     InventoryModule,
     AccessControlModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

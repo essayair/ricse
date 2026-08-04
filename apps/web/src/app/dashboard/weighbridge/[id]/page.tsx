@@ -36,6 +36,10 @@ interface WeighTicket {
   id: string;
   ticketNo: string;
   direction: string;
+  weighingStage: string;
+  sequence: number;
+  isSupplementary: boolean;
+  additionReason: string | null;
   status: string;
   dataSource: string;
   ticketDate: string;
@@ -101,21 +105,38 @@ const STATUS: Record<string, string> = {
 };
 const SOURCE: Record<string, string> = { DEVICE: '设备采集', MANUAL: '人工录入', IMPORTED: '导入' };
 const BASIS: Array<[string, string]> = [
-  ['RECEIVING', '本次称重净重（默认）'],
-  ['SHIPPING', '发货重量'],
-  ['CUSTOMER', '客户收货重量'],
+  ['RECEIVING', '本张磅单净重（默认）'],
+  ['SHIPPING', '外部发货重量'],
+  ['CUSTOMER', '外部收货重量'],
   ['THIRD_PARTY', '第三方重量'],
   ['MANUAL', '手工确认重量'],
 ];
 const BASIS_LABEL = Object.fromEntries(BASIS);
+const MIN_WEIGHING_INTERVAL_SECONDS = 30 * 60;
+const MAX_WEIGHING_INTERVAL_SECONDS = 40 * 60;
 
-function createRecordDraft(weighingType: 'GROSS' | 'TARE', base = false): WeighRecordDraft {
+function randomWeighingTimeAfter(value: Date | string) {
+  const parsed = value instanceof Date ? value : new Date(value);
+  const baseTime = Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime();
+  const intervalSeconds = MIN_WEIGHING_INTERVAL_SECONDS
+    + Math.floor(Math.random() * (MAX_WEIGHING_INTERVAL_SECONDS - MIN_WEIGHING_INTERVAL_SECONDS + 1));
+  return new Date(baseTime + intervalSeconds * 1000);
+}
+
+function latestWeighingTime(records: Array<Pick<WeighRecord, 'weighedAt'>>, drafts: Array<Pick<WeighRecordDraft, 'weighedAt'>> = []) {
+  const times = [...records, ...drafts]
+    .map(record => new Date(record.weighedAt))
+    .filter(value => !Number.isNaN(value.getTime()));
+  return times.length ? new Date(Math.max(...times.map(value => value.getTime()))) : null;
+}
+
+function createRecordDraft(weighingType: 'GROSS' | 'TARE', base = false, weighedAt: Date = new Date()): WeighRecordDraft {
   return {
     key: `record-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     weighingType,
     weight: '',
     dataSource: 'MANUAL',
-    weighedAt: toLocalDateTimeInput(),
+    weighedAt: toLocalDateTimeInput(weighedAt),
     remarks: '',
     base,
   };
@@ -125,9 +146,13 @@ function baseRecordDrafts(ticket: WeighTicket): WeighRecordDraft[] {
   const order: Array<'GROSS' | 'TARE'> = ticket.direction === 'INBOUND'
     ? ['GROSS', 'TARE']
     : ['TARE', 'GROSS'];
-  return order
-    .filter(type => !ticket.records.some(record => record.weighingType === type))
-    .map(type => createRecordDraft(type, true));
+  const missingTypes = order.filter(type => !ticket.records.some(record => record.weighingType === type));
+  let previousTime = latestWeighingTime(ticket.records);
+  return missingTypes.map(type => {
+    const weighedAt = previousTime ? randomWeighingTimeAfter(previousTime) : new Date();
+    previousTime = weighedAt;
+    return createRecordDraft(type, true, weighedAt);
+  });
 }
 
 export default function WeighTicketDetailPage() {
@@ -145,6 +170,9 @@ export default function WeighTicketDetailPage() {
   const [toleranceRate, setToleranceRate] = useState('0.5');
   const [reviewRemark, setReviewRemark] = useState('');
   const [editingInfo, setEditingInfo] = useState(false);
+  const [editingWaybill, setEditingWaybill] = useState(false);
+  const [waybillOptions, setWaybillOptions] = useState<any[]>([]);
+  const [newWaybillId, setNewWaybillId] = useState('');
   const [infoForm, setInfoForm] = useState({ ticketDate: '', plateNo: '', materialName: '', materialSpec: '', shipperName: '', receiverName: '', packageCount: '0', driverName: '', weighmasterName: '', remarks: '' });
   const [saving, setSaving] = useState(false);
 
@@ -177,7 +205,28 @@ export default function WeighTicketDetailPage() {
       router.push('/dashboard/weighbridge');
     }
   };
-  useEffect(() => { void load(); }, [id]);
+  useEffect(() => {
+    void load();
+    api.get<any[]>('/weigh-tickets/eligible-waybills').then(setWaybillOptions).catch(() => {});
+  }, [id]);
+
+  const saveWaybill = async () => {
+    if (!newWaybillId) return alert('请选择新的物流运单');
+    const option = waybillOptions.find(value => value.id === newWaybillId);
+    const hasSameStage = option?.weighTickets?.some((value: any) => value.weighingStage === ticket?.weighingStage);
+    const additionReason = hasSameStage ? prompt('目标运单同一称重节点已有磅单，请填写追加原因')?.trim() : '';
+    if (hasSameStage && !additionReason) return;
+    setSaving(true);
+    try {
+      applyTicket(await api.patch<WeighTicket>(`/weigh-tickets/${id}/waybill`, { waybillId: newWaybillId, additionReason: additionReason || undefined }), true);
+      setEditingWaybill(false);
+      setNewWaybillId('');
+    } catch (error: any) {
+      alert(error.message || '物流运单关联修改失败');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const saveRecordDrafts = async () => {
     const filled = recordDrafts.filter(record => record.weight.trim() !== '');
@@ -212,8 +261,12 @@ export default function WeighTicketDetailPage() {
     const order: Array<'GROSS' | 'TARE'> = ticket.direction === 'INBOUND'
       ? ['GROSS', 'TARE']
       : ['TARE', 'GROSS'];
-    const nextType = order[(ticket.records.length + recordDrafts.length) % order.length];
-    setRecordDrafts(current => [...current, createRecordDraft(nextType)]);
+    setRecordDrafts(current => {
+      const nextType = order[(ticket.records.length + current.length) % order.length];
+      const previousTime = latestWeighingTime(ticket.records, current);
+      const weighedAt = previousTime ? randomWeighingTimeAfter(previousTime) : new Date();
+      return [...current, createRecordDraft(nextType, false, weighedAt)];
+    });
   };
 
   const saveEffectiveRecords = async () => {
@@ -296,7 +349,7 @@ export default function WeighTicketDetailPage() {
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/weighbridge')}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
-          <div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{ticket.ticketNo}</h1><Badge variant={ticket.abnormal ? 'destructive' : 'default'}>{STATUS[ticket.status]}</Badge>{ticket.abnormal && <Badge variant="destructive">磅差异常</Badge>}</div>
+          <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold">{ticket.ticketNo}</h1><Badge variant="outline">{ticket.weighingStage === 'SHIPPING' ? '发货称重' : '收货称重'} · 第 {ticket.sequence} 张</Badge>{ticket.isSupplementary && <Badge variant="outline">追加磅单</Badge>}<Badge variant={ticket.abnormal ? 'destructive' : 'default'}>{STATUS[ticket.status]}</Badge>{ticket.abnormal && <Badge variant="destructive">磅差异常</Badge>}</div>
           <p className="mt-1 text-sm text-muted-foreground">{ticket.direction === 'INBOUND' ? '采购入场' : '销售出场'} · {ticket.waybill.plateNo || '无车牌'}</p>
         </div>
       </div>
@@ -320,7 +373,7 @@ export default function WeighTicketDetailPage() {
 
     {ticket.status === 'REVIEWED' && <Card className={`p-5 ${ticket.abnormal ? 'border-destructive/30' : ''}`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">复核结果</h2><Badge variant="secondary">已复核</Badge></div><div className="grid gap-4 sm:grid-cols-3"><SmallField label="复核人" value={ticket.reviewer?.name || '-'} /><SmallField label="复核时间" value={formatDateTimeToSecond(ticket.reviewedAt)} /><SmallField label="处理意见" value={ticket.reviewRemark || '-'} /></div></Card>}
 
-    <Card className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">完整磅单信息</h2><p className="mt-1 text-xs text-muted-foreground">业务信息按创建时快照保存，称重时间取当前有效毛重和皮重记录</p></div><div className="flex items-center gap-2">{!['REVIEWED', 'VOIDED'].includes(ticket.status) && <Button variant="outline" size="sm" onClick={() => setEditingInfo(value => !value)}>{editingInfo ? '取消编辑' : '编辑基本信息'}</Button>}<Badge variant="outline">{ticket.ticketNo}</Badge></div></div><div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6"><SmallField label="磅单日期" value={formatDateOnly(ticket.ticketDate)} /><SmallField label="磅单编号" value={ticket.ticketNo} /><SmallField label="车牌号" value={ticket.plateNo || ticket.waybill.plateNo || '-'} /><SmallField label="货物名称" value={ticket.materialName || '-'} /><SmallField label="规格型号" value={ticket.materialSpec || '-'} /><SmallField label="包/袋数" value={ticket.packageCount === null ? '-' : `${ticket.packageCount}`} /><SmallField label="发货单位" value={ticket.shipperName || '-'} /><SmallField label="收货单位" value={ticket.receiverName || '-'} /><SmallField label="毛重（吨）" value={plainNumber(ticket.grossWeight)} /><SmallField label="皮重（吨）" value={plainNumber(ticket.tareWeight)} /><SmallField label="净重（吨）" value={plainNumber(ticket.netWeight)} /><SmallField label="毛重时间" value={recordTime(ticket.records, ticket.selectedGrossRecordId)} /><SmallField label="皮重时间" value={recordTime(ticket.records, ticket.selectedTareRecordId)} /><SmallField label="打印时间" value={formatDateTimeToSecond(ticket.printedAt, '尚未打印')} /><SmallField label="司机姓名" value={ticket.driverName || ticket.waybill.driverName || '-'} /><SmallField label="司磅员" value={ticket.weighmasterName || ticket.creator.name} /><div className="sm:col-span-2"><SmallField label="备注" value={ticket.remarks || '-'} /></div></div>{editingInfo && <div className="mt-5 space-y-4 border-t pt-5"><div className="grid gap-4 md:grid-cols-3"><InfoInput label="磅单日期" type="date" value={infoForm.ticketDate} setValue={value => setInfoForm(current => ({ ...current, ticketDate: value }))} /><InfoInput label="车牌号" value={infoForm.plateNo} setValue={value => setInfoForm(current => ({ ...current, plateNo: value }))} /><InfoInput label="司机姓名" value={infoForm.driverName} setValue={value => setInfoForm(current => ({ ...current, driverName: value }))} /><InfoInput label="货物名称" value={infoForm.materialName} setValue={value => setInfoForm(current => ({ ...current, materialName: value }))} /><InfoInput label="规格型号" value={infoForm.materialSpec} setValue={value => setInfoForm(current => ({ ...current, materialSpec: value }))} /><InfoInput label="包/袋数" type="number" value={infoForm.packageCount} setValue={value => setInfoForm(current => ({ ...current, packageCount: value }))} /><InfoInput label="发货单位" value={infoForm.shipperName} setValue={value => setInfoForm(current => ({ ...current, shipperName: value }))} /><InfoInput label="收货单位" value={infoForm.receiverName} setValue={value => setInfoForm(current => ({ ...current, receiverName: value }))} /><InfoInput label="司磅员" value={infoForm.weighmasterName} setValue={value => setInfoForm(current => ({ ...current, weighmasterName: value }))} /><div className="md:col-span-3"><InfoInput label="备注" value={infoForm.remarks} setValue={value => setInfoForm(current => ({ ...current, remarks: value }))} /></div></div><div className="flex justify-end"><Button disabled={saving} onClick={() => void saveInfo()}>{saving ? '保存中...' : '保存基本信息'}</Button></div></div>}</Card>
+    <Card className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">完整磅单信息</h2><p className="mt-1 text-xs text-muted-foreground">业务信息按创建时快照保存，称重时间取当前有效毛重和皮重记录</p></div><div className="flex items-center gap-2">{!['REVIEWED', 'VOIDED'].includes(ticket.status) && <Button variant="outline" size="sm" onClick={() => setEditingInfo(value => !value)}>{editingInfo ? '取消编辑' : '编辑基本信息'}</Button>}<Badge variant="outline">{ticket.ticketNo}</Badge></div></div>{ticket.additionReason && <div className="mb-4 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">追加原因：{ticket.additionReason}</div>}<div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6"><SmallField label="称重节点" value={ticket.weighingStage === 'SHIPPING' ? '发货称重' : '收货称重'} /><SmallField label="节点序次" value={`第 ${ticket.sequence} 张${ticket.isSupplementary ? '（追加）' : ''}`} /><SmallField label="磅单日期" value={formatDateOnly(ticket.ticketDate)} /><SmallField label="磅单编号" value={ticket.ticketNo} /><SmallField label="车牌号" value={ticket.plateNo || ticket.waybill.plateNo || '-'} /><SmallField label="货物名称" value={ticket.materialName || '-'} /><SmallField label="规格型号" value={ticket.materialSpec || '-'} /><SmallField label="包/袋数" value={ticket.packageCount === null ? '-' : `${ticket.packageCount}`} /><SmallField label="发货单位" value={ticket.shipperName || '-'} /><SmallField label="收货单位" value={ticket.receiverName || '-'} /><SmallField label="毛重（吨）" value={plainNumber(ticket.grossWeight)} /><SmallField label="皮重（吨）" value={plainNumber(ticket.tareWeight)} /><SmallField label="净重（吨）" value={plainNumber(ticket.netWeight)} /><SmallField label="毛重时间" value={recordTime(ticket.records, ticket.selectedGrossRecordId)} /><SmallField label="皮重时间" value={recordTime(ticket.records, ticket.selectedTareRecordId)} /><SmallField label="打印时间" value={formatDateTimeToSecond(ticket.printedAt, '尚未打印')} /><SmallField label="司机姓名" value={ticket.driverName || ticket.waybill.driverName || '-'} /><SmallField label="司磅员" value={ticket.weighmasterName || ticket.creator.name} /><div className="sm:col-span-2"><SmallField label="备注" value={ticket.remarks || '-'} /></div></div>{editingInfo && <div className="mt-5 space-y-4 border-t pt-5"><div className="grid gap-4 md:grid-cols-3"><InfoInput label="磅单日期" type="date" value={infoForm.ticketDate} setValue={value => setInfoForm(current => ({ ...current, ticketDate: value }))} /><InfoInput label="车牌号" value={infoForm.plateNo} setValue={value => setInfoForm(current => ({ ...current, plateNo: value }))} /><InfoInput label="司机姓名" value={infoForm.driverName} setValue={value => setInfoForm(current => ({ ...current, driverName: value }))} /><InfoInput label="货物名称" value={infoForm.materialName} setValue={value => setInfoForm(current => ({ ...current, materialName: value }))} /><InfoInput label="规格型号" value={infoForm.materialSpec} setValue={value => setInfoForm(current => ({ ...current, materialSpec: value }))} /><InfoInput label="包/袋数" type="number" value={infoForm.packageCount} setValue={value => setInfoForm(current => ({ ...current, packageCount: value }))} /><InfoInput label="发货单位" value={infoForm.shipperName} setValue={value => setInfoForm(current => ({ ...current, shipperName: value }))} /><InfoInput label="收货单位" value={infoForm.receiverName} setValue={value => setInfoForm(current => ({ ...current, receiverName: value }))} /><InfoInput label="司磅员" value={infoForm.weighmasterName} setValue={value => setInfoForm(current => ({ ...current, weighmasterName: value }))} /><div className="md:col-span-3"><InfoInput label="备注" value={infoForm.remarks} setValue={value => setInfoForm(current => ({ ...current, remarks: value }))} /></div></div><div className="flex justify-end"><Button disabled={saving} onClick={() => void saveInfo()}>{saving ? '保存中...' : '保存基本信息'}</Button></div></div>}</Card>
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
       <Metric label="计划数量" value={weight(ticket.plannedQuantity)} />
@@ -361,7 +414,7 @@ export default function WeighTicketDetailPage() {
                 {ticket.direction === 'INBOUND'
                   ? '采购入场默认顺序：先毛重、后皮重'
                   : '销售出场默认顺序：先皮重、后毛重'}
-                ；可只保存当前已称记录，也可追加复磅
+                ；首次默认为当前系统时间，后续默认间隔 30–40 分钟（随机到秒），均可手动修改
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={appendRecordDraft}>
@@ -409,7 +462,7 @@ export default function WeighTicketDetailPage() {
                       <label className="mb-1 block text-sm">称重时间</label>
                       <Input type="datetime-local" step="1" value={record.weighedAt}
                         onChange={event => updateRecordDraft(record.key, { weighedAt: event.target.value })} />
-                      <p className="mt-1 text-xs text-muted-foreground">精确到秒</p>
+                      <p className="mt-1 text-xs text-muted-foreground">默认自动计算，支持手动选择并精确到秒</p>
                     </div>
                     <div className="md:col-span-2">
                       <label className="mb-1 block text-sm">备注</label>
@@ -464,7 +517,8 @@ export default function WeighTicketDetailPage() {
         </Card>
 
         <Card className="space-y-3 p-5">
-          <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-primary" /><h2 className="font-semibold">关联业务</h2></div>
+          <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Truck className="h-4 w-4 text-primary" /><h2 className="font-semibold">关联业务</h2></div>{editable && <Button size="sm" variant="outline" onClick={() => setEditingWaybill(value => !value)}>{editingWaybill ? '取消' : '调整运单'}</Button>}</div>
+          {editingWaybill && <div className="space-y-2 rounded-md border p-3"><label className="text-sm font-medium">按执行通知筛选后的可关联物流运单</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={newWaybillId} onChange={event => setNewWaybillId(event.target.value)}><option value="">请选择</option>{waybillOptions.map(option => <option key={option.id} value={option.id}>{option.dispatchNotice.noticeNo} · {option.waybillNo} · {option.plateNo || '无车牌'}</option>)}</select><p className="text-xs text-muted-foreground">仅待称重或称重中的磅单可调整；复核后关联关系锁定。</p><Button className="w-full" size="sm" disabled={saving || !newWaybillId} onClick={() => void saveWaybill()}>保存物流运单关联</Button></div>}
           <button className="w-full rounded-md border p-3 text-left hover:bg-muted" onClick={() => router.push(`/dashboard/waybills/${ticket.waybill.id}`)}><div className="font-medium">{ticket.waybill.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{ticket.waybill.plateNo || '无车牌'} · {ticket.waybill.driverName || '无司机'} · {number(ticket.waybill.totalQuantity)} 吨</div></button>
           <div><div className="text-sm font-medium">{ticket.waybill.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-primary">{ticket.waybill.dispatchNotice.order.orderNo}</div><div className="mt-1 text-xs text-muted-foreground">{ticket.waybill.dispatchNotice.order.contract.contractNo} · {ticket.waybill.dispatchNotice.order.contract.title}</div></div>
           <div className="grid grid-cols-2 gap-3 border-t pt-3"><SmallField label="起运地" value={ticket.waybill.originLocation || '-'} /><SmallField label="目的地" value={ticket.waybill.destinationLocation || '-'} /><SmallField label="建单人" value={ticket.creator.name} /><SmallField label="建单备注" value={ticket.remarks || '-'} /></div>

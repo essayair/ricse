@@ -25,6 +25,8 @@ describe('InventoryService', () => {
       ],
     }).compile();
     service = module.get(InventoryService);
+    prisma.weighTicket.findFirst.mockResolvedValue(null);
+    prisma.waybillWeightSelection.findFirst.mockResolvedValue(null);
   });
 
   it('只选择已到货、已复核且存在已确认合格质检单的采购运单', async () => {
@@ -97,6 +99,7 @@ describe('InventoryService', () => {
       weighTicket: {
         id: 'ticket-1',
         status: 'REVIEWED',
+        netWeight: 100,
         settlementWeight: 100,
         waybill: {
           id: 'waybill-1',
@@ -165,7 +168,7 @@ describe('InventoryService', () => {
       status: 'CONFIRMED',
       conclusion: 'PASS',
       weighTicket: {
-        id: 'ticket-1', settlementWeight: 100,
+        id: 'ticket-1', netWeight: 100, settlementWeight: 100,
         status: 'REVIEWED',
         waybill: {
           id: 'waybill-1', status: 'ARRIVED',
@@ -197,6 +200,8 @@ describe('InventoryService', () => {
   it('仓管可以改选同一运单下已确认合格质检单作为最终验收依据', async () => {
     jest.spyOn(service, 'findReceipt').mockResolvedValue({
       id: 'receipt-1', waybillId: 'waybill-1', status: 'PENDING', plateNo: '沪A12345',
+      weighTicketId: 'ticket-1',
+      weighTicket: { id: 'ticket-1', status: 'REVIEWED', netWeight: 100 },
     } as any);
     prisma.qualityInspection.findFirst.mockResolvedValue({
       id: 'quality-2', weighTicketId: 'ticket-2', materialName: '铁矿石', materialSpec: '粉矿',
@@ -220,7 +225,7 @@ describe('InventoryService', () => {
     }));
     expect(prisma.inboundReceipt.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
-        weighTicketId: 'ticket-2', qualityInspectionId: 'quality-2', receivedQuantity: 97.5,
+        weighTicketId: 'ticket-1', qualityInspectionId: 'quality-2', receivedQuantity: 98.5,
       }),
     }));
   });
@@ -264,19 +269,53 @@ describe('InventoryService', () => {
     expect(prisma.businessInbound.create).not.toHaveBeenCalled();
   });
 
-  it('库存总览按批次汇总可用数量、物料数和仓库数', async () => {
+  it('库存总览按库存主体和仓库汇总账面、冻结与可用数量', async () => {
     prisma.inventoryLot.findMany.mockResolvedValue([
-      { materialId: 'm1', warehouseId: 'w1', availableQuantity: 12.5 },
-      { materialId: 'm1', warehouseId: 'w2', availableQuantity: 7.5 },
+      {
+        id: 'lot-1', materialId: 'm1', warehouseId: 'w1', ownerPartnerId: 'owner-1',
+        availableQuantity: 12.5, createdAt: new Date('2026-01-01'),
+        warehouse: { id: 'w1', code: 'WH01', name: '一号仓' },
+        inventoryOwner: { id: 'owner-1', code: 'OWN01', name: '采购主体一' },
+      },
+      {
+        id: 'lot-2', materialId: 'm1', warehouseId: 'w2', ownerPartnerId: 'owner-1',
+        availableQuantity: 7.5, createdAt: new Date('2026-01-02'),
+        warehouse: { id: 'w2', code: 'WH02', name: '二号仓' },
+        inventoryOwner: { id: 'owner-1', code: 'OWN01', name: '采购主体一' },
+      },
+      {
+        id: 'lot-3', materialId: 'm2', warehouseId: 'w1', ownerPartnerId: 'owner-2',
+        availableQuantity: 5, createdAt: new Date('2026-01-03'),
+        warehouse: { id: 'w1', code: 'WH01', name: '一号仓' },
+        inventoryOwner: { id: 'owner-2', code: 'OWN02', name: '采购主体二' },
+      },
     ] as any);
+    prisma.outboundOrderLine.findMany.mockResolvedValue([]);
 
     const result = await service.inventoryOverview({}, 'user-1');
 
     expect(result.summary).toEqual({
-      lotCount: 2,
-      materialCount: 1,
+      lotCount: 3,
+      materialCount: 2,
       warehouseCount: 2,
-      totalQuantity: 20,
+      ownerCount: 2,
+      totalQuantity: 25,
+      totalPhysicalQuantity: 25,
+      totalReservedQuantity: 0,
+      totalAvailableQuantity: 25,
     });
+    expect(result.ownerSummaries).toHaveLength(2);
+    expect(result.ownerSummaries).toEqual(expect.arrayContaining([expect.objectContaining({
+      ownerPartnerId: 'owner-1', ownerName: '采购主体一', warehouseCount: 2,
+      totalPhysicalQuantity: 20, totalAvailableQuantity: 20,
+    })]));
+    expect(result.warehouseSummaries).toHaveLength(2);
+    expect(result.warehouseSummaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        warehouseId: 'w1', ownerCount: 2, lotCount: 2,
+        totalPhysicalQuantity: 17.5, totalAvailableQuantity: 17.5,
+      }),
+    ]));
+    expect(result.ownerWarehouseSummaries).toHaveLength(3);
   });
 });

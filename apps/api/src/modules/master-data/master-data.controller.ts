@@ -55,10 +55,10 @@ export class MasterDataController {
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建物料' })
   createMaterial(@Body() dto: {
-    code: string; name: string; categoryId: string; grade?: string;
+    code?: string; name: string; categoryId: string; grade?: string;
     unit?: string; spec?: string; sourceRegion?: string; packageType?: string;
     isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
-    internalCode?: string; qcTemplate?: string; remark?: string;
+    internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
   }) {
     return this.masterDataService.createMaterial(dto);
   }

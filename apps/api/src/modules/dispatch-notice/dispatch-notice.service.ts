@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { OutboundService } from '../inventory/outbound.service';
 import { CreateDispatchNoticeDto } from './dto/create-dispatch-notice.dto';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class DispatchNoticeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
+    private readonly outboundService: OutboundService,
   ) {}
 
   private readonly include = {
@@ -203,7 +205,22 @@ export class DispatchNoticeService {
           data: { status: 'DISPATCHED', dispatchedAt: new Date() },
         });
       }
+      if (status === 'ISSUED' && notice.type === 'SALES') {
+        await this.outboundService.ensureOrderForNotice(notice.id, userId, tx);
+      }
+      if (status === 'CANCELLED' && notice.type === 'SALES') {
+        await tx.outboundOrder.updateMany({
+          where: { dispatchNoticeId: notice.id, status: { not: 'COMPLETED' } },
+          data: { status: 'CANCELLED', reservedQuantity: 0, shortageQuantity: 0 },
+        });
+      }
       if (status === 'COMPLETED') {
+        if (notice.type === 'SALES') {
+          await tx.outboundOrder.updateMany({
+            where: { dispatchNoticeId: notice.id, status: { not: 'CANCELLED' } },
+            data: { status: 'COMPLETED', reservedQuantity: 0, shortageQuantity: 0 },
+          });
+        }
         const pending = await tx.dispatchNotice.count({
           where: { orderId: notice.orderId, deletedAt: null, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
         });

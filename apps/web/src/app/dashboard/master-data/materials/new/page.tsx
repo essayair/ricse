@@ -185,7 +185,10 @@ export default function MaterialNewPage() {
       });
       router.push('/dashboard/master-data?tab=materials');
     } catch (e: unknown) {
-      setError((e as Error).message || '创建失败');
+      const message = (e as Error).message || '创建失败';
+      setError(message === 'Internal server error'
+        ? '物料保存失败，请刷新物料编码和物料大类后重试'
+        : message);
       setLoading(false);
     }
   };

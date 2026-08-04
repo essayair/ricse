@@ -85,6 +85,11 @@ export class InboundReceiptController {
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly service: InventoryService) {}
-  @Get('overview') overview(@CurrentUser('id') userId: string, @Query('search') search?: string, @Query('warehouseId') warehouseId?: string) { return this.service.inventoryOverview({ search, warehouseId }, userId); }
+  @Get('overview') overview(
+    @CurrentUser('id') userId: string,
+    @Query('search') search?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('ownerPartnerId') ownerPartnerId?: string,
+  ) { return this.service.inventoryOverview({ search, warehouseId, ownerPartnerId }, userId); }
   @Get('ledger') ledger(@CurrentUser('id') userId: string) { return this.service.inventoryLedger(userId); }
 }

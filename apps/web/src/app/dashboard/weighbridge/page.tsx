@@ -12,6 +12,7 @@ import { formatDateTimeToSecond } from '@/lib/date-time';
 
 interface Ticket {
   id: string; ticketNo: string; direction: string; status: string; abnormal: boolean;
+  weighingStage: string; sequence: number; isSupplementary: boolean; additionReason: string | null;
   ticketDate: string; plateNo: string | null; materialName: string | null; materialSpec: string | null;
   shipperName: string | null; receiverName: string | null; packageCount: number | null;
   driverName: string | null; weighmasterName: string | null; printedAt: string | null; remarks: string | null;
@@ -78,10 +79,10 @@ export default function WeighbridgePage() {
         <div className="border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground">下方表格包含全部字段，可横向滚动查看。</div>
         <div className="overflow-x-auto"><table className="min-w-[3000px] w-full text-sm">
           <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>
-            <th className="px-3 py-3">序号</th><th className="px-3 py-3">磅单日期</th><th className="px-3 py-3">磅单编号</th><th className="px-3 py-3">车牌号</th><th className="px-3 py-3">货物名称</th><th className="px-3 py-3">规格型号</th><th className="px-3 py-3">发货单位</th><th className="px-3 py-3">收货单位</th><th className="px-3 py-3 text-right">毛重（吨）</th><th className="px-3 py-3 text-right">皮重（吨）</th><th className="px-3 py-3 text-right">净重（吨）</th><th className="px-3 py-3 text-right">包/袋数</th><th className="px-3 py-3">毛重时间</th><th className="px-3 py-3">皮重时间</th><th className="px-3 py-3">打印时间</th><th className="px-3 py-3">司机姓名</th><th className="px-3 py-3">司磅员</th><th className="px-3 py-3">备注</th><th className="px-3 py-3">状态</th>
+            <th className="px-3 py-3">序号</th><th className="px-3 py-3">称重节点</th><th className="px-3 py-3">节点序次</th><th className="px-3 py-3">磅单日期</th><th className="px-3 py-3">磅单编号</th><th className="px-3 py-3">车牌号</th><th className="px-3 py-3">货物名称</th><th className="px-3 py-3">规格型号</th><th className="px-3 py-3">发货单位</th><th className="px-3 py-3">收货单位</th><th className="px-3 py-3 text-right">毛重（吨）</th><th className="px-3 py-3 text-right">皮重（吨）</th><th className="px-3 py-3 text-right">净重（吨）</th><th className="px-3 py-3 text-right">包/袋数</th><th className="px-3 py-3">毛重时间</th><th className="px-3 py-3">皮重时间</th><th className="px-3 py-3">打印时间</th><th className="px-3 py-3">司机姓名</th><th className="px-3 py-3">司磅员</th><th className="px-3 py-3">追加原因/备注</th><th className="px-3 py-3">状态</th>
           </tr></thead>
           <tbody>{items.map((item, index) => <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/weighbridge/${item.id}`)}>
-            <td className="px-3 py-3 text-center">{index + 1}</td><td className="px-3 py-3">{dateOnly(item.ticketDate)}</td><td className="px-3 py-3 font-mono text-xs font-medium text-primary">{item.ticketNo}</td><td className="px-3 py-3">{item.plateNo || item.waybill.plateNo || '-'}</td><td className="max-w-48 truncate px-3 py-3" title={item.materialName || ''}>{item.materialName || '-'}</td><td className="max-w-48 truncate px-3 py-3" title={item.materialSpec || ''}>{item.materialSpec || '-'}</td><td className="max-w-56 truncate px-3 py-3" title={item.shipperName || ''}>{item.shipperName || '-'}</td><td className="max-w-56 truncate px-3 py-3" title={item.receiverName || ''}>{item.receiverName || '-'}</td><td className="px-3 py-3 text-right">{plainWeight(item.grossWeight)}</td><td className="px-3 py-3 text-right">{plainWeight(item.tareWeight)}</td><td className="px-3 py-3 text-right font-medium">{plainWeight(item.netWeight)}</td><td className="px-3 py-3 text-right">{item.packageCount ?? '-'}</td><td className="px-3 py-3 text-xs">{recordDate(item, item.selectedGrossRecordId)}</td><td className="px-3 py-3 text-xs">{recordDate(item, item.selectedTareRecordId)}</td><td className="px-3 py-3 text-xs">{dateTime(item.printedAt)}</td><td className="px-3 py-3">{item.driverName || '-'}</td><td className="px-3 py-3">{item.weighmasterName || item.creator.name}</td><td className="max-w-56 truncate px-3 py-3" title={item.remarks || ''}>{item.remarks || '-'}</td>
+            <td className="px-3 py-3 text-center">{index + 1}</td><td className="px-3 py-3"><Badge variant="outline">{stageLabel(item.weighingStage)}</Badge></td><td className="px-3 py-3">第 {item.sequence} 张{item.isSupplementary ? '（追加）' : ''}</td><td className="px-3 py-3">{dateOnly(item.ticketDate)}</td><td className="px-3 py-3 font-mono text-xs font-medium text-primary">{item.ticketNo}</td><td className="px-3 py-3">{item.plateNo || item.waybill.plateNo || '-'}</td><td className="max-w-48 truncate px-3 py-3" title={item.materialName || ''}>{item.materialName || '-'}</td><td className="max-w-48 truncate px-3 py-3" title={item.materialSpec || ''}>{item.materialSpec || '-'}</td><td className="max-w-56 truncate px-3 py-3" title={item.shipperName || ''}>{item.shipperName || '-'}</td><td className="max-w-56 truncate px-3 py-3" title={item.receiverName || ''}>{item.receiverName || '-'}</td><td className="px-3 py-3 text-right">{plainWeight(item.grossWeight)}</td><td className="px-3 py-3 text-right">{plainWeight(item.tareWeight)}</td><td className="px-3 py-3 text-right font-medium">{plainWeight(item.netWeight)}</td><td className="px-3 py-3 text-right">{item.packageCount ?? '-'}</td><td className="px-3 py-3 text-xs">{recordDate(item, item.selectedGrossRecordId)}</td><td className="px-3 py-3 text-xs">{recordDate(item, item.selectedTareRecordId)}</td><td className="px-3 py-3 text-xs">{dateTime(item.printedAt)}</td><td className="px-3 py-3">{item.driverName || '-'}</td><td className="px-3 py-3">{item.weighmasterName || item.creator.name}</td><td className="max-w-56 truncate px-3 py-3" title={item.additionReason || item.remarks || ''}>{item.additionReason || item.remarks || '-'}</td>
             <td className="px-3 py-3"><div className="flex items-center gap-2"><Badge variant={item.status === 'VOIDED' ? 'destructive' : 'secondary'}>{STATUS[item.status]}</Badge>{item.abnormal && <Badge variant="destructive">异常</Badge>}</div></td>
           </tr>)}</tbody>
         </table></div>
@@ -96,6 +97,8 @@ function TicketCard({ item, index, onOpen }: { item: Ticket; index: number; onOp
         <span className="flex h-7 items-center justify-center rounded-full bg-primary/10 px-3 text-xs font-semibold text-primary">序号 {index + 1}</span>
         <span className="text-sm"><span className="text-muted-foreground">磅单编号：</span><span className="font-mono font-semibold text-primary">{item.ticketNo}</span></span>
         <span className="text-sm text-muted-foreground">磅单日期：{dateOnly(item.ticketDate)}</span>
+        <Badge variant="outline">{stageLabel(item.weighingStage)} · 第 {item.sequence} 张</Badge>
+        {item.isSupplementary && <Badge variant="outline">追加磅单</Badge>}
         <Badge variant={item.status === 'VOIDED' ? 'destructive' : 'secondary'}>{STATUS[item.status]}</Badge>
         {item.abnormal && <Badge variant="destructive">磅差异常</Badge>}
       </div>
@@ -138,6 +141,7 @@ function TicketCard({ item, index, onOpen }: { item: Ticket; index: number; onOp
         <Field label="打印时间" value={dateTime(item.printedAt)} />
         <Field label="备注" value={item.remarks} missing />
       </section>
+      {item.additionReason && <div className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">追加原因：{item.additionReason}</div>}
     </div>
   </Card>;
 }
@@ -168,3 +172,4 @@ function plainWeight(value: string | number | null) { return value === null ? '-
 function dateOnly(value: string) { return new Date(value).toLocaleDateString('zh-CN'); }
 function dateTime(value: string | null) { return formatDateTimeToSecond(value); }
 function recordDate(item: Ticket, id: string | null) { return dateTime(item.records.find(record => record.id === id)?.weighedAt || null); }
+function stageLabel(value: string) { return value === 'SHIPPING' ? '发货称重' : '收货称重'; }

@@ -8,6 +8,7 @@ import { normalizeUploadFilename } from '../common/filename-encoding';
 import { CreateWeighRecordDto } from './dto/create-weigh-record.dto';
 import { CreateWeighRecordsDto } from './dto/create-weigh-records.dto';
 import { CreateWeighTicketDto } from './dto/create-weigh-ticket.dto';
+import { SelectWaybillWeightDto } from './dto/select-waybill-weight.dto';
 import { WeighTicketService } from './weigh-ticket.service';
 
 @ApiTags('磅单管理')
@@ -38,6 +39,17 @@ export class WeighTicketController {
     const attachment = await this.service.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Patch('waybills/:waybillId/selections/:purpose')
+  @ApiOperation({ summary: '选择运单的入出库或结算有效磅单' })
+  selectWaybillWeight(
+    @Param('waybillId') waybillId: string,
+    @Param('purpose') purpose: string,
+    @Body() dto: SelectWaybillWeightDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.selectForPurpose(waybillId, purpose, dto.weighTicketId, dto.reason, userId);
   }
 
   @Delete('attachments/:id')
@@ -125,6 +137,17 @@ export class WeighTicketController {
     driverName: string; weighmasterName: string; remarks?: string;
   }, @CurrentUser('id') userId: string) {
     return this.service.updateInfo(id, data, userId);
+  }
+
+  @Patch(':id/waybill')
+  @ApiOperation({ summary: '在磅单复核前调整关联物流运单' })
+  updateWaybill(
+    @Param('id') id: string,
+    @Body() data: { waybillId: string; additionReason?: string },
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!data.waybillId) throw new BadRequestException('请选择物流运单');
+    return this.service.updateWaybill(id, data.waybillId, userId, data.additionReason);
   }
 }
 

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { OutboundService } from '../inventory/outbound.service';
 import { CreateWaybillDto } from './dto/create-waybill.dto';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class WaybillService {
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
     private readonly inventoryService: InventoryService,
+    private readonly outboundService: OutboundService,
   ) {}
 
   private readonly include = {
@@ -32,9 +34,20 @@ export class WaybillService {
       where: { deletedAt: null },
       select: {
         id: true, ticketNo: true, status: true, netWeight: true,
-        settlementWeight: true, abnormal: true,
+        settlementWeight: true, abnormal: true, weighingStage: true,
+        sequence: true, isSupplementary: true, additionReason: true,
+        ticketDate: true, reviewedAt: true,
       },
-      orderBy: { createdAt: 'desc' as const },
+      orderBy: [{ weighingStage: 'asc' as const }, { sequence: 'asc' as const }],
+    },
+    weightSelections: {
+      where: { isCurrent: true },
+      select: {
+        id: true, purpose: true, weighTicketId: true, quantity: true,
+        reason: true, selectedAt: true,
+        selector: { select: { id: true, name: true } },
+      },
+      orderBy: { selectedAt: 'desc' as const },
     },
     attachments: { orderBy: { createdAt: 'desc' as const } },
     outboundReceipts: {
@@ -138,7 +151,7 @@ export class WaybillService {
       };
     });
     const notice = availability.notice;
-    return this.prisma.waybill.create({
+    const created = await this.prisma.waybill.create({
       data: {
         waybillNo: await this.generateNo(),
         dispatchNoticeId: notice.id,
@@ -160,6 +173,11 @@ export class WaybillService {
       },
       include: this.include,
     });
+    if (notice.type === 'SALES' && notice.mode === 'STANDARD') {
+      await this.outboundService.ensureReceiptForWaybill(created.id, userId);
+      return this.findOne(created.id, userId, 'logistics.manage');
+    }
+    return created;
   }
 
   async findAll(params: { status?: string; search?: string }, userId: string) {
@@ -242,8 +260,8 @@ export class WaybillService {
     if (!(allowed[waybill.status] || []).includes(status)) {
       throw new BadRequestException(`不能从 ${waybill.status} 变更为 ${status}`);
     }
-    if (status === 'CANCELLED' && waybill.outboundReceipts.length) {
-      throw new BadRequestException('已有有效物流出库单，不能取消物流运单');
+    if (status === 'CANCELLED' && waybill.outboundReceipts.some(item => item.status === 'POSTED')) {
+      throw new BadRequestException('该运单已经完成销售出库，不能取消');
     }
     if (status === 'IN_TRANSIT' && (!waybill.plateNo || !waybill.driverName)) {
       throw new BadRequestException('发运前必须完成车辆、车牌和司机调度信息');
@@ -275,6 +293,15 @@ export class WaybillService {
       });
       if (status === 'IN_TRANSIT' && waybill.dispatchNotice.status === 'ISSUED') {
         await tx.dispatchNotice.update({ where: { id: waybill.dispatchNoticeId }, data: { status: 'IN_PROGRESS' } });
+      }
+      if (status === 'CANCELLED') {
+        const receiptIds = waybill.outboundReceipts
+          .filter(item => item.status !== 'POSTED')
+          .map(item => item.id);
+        if (receiptIds.length) {
+          await tx.outboundReceiptAllocation.deleteMany({ where: { outboundReceiptId: { in: receiptIds } } });
+          await tx.outboundReceipt.updateMany({ where: { id: { in: receiptIds } }, data: { status: 'CANCELLED' } });
+        }
       }
       return updated;
     });

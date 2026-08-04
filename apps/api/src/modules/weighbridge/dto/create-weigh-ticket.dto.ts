@@ -9,6 +9,14 @@ export class CreateWeighTicketDto {
   direction?: string;
 
   @IsOptional()
+  @IsIn(['SHIPPING', 'RECEIVING'])
+  weighingStage?: string;
+
+  @IsOptional()
+  @IsString()
+  additionReason?: string;
+
+  @IsOptional()
   @IsIn(['DEVICE', 'MANUAL', 'IMPORTED'])
   dataSource?: string;
 

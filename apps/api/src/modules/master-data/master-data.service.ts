@@ -53,20 +53,20 @@ export class MasterDataService {
   // ===== 物料 =====
 
   async generateNextMaterialCode(): Promise<string> {
-    const last = await this.prisma.material.findFirst({
-      orderBy: { code: 'desc' },
+    const materials = await this.prisma.material.findMany({
+      where: { code: { startsWith: 'MAT', mode: 'insensitive' } },
       select: { code: true },
     });
-    let nextNum = 1;
-    if (last) {
-      const num = parseInt(last.code.replace(/\D/g, ''), 10);
-      if (!isNaN(num)) nextNum = num + 1;
-    }
+    const max = materials.reduce((value, item) => {
+      const matched = item.code.match(/^MAT[-_ ]?(\d+)$/i);
+      return matched ? Math.max(value, Number(matched[1])) : value;
+    }, 0);
+    const nextNum = max + 1;
     return `MAT${String(nextNum).padStart(4, '0')}`;
   }
 
   async createMaterial(data: {
-    code: string;
+    code?: string;
     name: string;
     categoryId: string;
     grade?: string;
@@ -80,12 +80,51 @@ export class MasterDataService {
     taxCode?: string;
     internalCode?: string;
     qcTemplate?: string;
+    status?: string;
     remark?: string;
   }) {
-    return this.prisma.material.create({
-      data,
-      include: { category: true },
+    const name = data.name?.trim();
+    const categoryId = data.categoryId?.trim();
+    if (!name) throw new BadRequestException('物料品名不能为空');
+    if (!categoryId) throw new BadRequestException('请选择物料大类');
+    const category = await this.prisma.materialCategory.findUnique({
+      where: { id: categoryId },
+      select: { id: true },
     });
+    if (!category) throw new BadRequestException('所选物料大类不存在或已被删除，请刷新后重新选择');
+
+    let code = data.code?.trim() || await this.generateNextMaterialCode();
+    const systemManagedCode = /^MAT[-_ ]?\d+$/i.test(code);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await this.prisma.material.create({
+          data: {
+            code, name, categoryId,
+            grade: clean(data.grade), unit: clean(data.unit) || 'TON',
+            spec: clean(data.spec), sourceRegion: clean(data.sourceRegion),
+            packageType: clean(data.packageType), isVirtual: data.isVirtual ?? false,
+            specs: data.specs as Prisma.InputJsonValue | undefined,
+            hsCode: clean(data.hsCode), taxCode: clean(data.taxCode),
+            internalCode: clean(data.internalCode), qcTemplate: clean(data.qcTemplate),
+            status: data.status || 'ACTIVE', remark: clean(data.remark),
+          },
+          include: { category: true },
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          if (systemManagedCode && attempt < 3) {
+            code = await this.generateNextMaterialCode();
+            continue;
+          }
+          throw new BadRequestException('物料编码已存在，请刷新页面后重试');
+        }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+          throw new BadRequestException('所选物料大类不存在或已失效，请刷新后重新选择');
+        }
+        throw error;
+      }
+    }
+    throw new BadRequestException('物料编码生成冲突，请重新提交');
   }
 
   async findAllMaterials(params: {
@@ -141,11 +180,24 @@ export class MasterDataService {
     internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
   }) {
     await this.findMaterialById(id);
-    return this.prisma.material.update({
-      where: { id },
-      data,
-      include: { category: true },
-    });
+    if (data.categoryId) {
+      const category = await this.prisma.materialCategory.findUnique({
+        where: { id: data.categoryId }, select: { id: true },
+      });
+      if (!category) throw new BadRequestException('所选物料大类不存在或已被删除，请刷新后重新选择');
+    }
+    try {
+      return await this.prisma.material.update({
+        where: { id },
+        data,
+        include: { category: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new BadRequestException('所选物料大类不存在或已失效，请刷新后重新选择');
+      }
+      throw error;
+    }
   }
 
   async deleteMaterial(id: string) {
@@ -279,4 +331,8 @@ export class MasterDataService {
     }
     return this.prisma.materialCategory.delete({ where: { id } });
   }
+}
+
+function clean(value?: string) {
+  return value?.trim() || undefined;
 }

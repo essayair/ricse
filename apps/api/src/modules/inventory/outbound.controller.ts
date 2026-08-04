@@ -27,6 +27,21 @@ export class OutboundReceiptController {
     return this.service.eligibleWaybills(userId);
   }
 
+  @Get('orders')
+  findOrders(@CurrentUser('id') userId: string, @Query('search') search?: string, @Query('status') status?: string) {
+    return this.service.findOrders({ search, status }, userId);
+  }
+
+  @Get('orders/:id')
+  findOrder(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.findOrder(id, userId);
+  }
+
+  @Patch('orders/:id/refresh-reservation')
+  refreshReservation(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.refreshReservation(id, userId);
+  }
+
   @Get('eligible-lots')
   eligibleLots(@CurrentUser('id') userId: string, @Query('waybillId') waybillId?: string) {
     if (!waybillId) throw new BadRequestException('请选择物流运单');
@@ -100,6 +115,15 @@ export class OutboundReceiptController {
   @Patch(':id/cancel')
   cancel(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.cancel(id, userId);
+  }
+
+  @Patch(':id/variance')
+  resolveVariance(
+    @Param('id') id: string,
+    @Body() data: { decision: string; reason: string },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.resolveVariance(id, data, userId);
   }
 
   @Post(':id/post')

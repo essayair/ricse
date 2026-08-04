@@ -69,13 +69,14 @@ describe('WeighTicketService', () => {
     prisma.weighTicket.count.mockResolvedValue(0);
     prisma.material.findMany.mockResolvedValue([{ id: 'material-1', spec: '一级品', grade: null }] as any);
     prisma.user.findUnique.mockResolvedValue({ name: '司磅员' } as any);
+    prisma.weighTicket.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
   });
 
-  it('采购运单仅允许到达后创建磅单', async () => {
+  it('采购运单到达前不能创建收货称重磅单', async () => {
     prisma.waybill.findFirst.mockResolvedValue({ ...waybill, status: 'IN_TRANSIT' } as any);
-    await expect(service.create({ waybillId: waybill.id }, 'user-1'))
-      .rejects.toThrow('采购物流运单仅在已到达或已签收后');
+    await expect(service.create({ waybillId: waybill.id, weighingStage: 'RECEIVING' }, 'user-1'))
+      .rejects.toThrow('物流运单到达后才能创建或关联收货称重磅单');
   });
 
   it('销售运单允许在发运前创建出库磅单', async () => {
@@ -94,25 +95,25 @@ describe('WeighTicketService', () => {
         },
       },
     } as any);
-    prisma.weighTicket.findFirst.mockResolvedValue(null);
     prisma.weighTicket.create.mockResolvedValue({ ...ticket, direction: 'OUTBOUND' } as any);
 
     await service.create({ waybillId: waybill.id }, 'user-1');
 
     expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ direction: 'OUTBOUND' }),
+      data: expect.objectContaining({ direction: 'OUTBOUND', weighingStage: 'SHIPPING', sequence: 1 }),
     }));
   });
 
   it('默认按收货称重净重作为结算口径', async () => {
     prisma.waybill.findFirst.mockResolvedValue(waybill as any);
-    prisma.weighTicket.findFirst.mockResolvedValue(null);
     prisma.weighTicket.create.mockResolvedValue({ ...ticket, settlementBasis: 'RECEIVING' } as any);
     await service.create({ waybillId: waybill.id }, 'user-1');
     expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         waybillId: waybill.id,
         direction: 'INBOUND',
+        weighingStage: 'RECEIVING',
+        sequence: 1,
         plannedQuantity: 100,
         settlementBasis: 'RECEIVING',
         plateNo: '甘A12345',
@@ -122,6 +123,30 @@ describe('WeighTicketService', () => {
         receiverName: '收货单位',
         driverName: '张师傅',
         weighmasterName: '司磅员',
+      }),
+    }));
+  });
+
+  it('同一运单同一节点追加完整磅单必须填写原因并保留序次', async () => {
+    prisma.waybill.findFirst.mockResolvedValue(waybill as any);
+    prisma.weighTicket.findMany.mockResolvedValue([
+      { id: 'ticket-old', ticketNo: 'PD-OLD', sequence: 1 },
+    ] as any);
+    await expect(service.create({ waybillId: waybill.id, weighingStage: 'RECEIVING' }, 'user-1'))
+      .rejects.toThrow('追加完整磅单必须填写追加原因');
+
+    prisma.weighTicket.create.mockResolvedValue({ ...ticket, sequence: 2, isSupplementary: true } as any);
+    await service.create({
+      waybillId: waybill.id,
+      weighingStage: 'RECEIVING',
+      additionReason: '客户要求重新称重',
+    }, 'user-1');
+    expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        sequence: 2,
+        isSupplementary: true,
+        previousTicketId: 'ticket-old',
+        additionReason: '客户要求重新称重',
       }),
     }));
   });
@@ -230,7 +255,6 @@ describe('WeighTicketService', () => {
 
   it('其他结算口径必须填写对应重量', async () => {
     prisma.waybill.findFirst.mockResolvedValue(waybill as any);
-    prisma.weighTicket.findFirst.mockResolvedValue(null);
     await expect(service.create({
       waybillId: waybill.id,
       settlementBasis: 'THIRD_PARTY',

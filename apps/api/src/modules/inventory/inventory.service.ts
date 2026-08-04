@@ -18,7 +18,7 @@ export class InventoryService {
     weighTicket: {
       select: {
         id: true, ticketNo: true, status: true, settlementWeight: true, netWeight: true,
-        abnormal: true, reviewedAt: true,
+        abnormal: true, reviewedAt: true, weighingStage: true, sequence: true,
       },
     },
     qualityInspection: {
@@ -35,7 +35,7 @@ export class InventoryService {
           where: { deletedAt: null },
           select: {
             id: true, ticketNo: true, status: true, abnormal: true, reviewedAt: true,
-            settlementWeight: true, netWeight: true,
+            settlementWeight: true, netWeight: true, weighingStage: true, sequence: true,
             qualityInspections: {
               where: { deletedAt: null },
               select: {
@@ -55,6 +55,7 @@ export class InventoryService {
                   select: {
                     id: true, contractNo: true, title: true,
                     seller: { select: { id: true, name: true } },
+                    signingPartner: { select: { id: true, code: true, name: true } },
                   },
                 },
               },
@@ -279,16 +280,19 @@ export class InventoryService {
 
     const weighTicket = await this.prisma.weighTicket.findFirst({ where: { id: dto.weighTicketId, waybillId: waybill.id, deletedAt: null } });
     if (!weighTicket || weighTicket.status !== 'REVIEWED') throw new BadRequestException('请选择该运单已复核的磅单');
-    const quality = await this.prisma.qualityInspection.findFirst({ where: { id: dto.qualityInspectionId, weighTicketId: weighTicket.id, deletedAt: null } });
-    if (!quality || quality.status !== 'CONFIRMED') throw new BadRequestException('请选择该磅单已确认的质检单');
+    const quality = await this.prisma.qualityInspection.findFirst({
+      where: { id: dto.qualityInspectionId, deletedAt: null, weighTicket: { waybillId: waybill.id } },
+    });
+    if (!quality || quality.status !== 'CONFIRMED') throw new BadRequestException('请选择该运单下已确认的质检单');
     if (quality.conclusion !== 'PASS') {
       throw new BadRequestException('只有质检结论为“合格”的货物才能入库；超标扣款、熔断或待判定货物不能入库');
     }
     const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, status: 'ACTIVE', deletedAt: null } });
     if (!warehouse) throw new BadRequestException('入库仓库不存在或已停用');
     if (!dto.receiverName.trim()) throw new BadRequestException('请填写收货人');
-    const quantity = Number(quality.settlementWeight || weighTicket.settlementWeight || 0);
-    if (quantity <= 0) throw new BadRequestException('质检后结算重量必须大于 0');
+    const quantity = this.inventoryQuantity(weighTicket, quality);
+    if (quantity <= 0) throw new BadRequestException('有效磅单净重扣除质检扣减后必须大于 0');
+    await this.ensureInventorySelection(waybill.id, weighTicket, userId, '采购入库作业首次选用');
 
     const receipt = await this.prisma.inboundReceipt.create({
       data: {
@@ -355,8 +359,24 @@ export class InventoryService {
       throw new BadRequestException('采购物流运单到达后才能确认合格并补齐入库作业单验收依据');
     }
 
-    const quantity = Number(quality.settlementWeight || ticket.settlementWeight || 0);
-    if (quantity <= 0) throw new BadRequestException('质检后结算重量必须大于 0');
+    const currentSelection = await this.prisma.waybillWeightSelection.findFirst({
+      where: { waybillId: waybill.id, purpose: 'INVENTORY', isCurrent: true },
+      include: { weighTicket: true },
+    });
+    const inventoryTicket = currentSelection?.weighTicket || await this.prisma.weighTicket.findFirst({
+      where: {
+        waybillId: waybill.id, deletedAt: null, status: 'REVIEWED', weighingStage: 'SHIPPING',
+      },
+      orderBy: [{ sequence: 'asc' }, { reviewedAt: 'asc' }],
+    }) || ticket;
+    if (inventoryTicket.status !== 'REVIEWED' || inventoryTicket.deletedAt) {
+      throw new BadRequestException('请先复核并选用该运单的有效入库磅单');
+    }
+    const quantity = this.inventoryQuantity(inventoryTicket, quality);
+    if (quantity <= 0) throw new BadRequestException('有效磅单净重扣除质检扣减后必须大于 0');
+    if (!currentSelection) {
+      await this.ensureInventorySelection(waybill.id, inventoryTicket, userId, '采购默认选用发货称重磅单');
+    }
 
     const existing = waybill.inboundReceipts[0];
     if (existing) {
@@ -367,7 +387,7 @@ export class InventoryService {
       const updated = await this.prisma.inboundReceipt.update({
         where: { id: existing.id },
         data: {
-          weighTicketId: ticket.id,
+          weighTicketId: inventoryTicket.id,
           qualityInspectionId: quality.id,
           acceptanceConclusion: 'PASS',
           materialName: quality.materialName,
@@ -389,7 +409,7 @@ export class InventoryService {
         data: {
           receiptNo: await this.nextNo('LIR', 'inboundReceipt'),
           waybillId: waybill.id,
-          weighTicketId: ticket.id,
+          weighTicketId: inventoryTicket.id,
           qualityInspectionId: quality.id,
           warehouseId: waybill.dispatchNotice.warehouseId,
           status: 'PENDING',
@@ -436,13 +456,17 @@ export class InventoryService {
       },
       include: { weighTicket: true },
     });
-    if (!quality) throw new BadRequestException('只能选择本运单已复核磅单下、已确认且合格的质检单');
-    const quantity = Number(quality.settlementWeight || quality.weighTicket.settlementWeight || 0);
-    if (quantity <= 0) throw new BadRequestException('质检后结算重量必须大于 0');
+    if (!quality) throw new BadRequestException('只能选择本运单下已确认且合格的质检单');
+    const inventoryTicket = receipt.weighTicket;
+    if (!inventoryTicket || inventoryTicket.status !== 'REVIEWED') {
+      throw new BadRequestException('请先在物流运单详情中选用已复核的入库磅单');
+    }
+    const quantity = this.inventoryQuantity(inventoryTicket, quality);
+    if (quantity <= 0) throw new BadRequestException('有效磅单净重扣除质检扣减后必须大于 0');
     const updated = await this.prisma.inboundReceipt.update({
       where: { id },
       data: {
-        weighTicketId: quality.weighTicketId,
+        weighTicketId: inventoryTicket.id,
         qualityInspectionId: quality.id,
         acceptanceConclusion: 'PASS',
         materialName: quality.materialName,
@@ -457,6 +481,37 @@ export class InventoryService {
       include: this.include,
     });
     return this.decorateReceipt(updated);
+  }
+
+  private inventoryQuantity(ticket: { netWeight: unknown }, quality: {
+    moistureDeductionWeight: unknown; impurityDeductionWeight: unknown;
+  }) {
+    return Math.max(0,
+      Number(ticket.netWeight || 0)
+      - Number(quality.moistureDeductionWeight || 0)
+      - Number(quality.impurityDeductionWeight || 0));
+  }
+
+  private async ensureInventorySelection(
+    waybillId: string,
+    ticket: { id: string; netWeight: unknown },
+    userId: string,
+    reason: string,
+  ) {
+    const current = await this.prisma.waybillWeightSelection.findFirst({
+      where: { waybillId, purpose: 'INVENTORY', isCurrent: true },
+    });
+    if (current && current.weighTicketId !== ticket.id) {
+      throw new BadRequestException('所选磅单不是当前入出库有效磅单，请先在物流运单详情中变更选用依据');
+    }
+    if (!current) {
+      await this.prisma.waybillWeightSelection.create({
+        data: {
+          waybillId, purpose: 'INVENTORY', weighTicketId: ticket.id,
+          quantity: Number(ticket.netWeight || 0), reason, selectedBy: userId,
+        },
+      });
+    }
   }
 
   async findReceipts(params: { search?: string; status?: string }, userId: string) {
@@ -523,6 +578,12 @@ export class InventoryService {
     if (!item.warehouseId) throw new BadRequestException('请先选择入库仓库');
     if (!item.receivedAt) throw new BadRequestException('请先填写实际收货时间');
     if (!item.receiverName?.trim()) throw new BadRequestException('请先填写收货人');
+    const currentWeight = await this.prisma.waybillWeightSelection.findFirst({
+      where: { waybillId: item.waybillId, purpose: 'INVENTORY', isCurrent: true },
+    });
+    if (!currentWeight || currentWeight.weighTicketId !== item.weighTicketId) {
+      throw new BadRequestException('入库单关联磅单与当前入出库有效磅单不一致，请先在物流运单详情中完成选用');
+    }
     const updated = await this.prisma.inboundReceipt.update({ where: { id }, data: { status: 'RECEIVED' }, include: this.include });
     return this.decorateReceipt(updated);
   }
@@ -575,7 +636,16 @@ export class InventoryService {
     this.assertQualifiedForInventory(receipt);
     if (receipt.businessInbound) throw new BadRequestException('该物流入库单已生成业务入库单');
     if (!receipt.warehouseId) throw new BadRequestException('入库单缺少入库仓库');
+    const currentWeight = await this.prisma.waybillWeightSelection.findFirst({
+      where: { waybillId: receipt.waybillId, purpose: 'INVENTORY', isCurrent: true },
+    });
+    if (!currentWeight || currentWeight.weighTicketId !== receipt.weighTicketId) {
+      throw new BadRequestException('入库单关联磅单与当前入出库有效磅单不一致，不能入账');
+    }
     const warehouseId = receipt.warehouseId;
+    const inventoryOwner = receipt.waybill.dispatchNotice.order.contract.signingPartner;
+    if (!inventoryOwner) throw new BadRequestException('采购合同缺少我方签约主体，无法确认库存所有权');
+    const ownerPartnerId = inventoryOwner.id;
     const line = receipt.waybill.lineItems[0];
     if (!line) throw new BadRequestException('运单缺少物料明细');
     const quantity = Number(receipt.receivedQuantity || 0);
@@ -585,14 +655,14 @@ export class InventoryService {
     await this.prisma.$transaction(async tx => {
       const inbound = await tx.businessInbound.create({
         data: {
-          inboundNo, receiptId: receipt.id, warehouseId,
+          inboundNo, receiptId: receipt.id, warehouseId, ownerPartnerId,
           materialId: line.materialId, materialName: receipt.materialName,
           supplierName: receipt.supplierName, quantity, lotNo, createdBy: userId,
         },
       });
       const lot = await tx.inventoryLot.create({
         data: {
-          lotNo, businessInboundId: inbound.id, warehouseId,
+          lotNo, businessInboundId: inbound.id, warehouseId, ownerPartnerId,
           materialId: line.materialId, materialName: receipt.materialName,
           supplierName: receipt.supplierName, initialQuantity: quantity,
           availableQuantity: quantity, qualityConclusion: receipt.acceptanceConclusion!,
@@ -623,22 +693,162 @@ export class InventoryService {
     }
   }
 
-  async inventoryOverview(params: { search?: string; warehouseId?: string }, userId: string) {
+  async inventoryOverview(params: { search?: string; warehouseId?: string; ownerPartnerId?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
     const scope = await this.accessControl.getInventoryLotScope(userId);
     const where: Prisma.InventoryLotWhereInput = { AND: [scope] };
     if (params.warehouseId) where.warehouseId = params.warehouseId;
+    if (params.ownerPartnerId) where.ownerPartnerId = params.ownerPartnerId;
     if (params.search) where.OR = [
       { lotNo: { contains: params.search, mode: 'insensitive' } },
       { materialName: { contains: params.search, mode: 'insensitive' } },
       { supplierName: { contains: params.search, mode: 'insensitive' } },
+      { inventoryOwner: { name: { contains: params.search, mode: 'insensitive' } } },
     ];
     const lots = await this.prisma.inventoryLot.findMany({
-      where, include: { warehouse: { select: { code: true, name: true } }, material: { select: { code: true, unit: true } }, businessInbound: { select: { inboundNo: true, postedAt: true } } },
+      where,
+      include: {
+        warehouse: { select: { id: true, code: true, name: true } },
+        inventoryOwner: { select: { id: true, code: true, name: true } },
+        material: { select: { code: true, unit: true } },
+        businessInbound: { select: { inboundNo: true, postedAt: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    const totalQuantity = lots.reduce((sum, lot) => sum + Number(lot.availableQuantity), 0);
-    return { lots, summary: { lotCount: lots.length, materialCount: new Set(lots.map(item => item.materialId)).size, warehouseCount: new Set(lots.map(item => item.warehouseId)).size, totalQuantity } };
+    const reservations = await this.prisma.outboundOrderLine.findMany({
+      where: {
+        outboundOrder: {
+          status: { in: ['PENDING', 'PARTIAL'] },
+          warehouseId: { in: [...new Set(lots.map(item => item.warehouseId))] },
+        },
+        materialId: { in: [...new Set(lots.map(item => item.materialId))] },
+      },
+      select: {
+        materialId: true, reservedQuantity: true, actualQuantity: true,
+        outboundOrder: { select: { warehouseId: true, ownerPartnerId: true } },
+      },
+    });
+    const reservedByGroup = new Map<string, number>();
+    for (const item of reservations) {
+      const key = `${item.outboundOrder.ownerPartnerId || 'UNASSIGNED'}:${item.outboundOrder.warehouseId}:${item.materialId}`;
+      reservedByGroup.set(key, (reservedByGroup.get(key) || 0)
+        + Math.max(0, Number(item.reservedQuantity) - Number(item.actualQuantity)));
+    }
+    const remainingByGroup = new Map(reservedByGroup);
+    const reservedByLot = new Map<string, number>();
+    for (const lot of [...lots].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
+      const key = `${lot.ownerPartnerId || 'UNASSIGNED'}:${lot.warehouseId}:${lot.materialId}`;
+      const reserved = Math.min(Number(lot.availableQuantity), remainingByGroup.get(key) || 0);
+      reservedByLot.set(lot.id, reserved);
+      remainingByGroup.set(key, Math.max(0, (remainingByGroup.get(key) || 0) - reserved));
+    }
+    const enrichedLots = lots.map(lot => ({
+      ...lot,
+      reservedOutboundQuantity: reservedByLot.get(lot.id) || 0,
+      availableToPromiseQuantity: Math.max(0, Number(lot.availableQuantity) - (reservedByLot.get(lot.id) || 0)),
+    }));
+    const totalPhysicalQuantity = lots.reduce((sum, lot) => sum + Number(lot.availableQuantity), 0);
+    const totalReservedQuantity = enrichedLots.reduce((sum, lot) => sum + lot.reservedOutboundQuantity, 0);
+    const totalAvailableQuantity = totalPhysicalQuantity - totalReservedQuantity;
+    const ownerGroups = new Map<string, any>();
+    const warehouseGroups = new Map<string, any>();
+    const ownerWarehouseGroups = new Map<string, any>();
+    for (const lot of enrichedLots) {
+      const ownerKey = lot.ownerPartnerId || 'UNASSIGNED';
+      const owner = ownerGroups.get(ownerKey) || {
+        ownerPartnerId: lot.ownerPartnerId,
+        ownerCode: lot.inventoryOwner?.code || null,
+        ownerName: lot.inventoryOwner?.name || '未归属库存主体',
+        lotCount: 0,
+        materialIds: new Set<string>(),
+        warehouseIds: new Set<string>(),
+        totalPhysicalQuantity: 0,
+        totalReservedQuantity: 0,
+        totalAvailableQuantity: 0,
+      };
+      owner.lotCount += 1;
+      owner.materialIds.add(lot.materialId);
+      owner.warehouseIds.add(lot.warehouseId);
+      owner.totalPhysicalQuantity += Number(lot.availableQuantity);
+      owner.totalReservedQuantity += lot.reservedOutboundQuantity;
+      owner.totalAvailableQuantity += lot.availableToPromiseQuantity;
+      ownerGroups.set(ownerKey, owner);
+
+      const warehouse = warehouseGroups.get(lot.warehouseId) || {
+        warehouseId: lot.warehouseId,
+        warehouseCode: lot.warehouse.code,
+        warehouseName: lot.warehouse.name,
+        lotCount: 0,
+        materialIds: new Set<string>(),
+        ownerIds: new Set<string>(),
+        totalPhysicalQuantity: 0,
+        totalReservedQuantity: 0,
+        totalAvailableQuantity: 0,
+      };
+      warehouse.lotCount += 1;
+      warehouse.materialIds.add(lot.materialId);
+      warehouse.ownerIds.add(ownerKey);
+      warehouse.totalPhysicalQuantity += Number(lot.availableQuantity);
+      warehouse.totalReservedQuantity += lot.reservedOutboundQuantity;
+      warehouse.totalAvailableQuantity += lot.availableToPromiseQuantity;
+      warehouseGroups.set(lot.warehouseId, warehouse);
+
+      const ownerWarehouseKey = `${ownerKey}:${lot.warehouseId}`;
+      const ownerWarehouse = ownerWarehouseGroups.get(ownerWarehouseKey) || {
+        ownerPartnerId: lot.ownerPartnerId,
+        ownerCode: lot.inventoryOwner?.code || null,
+        ownerName: lot.inventoryOwner?.name || '未归属库存主体',
+        warehouseId: lot.warehouseId,
+        warehouseCode: lot.warehouse.code,
+        warehouseName: lot.warehouse.name,
+        lotCount: 0,
+        materialIds: new Set<string>(),
+        totalPhysicalQuantity: 0,
+        totalReservedQuantity: 0,
+        totalAvailableQuantity: 0,
+      };
+      ownerWarehouse.lotCount += 1;
+      ownerWarehouse.materialIds.add(lot.materialId);
+      ownerWarehouse.totalPhysicalQuantity += Number(lot.availableQuantity);
+      ownerWarehouse.totalReservedQuantity += lot.reservedOutboundQuantity;
+      ownerWarehouse.totalAvailableQuantity += lot.availableToPromiseQuantity;
+      ownerWarehouseGroups.set(ownerWarehouseKey, ownerWarehouse);
+    }
+    const ownerSummaries = [...ownerGroups.values()].map(item => ({
+      ...item,
+      materialCount: item.materialIds.size,
+      warehouseCount: item.warehouseIds.size,
+      materialIds: undefined,
+      warehouseIds: undefined,
+    })).sort((a, b) => b.totalPhysicalQuantity - a.totalPhysicalQuantity);
+    const warehouseSummaries = [...warehouseGroups.values()].map(item => ({
+      ...item,
+      materialCount: item.materialIds.size,
+      ownerCount: item.ownerIds.size,
+      materialIds: undefined,
+      ownerIds: undefined,
+    })).sort((a, b) => b.totalPhysicalQuantity - a.totalPhysicalQuantity);
+    const ownerWarehouseSummaries = [...ownerWarehouseGroups.values()].map(item => ({
+      ...item,
+      materialCount: item.materialIds.size,
+      materialIds: undefined,
+    })).sort((a, b) => b.totalPhysicalQuantity - a.totalPhysicalQuantity);
+    return {
+      lots: enrichedLots,
+      ownerSummaries,
+      warehouseSummaries,
+      ownerWarehouseSummaries,
+      summary: {
+        lotCount: lots.length,
+        materialCount: new Set(lots.map(item => item.materialId)).size,
+        warehouseCount: new Set(lots.map(item => item.warehouseId)).size,
+        ownerCount: new Set(lots.map(item => item.ownerPartnerId || 'UNASSIGNED')).size,
+        totalQuantity: totalAvailableQuantity,
+        totalPhysicalQuantity,
+        totalReservedQuantity,
+        totalAvailableQuantity,
+      },
+    };
   }
 
   async inventoryLedger(userId: string) {

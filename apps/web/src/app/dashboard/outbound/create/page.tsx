@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, WandSparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toLocalDateTimeInput } from '@/lib/date-time';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 
 export default function CreateOutboundPage() {
   const router = useRouter();
+  const params = useSearchParams();
   const [waybills, setWaybills] = useState<any[]>([]);
   const [lots, setLots] = useState<any[]>([]);
   const [waybillId, setWaybillId] = useState('');
@@ -28,14 +29,18 @@ export default function CreateOutboundPage() {
       try { setOperatorName(JSON.parse(user).name || ''); } catch {}
     }
     api.get<any[]>('/outbound-receipts/eligible-waybills')
-      .then(setWaybills)
+      .then(items => {
+        setWaybills(items);
+        const requested = params.get('waybillId');
+        if (requested && items.some(item => item.id === requested)) setWaybillId(requested);
+      })
       .catch((error) => alert(error.message));
   }, []);
 
   const waybill = waybills.find((item) => item.id === waybillId);
   const tickets = waybill?.weighTickets || [];
   const ticket = tickets.find((item: any) => item.id === weighTicketId);
-  const quantity = Number(ticket?.settlementWeight || 0);
+  const quantity = Number(ticket?.netWeight || 0);
   const allocatedQuantity = useMemo(
     () => Object.values(allocations).reduce((sum, value) => sum + Number(value || 0), 0),
     [allocations],
@@ -89,7 +94,7 @@ export default function CreateOutboundPage() {
         remarks: remarks || undefined,
         allocations: selected,
       });
-      router.push(`/dashboard/outbound/${created.id}`);
+      router.push(`/dashboard/outbound/${params.get('orderId') || created.outboundOrderId}`);
     } catch (error: any) {
       alert(error.message || '创建失败');
     } finally {
@@ -104,16 +109,16 @@ export default function CreateOutboundPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">新建物流出库单</h1>
-          <p className="mt-1 text-sm text-muted-foreground">选择销售常规运单、已复核出库磅单，并按库存批次拣配</p>
+          <h1 className="text-2xl font-bold">完善车次出库作业</h1>
+          <p className="mt-1 text-sm text-muted-foreground">出库作业已由物流运单自动生成；请选择已复核磅单，按实际出库重量完成库存批次拣配</p>
         </div>
       </div>
 
       <Card className="space-y-4 p-6">
-        <h2 className="font-semibold">选择待发运销售运单</h2>
+        <h2 className="font-semibold">选择待完善车次作业</h2>
         {!waybills.length ? (
           <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-            暂无符合条件的销售运单：运单需待发运、属于常规出库，且已完成出库磅单复核。
+            暂无待完善车次：销售运单需处于待发运、属于常规出库，并且已有已复核出库磅单。
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -163,7 +168,7 @@ export default function CreateOutboundPage() {
               <option value="">请选择</option>
               {tickets.map((item: any) => (
                 <option key={item.id} value={item.id}>
-                  {item.ticketNo} · 结算重量 {Number(item.settlementWeight)} 吨
+                  {item.ticketNo} · 发货有效净重 {Number(item.netWeight)} 吨
                 </option>
               ))}
             </select>
@@ -238,7 +243,7 @@ export default function CreateOutboundPage() {
 
       <div className="flex justify-end">
         <Button disabled={saving} onClick={() => void submit()}>
-          <CheckCircle2 className="mr-2 h-4 w-4" />{saving ? '创建中...' : '创建物流出库单'}
+          <CheckCircle2 className="mr-2 h-4 w-4" />{saving ? '保存中...' : '保存车次作业'}
         </Button>
       </div>
     </div>
