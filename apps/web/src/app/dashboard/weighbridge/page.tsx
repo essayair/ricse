@@ -1,175 +1,126 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ChevronRight, LayoutGrid, Plus, Search, Scale, TableProperties } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Plus, Search, Scale } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeToSecond } from '@/lib/date-time';
 
-interface Ticket {
-  id: string; ticketNo: string; direction: string; status: string; abnormal: boolean;
-  weighingStage: string; sequence: number; isSupplementary: boolean; additionReason: string | null;
-  ticketDate: string; plateNo: string | null; materialName: string | null; materialSpec: string | null;
-  shipperName: string | null; receiverName: string | null; packageCount: number | null;
-  driverName: string | null; weighmasterName: string | null; printedAt: string | null; remarks: string | null;
-  selectedGrossRecordId: string | null; selectedTareRecordId: string | null;
-  plannedQuantity: string; grossWeight: string | null; tareWeight: string | null;
-  netWeight: string | null; settlementWeight: string | null; settlementBasis: string;
-  varianceWeight: string | null; varianceRate: string | null; createdAt: string;
-  creator: { name: string };
-  records: Array<{ id: string; weighedAt: string }>;
-  waybill: {
-    waybillNo: string; plateNo: string | null;
-    dispatchNotice: { noticeNo: string; order: { name: string; orderNo: string; contract: { contractNo: string } } };
-  };
+interface ChildTicket {
+  id: string; ticketNo: string; status: string; weighingStage: string; sequence: number;
+  abnormal: boolean; netWeight: string | null; materialName: string | null; ticketDate: string;
+}
+interface WeightSelection {
+  id: string; purpose: string; weighTicketId: string; quantity: string; selectedAt: string;
+  selector: { id: string; name: string };
+  weighTicket: { id: string; ticketNo: string; weighingStage: string; sequence: number; netWeight: string | null; status: string };
+}
+interface ManagementFile {
+  id: string; waybillNo: string; status: string; plateNo: string | null; driverName: string | null;
+  totalQuantity: string; originLocation: string | null; destinationLocation: string | null; createdAt: string;
+  dispatchNotice: { noticeNo: string; type: string; order: { orderNo: string; name: string; contract: { contractNo: string; title: string } } };
+  lineItems: Array<{ id: string; materialName: string | null; materialId: string; quantity: string; unit: string }>;
+  weighTickets: ChildTicket[];
+  weightSelections: WeightSelection[];
 }
 
-const STATUS: Record<string, string> = {
-  PENDING: '待称重', WEIGHING: '称重中', COMPLETED: '已完成', REVIEWED: '已复核', VOIDED: '已作废',
-};
-const BASIS: Record<string, string> = {
-  RECEIVING: '本次称重净重', SHIPPING: '发货重量', CUSTOMER: '客户收货', THIRD_PARTY: '第三方重量', MANUAL: '手工确认',
+const TICKET_STATUS: Record<string, string> = {
+  PENDING: '待称重', WEIGHING: '称重中', COMPLETED: '待复核', REVIEWED: '已复核', VOIDED: '已作废',
 };
 
 export default function WeighbridgePage() {
   const router = useRouter();
-  const [items, setItems] = useState<Ticket[]>([]);
+  const [items, setItems] = useState<ManagementFile[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [abnormal, setAbnormal] = useState(false);
-  const [view, setView] = useState<'cards' | 'table'>('table');
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (status) params.set('status', status);
     if (abnormal) params.set('abnormal', 'true');
-    api.get<{ items: Ticket[] }>(`/weigh-tickets?${params}`).then(data => setItems(data.items)).catch(error => alert(error.message));
+    api.get<{ items: ManagementFile[] }>(`/weigh-tickets/management-files?${params}`)
+      .then(data => setItems(data.items))
+      .catch(error => alert(error.message));
   }, [search, status, abnormal]);
 
+  const summary = useMemo(() => ({
+    tickets: items.reduce((sum, item) => sum + item.weighTickets.length, 0),
+    pending: items.filter(item => !effectiveSelection(item)).length,
+    abnormal: items.filter(item => item.weighTickets.some(ticket => ticket.abnormal)).length,
+  }), [items]);
+
   return <div className="space-y-6">
-    <div className="flex items-center justify-between">
-      <div><h1 className="text-2xl font-bold">磅单管理</h1><p className="mt-1 text-sm text-muted-foreground">支持毛重、皮重多次复磅，有效记录选择及结算重量口径管理</p></div>
-      <Button onClick={() => router.push('/dashboard/weighbridge/create')}><Plus className="mr-1 h-4 w-4" />新建磅单</Button>
+    <div className="flex items-center justify-between gap-4">
+      <div><h1 className="text-2xl font-bold">磅单管理</h1><p className="mt-1 text-sm text-muted-foreground">每张物流运单形成一条磅单信息，详情归集发货、收货及追加称重磅单</p></div>
+      <Button onClick={() => router.push('/dashboard/weighbridge/create')}><Plus className="mr-1 h-4 w-4" />新建称重磅单</Button>
     </div>
     <div className="grid gap-3 sm:grid-cols-4">
-      <Summary label="全部磅单" value={items.length} />
-      <Summary label="称重中" value={items.filter(item => ['PENDING', 'WEIGHING'].includes(item.status)).length} />
-      <Summary label="待复核" value={items.filter(item => item.status === 'COMPLETED').length} />
-      <Summary label="磅差异常" value={items.filter(item => item.abnormal).length} danger />
+      <Summary label="磅单信息" value={items.length} />
+      <Summary label="称重磅单" value={summary.tickets} />
+      <Summary label="待确定结算入库磅单" value={summary.pending} warn />
+      <Summary label="存在磅差异常" value={summary.abnormal} danger />
     </div>
     <div className="flex flex-wrap gap-3">
-      <div className="relative max-w-sm flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="搜索磅单、车牌、货物或发收货单位" value={search} onChange={event => setSearch(event.target.value)} /></div>
+      <div className="relative max-w-xl flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="搜索运单、磅单、执行通知、批次、车牌或货物" value={search} onChange={event => setSearch(event.target.value)} /></div>
       <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}>
-        <option value="">全部状态</option>{Object.entries(STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        <option value="">全部子磅单状态</option>{Object.entries(TICKET_STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
       <Button variant={abnormal ? 'default' : 'outline'} onClick={() => setAbnormal(value => !value)}><AlertTriangle className="mr-1 h-4 w-4" />只看异常</Button>
-      <div className="flex rounded-md border bg-background p-1">
-        <Button className="h-8" size="sm" variant={view === 'cards' ? 'secondary' : 'ghost'} onClick={() => setView('cards')}><LayoutGrid className="mr-1 h-4 w-4" />完整卡片</Button>
-        <Button className="h-8" size="sm" variant={view === 'table' ? 'secondary' : 'ghost'} onClick={() => setView('table')}><TableProperties className="mr-1 h-4 w-4" />横向表格</Button>
-      </div>
     </div>
-    {!items.length ? <Card><div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无磅单数据</div></Card> : view === 'cards' ?
-      <div className="space-y-4">{items.map((item, index) => <TicketCard key={item.id} item={item} index={index} onOpen={() => router.push(`/dashboard/weighbridge/${item.id}`)} />)}</div> :
-      <Card className="overflow-hidden">
-        <div className="border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground">下方表格包含全部字段，可横向滚动查看。</div>
-        <div className="overflow-x-auto"><table className="min-w-[3000px] w-full text-sm">
-          <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>
-            <th className="px-3 py-3">序号</th><th className="px-3 py-3">称重节点</th><th className="px-3 py-3">节点序次</th><th className="px-3 py-3">磅单日期</th><th className="px-3 py-3">磅单编号</th><th className="px-3 py-3">车牌号</th><th className="px-3 py-3">货物名称</th><th className="px-3 py-3">规格型号</th><th className="px-3 py-3">发货单位</th><th className="px-3 py-3">收货单位</th><th className="px-3 py-3 text-right">毛重（吨）</th><th className="px-3 py-3 text-right">皮重（吨）</th><th className="px-3 py-3 text-right">净重（吨）</th><th className="px-3 py-3 text-right">包/袋数</th><th className="px-3 py-3">毛重时间</th><th className="px-3 py-3">皮重时间</th><th className="px-3 py-3">打印时间</th><th className="px-3 py-3">司机姓名</th><th className="px-3 py-3">司磅员</th><th className="px-3 py-3">追加原因/备注</th><th className="px-3 py-3">状态</th>
-          </tr></thead>
-          <tbody>{items.map((item, index) => <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/weighbridge/${item.id}`)}>
-            <td className="px-3 py-3 text-center">{index + 1}</td><td className="px-3 py-3"><Badge variant="outline">{stageLabel(item.weighingStage)}</Badge></td><td className="px-3 py-3">第 {item.sequence} 张{item.isSupplementary ? '（追加）' : ''}</td><td className="px-3 py-3">{dateOnly(item.ticketDate)}</td><td className="px-3 py-3 font-mono text-xs font-medium text-primary">{item.ticketNo}</td><td className="px-3 py-3">{item.plateNo || item.waybill.plateNo || '-'}</td><td className="max-w-48 truncate px-3 py-3" title={item.materialName || ''}>{item.materialName || '-'}</td><td className="max-w-48 truncate px-3 py-3" title={item.materialSpec || ''}>{item.materialSpec || '-'}</td><td className="max-w-56 truncate px-3 py-3" title={item.shipperName || ''}>{item.shipperName || '-'}</td><td className="max-w-56 truncate px-3 py-3" title={item.receiverName || ''}>{item.receiverName || '-'}</td><td className="px-3 py-3 text-right">{plainWeight(item.grossWeight)}</td><td className="px-3 py-3 text-right">{plainWeight(item.tareWeight)}</td><td className="px-3 py-3 text-right font-medium">{plainWeight(item.netWeight)}</td><td className="px-3 py-3 text-right">{item.packageCount ?? '-'}</td><td className="px-3 py-3 text-xs">{recordDate(item, item.selectedGrossRecordId)}</td><td className="px-3 py-3 text-xs">{recordDate(item, item.selectedTareRecordId)}</td><td className="px-3 py-3 text-xs">{dateTime(item.printedAt)}</td><td className="px-3 py-3">{item.driverName || '-'}</td><td className="px-3 py-3">{item.weighmasterName || item.creator.name}</td><td className="max-w-56 truncate px-3 py-3" title={item.additionReason || item.remarks || ''}>{item.additionReason || item.remarks || '-'}</td>
-            <td className="px-3 py-3"><div className="flex items-center gap-2"><Badge variant={item.status === 'VOIDED' ? 'destructive' : 'secondary'}>{STATUS[item.status]}</Badge>{item.abnormal && <Badge variant="destructive">异常</Badge>}</div></td>
-          </tr>)}</tbody>
-        </table></div>
-      </Card>}
+    {!items.length ? <Card><div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无磅单信息</div></Card> : <Card className="overflow-hidden">
+      <div className="overflow-x-auto"><table className="min-w-[1500px] w-full text-sm">
+        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>
+          <th className="px-4 py-3">序号</th><th className="px-4 py-3">物流运单</th><th className="px-4 py-3">业务类型</th><th className="px-4 py-3">执行批次 / 通知</th><th className="px-4 py-3">车牌 / 司机</th><th className="px-4 py-3">货物</th><th className="px-4 py-3 text-right">计划数量（吨）</th><th className="px-4 py-3">发货称重</th><th className="px-4 py-3">收货称重</th><th className="px-4 py-3">结算入库磅单</th><th className="px-4 py-3">状态</th><th className="px-4 py-3"></th>
+        </tr></thead>
+        <tbody>{items.map((item, index) => {
+          const shipping = stageTickets(item, 'SHIPPING');
+          const receiving = stageTickets(item, 'RECEIVING');
+          const effective = effectiveSelection(item);
+          const state = managementState(item);
+          return <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/weighbridge/management/${item.id}`)}>
+            <td className="px-4 py-4 text-center">{index + 1}</td>
+            <td className="px-4 py-4"><div className="font-mono font-medium text-primary">{item.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.originLocation || '-'} → {item.destinationLocation || '-'}</div></td>
+            <td className="px-4 py-4"><Badge variant="outline">{item.dispatchNotice.type === 'PURCHASE' ? '采购' : '销售'}</Badge></td>
+            <td className="px-4 py-4"><div className="font-medium">{item.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.noticeNo}</div></td>
+            <td className="px-4 py-4"><div>{item.plateNo || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.driverName || '待补录司机'}</div></td>
+            <td className="max-w-56 px-4 py-4"><div className="truncate" title={materialNames(item)}>{materialNames(item)}</div></td>
+            <td className="px-4 py-4 text-right font-medium">{number(item.totalQuantity)}</td>
+            <td className="px-4 py-4"><StageSummary tickets={shipping} /></td>
+            <td className="px-4 py-4"><StageSummary tickets={receiving} /></td>
+            <td className="px-4 py-4">{effective ? <div><div className="font-mono font-medium text-primary">{effective.weighTicket.ticketNo}</div><div className="mt-1 text-xs text-muted-foreground">{stageName(item, effective.weighTicket.weighingStage)} · {number(effective.quantity)} 吨</div></div> : <span className="text-amber-700">尚未确定</span>}</td>
+            <td className="px-4 py-4"><Badge variant={state.variant}>{state.label}</Badge>{item.weighTickets.some(ticket => ticket.abnormal) && <Badge className="ml-1" variant="destructive">异常</Badge>}</td>
+            <td className="px-4 py-4"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+    </Card>}
   </div>;
 }
 
-function TicketCard({ item, index, onOpen }: { item: Ticket; index: number; onOpen: () => void }) {
-  return <Card className="overflow-hidden transition-shadow hover:shadow-md">
-    <button type="button" className="flex w-full items-center justify-between border-b bg-muted/30 px-5 py-3 text-left hover:bg-muted/50" onClick={onOpen}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="flex h-7 items-center justify-center rounded-full bg-primary/10 px-3 text-xs font-semibold text-primary">序号 {index + 1}</span>
-        <span className="text-sm"><span className="text-muted-foreground">磅单编号：</span><span className="font-mono font-semibold text-primary">{item.ticketNo}</span></span>
-        <span className="text-sm text-muted-foreground">磅单日期：{dateOnly(item.ticketDate)}</span>
-        <Badge variant="outline">{stageLabel(item.weighingStage)} · 第 {item.sequence} 张</Badge>
-        {item.isSupplementary && <Badge variant="outline">追加磅单</Badge>}
-        <Badge variant={item.status === 'VOIDED' ? 'destructive' : 'secondary'}>{STATUS[item.status]}</Badge>
-        {item.abnormal && <Badge variant="destructive">磅差异常</Badge>}
-      </div>
-      <span className="flex shrink-0 items-center text-xs text-muted-foreground">查看详情<ChevronRight className="ml-1 h-4 w-4" /></span>
-    </button>
-
-    <div className="space-y-5 p-5">
-      <section>
-        <div className="mb-3 text-xs font-medium text-muted-foreground">运输与货物信息</div>
-        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <Field label="车牌号" value={item.plateNo || item.waybill.plateNo} missing />
-          <Field label="司机姓名" value={item.driverName} missing />
-          <Field label="司磅员" value={item.weighmasterName || item.creator.name} missing />
-          <Field label="货物名称" value={item.materialName} missing />
-          <Field label="规格型号" value={item.materialSpec} missing />
-          <Field label="包/袋数" value={item.packageCount} missing />
-        </div>
-      </section>
-
-      <section className="rounded-lg border bg-muted/20 p-4">
-        <div className="grid items-center gap-4 md:grid-cols-[1fr_auto_1fr]">
-          <Field label="发货单位" value={item.shipperName} missing />
-          <ChevronRight className="hidden h-5 w-5 text-muted-foreground md:block" />
-          <Field label="收货单位" value={item.receiverName} missing />
-        </div>
-      </section>
-
-      <section>
-        <div className="mb-3 text-xs font-medium text-muted-foreground">称重信息</div>
-        <div className="grid overflow-hidden rounded-lg border sm:grid-cols-3">
-          <WeightField label="毛重（吨）" value={item.grossWeight} />
-          <WeightField label="皮重（吨）" value={item.tareWeight} />
-          <WeightField label="净重（吨）" value={item.netWeight} emphasized />
-        </div>
-      </section>
-
-      <section className="grid gap-x-6 gap-y-4 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="毛重时间" value={recordDate(item, item.selectedGrossRecordId)} />
-        <Field label="皮重时间" value={recordDate(item, item.selectedTareRecordId)} />
-        <Field label="打印时间" value={dateTime(item.printedAt)} />
-        <Field label="备注" value={item.remarks} missing />
-      </section>
-      {item.additionReason && <div className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">追加原因：{item.additionReason}</div>}
-    </div>
-  </Card>;
+function StageSummary({ tickets }: { tickets: ChildTicket[] }) {
+  const latest = tickets[tickets.length - 1];
+  if (!latest) return <span className="text-muted-foreground">未录入</span>;
+  return <div><div>{tickets.length} 张 · 最新 {latest.netWeight ? `${number(latest.netWeight)} 吨` : '待称重'}</div><div className="mt-1 text-xs text-muted-foreground">{latest.ticketNo} · {TICKET_STATUS[latest.status]}</div></div>;
 }
-
-function Field({ label, value, missing = false }: { label: string; value: string | number | null | undefined; missing?: boolean }) {
-  const empty = value === null || value === undefined || value === '' || value === '-';
-  return <div className="min-w-0">
-    <div className="text-xs text-muted-foreground">{label}</div>
-    <div className={`mt-1 break-words text-sm font-medium ${empty ? 'text-muted-foreground' : ''}`}>{empty ? (missing ? '待补录' : '-') : value}</div>
-  </div>;
+function Summary({ label, value, danger = false, warn = false }: { label: string; value: number; danger?: boolean; warn?: boolean }) {
+  return <Card className="p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 text-xl font-bold ${danger && value ? 'text-destructive' : warn && value ? 'text-amber-700' : ''}`}>{value}</div></Card>;
 }
-
-function WeightField({ label, value, emphasized = false }: { label: string; value: string | number | null; emphasized?: boolean }) {
-  return <div className={`px-5 py-4 sm:border-r sm:last:border-r-0 ${emphasized ? 'bg-primary/5' : ''}`}>
-    <div className="text-xs text-muted-foreground">{label}</div>
-    <div className={`mt-1 text-xl font-semibold ${emphasized ? 'text-primary' : ''}`}>{weight(value)}</div>
-  </div>;
+function effectiveSelection(item: ManagementFile) { return item.weightSelections.find(value => value.purpose === 'INVENTORY') || item.weightSelections[0]; }
+function stageTickets(item: ManagementFile, stage: string) { return item.weighTickets.filter(ticket => ticket.weighingStage === stage && ticket.status !== 'VOIDED'); }
+function materialNames(item: ManagementFile) { return [...new Set(item.lineItems.map(line => line.materialName || line.materialId))].join('、') || '-'; }
+function number(value: string | number) { return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 3 }); }
+function stageName(item: ManagementFile, stage: string) {
+  if (item.dispatchNotice.type === 'PURCHASE') return stage === 'SHIPPING' ? '供应商发货称重' : '我方收货称重';
+  return stage === 'SHIPPING' ? '我方发货称重' : '客户收货称重';
 }
-
-function Summary({ label, value, danger = false }: { label: string; value: number; danger?: boolean }) {
-  return <Card className="p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 text-xl font-bold ${danger && value ? 'text-destructive' : ''}`}>{value}</div></Card>;
+function managementState(item: ManagementFile): { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' } {
+  if (effectiveSelection(item)) return { label: '已确定', variant: 'default' };
+  if (item.weighTickets.some(ticket => ticket.status === 'REVIEWED')) return { label: '待选择依据', variant: 'outline' };
+  if (item.weighTickets.some(ticket => ticket.status === 'COMPLETED')) return { label: '待复核', variant: 'secondary' };
+  return { label: '称重处理中', variant: 'secondary' };
 }
-
-function weight(value: string | number | null) {
-  return value === null ? '-' : `${Number(value).toLocaleString()} 吨`;
-}
-function plainWeight(value: string | number | null) { return value === null ? '-' : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 3 }); }
-function dateOnly(value: string) { return new Date(value).toLocaleDateString('zh-CN'); }
-function dateTime(value: string | null) { return formatDateTimeToSecond(value); }
-function recordDate(item: Ticket, id: string | null) { return dateTime(item.records.find(record => record.id === id)?.weighedAt || null); }
-function stageLabel(value: string) { return value === 'SHIPPING' ? '发货称重' : '收货称重'; }

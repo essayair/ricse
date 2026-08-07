@@ -6,6 +6,7 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { OutboundService } from '../inventory/outbound.service';
 import { WaybillService } from './waybill.service';
+import { QualityInspectionService } from '../quality/quality-inspection.service';
 
 describe('WaybillService', () => {
   const prisma = mockDeep<PrismaService>();
@@ -19,6 +20,9 @@ describe('WaybillService', () => {
   };
   const outboundService = {
     ensureReceiptForWaybill: jest.fn().mockResolvedValue({ id: 'outbound-receipt-1' }),
+  };
+  const qualityService = {
+    ensureTaskForWaybill: jest.fn().mockResolvedValue({ id: 'quality-task-1' }),
   };
   let service: WaybillService;
   const notice = {
@@ -37,6 +41,7 @@ describe('WaybillService', () => {
         { provide: AccessControlService, useValue: accessControl },
         { provide: InventoryService, useValue: inventoryService },
         { provide: OutboundService, useValue: outboundService },
+        { provide: QualityInspectionService, useValue: qualityService },
       ],
     }).compile();
     service = module.get(WaybillService);
@@ -75,6 +80,58 @@ describe('WaybillService', () => {
     }, 'user-1')).rejects.toThrow('预计到达时间必须晚于计划发运时间');
   });
 
+  it('自有运力不能引用外协车辆', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.vehicle.findFirst.mockResolvedValue({ id: 'vehicle-1', ownerType: 'OUTSOURCED', ownerId: 'carrier-1' } as any);
+    await expect(service.create({
+      dispatchNoticeId: notice.id,
+      freightMode: 'SELF',
+      vehicleId: 'vehicle-1',
+      lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+    }, 'user-1')).rejects.toThrow('自有运力只能选择自有车辆');
+  });
+
+  it('自有运力不能引用外部物流服务商的司机', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.driver.findFirst.mockResolvedValue({
+      id: 'driver-1', name: '张师傅', phone: '13800138000',
+      serviceOrganization: { partnerId: 'carrier-1', partner: { isInternal: false } },
+    } as any);
+    await expect(service.create({
+      dispatchNoticeId: notice.id,
+      freightMode: 'SELF',
+      driverId: 'driver-1',
+      lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+    }, 'user-1')).rejects.toThrow('自有运力只能选择内部物流服务商维护的司机');
+  });
+
+  it('改为手工填写车辆时清除原车辆主数据关联', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1', status: 'PENDING', freightMode: 'SELF',
+      vehicleId: 'vehicle-old', carrierPartnerId: null,
+      plateNo: '甘A00001', driverName: '原司机', driverPhone: '13800000000',
+      plannedDepartureAt: null, plannedArrivalAt: null,
+    } as any);
+    prisma.waybill.update.mockResolvedValue({ id: 'waybill-1' } as any);
+
+    await service.assign('waybill-1', {
+      vehicleId: null,
+      plateNo: '甘A99999',
+      driverName: '临时司机',
+      driverPhone: '13900000000',
+    }, 'user-1');
+
+    expect(prisma.vehicle.findFirst).not.toHaveBeenCalled();
+    expect(prisma.waybill.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        vehicleId: null,
+        plateNo: '甘A99999',
+        driverName: '临时司机',
+        driverPhone: '13900000000',
+      }),
+    }));
+  });
+
   it('委外运输缺少承运单位时不能确认发运', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1', status: 'PENDING', freightMode: 'THIRD_PARTY',
@@ -110,6 +167,7 @@ describe('WaybillService', () => {
     await service.updateStatus('waybill-purchase', 'ARRIVED', 'user-1');
 
     expect(inventoryService.ensurePendingReceiptForWaybill).toHaveBeenCalledWith('waybill-purchase', 'user-1');
+    expect(qualityService.ensureTaskForWaybill).toHaveBeenCalledWith('waybill-purchase', 'user-1');
   });
 
   it('确认签收前必须上传物流收货附件', async () => {

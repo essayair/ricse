@@ -130,7 +130,7 @@ export default function InboundDetail() {
   };
 
   const selectAcceptanceQuality = async (qualityInspectionId: string) => {
-    if (!confirm('确认将这张合格质检单设为最终入库验收依据？最终入库数量和扣减数据将同步更新。')) return;
+    if (!confirm('确认采用到货质检任务已经确定的执行口径报告？最终入库数量和扣减数据将同步更新。')) return;
     setSaving(true);
     try {
       const result = await api.patch(`/inbound-receipts/${id}/acceptance-quality`, { qualityInspectionId });
@@ -245,7 +245,7 @@ export default function InboundDetail() {
           {item.qualityInspection ? (
             <>
               <Grid items={[
-                ['最终验收质检单', item.qualityInspection.inspectionNo],
+                ['执行口径报告', item.qualityInspection.inspectionNo],
                 ['检测机构', item.qualityInspection.institutionName],
                 ['报告编号', item.qualityInspection.reportNo || '-'],
                 ['验收结论', item.acceptanceConclusion === 'PASS' ? '合格' : '待确认'],
@@ -254,13 +254,13 @@ export default function InboundDetail() {
                 ['预计扣款', `¥${Number(item.deductionAmount).toLocaleString()}`],
                 ['最终入库数量', weight(item.receivedQuantity)],
               ]} />
-              <Button className="mt-4" variant="outline" onClick={() => router.push(`/dashboard/quality/${item.qualityInspection.id}`)}>
-                查看最终验收质检单
+              <Button className="mt-4" variant="outline" onClick={() => router.push(`/dashboard/quality/${item.waybill.qualityTask?.id}`)}>
+                查看到货质检任务
               </Button>
             </>
           ) : (
             <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
-              尚未指定最终验收质检单。磅单复核后可以创建一张或多张独立质检单；已确认且合格的质检单可设为最终验收依据。
+              到货质检任务尚未形成最终合格结论。请先完成机构报告录入、确认和任务级最终判定。
             </div>
           )}
         </Card>
@@ -268,8 +268,8 @@ export default function InboundDetail() {
 
       <Card className="p-5">
         <div className="mb-4">
-          <h2 className="font-semibold">关联质检记录</h2>
-          <p className="mt-1 text-xs text-muted-foreground">同一车辆可以关联多张质检单，仅一张已确认且合格的质检单作为最终入库验收依据。</p>
+          <h2 className="font-semibold">关联机构检测报告</h2>
+          <p className="mt-1 text-xs text-muted-foreground">同一到货质检任务可归集多份机构报告，任务最终选择一份作为入库与结算执行口径。</p>
         </div>
         {!inspections.length ? (
           <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无质检记录</div>
@@ -277,15 +277,15 @@ export default function InboundDetail() {
           <div className="space-y-2">
             {inspections.map((inspection: any) => {
               const selected = item.qualityInspectionId === inspection.id;
-              const selectable = item.status === 'PENDING' && inspection.status === 'CONFIRMED' && inspection.conclusion === 'PASS';
+              const selectable = item.status === 'PENDING' && inspection.id === item.waybill.qualityTask?.basisInspectionId && inspection.status === 'CONFIRMED' && inspection.conclusion === 'PASS';
               return (
                 <div key={inspection.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 ${selected ? 'border-success/40 bg-success-bg' : ''}`}>
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <button className="font-mono text-sm font-medium text-primary hover:underline" onClick={() => router.push(`/dashboard/quality/${inspection.id}`)}>
+                      <button className="font-mono text-sm font-medium text-primary hover:underline" onClick={() => router.push(`/dashboard/quality/${inspection.qualityTaskId}`)}>
                         {inspection.inspectionNo}
                       </button>
-                      {selected && <Badge className="bg-success text-success-foreground">最终验收依据</Badge>}
+                      {selected && <Badge className="bg-success text-success-foreground">执行口径报告</Badge>}
                       <Badge variant="outline">{qualityStatus(inspection)}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
@@ -294,7 +294,7 @@ export default function InboundDetail() {
                   </div>
                   {selectable && !selected && (
                     <Button variant="outline" size="sm" disabled={saving} onClick={() => void selectAcceptanceQuality(inspection.id)}>
-                      设为最终验收依据
+                      采用任务执行口径
                     </Button>
                   )}
                 </div>

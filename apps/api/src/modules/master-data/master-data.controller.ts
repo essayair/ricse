@@ -47,15 +47,17 @@ export class MasterDataController {
   @Get('materials/next-code')
   @RequirePermission('master_data.view')
   @ApiOperation({ summary: '获取下一个物料编码' })
-  getMaterialNextCode() {
-    return this.masterDataService.generateNextMaterialCode();
+  getMaterialNextCode(@Query('referenceType') referenceType?: string) {
+    return this.masterDataService.generateNextMaterialCode(referenceType);
   }
 
   @Post('materials')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建物料' })
   createMaterial(@Body() dto: {
-    code?: string; name: string; categoryId: string; grade?: string;
+    code?: string; name?: string; baseName?: string; categoryId: string;
+    commodityForm?: string; coreSpecName?: string; coreSpecOperator?: string;
+    coreSpecValue?: string; coreSpecUnit?: string; referenceType?: string; grade?: string;
     unit?: string; spec?: string; sourceRegion?: string; packageType?: string;
     isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
     internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
@@ -88,10 +90,8 @@ export class MasterDataController {
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '更新物料' })
   updateMaterial(@Param('id') id: string, @Body() dto: {
-    name?: string; categoryId?: string; grade?: string; unit?: string;
-    spec?: string; sourceRegion?: string; packageType?: string;
-    isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
-    internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
+    isVirtual?: boolean; specs?: object; hsCode?: string | null; taxCode?: string | null;
+    internalCode?: string | null; qcTemplate?: string | null; status?: string; remark?: string | null;
   }) {
     return this.masterDataService.updateMaterial(id, dto);
   }

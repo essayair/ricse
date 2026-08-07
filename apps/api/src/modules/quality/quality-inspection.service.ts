@@ -18,6 +18,7 @@ export class QualityInspectionService {
     confirmer: { select: { id: true, name: true } },
     indicators: { orderBy: { sort: 'asc' as const } },
     attachments: { orderBy: { createdAt: 'desc' as const } },
+    qualityTask: { select: { id: true, taskNo: true, status: true, finalConclusion: true } },
     inboundReceipts: {
       where: { deletedAt: null, status: { not: 'CANCELLED' } },
       select: { id: true, receiptNo: true, status: true },
@@ -50,6 +51,69 @@ export class QualityInspectionService {
     },
   };
 
+  private readonly taskInclude = {
+    creator: { select: { id: true, name: true } },
+    handler: { select: { id: true, name: true } },
+    decider: { select: { id: true, name: true } },
+    basisInspection: {
+      select: {
+        id: true, inspectionNo: true, institutionName: true, reportNo: true,
+        conclusion: true, settlementWeight: true, moistureDeductionWeight: true,
+        impurityDeductionWeight: true, deductionAmount: true,
+      },
+    },
+    reports: {
+      where: { deletedAt: null },
+      include: {
+        creator: { select: { id: true, name: true } },
+        confirmer: { select: { id: true, name: true } },
+        indicators: { orderBy: { sort: 'asc' as const } },
+        attachments: { orderBy: { createdAt: 'desc' as const } },
+        weighTicket: { select: { id: true, ticketNo: true, status: true } },
+      },
+      orderBy: { createdAt: 'asc' as const },
+    },
+    waybill: {
+      include: {
+        lineItems: { orderBy: { createdAt: 'asc' as const } },
+        weighTickets: {
+          where: { deletedAt: null },
+          select: {
+            id: true, ticketNo: true, status: true, weighingStage: true, sequence: true,
+            materialName: true, materialSpec: true, netWeight: true, settlementWeight: true,
+          },
+          orderBy: [{ weighingStage: 'asc' as const }, { sequence: 'asc' as const }],
+        },
+        weightSelections: {
+          where: { isCurrent: true },
+          select: { purpose: true, weighTicketId: true, quantity: true },
+        },
+        inboundReceipts: {
+          where: { deletedAt: null, status: { not: 'CANCELLED' } },
+          select: { id: true, receiptNo: true, status: true, qualityInspectionId: true },
+          orderBy: { createdAt: 'desc' as const },
+        },
+        dispatchNotice: {
+          include: {
+            warehouse: { select: { id: true, code: true, name: true } },
+            order: {
+              include: {
+                contract: {
+                  select: {
+                    id: true, contractNo: true, title: true, type: true,
+                    seller: { select: { id: true, name: true } },
+                    buyer: { select: { id: true, name: true } },
+                    signingPartner: { select: { id: true, name: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
   private async generateNo() {
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -57,6 +121,114 @@ export class QualityInspectionService {
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const count = await this.prisma.qualityInspection.count({ where: { createdAt: { gte: start, lt: end } } });
     return `QC-${date}-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  private async generateTaskNo() {
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const count = await this.prisma.qualityTask.count({ where: { createdAt: { gte: start, lt: end } } });
+    return `QT-${date}-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  async ensureTaskForWaybill(waybillId: string, userId: string) {
+    const waybill = await this.prisma.waybill.findFirst({
+      where: { id: waybillId, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (!waybill || !['ARRIVED', 'SIGNED'].includes(waybill.status)) return null;
+    const existing = await this.prisma.qualityTask.findUnique({
+      where: { waybillId }, include: this.taskInclude,
+    });
+    if (existing && !existing.deletedAt) return existing;
+    try {
+      return await this.prisma.qualityTask.create({
+        data: {
+          taskNo: await this.generateTaskNo(), waybillId,
+          status: 'PENDING_SAMPLING', plannedReportCount: 3, createdBy: userId,
+        },
+        include: this.taskInclude,
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return this.prisma.qualityTask.findUnique({ where: { waybillId }, include: this.taskInclude });
+      }
+      throw error;
+    }
+  }
+
+  async findTasks(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const page = Math.max(1, params.page || 1);
+    const pageSize = Math.min(100, Math.max(1, params.pageSize || 20));
+    const where: Prisma.QualityTaskWhereInput = { deletedAt: null, AND: [scope] };
+    if (params.status) where.status = params.status;
+    if (params.conclusion) where.finalConclusion = params.conclusion;
+    if (params.dateFrom || params.dateTo) {
+      where.createdAt = {};
+      if (params.dateFrom) where.createdAt.gte = new Date(params.dateFrom);
+      if (params.dateTo) where.createdAt.lte = new Date(`${params.dateTo}T23:59:59.999`);
+    }
+    if (params.search?.trim()) {
+      const search = params.search.trim();
+      where.OR = [
+        { taskNo: { contains: search, mode: 'insensitive' } },
+        { waybill: { waybillNo: { contains: search, mode: 'insensitive' } } },
+        { waybill: { plateNo: { contains: search, mode: 'insensitive' } } },
+        { waybill: { lineItems: { some: { materialName: { contains: search, mode: 'insensitive' } } } } },
+        { waybill: { dispatchNotice: { order: { name: { contains: search, mode: 'insensitive' } } } } },
+        { waybill: { dispatchNotice: { order: { orderNo: { contains: search, mode: 'insensitive' } } } } },
+        { reports: { some: { institutionName: { contains: search, mode: 'insensitive' } } } },
+        { reports: { some: { reportNo: { contains: search, mode: 'insensitive' } } } },
+      ];
+    }
+    const [items, total] = await Promise.all([
+      this.prisma.qualityTask.findMany({ where, include: this.taskInclude, skip: (page - 1) * pageSize, take: pageSize, orderBy: { createdAt: 'desc' } }),
+      this.prisma.qualityTask.count({ where }),
+    ]);
+    return { items, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
+  }
+
+  async findTask(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const task = await this.prisma.qualityTask.findFirst({
+      where: { id, deletedAt: null, AND: [scope] }, include: this.taskInclude,
+    });
+    if (!task) throw new NotFoundException('到货质检任务不存在');
+    return task;
+  }
+
+  async finalizeTask(id: string, data: { conclusion: string; basisInspectionId: string; reason?: string }, userId: string) {
+    const task = await this.findTask(id, userId, 'quality.manage');
+    if (task.status === 'VOIDED') throw new BadRequestException('已作废质检任务不能形成最终结论');
+    const confirmed = task.reports.filter(report => report.status === 'CONFIRMED');
+    if (!confirmed.length) throw new BadRequestException('至少需要一份已确认的有效检测报告');
+    const basis = confirmed.find(report => report.id === data.basisInspectionId);
+    if (!basis) throw new BadRequestException('执行口径报告必须是本任务下已确认的有效检测报告');
+    if (basis.conclusion !== data.conclusion) {
+      throw new BadRequestException('最终结论必须与所选执行口径报告的结论一致');
+    }
+    const partial = confirmed.length < task.plannedReportCount;
+    if ((partial || confirmed.length === 1) && !data.reason?.trim()) {
+      throw new BadRequestException('有效报告少于计划数量时必须填写提前判定原因');
+    }
+    await this.prisma.qualityTask.update({
+      where: { id },
+      data: {
+        status: 'COMPLETED', finalConclusion: data.conclusion,
+        basisInspectionId: basis.id, finalizedReportIds: confirmed.map(report => report.id),
+        finalizedReportCount: confirmed.length, decisionReason: data.reason?.trim() || '依据全部有效检测报告形成结论',
+        decisionVersion: { increment: 1 }, decidedBy: userId, decidedAt: new Date(),
+        handlerId: task.handlerId || userId, handledAt: task.handledAt || new Date(),
+      },
+    });
+    if (data.conclusion === 'PASS') {
+      await this.inventoryService.createPendingReceiptForConfirmedQuality(basis.id, userId);
+    }
+    return this.findTask(id, userId, 'quality.manage');
   }
 
   async eligibleWeighTickets(userId: string) {
@@ -112,9 +284,11 @@ export class QualityInspectionService {
 
   async create(dto: CreateQualityInspectionDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.manage');
+    const task = await this.findTask(dto.qualityTaskId, userId, 'quality.manage');
+    if (task.status === 'VOIDED') throw new BadRequestException('已作废质检任务不能追加检测报告');
     const scope = await this.accessControl.getWeighTicketScope(userId);
     const ticket = await this.prisma.weighTicket.findFirst({
-      where: { id: dto.weighTicketId, deletedAt: null, AND: [scope] },
+      where: { id: dto.weighTicketId, waybillId: task.waybillId, deletedAt: null, AND: [scope] },
       include: {
         waybill: {
           include: {
@@ -169,9 +343,10 @@ export class QualityInspectionService {
       ? evaluated.filter(item => item.result === 'FUSE').map(item => `${item.name}达到熔断线`).join('；')
       : null;
 
-    return this.prisma.qualityInspection.create({
+    const inspection = await this.prisma.qualityInspection.create({
       data: {
         inspectionNo: await this.generateNo(),
+        qualityTaskId: task.id,
         weighTicketId: ticket.id,
         status: dto.submit ? 'REPORTED' : 'DRAFT',
         conclusion,
@@ -184,6 +359,7 @@ export class QualityInspectionService {
         sampledAt: new Date(dto.sampledAt),
         samplerName: dto.samplerName.trim(),
         samplingMethod: clean(dto.samplingMethod),
+        sampleNo: clean(dto.sampleNo),
         sampleNo1: clean(dto.sampleNo1), sampleNo2: clean(dto.sampleNo2), sampleNo3: clean(dto.sampleNo3),
         materialName: ticket.materialName || ticket.waybill.lineItems.map(line => line.materialName || line.materialId).join('、'),
         materialSpec: ticket.materialSpec,
@@ -208,6 +384,18 @@ export class QualityInspectionService {
       },
       include: this.include,
     });
+    await this.prisma.qualityTask.update({
+      where: { id: task.id },
+      data: {
+        status: ['COMPLETED', 'RECHECK_REQUIRED'].includes(task.status) ? 'RECHECK_REQUIRED' : 'INSPECTING',
+        sampledAt: task.sampledAt || new Date(dto.sampledAt),
+        samplerName: task.samplerName || dto.samplerName.trim(),
+        samplingMethod: task.samplingMethod || clean(dto.samplingMethod),
+        handlerId: task.handlerId || userId,
+        handledAt: task.handledAt || new Date(),
+      },
+    });
+    return inspection;
   }
 
   async findAll(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }, userId: string) {
@@ -296,8 +484,15 @@ export class QualityInspectionService {
         ...(resolution?.trim() ? { resolution: resolution.trim(), resolvedAt: new Date() } : {}),
       },
     });
-    if (status === 'CONFIRMED' && item.conclusion === 'PASS') {
-      await this.inventoryService.createPendingReceiptForConfirmedQuality(id, userId);
+    if (status === 'CONFIRMED') {
+      await this.prisma.qualityTask.update({
+        where: { id: item.qualityTask.id },
+        data: {
+          status: item.qualityTask.status === 'COMPLETED' ? 'RECHECK_REQUIRED' : 'PENDING_DECISION',
+          handlerId: userId,
+          handledAt: new Date(),
+        },
+      });
     }
     return this.findOne(id, userId, 'quality.manage');
   }

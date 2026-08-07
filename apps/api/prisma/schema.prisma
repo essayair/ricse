@@ -25,31 +25,34 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company                     Company?            @relation(fields: [companyId], references: [id])
-  employee                    Employee?           @relation(fields: [employeeId], references: [id])
+  company                     Company?                 @relation(fields: [companyId], references: [id])
+  employee                    Employee?                @relation(fields: [employeeId], references: [id])
   roleAssignments             UserRoleAssignment[]
-  createdContracts            Contract[]          @relation("ContractCreator")
-  createdPartners             Partner[]           @relation("PartnerCreator")
-  approvalTasks               Approval[]          @relation("ApprovalAssignee")
-  actedApprovals              Approval[]          @relation("ApprovalActor")
-  createdOrders               Order[]             @relation("OrderCreator")
-  createdDispatchNotices      DispatchNotice[]    @relation("DispatchNoticeCreator")
-  createdWaybills             Waybill[]           @relation("WaybillCreator")
-  createdWeighTickets         WeighTicket[]       @relation("WeighTicketCreator")
-  reviewedWeighTickets        WeighTicket[]       @relation("WeighTicketReviewer")
+  createdContracts            Contract[]               @relation("ContractCreator")
+  createdPartners             Partner[]                @relation("PartnerCreator")
+  approvalTasks               Approval[]               @relation("ApprovalAssignee")
+  actedApprovals              Approval[]               @relation("ApprovalActor")
+  createdOrders               Order[]                  @relation("OrderCreator")
+  createdDispatchNotices      DispatchNotice[]         @relation("DispatchNoticeCreator")
+  createdWaybills             Waybill[]                @relation("WaybillCreator")
+  createdWeighTickets         WeighTicket[]            @relation("WeighTicketCreator")
+  reviewedWeighTickets        WeighTicket[]            @relation("WeighTicketReviewer")
   weighTicketSelections       WaybillWeightSelection[] @relation("WaybillWeightSelector")
-  weighRecords                WeighRecord[]       @relation("WeighRecordOperator")
-  createdQualityInspections   QualityInspection[] @relation("QualityInspectionCreator")
-  confirmedQualityInspections QualityInspection[] @relation("QualityInspectionConfirmer")
-  createdInboundReceipts      InboundReceipt[]    @relation("InboundReceiptCreator")
-  createdBusinessInbounds     BusinessInbound[]   @relation("BusinessInboundCreator")
-  createdOutboundOrders       OutboundOrder[]     @relation("OutboundOrderCreator")
-  createdOutboundReceipts     OutboundReceipt[]   @relation("OutboundReceiptCreator")
-  createdSalesOutbounds       SalesOutbound[]     @relation("SalesOutboundCreator")
-  inventoryLedgerEntries      InventoryLedger[]   @relation("InventoryLedgerCreator")
-  createdInventoryReversals   InventoryReversal[] @relation("InventoryReversalCreator")
-  approvedInventoryReversals  InventoryReversal[] @relation("InventoryReversalApprover")
-  postedInventoryReversals    InventoryReversal[] @relation("InventoryReversalPoster")
+  weighRecords                WeighRecord[]            @relation("WeighRecordOperator")
+  createdQualityInspections   QualityInspection[]      @relation("QualityInspectionCreator")
+  confirmedQualityInspections QualityInspection[]      @relation("QualityInspectionConfirmer")
+  createdQualityTasks         QualityTask[]            @relation("QualityTaskCreator")
+  handledQualityTasks         QualityTask[]            @relation("QualityTaskHandler")
+  decidedQualityTasks         QualityTask[]            @relation("QualityTaskDecider")
+  createdInboundReceipts      InboundReceipt[]         @relation("InboundReceiptCreator")
+  createdBusinessInbounds     BusinessInbound[]        @relation("BusinessInboundCreator")
+  createdOutboundOrders       OutboundOrder[]          @relation("OutboundOrderCreator")
+  createdOutboundReceipts     OutboundReceipt[]        @relation("OutboundReceiptCreator")
+  createdSalesOutbounds       SalesOutbound[]          @relation("SalesOutboundCreator")
+  inventoryLedgerEntries      InventoryLedger[]        @relation("InventoryLedgerCreator")
+  createdInventoryReversals   InventoryReversal[]      @relation("InventoryReversalCreator")
+  approvedInventoryReversals  InventoryReversal[]      @relation("InventoryReversalApprover")
+  postedInventoryReversals    InventoryReversal[]      @relation("InventoryReversalPoster")
 
   @@map("users")
 }
@@ -161,8 +164,8 @@ model Role {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  permissions RolePermission[]
-  assignments UserRoleAssignment[]
+  permissions       RolePermission[]
+  assignments       UserRoleAssignment[]
   approvalFlowNodes ApprovalFlowNode[]
 
   @@map("roles")
@@ -196,16 +199,16 @@ model RolePermission {
 }
 
 model UserRoleAssignment {
-  id         String    @id @default(cuid())
-  userId     String
-  roleId     String
-  scopeType  String    @default("ALL") // SELF | DEPARTMENT | DEPARTMENT_AND_CHILDREN | COMPANY | SPECIFIED_COMPANIES | ALL
-  status     String    @default("ACTIVE")
-  effectiveAt DateTime @default(now())
-  expiresAt  DateTime?
-  assignedBy String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  userId      String
+  roleId      String
+  scopeType   String    @default("ALL") // SELF | DEPARTMENT | DEPARTMENT_AND_CHILDREN | COMPANY | SPECIFIED_COMPANIES | ALL
+  status      String    @default("ACTIVE")
+  effectiveAt DateTime  @default(now())
+  expiresAt   DateTime?
+  assignedBy  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   role   Role            @relation(fields: [roleId], references: [id], onDelete: Restrict)
@@ -219,7 +222,7 @@ model UserRoleAssignment {
 model UserRoleScope {
   id           String   @id @default(cuid())
   assignmentId String
-  targetType   String   // COMPANY | DEPARTMENT | WAREHOUSE
+  targetType   String // COMPANY | DEPARTMENT | WAREHOUSE
   targetId     String
   createdAt    DateTime @default(now())
 
@@ -303,8 +306,8 @@ model Partner {
   carrierWaybills         Waybill[]             @relation("WaybillCarrierPartner")
   institutionInspections  QualityInspection[]   @relation("QualityInstitutionPartner")
   ownedBusinessInbounds   BusinessInbound[]     @relation("BusinessInboundOwner")
-  ownedInventoryLots      InventoryLot[]         @relation("InventoryLotOwner")
-  ownedOutboundOrders     OutboundOrder[]        @relation("OutboundOrderOwner")
+  ownedInventoryLots      InventoryLot[]        @relation("InventoryLotOwner")
+  ownedOutboundOrders     OutboundOrder[]       @relation("OutboundOrderOwner")
 
   @@unique([taxId, name])
   @@map("partners")
@@ -343,12 +346,40 @@ model ServiceOrganization {
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
-  partner Partner @relation(fields: [partnerId], references: [id])
+  partner Partner  @relation(fields: [partnerId], references: [id])
+  drivers Driver[]
 
   @@unique([partnerId, organizationType])
   @@index([organizationType, status])
   @@index([partnerId])
   @@map("service_organizations")
+}
+
+/// 司机档案；归属于物流承运商服务档案
+model Driver {
+  id                    String    @id @default(cuid())
+  serviceOrganizationId String
+  name                  String
+  phone                 String
+  idCardNo              String?
+  licenseNo             String?
+  licenseClass          String?
+  licenseExpiry         DateTime?
+  status                String    @default("ACTIVE") // ACTIVE | INACTIVE
+  remark                String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+
+  serviceOrganization ServiceOrganization @relation(fields: [serviceOrganizationId], references: [id])
+  waybills             Waybill[]
+  vehicleLinks         VehicleDriver[]
+
+  @@unique([serviceOrganizationId, phone])
+  @@index([serviceOrganizationId, status])
+  @@index([name])
+  @@index([phone])
+  @@map("drivers")
 }
 
 model MaterialCategory {
@@ -359,68 +390,130 @@ model MaterialCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  parent    MaterialCategory?  @relation("CategoryParent", fields: [parentId], references: [id])
-  children  MaterialCategory[] @relation("CategoryParent")
-  materials Material[]
+  parent              MaterialCategory?   @relation("CategoryParent", fields: [parentId], references: [id])
+  children            MaterialCategory[]  @relation("CategoryParent")
+  materials           Material[]
+  standardCommodities StandardCommodity[]
 
   @@map("material_categories")
 }
 
-model Material {
-  id           String    @id @default(cuid())
-  code         String    @unique
-  name         String
-  categoryId   String
-  grade        String? // 品级：CaF₂≥97%、CaF₂≥95% 等（保留兼容）
-  unit         String    @default("TON")
-  spec         String?
-  sourceRegion String?
-  packageType  String? // 包装方式：散装 / 吨袋 / 小包装
-  isVirtual    Boolean   @default(false) // 是否虚拟物料
-  specs        Json? // 规格指标数组 [{name,indicator,operator,value,unit}]
-  hsCode       String? // HS编码（海关报关）
-  taxCode      String? // 税务商品编码
-  internalCode String? // 内部编码
-  qcTemplate   String? // 质检模板ID
-  status       String    @default("ACTIVE")
-  remark       String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
+model StandardCommodity {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  categoryId       String
+  baseName         String
+  commodityForm    String
+  coreSpecName     String
+  coreSpecOperator String
+  coreSpecValue    String
+  coreSpecUnit     String
+  packageType      String
+  unit             String   @default("TON")
+  fingerprint      String   @unique
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  category         MaterialCategory  @relation(fields: [categoryId], references: [id])
-  businessInbounds BusinessInbound[]
-  salesOutbounds   SalesOutbound[]
-  inventoryLots    InventoryLot[]
-  inventoryLedgers InventoryLedger[]
-  OutboundReceipt  OutboundReceipt[]
+  category  MaterialCategory @relation(fields: [categoryId], references: [id])
+  materials Material[]
 
   @@index([categoryId])
+  @@index([status])
+  @@map("standard_commodities")
+}
+
+model Material {
+  id                  String    @id @default(cuid())
+  code                String    @unique
+  name                String
+  categoryId          String
+  standardCommodityId String?
+  referenceType       String    @default("TRADING_GOODS")
+  commodityForm       String?
+  grade               String? // 品级：CaF₂≥97%、CaF₂≥95% 等（保留兼容）
+  unit                String    @default("TON")
+  spec                String?
+  sourceRegion        String?
+  packageType         String? // 包装方式：散装 / 吨袋 / 小包装
+  isVirtual           Boolean   @default(false) // 是否虚拟物料
+  specs               Json? // 规格指标数组 [{name,indicator,operator,value,unit}]
+  hsCode              String? // HS编码（海关报关）
+  taxCode             String? // 税务商品编码
+  internalCode        String? // 内部编码
+  qcTemplate          String? // 质检模板ID
+  status              String    @default("ACTIVE")
+  remark              String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  category          MaterialCategory   @relation(fields: [categoryId], references: [id])
+  standardCommodity StandardCommodity? @relation(fields: [standardCommodityId], references: [id])
+  businessInbounds  BusinessInbound[]
+  salesOutbounds    SalesOutbound[]
+  inventoryLots     InventoryLot[]
+  inventoryLedgers  InventoryLedger[]
+  OutboundReceipt   OutboundReceipt[]
+
+  @@index([categoryId])
+  @@index([standardCommodityId])
+  @@index([referenceType])
   @@map("materials")
 }
 
 /// 车辆管理
 model Vehicle {
-  id           String    @id @default(cuid())
-  plateNo      String    @unique
-  vehicleType  String // TRUCK | TANK | TRAILER
-  brand        String?
-  loadCapacity Decimal   @db.Decimal(10, 2)
-  ownerId      String? // 关联 Partner（外协车辆）
-  ownerType    String    @default("SELF") // SELF | OUTSOURCED
-  driverName   String?
-  driverPhone  String?
-  status       String    @default("ACTIVE") // ACTIVE | MAINTENANCE | RETIRED
-  remark       String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
+  id                          String    @id @default(cuid())
+  plateNo                     String    @unique
+  vehicleType                 String // SEMI_TRAILER | HEAVY_SEMI_TRAILER | BOX_TRUCK | DUMP_TRUCK | TANK_TRUCK；兼容 TRUCK/TANK/TRAILER
+  brand                       String?
+  tareWeight                  Decimal?  @db.Decimal(10, 2)
+  loadCapacity                Decimal   @db.Decimal(10, 2)
+  plateColor                  String? // YELLOW | GREEN | BLUE | BLACK | OTHER
+  licenseNo                   String?
+  annualInspectionExpiry      DateTime?
+  compulsoryInsuranceExpiry   DateTime?
+  commercialInsuranceExpiry   DateTime?
+  ownerId                     String? // 关联 Partner
+  ownerType                   String    @default("SELF") // SELF | OUTSOURCED
+  ownerName                   String?
+  ownerPhone                  String?
+  driverName                  String? // 兼容旧数据；新数据取主驾快照
+  driverPhone                 String? // 兼容旧数据；新数据取主驾快照
+  deviceType                  String? // BEIDOU | GPS | NONE
+  deviceNo                    String?
+  deviceInstalledAt           DateTime?
+  status                      String    @default("ACTIVE") // ACTIVE | MAINTENANCE | RETIRED
+  remark                      String?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  deletedAt                   DateTime?
 
-  owner    Partner?  @relation(fields: [ownerId], references: [id])
-  waybills Waybill[]
+  owner       Partner?        @relation(fields: [ownerId], references: [id])
+  drivers     VehicleDriver[]
+  waybills    Waybill[]
 
   @@index([ownerId])
   @@map("vehicles")
+}
+
+/// 车辆与司机关联；一辆车可关联多名主/副驾，司机仍保持独立主数据身份
+model VehicleDriver {
+  id        String   @id @default(cuid())
+  vehicleId String
+  driverId  String
+  role      String   @default("SECONDARY") // PRIMARY | SECONDARY
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver  Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, driverId])
+  @@index([driverId])
+  @@map("vehicle_drivers")
 }
 
 /// 银行账户
@@ -489,14 +582,14 @@ model Contract {
   signingPartnerId String? // 我方签约主体（内部合作伙伴）
   companyId        String? // 签约主体（内部企业）
   departmentId     String? // 业务部门
-  externalNo       String? // 外部合同号
+  externalNo       String? // 外部合同号：纸质合同或其他系统合同编号
   // 对手方
   contactPerson    String? // 对手方联系人
   contactPhone     String? // 对手方电话
   // 货物与价格
   pricingType      String? // 定价类型：FIXED/BASIS/FLOATING
-  overfillPct      Decimal?  @db.Decimal(5, 2) // 溢装比例(%)
-  shortfallPct     Decimal?  @db.Decimal(5, 2) // 短装比例(%)
+  overfillPct      Decimal?  @default(10) @db.Decimal(5, 2) // 溢装比例(%)，默认10%
+  shortfallPct     Decimal?  @default(10) @db.Decimal(5, 2) // 短装比例(%)，默认10%
   // 履约
   deliveryMethod   String? // 交货方式
   deliveryLocation String? // 收货/发货地点
@@ -528,11 +621,11 @@ model Contract {
   company        Company?           @relation(fields: [companyId], references: [id])
   orders         Order[]
 
+  @@unique([createdBy, clientRequestId])
   @@index([contractNo])
   @@index([status])
   @@index([sellerId])
   @@index([signingPartnerId])
-  @@unique([createdBy, clientRequestId])
   @@map("contracts")
 }
 
@@ -629,11 +722,11 @@ model DispatchNotice {
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
 
-  order     Order                    @relation(fields: [orderId], references: [id])
-  warehouse Warehouse?               @relation(fields: [warehouseId], references: [id])
-  creator   User                     @relation("DispatchNoticeCreator", fields: [createdBy], references: [id])
-  lineItems DispatchNoticeLineItem[]
-  waybills  Waybill[]
+  order         Order                    @relation(fields: [orderId], references: [id])
+  warehouse     Warehouse?               @relation(fields: [warehouseId], references: [id])
+  creator       User                     @relation("DispatchNoticeCreator", fields: [createdBy], references: [id])
+  lineItems     DispatchNoticeLineItem[]
+  waybills      Waybill[]
   outboundOrder OutboundOrder?
 
   @@index([noticeNo])
@@ -655,9 +748,9 @@ model DispatchNoticeLineItem {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  dispatchNotice   DispatchNotice    @relation(fields: [dispatchNoticeId], references: [id], onDelete: Cascade)
-  orderLineItem    OrderLineItem     @relation(fields: [orderLineItemId], references: [id])
-  waybillLineItems WaybillLineItem[]
+  dispatchNotice    DispatchNotice     @relation(fields: [dispatchNoticeId], references: [id], onDelete: Cascade)
+  orderLineItem     OrderLineItem      @relation(fields: [orderLineItemId], references: [id])
+  waybillLineItems  WaybillLineItem[]
   outboundOrderLine OutboundOrderLine?
 
   @@index([dispatchNoticeId])
@@ -672,6 +765,7 @@ model Waybill {
   status              String    @default("PENDING") // PENDING | IN_TRANSIT | ARRIVED | SIGNED | CANCELLED
   freightMode         String    @default("SELF") // SELF | THIRD_PARTY
   vehicleId           String?
+  driverId            String?
   carrierPartnerId    String?
   carrierName         String?
   plateNo             String?
@@ -691,21 +785,24 @@ model Waybill {
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
 
-  dispatchNotice   DispatchNotice    @relation(fields: [dispatchNoticeId], references: [id])
-  vehicle          Vehicle?          @relation(fields: [vehicleId], references: [id])
-  carrierPartner   Partner?          @relation("WaybillCarrierPartner", fields: [carrierPartnerId], references: [id])
-  creator          User              @relation("WaybillCreator", fields: [createdBy], references: [id])
+  dispatchNotice   DispatchNotice           @relation(fields: [dispatchNoticeId], references: [id])
+  vehicle          Vehicle?                 @relation(fields: [vehicleId], references: [id])
+  driver           Driver?                  @relation(fields: [driverId], references: [id])
+  carrierPartner   Partner?                 @relation("WaybillCarrierPartner", fields: [carrierPartnerId], references: [id])
+  creator          User                     @relation("WaybillCreator", fields: [createdBy], references: [id])
   lineItems        WaybillLineItem[]
   weighTickets     WeighTicket[]
   weightSelections WaybillWeightSelection[]
   attachments      Attachment[]
   inboundReceipts  InboundReceipt[]
   outboundReceipts OutboundReceipt[]
+  qualityTask      QualityTask?
 
   @@index([waybillNo])
   @@index([dispatchNoticeId])
   @@index([status])
   @@index([vehicleId])
+  @@index([driverId])
   @@index([carrierPartnerId])
   @@map("waybills")
 }
@@ -777,17 +874,17 @@ model WeighTicket {
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime?
 
-  waybill            Waybill             @relation(fields: [waybillId], references: [id])
-  previousTicket     WeighTicket?        @relation("SupplementaryWeighTickets", fields: [previousTicketId], references: [id])
-  supplementaryTickets WeighTicket[]     @relation("SupplementaryWeighTickets")
-  creator            User                @relation("WeighTicketCreator", fields: [createdBy], references: [id])
-  reviewer           User?               @relation("WeighTicketReviewer", fields: [reviewedBy], references: [id])
-  records            WeighRecord[]
-  attachments        Attachment[]
-  qualityInspections QualityInspection[]
-  inboundReceipts    InboundReceipt[]
-  outboundReceipts   OutboundReceipt[]
-  weightSelections   WaybillWeightSelection[]
+  waybill              Waybill                  @relation(fields: [waybillId], references: [id])
+  previousTicket       WeighTicket?             @relation("SupplementaryWeighTickets", fields: [previousTicketId], references: [id])
+  supplementaryTickets WeighTicket[]            @relation("SupplementaryWeighTickets")
+  creator              User                     @relation("WeighTicketCreator", fields: [createdBy], references: [id])
+  reviewer             User?                    @relation("WeighTicketReviewer", fields: [reviewedBy], references: [id])
+  records              WeighRecord[]
+  attachments          Attachment[]
+  qualityInspections   QualityInspection[]
+  inboundReceipts      InboundReceipt[]
+  outboundReceipts     OutboundReceipt[]
+  weightSelections     WaybillWeightSelection[]
 
   @@index([ticketNo])
   @@index([ticketDate])
@@ -843,9 +940,49 @@ model WeighRecord {
 
 // ========== 质检化验 ==========
 
+/// 一次物流到货对应一个质检任务，机构检测报告作为任务子记录归集。
+model QualityTask {
+  id                   String    @id @default(cuid())
+  taskNo               String    @unique
+  waybillId            String    @unique
+  status               String    @default("PENDING_SAMPLING") // PENDING_SAMPLING | INSPECTING | PENDING_DECISION | COMPLETED | RECHECK_REQUIRED | VOIDED
+  plannedReportCount   Int       @default(3)
+  sampledAt            DateTime?
+  samplerName          String?
+  samplingMethod       String?
+  handlerId            String?
+  handledAt            DateTime?
+  finalConclusion      String    @default("PENDING") // PENDING | PASS | DEDUCTION | FUSE
+  basisInspectionId    String?
+  finalizedReportIds   Json?
+  finalizedReportCount Int       @default(0)
+  decisionReason       String?
+  decisionVersion      Int       @default(0)
+  decidedBy            String?
+  decidedAt            DateTime?
+  createdBy            String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
+
+  waybill         Waybill             @relation(fields: [waybillId], references: [id])
+  creator         User                @relation("QualityTaskCreator", fields: [createdBy], references: [id])
+  handler         User?               @relation("QualityTaskHandler", fields: [handlerId], references: [id])
+  decider         User?               @relation("QualityTaskDecider", fields: [decidedBy], references: [id])
+  basisInspection QualityInspection?  @relation("QualityTaskBasisInspection", fields: [basisInspectionId], references: [id])
+  reports         QualityInspection[] @relation("QualityTaskReports")
+
+  @@index([status])
+  @@index([finalConclusion])
+  @@index([handlerId])
+  @@index([decidedBy])
+  @@map("quality_tasks")
+}
+
 model QualityInspection {
   id                      String    @id @default(cuid())
   inspectionNo            String    @unique
+  qualityTaskId           String
   weighTicketId           String
   status                  String    @default("DRAFT") // DRAFT | TESTING | REPORTED | CONFIRMED | VOIDED
   conclusion              String    @default("PENDING") // PENDING | PASS | DEDUCTION | FUSE
@@ -858,6 +995,7 @@ model QualityInspection {
   sampledAt               DateTime
   samplerName             String
   samplingMethod          String?
+  sampleNo                String?
   sampleNo1               String?
   sampleNo2               String?
   sampleNo3               String?
@@ -881,6 +1019,8 @@ model QualityInspection {
   updatedAt               DateTime  @updatedAt
   deletedAt               DateTime?
 
+  qualityTask        QualityTask                  @relation("QualityTaskReports", fields: [qualityTaskId], references: [id])
+  basisForTasks      QualityTask[]                @relation("QualityTaskBasisInspection")
   weighTicket        WeighTicket                  @relation(fields: [weighTicketId], references: [id])
   creator            User                         @relation("QualityInspectionCreator", fields: [createdBy], references: [id])
   confirmer          User?                        @relation("QualityInspectionConfirmer", fields: [confirmedBy], references: [id])
@@ -890,6 +1030,7 @@ model QualityInspection {
   inboundReceipts    InboundReceipt[]
 
   @@index([inspectionNo])
+  @@index([qualityTaskId])
   @@index([weighTicketId])
   @@index([status])
   @@index([conclusion])
@@ -952,11 +1093,11 @@ model InboundReceipt {
   updatedAt               DateTime  @updatedAt
   deletedAt               DateTime?
 
-  waybill           Waybill           @relation(fields: [waybillId], references: [id])
+  waybill           Waybill            @relation(fields: [waybillId], references: [id])
   weighTicket       WeighTicket?       @relation(fields: [weighTicketId], references: [id])
   qualityInspection QualityInspection? @relation(fields: [qualityInspectionId], references: [id])
-  warehouse         Warehouse?        @relation(fields: [warehouseId], references: [id])
-  creator           User              @relation("InboundReceiptCreator", fields: [createdBy], references: [id])
+  warehouse         Warehouse?         @relation(fields: [warehouseId], references: [id])
+  creator           User               @relation("InboundReceiptCreator", fields: [createdBy], references: [id])
   businessInbound   BusinessInbound?
   attachments       Attachment[]
 
@@ -970,29 +1111,29 @@ model InboundReceipt {
 }
 
 model BusinessInbound {
-  id           String   @id @default(cuid())
-  inboundNo    String   @unique
-  receiptId    String   @unique
-  warehouseId  String
+  id             String   @id @default(cuid())
+  inboundNo      String   @unique
+  receiptId      String   @unique
+  warehouseId    String
   ownerPartnerId String?
-  materialId   String
-  materialName String
-  supplierName String?
-  quantity     Decimal  @db.Decimal(15, 3)
-  status       String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
-  lotNo        String
-  postedAt     DateTime @default(now())
-  createdBy    String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  materialId     String
+  materialName   String
+  supplierName   String?
+  quantity       Decimal  @db.Decimal(15, 3)
+  status         String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
+  lotNo          String
+  postedAt       DateTime @default(now())
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  receipt      InboundReceipt      @relation(fields: [receiptId], references: [id])
-  warehouse    Warehouse           @relation(fields: [warehouseId], references: [id])
-  inventoryOwner Partner?          @relation("BusinessInboundOwner", fields: [ownerPartnerId], references: [id])
-  material     Material            @relation(fields: [materialId], references: [id])
-  creator      User                @relation("BusinessInboundCreator", fields: [createdBy], references: [id])
-  inventoryLot InventoryLot?
-  reversals    InventoryReversal[]
+  receipt        InboundReceipt      @relation(fields: [receiptId], references: [id])
+  warehouse      Warehouse           @relation(fields: [warehouseId], references: [id])
+  inventoryOwner Partner?            @relation("BusinessInboundOwner", fields: [ownerPartnerId], references: [id])
+  material       Material            @relation(fields: [materialId], references: [id])
+  creator        User                @relation("BusinessInboundCreator", fields: [createdBy], references: [id])
+  inventoryLot   InventoryLot?
+  reversals      InventoryReversal[]
 
   @@index([inboundNo])
   @@index([warehouseId])
@@ -1062,24 +1203,24 @@ model InventoryLedger {
 // ========== 销售出库与库存扣减 ==========
 
 model OutboundOrder {
-  id               String    @id @default(cuid())
-  orderNo          String    @unique
-  dispatchNoticeId String    @unique
+  id               String   @id @default(cuid())
+  orderNo          String   @unique
+  dispatchNoticeId String   @unique
   warehouseId      String?
   ownerPartnerId   String?
-  status           String    @default("PENDING") // PENDING | PARTIAL | COMPLETED | CANCELLED
-  plannedQuantity  Decimal   @db.Decimal(15, 3)
-  reservedQuantity Decimal   @default(0) @db.Decimal(15, 3)
-  actualQuantity   Decimal   @default(0) @db.Decimal(15, 3)
-  shortageQuantity Decimal   @default(0) @db.Decimal(15, 3)
+  status           String   @default("PENDING") // PENDING | PARTIAL | COMPLETED | CANCELLED
+  plannedQuantity  Decimal  @db.Decimal(15, 3)
+  reservedQuantity Decimal  @default(0) @db.Decimal(15, 3)
+  actualQuantity   Decimal  @default(0) @db.Decimal(15, 3)
+  shortageQuantity Decimal  @default(0) @db.Decimal(15, 3)
   createdBy        String
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  dispatchNotice DispatchNotice     @relation(fields: [dispatchNoticeId], references: [id])
-  warehouse      Warehouse?         @relation(fields: [warehouseId], references: [id])
-  inventoryOwner Partner?           @relation("OutboundOrderOwner", fields: [ownerPartnerId], references: [id])
-  creator        User               @relation("OutboundOrderCreator", fields: [createdBy], references: [id])
+  dispatchNotice DispatchNotice      @relation(fields: [dispatchNoticeId], references: [id])
+  warehouse      Warehouse?          @relation(fields: [warehouseId], references: [id])
+  inventoryOwner Partner?            @relation("OutboundOrderOwner", fields: [ownerPartnerId], references: [id])
+  creator        User                @relation("OutboundOrderCreator", fields: [createdBy], references: [id])
   lineItems      OutboundOrderLine[]
   receipts       OutboundReceipt[]
 
@@ -1112,32 +1253,32 @@ model OutboundOrderLine {
 }
 
 model OutboundReceipt {
-  id               String    @id @default(cuid())
-  receiptNo        String    @unique
-  outboundOrderId  String
-  waybillId        String
-  weighTicketId    String?
-  warehouseId      String
-  status           String    @default("PENDING") // PENDING | READY | VARIANCE_PENDING | POSTED | CANCELLED
-  materialId       String
-  materialName     String
-  customerName     String?
-  plateNo          String?
-  plannedQuantity  Decimal   @db.Decimal(15, 3)
-  outboundQuantity Decimal?  @db.Decimal(15, 3)
-  varianceQuantity Decimal?  @db.Decimal(15, 3)
-  varianceRate     Decimal?  @db.Decimal(10, 4)
-  varianceDecision String? // SHORT_CONTINUE | SHORT_CLOSE | OVERAGE_APPROVED
-  varianceReason   String?
+  id                 String    @id @default(cuid())
+  receiptNo          String    @unique
+  outboundOrderId    String
+  waybillId          String
+  weighTicketId      String?
+  warehouseId        String
+  status             String    @default("PENDING") // PENDING | READY | VARIANCE_PENDING | POSTED | CANCELLED
+  materialId         String
+  materialName       String
+  customerName       String?
+  plateNo            String?
+  plannedQuantity    Decimal   @db.Decimal(15, 3)
+  outboundQuantity   Decimal?  @db.Decimal(15, 3)
+  varianceQuantity   Decimal?  @db.Decimal(15, 3)
+  varianceRate       Decimal?  @db.Decimal(10, 4)
+  varianceDecision   String? // SHORT_CONTINUE | SHORT_CLOSE | OVERAGE_APPROVED
+  varianceReason     String?
   varianceResolvedBy String?
   varianceResolvedAt DateTime?
-  departedAt       DateTime?
-  operatorName     String?
-  remarks          String?
-  createdBy        String
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime?
+  departedAt         DateTime?
+  operatorName       String?
+  remarks            String?
+  createdBy          String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
 
   outboundOrder OutboundOrder               @relation(fields: [outboundOrderId], references: [id])
   waybill       Waybill                     @relation(fields: [waybillId], references: [id])
@@ -1282,21 +1423,21 @@ model InventoryReversalLine {
 }
 
 model Approval {
-  id         String    @id @default(cuid())
-  contractId String
-  assigneeId String
-  actedById  String?
-  nodeName   String    @default("合同审批")
-  roleCode   String?
-  roleName   String?
-  approvalMode String  @default("ALL") // ALL | ANY
-  step       Int       @default(1)
-  round      Int       @default(1)
-  status     String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | OTHERS_APPROVED | OTHERS_REJECTED | CANCELLED
-  comment    String?
-  actedAt    DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  contractId   String
+  assigneeId   String
+  actedById    String?
+  nodeName     String    @default("合同审批")
+  roleCode     String?
+  roleName     String?
+  approvalMode String    @default("ALL") // ALL | ANY
+  step         Int       @default(1)
+  round        Int       @default(1)
+  status       String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | OTHERS_APPROVED | OTHERS_REJECTED | CANCELLED
+  comment      String?
+  actedAt      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   contract Contract @relation(fields: [contractId], references: [id])
   assignee User     @relation("ApprovalAssignee", fields: [assigneeId], references: [id])
@@ -1324,20 +1465,20 @@ model ApprovalFlow {
 }
 
 model ApprovalFlowNode {
-  id         String   @id @default(cuid())
-  flowId     String
-  nodeName   String
-  step       Int
-  roleId     String
-  approvalMode String @default("ALL") // ALL（会签）| ANY（或签）
-  scopeType  String   @default("COMPANY") // DEPARTMENT | COMPANY | ALL
-  condition  String   @default("ALWAYS") // ALWAYS | AMOUNT_GTE_THRESHOLD
-  enabled    Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String   @id @default(cuid())
+  flowId       String
+  nodeName     String
+  step         Int
+  roleId       String
+  approvalMode String   @default("ALL") // ALL（会签）| ANY（或签）
+  scopeType    String   @default("COMPANY") // DEPARTMENT | COMPANY | ALL
+  condition    String   @default("ALWAYS") // ALWAYS | AMOUNT_GTE_THRESHOLD
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  flow     ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  role     Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  flow ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  role Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
   @@unique([flowId, step])
   @@index([roleId])

@@ -1,22 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ArrowLeft, Save, Plus, X, Info } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Info, Plus, Save, X } from 'lucide-react';
 import { api } from '@/lib/api';
-
-/* ── 类型 ── */
-
-interface SpecRow {
-  id: number;
-  name: string;      // 指标名称，如 CaF₂
-  operator: string;  // ≥ | ≤ | = | 范围
-  value: string;     // 数值
-  unit: string;      // 单位
-}
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { unitLabel } from '@/lib/unit';
 
 interface Category {
   id: string;
@@ -24,379 +15,212 @@ interface Category {
   children?: Category[];
 }
 
-/* ── 常量 ── */
+interface SpecRow {
+  id: number;
+  name: string;
+  operator: string;
+  value: string;
+  unit: string;
+}
 
+const REFERENCE_TYPES = [
+  ['TRADING_GOODS', '贸易商品（TRD）'], ['RAW_MATERIAL', '原材料（RAW）'],
+  ['SEMI_FINISHED', '半成品（SFG）'], ['FINISHED_GOODS', '产成品（FGD）'],
+  ['AUXILIARY', '辅助材料（AUX）'], ['PACKAGING', '包装材料（PKG）'],
+  ['SERVICE', '服务项目（SRV）'], ['OTHER', '其他物料（OTH）'],
+] as const;
 const UNITS = ['吨', '千克', '立方米', '件', '袋'];
-const OPERATORS = ['≥', '≤', '=', '范围'];
-const PACKAGE_TYPES = ['散装', '吨袋', '小包装', '桶装'];
-
+const PACKAGE_TYPES = ['散装', '吨袋', '500kg吨袋', '1吨吨袋', '1.2吨吨袋', '编织袋', '桶装', '罐装', '托盘', '其他'];
+const OPERATORS = ['≥', '≤', '='];
 const QC_TEMPLATES = [
-  {
-    id: 'QC-v3.1',
-    name: 'QC-v3.1 · 萤石粉标准模板',
-    desc: '适用：萤石粉（所有品位）',
-    items: ['CaF₂含量（主指标）', '水分含量', '粒度分布（-200目过筛率）', 'SiO₂含量', 'CaCO₃含量'],
-  },
-  {
-    id: 'QC-v2.0',
-    name: 'QC-v2.0 · 萤石块模板',
-    desc: '适用：萤石块矿',
-    items: ['CaF₂含量（主指标）', '块度（粒径范围）', '水分含量'],
-  },
-  {
-    id: 'QC-v3.2',
-    name: 'QC-v3.2 · 精制萤石粉模板',
-    desc: '适用：高品位精制粉（99%+）',
-    items: ['CaF₂含量', '水分含量', '粒度（-325目过筛率）', 'SiO₂含量', 'Fe含量', '白度'],
-  },
-];
+  ['QC-v3.1', 'QC-v3.1 · 萤石粉标准模板'],
+  ['QC-v2.0', 'QC-v2.0 · 萤石块模板'],
+  ['QC-v3.2', 'QC-v3.2 · 精制萤石粉模板'],
+] as const;
 
-const DEFAULT_SPECS: SpecRow[] = [
-  { id: 1, name: 'CaF₂', operator: '≥', value: '97', unit: '%' },
-  { id: 2, name: '水分', operator: '≤', value: '0.5', unit: '%' },
-  { id: 3, name: '粒度-200目', operator: '≥', value: '90', unit: '%' },
-];
-
-/* ── 辅助组件 ── */
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">
-      {children}
-    </div>
-  );
-}
-
-function FormField({ label, required, hint, children }: {
-  label: string; required?: boolean; hint?: string; children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium text-foreground">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </label>
-      {children}
-      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-    </div>
-  );
-}
-
-function SelectField({ value, onChange, options, placeholder }: {
-  value: string; onChange: (v: string) => void;
-  options: string[] | { value: string; label: string }[];
-  placeholder?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-    >
-      <option value="">{placeholder || '请选择'}</option>
-      {options.map((o) =>
-        typeof o === 'string'
-          ? <option key={o} value={o}>{o}</option>
-          : <option key={o.value} value={o.value}>{o.label}</option>
-      )}
-    </select>
-  );
-}
-
-/* ── 页面 ── */
-
-let specIdCounter = 10;
+let rowSequence = 10;
 
 export default function MaterialNewPage() {
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [nextCode, setNextCode] = useState('');
-
-  // 基本信息
-  const [name, setName] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [commodityForm, setCommodityForm] = useState('');
+  const [coreSpecName, setCoreSpecName] = useState('CaF₂');
+  const [coreSpecOperator, setCoreSpecOperator] = useState('≥');
+  const [coreSpecValue, setCoreSpecValue] = useState('');
+  const [coreSpecUnit, setCoreSpecUnit] = useState('%');
+  const [packageType, setPackageType] = useState('散装');
+  const [referenceType, setReferenceType] = useState('TRADING_GOODS');
   const [unit, setUnit] = useState('吨');
-  const [status, setStatus] = useState('ACTIVE');
-  const [isVirtual, setIsVirtual] = useState(false);
-  const [packageType, setPackageType] = useState('');
-  const [remark, setRemark] = useState('');
-
-  // 规格指标
-  const [specs, setSpecs] = useState<SpecRow[]>(DEFAULT_SPECS);
-
-  // 商品编码映射
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [specs, setSpecs] = useState<SpecRow[]>([]);
+  const [qcTemplate, setQcTemplate] = useState('');
   const [internalCode, setInternalCode] = useState('');
   const [hsCode, setHsCode] = useState('');
   const [taxCode, setTaxCode] = useState('');
-
-  // 质检模板
-  const [qcTemplate, setQcTemplate] = useState('QC-v3.1');
-
+  const [isVirtual, setIsVirtual] = useState(false);
+  const [remark, setRemark] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get<Category[]>('/master-data/material-categories').then(setCategories).catch(() => {});
-    api.get<string>('/master-data/materials/next-code').then(setNextCode).catch(() => {});
+    api.get<Category[]>('/master-data/material-categories').then(setCategories).catch(() => setError('物料分类加载失败'));
+    const params = new URLSearchParams(window.location.search);
+    const fromId = params.get('from');
+    const requestedType = params.get('referenceType');
+    if (requestedType && REFERENCE_TYPES.some(([value]) => value === requestedType)) setReferenceType(requestedType);
+    if (!fromId) return;
+    api.get<any>(`/master-data/materials/${fromId}`).then((material) => {
+      const standard = material.standardCommodity;
+      setCategoryId(standard?.categoryId || material.categoryId || '');
+      setCommodityForm(standard?.commodityForm || material.commodityForm || '');
+      setCoreSpecName(standard?.coreSpecName || '');
+      setCoreSpecOperator(standard?.coreSpecOperator || '≥');
+      setCoreSpecValue(standard?.coreSpecValue || '');
+      setCoreSpecUnit(standard?.coreSpecUnit || '%');
+      setPackageType(standard?.packageType || material.packageType || '散装');
+      setUnit(unitLabel(standard?.unit || material.unit || '吨'));
+      setQcTemplate(material.qcTemplate || '');
+      setHsCode(material.hsCode || '');
+      setTaxCode(material.taxCode || '');
+      setRemark(material.remark || '');
+      const rows = Array.isArray(material.specs) ? material.specs : [];
+      setSpecs(rows.slice(1).map((row: any, index: number) => ({ ...row, id: 100 + index })));
+    }).catch(() => setError('原物料信息加载失败'));
   }, []);
 
-  // 展平分类列表（含子分类）
-  const flatCategories = categories.flatMap((c) => [
-    { value: c.id, label: c.name },
-    ...(c.children || []).map((ch) => ({ value: ch.id, label: `└ ${ch.name}` })),
+  useEffect(() => {
+    api.get<string>(`/master-data/materials/next-code?referenceType=${referenceType}`)
+      .then(setNextCode).catch(() => setNextCode('系统保存时生成'));
+  }, [referenceType]);
+
+  const flatCategories = categories.flatMap((category) => [
+    { value: category.id, label: category.name, name: category.name },
+    ...(category.children || []).map((child) => ({ value: child.id, label: `└ ${child.name}`, name: child.name })),
   ]);
+  const selectedCategoryName = flatCategories.find(category => category.value === categoryId)?.name || '';
+  const standardName = useMemo(() => {
+    const base = `${selectedCategoryName.trim()}${commodityForm.trim()}`;
+    const core = coreSpecName.trim() && coreSpecValue.trim()
+      ? `${coreSpecName.trim()}${coreSpecOperator}${coreSpecValue.trim()}${coreSpecUnit.trim()}`
+      : '';
+    return [base, core].filter(Boolean).join('-');
+  }, [selectedCategoryName, commodityForm, coreSpecName, coreSpecOperator, coreSpecValue, coreSpecUnit]);
 
   const addSpec = () => {
-    specIdCounter++;
-    setSpecs((prev) => [...prev, { id: specIdCounter, name: '', operator: '≥', value: '', unit: '%' }]);
-  };
-
-  const removeSpec = (id: number) => {
-    if (specs.length <= 1) return;
-    setSpecs((prev) => prev.filter((s) => s.id !== id));
-  };
-
-  const updateSpec = (id: number, field: keyof SpecRow, value: string) => {
-    setSpecs((prev) => prev.map((s) => s.id === id ? { ...s, [field]: value } : s));
+    rowSequence += 1;
+    setSpecs(current => [...current, { id: rowSequence, name: '', operator: '≤', value: '', unit: '%' }]);
   };
 
   const handleSubmit = async () => {
-    if (!name) { setError('请填写物料品名'); return; }
-    if (!categoryId) { setError('请选择物料大类'); return; }
-    if (specs.some((s) => !s.name || !s.value)) { setError('规格指标中存在空行，请补全或删除'); return; }
-
+    if (!categoryId || !selectedCategoryName || !commodityForm.trim() || !coreSpecName.trim() || !coreSpecValue.trim() || !coreSpecUnit.trim() || !packageType || !referenceType || !unit) {
+      setError('请完整填写商品分类、形态、核心规格、包装、参考类型和计量单位');
+      return;
+    }
+    if (specs.some(row => !row.name.trim() || !row.value.trim())) {
+      setError('辅助质量指标中存在空行，请补全或删除');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       await api.post('/master-data/materials', {
-        code: nextCode,
-        name,
-        categoryId,
-        unit,
-        status,
-        isVirtual,
-        packageType: packageType || undefined,
-        specs,
-        internalCode: internalCode || undefined,
-        hsCode: hsCode || undefined,
-        taxCode: taxCode || undefined,
-        qcTemplate: qcTemplate || undefined,
-        remark: remark || undefined,
+        baseName: selectedCategoryName, categoryId, commodityForm: commodityForm.trim(),
+        coreSpecName: coreSpecName.trim(), coreSpecOperator,
+        coreSpecValue: coreSpecValue.trim(), coreSpecUnit: coreSpecUnit.trim(),
+        packageType, referenceType, unit,
+        specs: [
+          { name: coreSpecName.trim(), operator: coreSpecOperator, value: coreSpecValue.trim(), unit: coreSpecUnit.trim() },
+          ...specs.map(({ id: _id, ...row }) => row),
+        ],
+        qcTemplate: qcTemplate || undefined, internalCode: internalCode.trim() || undefined,
+        hsCode: hsCode.trim() || undefined, taxCode: taxCode.trim() || undefined,
+        isVirtual, remark: remark.trim() || undefined, status: 'ACTIVE',
       });
       router.push('/dashboard/master-data?tab=materials');
-    } catch (e: unknown) {
-      const message = (e as Error).message || '创建失败';
-      setError(message === 'Internal server error'
-        ? '物料保存失败，请刷新物料编码和物料大类后重试'
-        : message);
+    } catch (exception) {
+      setError((exception as Error).message || '物料保存失败');
       setLoading(false);
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <ArrowLeft className="h-4 w-4 mr-1" />返回
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">新增物料</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">填写物料基本信息和质检指标模板关联，保存后可在业务单据中引用</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.back()}>取消</Button>
-          <Button onClick={handleSubmit} disabled={loading}>
-            <Save className="h-4 w-4 mr-1" />
-            {loading ? '保存中...' : '保存物料'}
-          </Button>
-        </div>
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => router.back()}><ArrowLeft className="mr-1 h-4 w-4" />返回</Button>
+        <div><h1 className="text-2xl font-bold">新建商品物料</h1><p className="mt-1 text-sm text-muted-foreground">填写核心信息即可，平台标准关联、查重、名称和编码由系统自动完成</p></div>
       </div>
-
-      {error && (
-        <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-md border border-destructive/20">
-          {error}
-        </div>
-      )}
-
-      <div className="max-w-3xl space-y-4">
-
-        {/* 基本信息 */}
-        <Card className="p-6">
-          <SectionTitle>基本信息</SectionTitle>
-          <div className="grid grid-cols-3 gap-x-6 gap-y-4">
-            <FormField label="物料编码">
-              <Input
-                value={nextCode || '加载中...'}
-                readOnly
-                className="font-mono bg-muted/50 text-muted-foreground italic"
-              />
-            </FormField>
-            <FormField label="物料品名" required>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：萤石粉、萤石块" />
-            </FormField>
-            <FormField label="物料大类" required>
-              <SelectField
-                value={categoryId}
-                onChange={setCategoryId}
-                options={flatCategories}
-                placeholder="请选择大类"
-              />
-            </FormField>
-            <FormField label="计量单位" required>
-              <SelectField value={unit} onChange={setUnit} options={UNITS} />
-            </FormField>
-            <FormField label="包装方式">
-              <SelectField value={packageType} onChange={setPackageType} options={PACKAGE_TYPES} placeholder="请选择" />
-            </FormField>
-            <FormField label="状态" required>
-              <SelectField
-                value={status} onChange={setStatus}
-                options={[{ value: 'ACTIVE', label: '启用' }, { value: 'INACTIVE', label: '停用' }]}
-              />
-            </FormField>
-            <div className="col-span-3 flex items-center gap-2">
-              <input
-                type="checkbox" id="isVirtual" checked={isVirtual}
-                onChange={(e) => setIsVirtual(e.target.checked)}
-                className="h-4 w-4 rounded border-input"
-              />
-              <label htmlFor="isVirtual" className="text-sm text-foreground cursor-pointer">
-                虚拟物料
-              </label>
-              <span className="text-xs text-muted-foreground">（委托加工成品 / 中间品，不参与实物库存管理）</span>
-            </div>
-          </div>
-
-          <SectionTitle>规格标准定义</SectionTitle>
-          <div className="flex items-start gap-2 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 px-3 py-2.5 mb-4">
-            <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              规格参数将显示在合同、入库单、质检报告等单据中，建议按行业标准格式填写（如：CaF₂≥97%，水分≤0.5%）
-            </p>
-          </div>
-          <div className="space-y-2">
-            {specs.map((s) => (
-              <div key={s.id} className="flex items-center gap-2 p-2.5 bg-muted/30 rounded-lg">
-                <Input
-                  value={s.name}
-                  onChange={(e) => updateSpec(s.id, 'name', e.target.value)}
-                  placeholder="指标名称"
-                  className="w-32 text-sm"
-                />
-                <select
-                  value={s.operator}
-                  onChange={(e) => updateSpec(s.id, 'operator', e.target.value)}
-                  className="h-9 w-20 rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  {OPERATORS.map((op) => <option key={op} value={op}>{op}</option>)}
-                </select>
-                <Input
-                  value={s.value}
-                  onChange={(e) => updateSpec(s.id, 'value', e.target.value)}
-                  placeholder="数值"
-                  className="w-24 text-sm"
-                />
-                <Input
-                  value={s.unit}
-                  onChange={(e) => updateSpec(s.id, 'unit', e.target.value)}
-                  placeholder="单位"
-                  className="w-16 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeSpec(s.id)}
-                  disabled={specs.length <= 1}
-                  className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-          <Button type="button" variant="outline" size="sm" className="mt-3" onClick={addSpec}>
-            <Plus className="h-3.5 w-3.5 mr-1" />添加规格参数
-          </Button>
-
-          <SectionTitle>备注</SectionTitle>
-          <textarea
-            rows={2} value={remark}
-            onChange={(e) => setRemark(e.target.value)}
-            placeholder="物料说明、使用注意事项等（可选）"
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-          />
-        </Card>
-
-        {/* 商品编码映射 */}
-        <Card className="p-6">
-          <SectionTitle>商品编码映射 <span className="text-muted-foreground normal-case font-normal text-xs tracking-normal">用于税务申报和海关报关</span></SectionTitle>
-          <div className="grid grid-cols-3 gap-x-6 gap-y-4">
-            <FormField label="内部编码">
-              <Input value={internalCode} onChange={(e) => setInternalCode(e.target.value)} placeholder="内部编码（可选）" className="font-mono" />
-            </FormField>
-            <FormField label="HS编码（海关）" hint="萤石粉→25291100，萤石块→25291900">
-              <Input value={hsCode} onChange={(e) => setHsCode(e.target.value)} placeholder="如：25291100" className="font-mono" />
-            </FormField>
-            <FormField label="税务商品编码">
-              <Input value={taxCode} onChange={(e) => setTaxCode(e.target.value)} placeholder="增值税发票商品编码" className="font-mono" />
-            </FormField>
-          </div>
-        </Card>
-
-        {/* 质检指标模板 */}
-        <Card className="p-6">
-          <SectionTitle>质检指标模板关联 <span className="text-muted-foreground normal-case font-normal text-xs tracking-normal">入库时将自动触发对应质检项目</span></SectionTitle>
-          <div className="flex items-start gap-2 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 px-3 py-2.5 mb-4">
-            <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              选择质检模板后，每次该物料入库时系统将自动生成质检任务，并要求填写对应指标数据
-            </p>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {QC_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                type="button"
-                onClick={() => setQcTemplate(tpl.id)}
-                className={`flex flex-col items-start text-left p-4 rounded-lg border-2 transition-colors ${
-                  qcTemplate === tpl.id
-                    ? 'border-primary bg-primary/5'
-                    : 'border-input hover:border-foreground/30'
-                }`}
-              >
-                <div className="flex items-center justify-between w-full mb-1">
-                  <span className="text-sm font-semibold text-foreground">{tpl.name}</span>
-                </div>
-                <span className={`text-xs px-1.5 py-0.5 rounded font-medium mb-2 ${
-                  qcTemplate === tpl.id ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                }`}>
-                  {qcTemplate === tpl.id ? '当前选中' : '未选中'}
-                </span>
-                <p className="text-xs text-muted-foreground mb-2">{tpl.desc}</p>
-                <ol className="text-xs text-muted-foreground space-y-0.5">
-                  {tpl.items.map((item, i) => (
-                    <li key={i}>{'①②③④⑤⑥'[i]} {item}</li>
-                  ))}
-                </ol>
-              </button>
-            ))}
-          </div>
-          <Button type="button" variant="outline" size="sm" className="mt-3">
-            <Plus className="h-3.5 w-3.5 mr-1" />新建质检模板
-          </Button>
-        </Card>
-
-        {/* 底部操作 */}
-        <div className="flex justify-end gap-3 pb-8 border-t pt-6">
-          <Button variant="outline" onClick={() => router.back()}>取消</Button>
-          <Button onClick={handleSubmit} disabled={loading} size="lg">
-            <Save className="h-4 w-4 mr-1" />
-            {loading ? '保存中...' : '保存物料'}
-          </Button>
-        </div>
-      </div>
+      <div className="flex gap-2"><Button variant="outline" onClick={() => router.back()}>取消</Button><Button disabled={loading} onClick={() => void handleSubmit()}><Save className="mr-1 h-4 w-4" />{loading ? '保存中...' : '保存物料'}</Button></div>
     </div>
-  );
+    {error && <div className="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>}
+
+    <div className="max-w-4xl space-y-4">
+      <Card className="space-y-5 p-6">
+        <div><h2 className="font-semibold">商品基本定义</h2><p className="mt-1 text-xs text-muted-foreground">参考类型只用于编码、检索和统计，不限制采购、销售或加工使用</p></div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="商品分类" required><Select value={categoryId} onChange={setCategoryId} options={flatCategories} placeholder="请选择分类" /></Field>
+          <Field label="商品名称（系统拼接）"><Input value={standardName || '选择分类并填写形态、核心规格后生成'} readOnly className="bg-muted/50 font-medium" /></Field>
+          <Field label="商品形态" required><Input value={commodityForm} onChange={event => setCommodityForm(event.target.value)} placeholder="如：精粉、原矿、块矿" /></Field>
+          <Field label="包装方式" required><Select value={packageType} onChange={setPackageType} options={PACKAGE_TYPES.map(value => ({ value, label: value }))} /></Field>
+          <Field label="参考类型" required><Select value={referenceType} onChange={setReferenceType} options={REFERENCE_TYPES.map(([value, label]) => ({ value, label }))} /></Field>
+          <Field label="计量单位" required><Select value={unit} onChange={setUnit} options={UNITS.map(value => ({ value, label: value }))} /></Field>
+          <Field label="物料编码"><Input value={nextCode || '加载中...'} readOnly className="bg-muted/50 font-mono text-muted-foreground" /></Field>
+        </div>
+        <p className="text-xs text-muted-foreground">商品名称不单独录入，按“所选分类名称 + 商品形态 + 核心规格”自动拼接；包装方式作为独立属性显示。</p>
+      </Card>
+
+      <Card className="space-y-5 p-6">
+        <div><h2 className="font-semibold">规格标准定义</h2><p className="mt-1 text-xs text-muted-foreground">核心规格参与商品名称拼接和标准商品查重；其他指标作为质量与单据标准保留</p></div>
+        <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2.5 dark:border-blue-800 dark:bg-blue-950/30">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+          <p className="text-xs text-blue-700 dark:text-blue-300">规格参数会显示在合同、质检、入出库等单据中，请按行业标准录入，如 CaF₂≥97%、水分≤10%。</p>
+        </div>
+        <div className="space-y-2">
+          <div className="grid grid-cols-[80px_1fr_72px_96px_72px_36px] items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+            <span className="text-center text-xs font-medium text-primary">核心规格</span>
+            <Input value={coreSpecName} onChange={event => setCoreSpecName(event.target.value)} placeholder="指标，如 CaF₂" />
+            <Select value={coreSpecOperator} onChange={setCoreSpecOperator} options={OPERATORS.map(value => ({ value, label: value }))} />
+            <Input value={coreSpecValue} onChange={event => setCoreSpecValue(event.target.value)} placeholder="数值" />
+            <Input value={coreSpecUnit} onChange={event => setCoreSpecUnit(event.target.value)} placeholder="单位" />
+            <span />
+          </div>
+          {specs.map(row => <div key={row.id} className="grid grid-cols-[80px_1fr_72px_96px_72px_36px] items-center gap-2 rounded-lg bg-muted/30 p-2.5">
+            <span className="text-center text-xs text-muted-foreground">其他指标</span>
+            <Input value={row.name} onChange={event => setSpecs(current => current.map(item => item.id === row.id ? { ...item, name: event.target.value } : item))} placeholder="如：水分" />
+            <Select value={row.operator} onChange={value => setSpecs(current => current.map(item => item.id === row.id ? { ...item, operator: value } : item))} options={OPERATORS.map(value => ({ value, label: value }))} />
+            <Input value={row.value} onChange={event => setSpecs(current => current.map(item => item.id === row.id ? { ...item, value: event.target.value } : item))} placeholder="数值" />
+            <Input value={row.unit} onChange={event => setSpecs(current => current.map(item => item.id === row.id ? { ...item, unit: event.target.value } : item))} placeholder="单位" />
+            <Button type="button" variant="ghost" size="icon" onClick={() => setSpecs(current => current.filter(item => item.id !== row.id))}><X className="h-4 w-4 text-destructive" /></Button>
+          </div>)}
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={addSpec}><Plus className="mr-1 h-4 w-4" />添加规格指标</Button>
+      </Card>
+
+      <Card className="p-6">
+        <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setAdvancedOpen(value => !value)}>
+          <div><h2 className="font-semibold">更多设置（可选）</h2><p className="mt-1 text-xs text-muted-foreground">质检模板、编码映射和说明可以创建后继续完善</p></div>
+          {advancedOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+        </button>
+        {advancedOpen && <div className="mt-5 space-y-5 border-t pt-5">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label="质检模板"><Select value={qcTemplate} onChange={setQcTemplate} options={QC_TEMPLATES.map(([value, label]) => ({ value, label }))} placeholder="暂不关联" /></Field>
+            <Field label="内部编码"><Input value={internalCode} onChange={event => setInternalCode(event.target.value)} /></Field>
+            <Field label="HS编码"><Input value={hsCode} onChange={event => setHsCode(event.target.value)} /></Field>
+            <Field label="税务商品编码"><Input value={taxCode} onChange={event => setTaxCode(event.target.value)} /></Field>
+            <label className="flex items-center gap-2 pt-7 text-sm"><input type="checkbox" checked={isVirtual} onChange={event => setIsVirtual(event.target.checked)} />不参与实物库存</label>
+          </div>
+          <Field label="备注"><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={remark} onChange={event => setRemark(event.target.value)} /></Field>
+        </div>}
+      </Card>
+    </div>
+  </div>;
+}
+
+function Field({ label, required, className, children }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) {
+  return <div className={className}><label className="mb-1.5 block text-sm font-medium">{label}{required && <span className="ml-0.5 text-destructive">*</span>}</label>{children}</div>;
+}
+
+function Select({ value, onChange, options, placeholder }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; placeholder?: string }) {
+  return <select value={value} onChange={event => onChange(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">{placeholder || '请选择'}</option>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
 }

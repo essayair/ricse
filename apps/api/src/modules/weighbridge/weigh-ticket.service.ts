@@ -9,6 +9,14 @@ const BASES = ['RECEIVING', 'SHIPPING', 'CUSTOMER', 'THIRD_PARTY', 'MANUAL'];
 const WEIGHING_STAGES = ['SHIPPING', 'RECEIVING'];
 const SELECTION_PURPOSES = ['INVENTORY', 'SETTLEMENT'];
 
+export function normalizeWeight(value: number) {
+  return Number(value.toFixed(3));
+}
+
+export function calculateNetWeight(grossWeight: number, tareWeight: number) {
+  return normalizeWeight(Math.abs(grossWeight - tareWeight));
+}
+
 @Injectable()
 export class WeighTicketService {
   constructor(
@@ -48,6 +56,52 @@ export class WeighTicketService {
     weightSelections: {
       where: { isCurrent: true },
       include: { selector: { select: { id: true, name: true } } },
+      orderBy: { selectedAt: 'desc' as const },
+    },
+  };
+
+  private readonly managementInclude = {
+    lineItems: { orderBy: { createdAt: 'asc' as const } },
+    dispatchNotice: {
+      include: {
+        order: {
+          include: {
+            contract: {
+              select: {
+                id: true, contractNo: true, title: true, type: true,
+                seller: { select: { id: true, name: true } },
+                buyer: { select: { id: true, name: true } },
+                signingPartner: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+    },
+    weighTickets: {
+      where: { deletedAt: null },
+      include: {
+        creator: { select: { id: true, name: true } },
+        reviewer: { select: { id: true, name: true } },
+        records: {
+          include: { operator: { select: { id: true, name: true } } },
+          orderBy: { sequence: 'asc' as const },
+        },
+        attachments: { orderBy: { createdAt: 'desc' as const } },
+      },
+      orderBy: [{ weighingStage: 'asc' as const }, { sequence: 'asc' as const }],
+    },
+    weightSelections: {
+      where: { isCurrent: true },
+      include: {
+        selector: { select: { id: true, name: true } },
+        weighTicket: {
+          select: {
+            id: true, ticketNo: true, weighingStage: true, sequence: true,
+            netWeight: true, status: true,
+          },
+        },
+      },
       orderBy: { selectedAt: 'desc' as const },
     },
   };
@@ -177,10 +231,10 @@ export class WeighTicketService {
         weighmasterName: dto.weighmasterName?.trim() || weighmaster?.name || null,
         plannedQuantity: waybill.totalQuantity,
         settlementBasis,
-        shippingWeight: dto.shippingWeight,
-        customerWeight: dto.customerWeight,
-        thirdPartyWeight: dto.thirdPartyWeight,
-        manualWeight: dto.manualWeight,
+        shippingWeight: dto.shippingWeight === undefined ? undefined : normalizeWeight(dto.shippingWeight),
+        customerWeight: dto.customerWeight === undefined ? undefined : normalizeWeight(dto.customerWeight),
+        thirdPartyWeight: dto.thirdPartyWeight === undefined ? undefined : normalizeWeight(dto.thirdPartyWeight),
+        manualWeight: dto.manualWeight === undefined ? undefined : normalizeWeight(dto.manualWeight),
         toleranceRate: dto.toleranceRate ?? 0.5,
         remarks: dto.remarks,
         createdBy: userId,
@@ -255,6 +309,56 @@ export class WeighTicketService {
     return { items, total: items.length };
   }
 
+  async findManagementFiles(params: { status?: string; abnormal?: string; search?: string }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getWaybillScope(userId);
+    const ticketFilter: Prisma.WeighTicketWhereInput = { deletedAt: null };
+    if (params.status) ticketFilter.status = params.status;
+    if (params.abnormal === 'true') ticketFilter.abnormal = true;
+    const where: Prisma.WaybillWhereInput = {
+      deletedAt: null,
+      AND: [scope],
+      weighTickets: { some: ticketFilter },
+    };
+    if (params.search) {
+      where.OR = [
+        { waybillNo: { contains: params.search, mode: 'insensitive' } },
+        { plateNo: { contains: params.search, mode: 'insensitive' } },
+        { driverName: { contains: params.search, mode: 'insensitive' } },
+        { dispatchNotice: { noticeNo: { contains: params.search, mode: 'insensitive' } } },
+        { dispatchNotice: { order: { name: { contains: params.search, mode: 'insensitive' } } } },
+        { dispatchNotice: { order: { orderNo: { contains: params.search, mode: 'insensitive' } } } },
+        { weighTickets: { some: { deletedAt: null, ticketNo: { contains: params.search, mode: 'insensitive' } } } },
+        { weighTickets: { some: { deletedAt: null, materialName: { contains: params.search, mode: 'insensitive' } } } },
+        { weighTickets: { some: { deletedAt: null, shipperName: { contains: params.search, mode: 'insensitive' } } } },
+        { weighTickets: { some: { deletedAt: null, receiverName: { contains: params.search, mode: 'insensitive' } } } },
+      ];
+    }
+    const items = await this.prisma.waybill.findMany({
+      where,
+      include: this.managementInclude,
+      take: 100,
+      orderBy: { createdAt: 'desc' },
+    });
+    return { items, total: items.length };
+  }
+
+  async findManagementFile(waybillId: string, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getWaybillScope(userId);
+    const item = await this.prisma.waybill.findFirst({
+      where: {
+        id: waybillId,
+        deletedAt: null,
+        AND: [scope],
+        weighTickets: { some: { deletedAt: null } },
+      },
+      include: this.managementInclude,
+    });
+    if (!item) throw new NotFoundException('磅单信息不存在');
+    return item;
+  }
+
   async findOne(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
     const scope = await this.accessControl.getWeighTicketScope(userId);
@@ -289,7 +393,7 @@ export class WeighTicketService {
             weighTicketId: id,
             weighingType: dto.weighingType,
             sequence: (max._max.sequence || 0) + index + 1,
-            weight: dto.weight,
+            weight: normalizeWeight(dto.weight),
             dataSource: dto.dataSource || 'MANUAL',
             weighedAt: dto.weighedAt ? new Date(dto.weighedAt) : new Date(),
             operatorId: userId,
@@ -347,10 +451,10 @@ export class WeighTicketService {
         where: { id },
         data: {
           settlementBasis: data.settlementBasis,
-          shippingWeight: data.shippingWeight,
-          customerWeight: data.customerWeight,
-          thirdPartyWeight: data.thirdPartyWeight,
-          manualWeight: data.manualWeight,
+          shippingWeight: data.shippingWeight === undefined ? undefined : normalizeWeight(data.shippingWeight),
+          customerWeight: data.customerWeight === undefined ? undefined : normalizeWeight(data.customerWeight),
+          thirdPartyWeight: data.thirdPartyWeight === undefined ? undefined : normalizeWeight(data.thirdPartyWeight),
+          manualWeight: data.manualWeight === undefined ? undefined : normalizeWeight(data.manualWeight),
           toleranceRate: data.toleranceRate,
         },
       });
@@ -483,10 +587,16 @@ export class WeighTicketService {
     userId: string,
   ) {
     if (!SELECTION_PURPOSES.includes(purpose)) throw new BadRequestException('磅单选用用途无效');
-    await this.accessControl.assertPermission(
-      userId,
-      purpose === 'INVENTORY' ? 'inventory.manage' : 'settlement.manage',
-    );
+    return this.selectEffectiveTicket(waybillId, weighTicketId, reason, userId);
+  }
+
+  async selectEffectiveTicket(
+    waybillId: string,
+    weighTicketId: string,
+    reason: string | undefined,
+    userId: string,
+  ) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
     const scope = await this.accessControl.getWaybillScope(userId);
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null, AND: [scope] },
@@ -500,75 +610,77 @@ export class WeighTicketService {
     if (!ticket) throw new BadRequestException('只能选用该运单下已复核的有效磅单');
     const quantity = Number(ticket.netWeight || 0);
     if (quantity <= 0) throw new BadRequestException('所选磅单缺少有效净重');
-    return this.setCurrentSelection(waybillId, purpose, ticket.id, quantity, reason, userId, true);
+    return this.setEffectiveSelection(waybillId, ticket.id, quantity, reason, userId, true);
   }
 
-  private async setCurrentSelection(
+  private async setEffectiveSelection(
     waybillId: string,
-    purpose: string,
     weighTicketId: string,
     quantity: number,
     reason: string | undefined,
     userId: string,
     requireSwitchReason: boolean,
   ) {
-    const current = await this.prisma.waybillWeightSelection.findFirst({
-      where: { waybillId, purpose, isCurrent: true },
+    const currents = await this.prisma.waybillWeightSelection.findMany({
+      where: { waybillId, purpose: { in: SELECTION_PURPOSES }, isCurrent: true },
+      orderBy: { selectedAt: 'desc' },
     });
-    if (current?.weighTicketId === weighTicketId) return current;
+    const isAlreadyUnified = SELECTION_PURPOSES.every(purpose =>
+      currents.some(item => item.purpose === purpose && item.weighTicketId === weighTicketId),
+    );
+    if (isAlreadyUnified) return currents;
     const normalizedReason = reason?.trim();
-    if (current && requireSwitchReason && !normalizedReason) {
-      throw new BadRequestException('更换已选用的磅单必须填写变更原因');
+    const isChangingTicket = currents.some(item => item.weighTicketId !== weighTicketId);
+    if (isChangingTicket && requireSwitchReason && !normalizedReason) {
+      throw new BadRequestException('更换结算入库磅单必须填写变更原因');
     }
-    if (purpose === 'INVENTORY' && current) {
+    if (isChangingTicket) {
       const [postedInbound, postedOutbound, preparedOutbound] = await Promise.all([
         this.prisma.inboundReceipt.findFirst({ where: { waybillId, status: 'POSTED', deletedAt: null }, select: { receiptNo: true } }),
         this.prisma.outboundReceipt.findFirst({ where: { waybillId, status: 'POSTED', deletedAt: null }, select: { receiptNo: true } }),
         this.prisma.outboundReceipt.findFirst({ where: { waybillId, status: { in: ['READY', 'VARIANCE_PENDING'] }, deletedAt: null }, select: { receiptNo: true } }),
       ]);
-      if (postedInbound || postedOutbound) throw new BadRequestException('该运单已经完成库存入账，不能更换入出库有效磅单');
+      if (postedInbound || postedOutbound) throw new BadRequestException('该运单已经完成库存入账，不能更换结算入库磅单');
       if (preparedOutbound) throw new BadRequestException(`出库作业 ${preparedOutbound.receiptNo} 已完成批次拣配，请先重新处理出库作业后再更换磅单`);
     }
     return this.prisma.$transaction(async tx => {
       await tx.waybillWeightSelection.updateMany({
-        where: { waybillId, purpose, isCurrent: true },
+        where: { waybillId, purpose: { in: SELECTION_PURPOSES }, isCurrent: true },
         data: { isCurrent: false },
       });
-      const selection = await tx.waybillWeightSelection.create({
-        data: {
-          waybillId, purpose, weighTicketId, quantity,
-          reason: normalizedReason || (current ? '更换有效磅单' : '系统按业务默认口径选用'),
-          selectedBy: userId,
-        },
-        include: {
-          weighTicket: { select: { id: true, ticketNo: true, weighingStage: true, sequence: true, netWeight: true } },
-          selector: { select: { id: true, name: true } },
-        },
+      const selectionReason = normalizedReason || (currents.length ? '统一结算与入库磅单口径' : '系统按业务默认口径选用');
+      const selections = [];
+      for (const purpose of SELECTION_PURPOSES) {
+        selections.push(await tx.waybillWeightSelection.create({
+          data: { waybillId, purpose, weighTicketId, quantity, reason: selectionReason, selectedBy: userId },
+          include: {
+            weighTicket: { select: { id: true, ticketNo: true, weighingStage: true, sequence: true, netWeight: true } },
+            selector: { select: { id: true, name: true } },
+          },
+        }));
+      }
+      const inboundReceipts = await tx.inboundReceipt.findMany({
+        where: { waybillId, status: { in: ['PENDING', 'RECEIVED'] }, deletedAt: null },
+        select: { id: true, qualityInspectionId: true, moistureDeductionWeight: true, impurityDeductionWeight: true },
       });
-      if (purpose === 'INVENTORY') {
-        const inboundReceipts = await tx.inboundReceipt.findMany({
-          where: { waybillId, status: { in: ['PENDING', 'RECEIVED'] }, deletedAt: null },
-          select: { id: true, qualityInspectionId: true, moistureDeductionWeight: true, impurityDeductionWeight: true },
-        });
-        for (const receipt of inboundReceipts) {
-          await tx.inboundReceipt.update({
-            where: { id: receipt.id },
-            data: {
-              weighTicketId,
-              ...(receipt.qualityInspectionId ? {
-                receivedQuantity: Math.max(0, quantity
-                  - Number(receipt.moistureDeductionWeight || 0)
-                  - Number(receipt.impurityDeductionWeight || 0)),
-              } : {}),
-            },
-          });
-        }
-        await tx.outboundReceipt.updateMany({
-          where: { waybillId, status: 'PENDING', deletedAt: null },
-          data: { weighTicketId },
+      for (const receipt of inboundReceipts) {
+        await tx.inboundReceipt.update({
+          where: { id: receipt.id },
+          data: {
+            weighTicketId,
+            ...(receipt.qualityInspectionId ? {
+              receivedQuantity: Math.max(0, quantity
+                - Number(receipt.moistureDeductionWeight || 0)
+                - Number(receipt.impurityDeductionWeight || 0)),
+            } : {}),
+          },
         });
       }
-      return selection;
+      await tx.outboundReceipt.updateMany({
+        where: { waybillId, status: 'PENDING', deletedAt: null },
+        data: { weighTicketId },
+      });
+      return selections;
     });
   }
 
@@ -582,18 +694,12 @@ export class WeighTicketService {
     });
     const quantity = Number(ticket.netWeight || 0);
     if (quantity <= 0) return;
-    const isPurchase = ticket.waybill.dispatchNotice.type === 'PURCHASE';
-    const purposes: string[] = [];
-    if (isPurchase && ticket.weighingStage === 'SHIPPING') purposes.push('INVENTORY', 'SETTLEMENT');
-    if (!isPurchase && ticket.weighingStage === 'SHIPPING') purposes.push('INVENTORY');
-    if (!isPurchase && ticket.weighingStage === 'RECEIVING') purposes.push('SETTLEMENT');
-    for (const purpose of purposes) {
-      const current = await this.prisma.waybillWeightSelection.findFirst({
-        where: { waybillId: ticket.waybillId, purpose, isCurrent: true },
-      });
-      if (!current) {
-        await this.setCurrentSelection(ticket.waybillId, purpose, ticket.id, quantity, undefined, userId, false);
-      }
+    if (ticket.weighingStage !== 'SHIPPING') return;
+    const current = await this.prisma.waybillWeightSelection.findFirst({
+      where: { waybillId: ticket.waybillId, purpose: { in: SELECTION_PURPOSES }, isCurrent: true },
+    });
+    if (!current) {
+      await this.setEffectiveSelection(ticket.waybillId, ticket.id, quantity, undefined, userId, false);
     }
   }
 
@@ -616,7 +722,7 @@ export class WeighTicketService {
     const tare = ticket.records.find(item => item.id === ticket.selectedTareRecordId);
     const grossWeight = gross ? Number(gross.weight) : null;
     const tareWeight = tare ? Number(tare.weight) : null;
-    const netWeight = grossWeight !== null && tareWeight !== null ? Math.abs(grossWeight - tareWeight) : null;
+    const netWeight = grossWeight !== null && tareWeight !== null ? calculateNetWeight(grossWeight, tareWeight) : null;
     const receivingWeight = netWeight;
     const weights: Record<string, number | null> = {
       RECEIVING: receivingWeight,
@@ -627,7 +733,7 @@ export class WeighTicketService {
     };
     const settlementWeight = weights[ticket.settlementBasis];
     const planned = Number(ticket.plannedQuantity);
-    const varianceWeight = netWeight === null ? null : netWeight - planned;
+    const varianceWeight = netWeight === null ? null : normalizeWeight(netWeight - planned);
     const varianceRate = varianceWeight === null || planned === 0 ? null : Math.abs(varianceWeight) / planned * 100;
     await tx.weighTicket.update({
       where: { id },

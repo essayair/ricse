@@ -34,10 +34,10 @@ export class CreateWeighTicketDto {
   @IsIn(['RECEIVING', 'SHIPPING', 'CUSTOMER', 'THIRD_PARTY', 'MANUAL'])
   settlementBasis?: string;
 
-  @IsOptional() @IsNumber() @Min(0) shippingWeight?: number;
-  @IsOptional() @IsNumber() @Min(0) customerWeight?: number;
-  @IsOptional() @IsNumber() @Min(0) thirdPartyWeight?: number;
-  @IsOptional() @IsNumber() @Min(0) manualWeight?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) shippingWeight?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) customerWeight?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) thirdPartyWeight?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) manualWeight?: number;
   @IsOptional() @IsNumber() @Min(0) toleranceRate?: number;
   @IsOptional() @IsString() remarks?: string;
 }

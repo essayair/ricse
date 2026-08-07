@@ -23,6 +23,7 @@ interface Indicator {
 }
 interface PendingFile { file: File; category: string }
 interface InstitutionProfile { id: string; partnerId: string; partner: { id: string; code: string; name: string } }
+interface QualityTaskBrief { id: string; taskNo: string; waybillId: string; reports: Array<{ id: string }>; waybill: { id: string; waybillNo: string } }
 
 const CATEGORY = { REPORT: '检测报告', SAMPLE_PHOTO: '取样照片', OTHER: '其他附件' };
 const INSTITUTION_TYPE = { OUR: '我方检测机构', PARTNER: '合作方检测机构', THIRD_PARTY: '第三方检测机构', OTHER: '其他检测机构' };
@@ -35,12 +36,13 @@ const DEFAULT_INDICATORS: Indicator[] = [
 export default function CreateQualityInspectionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [task, setTask] = useState<QualityTaskBrief | null>(null);
   const [tickets, setTickets] = useState<EligibleTicket[]>([]);
   const [weighTicketId, setWeighTicketId] = useState('');
   const [sampledAt, setSampledAt] = useState('');
   const [samplerName, setSamplerName] = useState('');
   const [samplingMethod, setSamplingMethod] = useState('多点混合取样');
-  const [sampleNos, setSampleNos] = useState(['', '', '']);
+  const [sampleNo, setSampleNo] = useState('');
   const [dataSource, setDataSource] = useState('MANUAL');
   const [institutionType, setInstitutionType] = useState('OUR');
   const [institutionPartnerId, setInstitutionPartnerId] = useState('');
@@ -59,15 +61,24 @@ export default function CreateQualityInspectionPage() {
     setSampledAt(now); setTestedAt(now);
     const stored = localStorage.getItem('user');
     if (stored) { try { setSamplerName(JSON.parse(stored).name || ''); } catch {} }
-    api.get<EligibleTicket[]>('/quality-inspections/eligible-weigh-tickets').then(items => {
-      setTickets(items);
+    const taskId = searchParams.get('taskId');
+    if (!taskId) { alert('请从到货质检任务详情追加检测报告'); router.push('/dashboard/quality'); return; }
+    Promise.all([
+      api.get<QualityTaskBrief>(`/quality-tasks/${taskId}`),
+      api.get<EligibleTicket[]>('/quality-inspections/eligible-weigh-tickets'),
+    ]).then(([qualityTask, items]) => {
+      setTask(qualityTask);
+      const available = items.filter(item => item.waybill.waybillNo === qualityTask.waybill.waybillNo);
+      setTickets(available);
       const requested = searchParams.get('weighTicketId');
-      if (requested && items.some(item => item.id === requested)) setWeighTicketId(requested);
-    }).catch(error => alert(error.message || '可质检磅单加载失败'));
+      if (requested && available.some(item => item.id === requested)) setWeighTicketId(requested);
+      else if (available[0]) setWeighTicketId(available[0].id);
+      setSampleNo(`${qualityTask.taskNo}-S${String(qualityTask.reports.length + 1).padStart(2, '0')}`);
+    }).catch(error => alert(error.message || '到货质检任务或可用磅单加载失败'));
     api.get<{ items: InstitutionProfile[] }>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE&pageSize=200')
       .then(result => setInstitutions(result.items || []))
       .catch(error => alert(error.message || '质检机构主数据加载失败'));
-  }, [searchParams]);
+  }, [router, searchParams]);
 
   const ticket = tickets.find(item => item.id === weighTicketId);
   useEffect(() => {
@@ -94,6 +105,7 @@ export default function CreateQualityInspectionPage() {
   };
 
   const submit = async () => {
+    if (!task) return alert('到货质检任务不存在');
     if (!ticket) return alert('请选择关联磅单');
     if (!sampledAt || !samplerName.trim()) return alert('请填写取样时间和取样人');
     if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) && !institutionPartnerId) return alert('请选择已维护的质检机构');
@@ -102,8 +114,8 @@ export default function CreateQualityInspectionPage() {
     setSaving(true);
     try {
       const created = await api.post<{ id: string }>('/quality-inspections', {
-        weighTicketId, sampledAt, samplerName: samplerName.trim(), samplingMethod,
-        sampleNo1: sampleNos[0] || undefined, sampleNo2: sampleNos[1] || undefined, sampleNo3: sampleNos[2] || undefined,
+        qualityTaskId: task.id, weighTicketId, sampledAt, samplerName: samplerName.trim(), samplingMethod,
+        sampleNo: sampleNo.trim() || undefined,
         dataSource, institutionType, institutionPartnerId: institutionPartnerId || undefined, institutionName: institutionName.trim(), reportNo: reportNo.trim(), testedAt,
         deductionAmount: deductions.amount, remarks: remarks || undefined, submit: true,
         indicators: indicators.map(item => ({
@@ -116,16 +128,16 @@ export default function CreateQualityInspectionPage() {
         const body = new FormData(); body.append('file', item.file); body.append('category', item.category);
         await api.upload(`/quality-inspections/${created.id}/attachments`, body);
       }
-      router.push(`/dashboard/quality/${created.id}`);
-    } catch (error: any) { alert(error.message || '质检单创建失败'); }
+      router.push(`/dashboard/quality/${task.id}`);
+    } catch (error: any) { alert(error.message || '检测报告创建失败'); }
     finally { setSaving(false); }
   };
 
   return <div className="mx-auto max-w-6xl space-y-6">
-    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">新建质检单</h1><p className="mt-1 text-sm text-muted-foreground">关联已完成磅单，为一个检测机构录入一份独立报告并自动判定结论</p></div></div>
+    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">追加检测报告</h1><p className="mt-1 text-sm text-muted-foreground">{task ? `${task.taskNo} · ${task.waybill.waybillNo}` : '在同一到货质检任务内录入一家检测机构的一份独立报告'}</p></div></div>
 
     <Card className="overflow-hidden">
-      <div className="border-b p-6 pb-4"><SectionTitle title="选择关联磅单" noMargin /><p className="mt-2 text-sm text-muted-foreground">仅显示已完成称重或已复核的磅单；同一磅单可以创建多个检测机构的质检单。点击整行即可选中。</p></div>
+      <div className="border-b p-6 pb-4"><SectionTitle title="选择关联磅单" noMargin /><p className="mt-2 text-sm text-muted-foreground">仅显示本到货任务下已完成称重或已复核的磅单。点击整行即可选中。</p></div>
       {!tickets.length ? <div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" /><div>暂无可质检的磅单</div><div className="mt-1 text-xs">请先完成磅单称重或复核，再创建质检单。</div></div> : <div className="overflow-x-auto"><table className="min-w-[1350px] w-full text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="w-14 px-4 py-3">选择</th><th className="px-4 py-3">磅单日期</th><th className="px-4 py-3">磅单编号 / 状态</th><th className="px-4 py-3">物流运单</th><th className="px-4 py-3">物料 / 规格</th><th className="px-4 py-3">发货 / 收货单位</th><th className="px-4 py-3">车牌号</th><th className="px-4 py-3 text-right">净重 / 结算重量</th><th className="px-4 py-3">操作</th></tr></thead>
         <tbody>{tickets.map(item => { const selected = item.id === weighTicketId; return <tr key={item.id} className={`cursor-pointer border-b transition-colors ${selected ? 'bg-primary/10 ring-1 ring-inset ring-primary/30' : 'hover:bg-muted/50'}`} onClick={() => setWeighTicketId(item.id)}>
@@ -137,7 +149,7 @@ export default function CreateQualityInspectionPage() {
           <td className="max-w-64 px-4 py-3"><div className="truncate" title={item.shipperName || ''}>{item.shipperName || '-'}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={item.receiverName || ''}>{item.receiverName || '-'}</div></td>
           <td className="whitespace-nowrap px-4 py-3">{item.plateNo || item.waybill.plateNo || '-'}</td>
           <td className="whitespace-nowrap px-4 py-3 text-right"><div>{qualityWeight(item.netWeight)}</div><div className="mt-1 font-medium text-primary">{qualityWeight(item.settlementWeight)}</div></td>
-          <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={event => { event.stopPropagation(); window.open(`/dashboard/weighbridge/${item.id}`, '_blank', 'noopener,noreferrer'); }}><ExternalLink className="mr-1 h-3.5 w-3.5" />查看详情</Button></td>
+          <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={event => { event.stopPropagation(); router.push(`/dashboard/weighbridge/${item.id}`); }}><ExternalLink className="mr-1 h-3.5 w-3.5" />查看详情</Button></td>
         </tr>; })}</tbody>
       </table></div>}
     </Card>
@@ -152,7 +164,7 @@ export default function CreateQualityInspectionPage() {
         <Field label="数据来源"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={dataSource} onChange={event => setDataSource(event.target.value)}><option value="MANUAL">人工录入</option><option value="DEVICE">设备采集</option><option value="OCR">附件识别</option></select></Field>
       </div>
       {ticket && <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2 lg:grid-cols-6"><Info label="执行批次" value={ticket.waybill.dispatchNotice.order.name} /><Info label="物流运单" value={ticket.waybill.waybillNo} /><Info label="磅单" value={ticket.ticketNo} /><Info label="物料" value={ticket.materialName || '-'} /><Info label="供应商" value={ticket.shipperName || '-'} /><Info label="结算重量" value={`${Number(ticket.settlementWeight || ticket.netWeight || 0).toLocaleString()} 吨`} /></div>}
-      <div className="grid gap-4 md:grid-cols-3">{sampleNos.map((value, index) => <Field key={index} label={`留样编号 #${index + 1}${index === 0 ? '（我方）' : index === 1 ? '（供方）' : '（第三方备用）'}`}><Input value={value} onChange={event => setSampleNos(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></Field>)}</div>
+      <div className="grid gap-4 md:grid-cols-3"><Field label="样品编号"><Input value={sampleNo} onChange={event => setSampleNo(event.target.value)} placeholder="每份机构报告对应一个样品编号" /></Field></div>
     </Card>
 
     <Card className="space-y-5 p-6"><SectionTitle title="检测机构与报告" />
@@ -162,7 +174,7 @@ export default function CreateQualityInspectionPage() {
         <Field label="报告编号 *"><Input value={reportNo} onChange={event => setReportNo(event.target.value)} /></Field>
         <Field label="检测时间 *"><Input type="datetime-local" step="1" value={testedAt} onChange={event => setTestedAt(event.target.value)} /></Field>
       </div>
-      <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">一张质检单仅记录一个检测机构。同一车辆需要录入其他机构报告时，请再次新建质检单并选择同一磅单。</div>
+      <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">本记录对应一家检测机构和一份检测报告。其他机构报告请返回任务详情继续追加。</div>
     </Card>
 
     <Card className="space-y-4 p-6"><div className="flex items-center justify-between"><SectionTitle title="检测指标" noMargin /><Button variant="outline" size="sm" onClick={addIndicator}><Plus className="mr-1 h-4 w-4" />增加指标</Button></div>
@@ -176,7 +188,7 @@ export default function CreateQualityInspectionPage() {
       <textarea className="min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={remarks} onChange={event => setRemarks(event.target.value)} placeholder="化验特殊情况、复检说明、留样位置等" />
     </Card>
 
-    <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={() => router.push('/dashboard/quality')}>取消</Button><Button disabled={saving || !weighTicketId} onClick={() => void submit()}><FlaskConical className="mr-2 h-4 w-4" />{saving ? '提交中...' : '提交并出具结论'}</Button></div>
+    <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}>取消</Button><Button disabled={saving || !weighTicketId || !task} onClick={() => void submit()}><FlaskConical className="mr-2 h-4 w-4" />{saving ? '提交中...' : '提交检测报告'}</Button></div>
   </div>;
 }
 

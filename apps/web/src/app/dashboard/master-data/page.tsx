@@ -29,6 +29,8 @@ interface MaterialCategory { id: string; name: string; }
 interface Material {
   id: string; code: string; name: string;
   category: { id: string; name: string }; grade: string | null; unit: string; status: string;
+  referenceType: string; commodityForm: string | null;
+  standardCommodity: { id: string; code: string; name: string } | null;
   internalCode: string | null; spec: string | null; sourceRegion: string | null; packageType: string | null;
   hsCode: string | null; qcTemplate: string | null; isVirtual: boolean;
 }
@@ -39,17 +41,22 @@ interface WarehouseItem {
 }
 interface Vehicle {
   id: string; plateNo: string; vehicleType: string; loadCapacity: string;
-  brand: string | null;
-  owner: { name: string } | null; ownerType: string;
+  brand: string | null; tareWeight: string | null; plateColor: string | null; deviceType: string | null; deviceNo: string | null; remark: string | null;
+  owner: { id: string; name: string; isInternal: boolean } | null; ownerType: string;
+  ownerName: string | null; ownerPhone: string | null;
   driverName: string | null; driverPhone: string | null; status: string;
+  drivers: Array<{ id: string; role: string; driver: { id: string; name: string; phone: string } }>;
+  operationStatus: string;
+  _count: { waybills: number };
 }
+interface VehicleOwnerOption { id: string; partnerId: string; partner: { id: string; code: string; name: string } }
 interface PriceItem { id: string; material: string; buyPrice: number; sellPrice: number; effectiveAt: string; status: string; }
 
 type TabKey = 'partners' | 'materials' | 'warehouses' | 'vehicles' | 'price';
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'partners',   label: '合作伙伴', icon: Building2 },
-  { key: 'materials',  label: '物料品类', icon: Package },
+  { key: 'materials',  label: '商品物料', icon: Package },
   { key: 'warehouses', label: '仓库管理', icon: Warehouse },
   { key: 'vehicles',   label: '车辆管理', icon: Truck },
   { key: 'price',      label: '价格基准', icon: DollarSign },
@@ -67,6 +74,7 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
 };
 
 const VEHICLE_TYPE: Record<string, string> = {
+  SEMI_TRAILER: '半挂车（标准型）', HEAVY_SEMI_TRAILER: '半挂车（超重型）', BOX_TRUCK: '厢式货车', DUMP_TRUCK: '自卸车', TANK_TRUCK: '槽罐车',
   TRUCK: '自卸车', TANK: '罐车', TRAILER: '挂车',
 };
 
@@ -83,6 +91,12 @@ const TAX_RATING_CONFIG: Record<string, string> = {
   D级: 'bg-destructive-bg text-destructive border-0',
 };
 
+const MATERIAL_REFERENCE_LABELS: Record<string, string> = {
+  TRADING_GOODS: '贸易商品（TRD）', RAW_MATERIAL: '原材料（RAW）', SEMI_FINISHED: '半成品（SFG）',
+  FINISHED_GOODS: '产成品（FGD）', AUXILIARY: '辅助材料（AUX）', PACKAGING: '包装材料（PKG）',
+  SERVICE: '服务项目（SRV）', OTHER: '其他物料（OTH）',
+};
+
 /* ── Mock data (price — 后续迭代接真实接口) ── */
 
 const MOCK_PRICES: PriceItem[] = [
@@ -97,6 +111,8 @@ const StatusBadge = ({ status }: { status: string }) => {
     ACTIVE:    { label: '启用',  className: 'bg-success-bg text-success border-0' },
     INACTIVE:  { label: '停用',  className: '' },
     BLACKLIST: { label: '黑名单', className: 'bg-destructive-bg text-destructive border-0' },
+    MAINTENANCE: { label: '维修停用', className: 'bg-warning-bg text-warning border-0' },
+    RETIRED: { label: '已退役', className: '' },
   };
   const cfg = map[status] || { label: status, className: '' };
   return <Badge variant="secondary" className={cfg.className}>{cfg.label}</Badge>;
@@ -147,11 +163,16 @@ function MasterDataPageInner() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehicleOwners, setVehicleOwners] = useState<VehicleOwnerOption[]>([]);
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [vehicleOwnerFilter, setVehicleOwnerFilter] = useState('');
+  const [vehicleOwnerIdFilter, setVehicleOwnerIdFilter] = useState('');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('');
+  const [vehicleStatusFilter, setVehicleStatusFilter] = useState('');
 
   const fetchPartners = useCallback(() => {
     const params = new URLSearchParams();
@@ -167,14 +188,25 @@ function MasterDataPageInner() {
     api.get<{ items: Material[] }>(`/master-data/materials?${params}`).then((d) => setMaterials(d.items || [])).catch(() => {});
   }, [categoryFilter, searchTerm]);
 
+  const fetchVehicles = useCallback(() => {
+    const params = new URLSearchParams({ pageSize: '100' });
+    if (searchTerm) params.set('search', searchTerm);
+    if (vehicleOwnerFilter) params.set('ownerType', vehicleOwnerFilter);
+    if (vehicleOwnerIdFilter) params.set('ownerId', vehicleOwnerIdFilter);
+    if (vehicleTypeFilter) params.set('vehicleType', vehicleTypeFilter);
+    if (vehicleStatusFilter) params.set('status', vehicleStatusFilter);
+    api.get<{ items: Vehicle[] }>(`/partners/vehicles?${params}`).then((d) => setVehicles(d.items || [])).catch(() => {});
+  }, [searchTerm, vehicleOwnerFilter, vehicleOwnerIdFilter, vehicleStatusFilter, vehicleTypeFilter]);
+
   useEffect(() => {
     api.get<MaterialCategory[]>('/master-data/material-categories').then(setCategories).catch(() => {});
     api.get<WarehouseItem[]>('/master-data/warehouses').then((d) => setWarehouses(Array.isArray(d) ? d : [])).catch(() => {});
-    api.get<{ items: Vehicle[] }>('/partners/vehicles').then((d) => setVehicles(d.items || [])).catch(() => {});
+    api.get<{ items: VehicleOwnerOption[] }>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE&pageSize=200').then(d => setVehicleOwners(d.items || [])).catch(() => {});
   }, []);
 
   useEffect(() => { fetchPartners(); }, [fetchPartners]);
   useEffect(() => { fetchMaterials(); }, [fetchMaterials]);
+  useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
 
   // Clear search when switching tabs
   useEffect(() => { setSearchTerm(''); }, [tab]);
@@ -195,6 +227,16 @@ function MasterDataPageInner() {
       const data = await api.get<WarehouseItem[]>('/master-data/warehouses');
       setWarehouses(Array.isArray(data) ? data : []);
     } catch (e: unknown) { /* ignore */ }
+  };
+
+  const toggleVehicleStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE';
+    try {
+      await api.patch(`/partners/vehicles/${id}`, { status: newStatus });
+      fetchVehicles();
+    } catch (error: any) {
+      alert(error.message || '车辆状态更新失败');
+    }
   };
 
   const currentLabel = TABS.find((t) => t.key === tab)?.label || '';
@@ -223,7 +265,7 @@ function MasterDataPageInner() {
             </Link>
             <Link href="/dashboard/master-data/materials/new">
               <Button>
-                <Plus className="h-4 w-4 mr-1" />新建物料
+                <Plus className="h-4 w-4 mr-1" />新建商品物料
               </Button>
             </Link>
           </div>
@@ -232,6 +274,13 @@ function MasterDataPageInner() {
           <Link href="/dashboard/master-data/warehouses/new">
             <Button>
               <Plus className="h-4 w-4 mr-1" />新建仓库
+            </Button>
+          </Link>
+        )}
+        {tab === 'vehicles' && (
+          <Link href="/dashboard/master-data/vehicles/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-1" />新建车辆
             </Button>
           </Link>
         )}
@@ -299,6 +348,29 @@ function MasterDataPageInner() {
           </div>
         )}
 
+        {tab === 'vehicles' && (
+          <>
+            <select className="h-9 rounded-md border bg-background px-3 text-sm" value={vehicleOwnerFilter} onChange={(event) => setVehicleOwnerFilter(event.target.value)}>
+              <option value="">全部归属</option>
+              <option value="SELF">自有车辆</option>
+              <option value="OUTSOURCED">外协车辆</option>
+            </select>
+            <select className="h-9 rounded-md border bg-background px-3 text-sm" value={vehicleStatusFilter} onChange={(event) => setVehicleStatusFilter(event.target.value)}>
+              <option value="">全部状态</option>
+              <option value="ACTIVE">启用</option>
+              <option value="MAINTENANCE">维修停用</option>
+              <option value="RETIRED">已退役</option>
+            </select>
+            <select className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm" value={vehicleOwnerIdFilter} onChange={(event) => setVehicleOwnerIdFilter(event.target.value)}><option value="">全部承运商</option>{vehicleOwners.map(item => <option key={item.id} value={item.partnerId}>{item.partner.name}</option>)}</select>
+            <select className="h-9 rounded-md border bg-background px-3 text-sm" value={vehicleTypeFilter} onChange={(event) => setVehicleTypeFilter(event.target.value)}><option value="">全部车型</option><option value="SEMI_TRAILER">半挂车（标准型）</option><option value="HEAVY_SEMI_TRAILER">半挂车（超重型）</option><option value="BOX_TRUCK">厢式货车</option><option value="DUMP_TRUCK">自卸车</option><option value="TANK_TRUCK">槽罐车</option></select>
+            <Link href="/dashboard/master-data/vehicles/new" className="ml-auto">
+              <Button>
+                <Plus className="mr-1 h-4 w-4" />新建车辆
+              </Button>
+            </Link>
+          </>
+        )}
+
         {/* 搜索 */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -363,20 +435,23 @@ function MasterDataPageInner() {
           />
         )}
 
-        {/* 物料品类 */}
+        {/* 商品物料 */}
         {tab === 'materials' && (
           <DataTable
-            headers={['编码 / 内部编码', '品名 / 规格', '分类', '品级 / 包装', '产地 / HS编码', '单位', '质检模板', '状态', '操作']}
+            headers={['业务编码 / 标准编码', '商品名称 / 形态', '参考类型 / 包装', '商品分类', '核心规格', '单位', '质检模板', '状态', '操作']}
             rows={materials.map((m) => [
-              <div key="c"><div className="font-mono text-xs">{m.code}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.internalCode || '无内部编码'}</div></div>,
-              <div key="n"><div className="font-medium">{m.name}</div><div className="mt-1 max-w-56 truncate text-xs text-muted-foreground">{m.spec || (m.isVirtual ? '虚拟物料' : '未设置规格')}</div></div>,
+              <div key="c"><div className="font-mono text-xs">{m.code}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.standardCommodity?.code || '历史物料'}</div></div>,
+              <div key="n"><Link href={`/dashboard/master-data/materials/${m.id}`} className="font-medium hover:text-primary hover:underline">{m.standardCommodity?.name || m.name}</Link><div className="mt-1 max-w-56 truncate text-xs text-muted-foreground">{m.commodityForm || '未设置形态'}</div></div>,
+              <div key="rt"><div className="text-xs">{MATERIAL_REFERENCE_LABELS[m.referenceType] || m.referenceType || '贸易商品'}</div><div className="mt-1 text-xs text-muted-foreground">{m.packageType || '未设置包装'}</div></div>,
               <Badge key="cat" variant="outline" className="text-xs">{m.category?.name || '-'}</Badge>,
-              <div key="g"><div className="text-xs">{m.grade || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{m.packageType || '未设置包装'}</div></div>,
-              <div key="src"><div className="text-xs">{m.sourceRegion || '-'}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.hsCode || '无 HS 编码'}</div></div>,
+              <div key="g"><div className="text-xs">{m.grade || '-'}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.internalCode || '无内部编码'}</div></div>,
               unitLabel(m.unit),
               <span key="qc" className="text-xs text-muted-foreground">{m.qcTemplate || '—'}</span>,
               <StatusBadge key="s" status={m.status} />,
               <div key="ops" className="flex gap-1.5">
+                <Link href={`/dashboard/master-data/materials/${m.id}`}>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button>
+                </Link>
                 <Link href={`/dashboard/master-data/materials/${m.id}/edit`}>
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">编辑</Button>
                 </Link>
@@ -427,19 +502,41 @@ function MasterDataPageInner() {
         {/* 车辆管理 */}
         {tab === 'vehicles' && (
           <DataTable
-            headers={['车牌号', '车型 / 品牌', '核定载重(吨)', '归属', '驾驶员 / 电话', '状态']}
+            headers={['车牌号', '车型 / 品牌', '核定载重 / 皮重', '定位设备', '所属承运商 / 车主', '关联司机', '运行 / 档案状态', '引用运单', '操作']}
             rows={vehicles.map((v) => [
-              <span key="p" className="font-mono font-medium">{v.plateNo}</span>,
+              <Link key="p" href={`/dashboard/master-data/vehicles/${v.id}`} className="font-mono font-medium text-primary hover:underline">{v.plateNo}</Link>,
               <div key="vt"><div>{VEHICLE_TYPE[v.vehicleType] || v.vehicleType}</div><div className="mt-1 text-xs text-muted-foreground">{v.brand || '未设置品牌'}</div></div>,
-              <span key="l" className="font-mono">{Number(v.loadCapacity).toFixed(1)}</span>,
+              <div key="l"><div>{Number(v.loadCapacity).toFixed(2)} 吨</div><div className="mt-1 text-xs text-muted-foreground">皮重 {v.tareWeight ? `${Number(v.tareWeight).toFixed(2)} 吨` : '—'}</div></div>,
+              <div key="dev"><div>{v.deviceType === 'BEIDOU' ? '北斗' : v.deviceType === 'GPS' ? 'GPS' : '未绑定'}</div><div className="mt-1 text-xs text-muted-foreground">{v.deviceNo || '—'}</div></div>,
               <div key="o">
-                <Badge variant="outline" className="text-xs mr-1">{v.ownerType === 'SELF' ? '自有' : '外协'}</Badge>
-                {v.owner?.name && <span className="text-xs text-muted-foreground">{v.owner.name}</span>}
+                <div><Badge variant="outline" className="text-xs mr-1">{v.ownerType === 'SELF' ? '自有' : '外协'}</Badge>{v.owner?.name && <span className="text-xs text-muted-foreground">{v.owner.name}</span>}</div>
+                {v.ownerName && <div className="mt-1 text-xs text-muted-foreground">车主：{v.ownerName}{v.ownerPhone ? ` · ${v.ownerPhone}` : ''}</div>}
               </div>,
-              <div key="drv"><div>{v.driverName || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{v.driverPhone || '无联系电话'}</div></div>,
-              <StatusBadge key="s" status={v.status} />,
+              <div key="drv">{v.drivers.length ? v.drivers.map(link => <div key={link.id} className="whitespace-nowrap"><span>{link.driver.name}</span><span className="ml-1 text-xs text-muted-foreground">{link.role === 'PRIMARY' ? '主驾' : '副驾'} · {link.driver.phone}</span></div>) : <span className="text-muted-foreground">未关联</span>}</div>,
+              <div key="status"><Badge variant="outline" className={v.operationStatus === 'IN_TRANSIT' ? 'border-blue-200 bg-blue-50 text-blue-700' : ''}>{v.operationStatus === 'IN_TRANSIT' ? '在途' : '空闲'}</Badge><div className="mt-1"><StatusBadge status={v.status} /></div></div>,
+              <span key="refs" className="font-mono text-xs">{v._count?.waybills || 0}</span>,
+              <div key="ops" className="flex gap-1.5">
+                <Link href={`/dashboard/master-data/vehicles/${v.id}`}><Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button></Link>
+                <Link href={`/dashboard/master-data/vehicles/${v.id}/edit`}>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">编辑</Button>
+                </Link>
+                {v.status !== 'RETIRED' && (
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void toggleVehicleStatus(v.id, v.status)}>
+                    {v.status === 'ACTIVE' ? '暂停使用' : '恢复使用'}
+                  </Button>
+                )}
+              </div>,
             ])}
-            empty="暂无车辆数据"
+            empty={(
+              <div className="flex flex-col items-center gap-3">
+                <span>暂无车辆数据</span>
+                <Link href="/dashboard/master-data/vehicles/new">
+                  <Button size="sm">
+                    <Plus className="mr-1 h-4 w-4" />创建第一辆车辆
+                  </Button>
+                </Link>
+              </div>
+            )}
           />
         )}
 
@@ -472,7 +569,7 @@ function MasterDataPageInner() {
 /* ── Shared DataTable ── */
 
 function DataTable({ headers, rows, empty }: {
-  headers: string[]; rows: React.ReactNode[][]; empty: string;
+  headers: string[]; rows: React.ReactNode[][]; empty: React.ReactNode;
 }) {
   if (rows.length === 0) {
     return <div className="p-12 text-center text-muted-foreground text-sm">{empty}</div>;

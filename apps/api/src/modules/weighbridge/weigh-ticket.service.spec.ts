@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
-import { WeighTicketService } from './weigh-ticket.service';
+import { calculateNetWeight, normalizeWeight, WeighTicketService } from './weigh-ticket.service';
 import { attachmentMimeType } from './weigh-ticket.controller';
 
 describe('磅单附件类型兼容', () => {
@@ -15,6 +15,17 @@ describe('磅单附件类型兼容', () => {
   it('拒绝扩展名与文件类型不匹配', () => {
     expect(attachmentMimeType('异常文件.pdf', 'image/png')).toBeNull();
     expect(attachmentMimeType('异常文件.exe', 'application/octet-stream')).toBeNull();
+  });
+});
+
+describe('磅单重量精度', () => {
+  it('整数毛重和皮重得到准确的整数净重', () => {
+    expect(calculateNetWeight(130, 10)).toBe(120);
+  });
+
+  it('重量和净重统一保留最多三位小数', () => {
+    expect(normalizeWeight(130.0004)).toBe(130);
+    expect(calculateNetWeight(130.001, 10)).toBe(120.001);
   });
 });
 
@@ -259,5 +270,57 @@ describe('WeighTicketService', () => {
       waybillId: waybill.id,
       settlementBasis: 'THIRD_PARTY',
     }, 'user-1')).rejects.toThrow('所选结算口径必须填写对应重量');
+  });
+
+  it('按运单查询磅单信息时一条运单只返回一条聚合记录', async () => {
+    prisma.waybill.findMany.mockResolvedValue([{ ...waybill, weighTickets: [ticket] }] as any);
+
+    const result = await service.findManagementFiles({ search: '甘A12345' }, 'user-1');
+
+    expect(result.total).toBe(1);
+    expect(prisma.waybill.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        weighTickets: { some: { deletedAt: null } },
+      }),
+    }));
+  });
+
+  it('选中结算入库磅单时原子同步库存与结算两个口径', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: waybill.id } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue({
+      id: ticket.id, ticketNo: ticket.ticketNo, status: 'REVIEWED', netWeight: 100,
+    } as any);
+    prisma.waybillWeightSelection.findMany.mockResolvedValue([]);
+    prisma.waybillWeightSelection.create
+      .mockResolvedValueOnce({ id: 'selection-inventory', purpose: 'INVENTORY' } as any)
+      .mockResolvedValueOnce({ id: 'selection-settlement', purpose: 'SETTLEMENT' } as any);
+    prisma.inboundReceipt.findMany.mockResolvedValue([]);
+
+    const result = await service.selectEffectiveTicket(waybill.id, ticket.id, undefined, 'user-1');
+
+    expect(result).toHaveLength(2);
+    expect(prisma.waybillWeightSelection.updateMany).toHaveBeenCalledWith({
+      where: { waybillId: waybill.id, purpose: { in: ['INVENTORY', 'SETTLEMENT'] }, isCurrent: true },
+      data: { isCurrent: false },
+    });
+    expect(prisma.waybillWeightSelection.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      data: expect.objectContaining({ purpose: 'INVENTORY', weighTicketId: ticket.id, quantity: 100 }),
+    }));
+    expect(prisma.waybillWeightSelection.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      data: expect.objectContaining({ purpose: 'SETTLEMENT', weighTicketId: ticket.id, quantity: 100 }),
+    }));
+  });
+
+  it('更换结算入库磅单必须填写原因', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: waybill.id } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue({
+      id: ticket.id, ticketNo: ticket.ticketNo, status: 'REVIEWED', netWeight: 100,
+    } as any);
+    prisma.waybillWeightSelection.findMany.mockResolvedValue([
+      { id: 'old', waybillId: waybill.id, purpose: 'INVENTORY', weighTicketId: 'ticket-old' },
+    ] as any);
+
+    await expect(service.selectEffectiveTicket(waybill.id, ticket.id, undefined, 'user-1'))
+      .rejects.toThrow('更换结算入库磅单必须填写变更原因');
   });
 });

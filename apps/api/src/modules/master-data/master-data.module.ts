@@ -6,11 +6,13 @@ import { PartnerService } from './partner.service';
 import { CommonModule } from '../common/common.module';
 import { ServiceOrganizationController } from './service-organization.controller';
 import { ServiceOrganizationService } from './service-organization.service';
+import { DriverController } from './driver.controller';
+import { DriverService } from './driver.service';
 
 @Module({
   imports: [CommonModule],
-  controllers: [MasterDataController, PartnerController, ServiceOrganizationController],
-  providers: [MasterDataService, PartnerService, ServiceOrganizationService],
-  exports: [MasterDataService, PartnerService, ServiceOrganizationService],
+  controllers: [MasterDataController, PartnerController, ServiceOrganizationController, DriverController],
+  providers: [MasterDataService, PartnerService, ServiceOrganizationService, DriverService],
+  exports: [MasterDataService, PartnerService, ServiceOrganizationService, DriverService],
 })
 export class MasterDataModule {}

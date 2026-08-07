@@ -73,6 +73,8 @@ describe('ContractService', () => {
           data: expect.objectContaining({
             contractNo: expect.stringMatching(/^CG\d{12}$/),
             title: '测试合同',
+            overfillPct: 10,
+            shortfallPct: 10,
           }),
         }),
       );

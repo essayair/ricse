@@ -23,6 +23,7 @@ describe('QualityInspectionService', () => {
     assertPermission: jest.fn().mockResolvedValue({}),
     getWeighTicketScope: jest.fn().mockResolvedValue({}),
     getQualityInspectionScope: jest.fn().mockResolvedValue({}),
+    getQualityTaskScope: jest.fn().mockResolvedValue({}),
   };
   const inventoryService = {
     createPendingReceiptForConfirmedQuality: jest.fn().mockResolvedValue({ id: 'receipt-1', status: 'PENDING' }),
@@ -79,13 +80,63 @@ describe('QualityInspectionService', () => {
           dispatchNotice: { type: 'PURCHASE' },
         },
       },
+      qualityTask: { id: 'task-1', status: 'INSPECTING' },
     };
     jest.spyOn(service, 'findOne').mockResolvedValue(item as any);
     prisma.qualityInspection.update.mockResolvedValue({} as any);
 
     await service.updateStatus('quality-1', 'CONFIRMED', 'user-1');
 
+    expect(prisma.qualityTask.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'task-1' }, data: expect.objectContaining({ status: 'PENDING_DECISION' }),
+    }));
+    expect(inventoryService.createPendingReceiptForConfirmedQuality).not.toHaveBeenCalled();
+  });
+
+  it('物流到达后幂等创建到货质检任务', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: 'waybill-1', status: 'ARRIVED' } as any);
+    prisma.qualityTask.findUnique.mockResolvedValue(null);
+    prisma.qualityTask.count.mockResolvedValue(0);
+    prisma.qualityTask.create.mockResolvedValue({ id: 'task-1', taskNo: 'QT-20260805-0001' } as any);
+
+    const task = await service.ensureTaskForWaybill('waybill-1', 'user-1');
+
+    expect(task?.taskNo).toBe('QT-20260805-0001');
+    expect(prisma.qualityTask.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ waybillId: 'waybill-1', status: 'PENDING_SAMPLING', plannedReportCount: 3 }),
+    }));
+  });
+
+  it('只有一份有效报告时必须填写提前判定原因', async () => {
+    jest.spyOn(service, 'findTask').mockResolvedValue({
+      id: 'task-1', status: 'PENDING_DECISION', plannedReportCount: 3,
+      reports: [{ id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS' }],
+    } as any);
+
+    await expect(service.finalizeTask('task-1', {
+      conclusion: 'PASS', basisInspectionId: 'report-1',
+    }, 'user-1')).rejects.toThrow('必须填写提前判定原因');
+  });
+
+  it('任务最终合格后才以执行口径报告补齐入库依据', async () => {
+    jest.spyOn(service, 'findTask').mockResolvedValue({
+      id: 'task-1', status: 'PENDING_DECISION', plannedReportCount: 3,
+      handlerId: null, handledAt: null,
+      reports: [{ id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS' }],
+    } as any);
+    prisma.qualityTask.update.mockResolvedValue({} as any);
+
+    await service.finalizeTask('task-1', {
+      conclusion: 'PASS', basisInspectionId: 'report-1', reason: '合同允许采用单一报告',
+    }, 'user-1');
+
+    expect(prisma.qualityTask.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: 'report-1',
+        finalizedReportCount: 1,
+      }),
+    }));
     expect(inventoryService.createPendingReceiptForConfirmedQuality)
-      .toHaveBeenCalledWith('quality-1', 'user-1');
+      .toHaveBeenCalledWith('report-1', 'user-1');
   });
 });

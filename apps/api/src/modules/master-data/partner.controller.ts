@@ -12,6 +12,7 @@ import { CurrentUser } from '../common/current-user.decorator';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { PermissionGuard } from '../common/permission.guard';
 import { RequirePermission } from '../common/require-permission.decorator';
+import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
 
 @ApiTags('合作伙伴')
 @ApiBearerAuth()
@@ -75,12 +76,21 @@ export class PartnerController {
   findAllVehicles(
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
     @Query('status') status?: string, @Query('ownerId') ownerId?: string,
+    @Query('ownerType') ownerType?: string, @Query('vehicleType') vehicleType?: string,
+    @Query('search') search?: string,
   ) {
     return this.partnerService.findAllVehicles({
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
-      status, ownerId,
+      status, ownerId, ownerType, vehicleType, search,
     });
+  }
+
+  @Get('vehicles/:vehicleId')
+  @RequirePermission('master_data.view')
+  @ApiOperation({ summary: '车辆详情' })
+  findOneVehicle(@Param('vehicleId') vehicleId: string) {
+    return this.partnerService.findOneVehicle(vehicleId);
   }
 
   @Get(':id')
@@ -153,11 +163,15 @@ export class PartnerController {
   @Post('vehicles')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建车辆' })
-  createVehicle(@Body() dto: {
-    plateNo: string; vehicleType: string; brand?: string; loadCapacity: number;
-    ownerId?: string; ownerType?: string; driverName?: string; driverPhone?: string; remark?: string;
-  }) {
+  createVehicle(@Body() dto: CreateVehicleDto) {
     return this.partnerService.createVehicle(dto);
+  }
+
+  @Patch('vehicles/:vehicleId')
+  @RequirePermission('master_data.manage')
+  @ApiOperation({ summary: '更新车辆档案和使用状态' })
+  updateVehicle(@Param('vehicleId') vehicleId: string, @Body() dto: UpdateVehicleDto) {
+    return this.partnerService.updateVehicle(vehicleId, dto);
   }
 
   @Delete('vehicles/:id')

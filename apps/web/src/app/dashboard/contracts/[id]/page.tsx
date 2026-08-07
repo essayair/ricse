@@ -6,11 +6,26 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2, Plus } from 'lucide-react';
+import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2, Plus, ShieldAlert, MoreHorizontal } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { unitLabel } from '@/lib/unit';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Approval {
   id: string;
@@ -94,8 +109,17 @@ const TYPE_LABEL: Record<string, string> = {
   PURCHASE: '采购合同', SALES: '销售合同', BILATERAL: '双边合同',
 };
 
+type ContractAction = {
+  next: string;
+  label: string;
+  variant: 'default' | 'destructive' | 'outline' | 'secondary';
+  needsComment?: boolean;
+};
+
+const PROTECTED_STATUS_ACTIONS = new Set(['EXECUTING', 'COMPLETED', 'CLOSED']);
+
 // 每个状态下，各角色可执行的操作
-const ROLE_ACTIONS: Record<string, Record<string, { next: string; label: string; variant: 'default' | 'destructive' | 'outline' | 'secondary'; needsComment?: boolean }[]>> = {
+const ROLE_ACTIONS: Record<string, Record<string, ContractAction[]>> = {
   DRAFT: {
     SALESPERSON: [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
     MANAGER:     [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
@@ -139,6 +163,95 @@ const ROLE_ACTIONS: Record<string, Record<string, { next: string; label: string;
     ADMIN:   [{ next: 'CLOSED', label: '归档关闭', variant: 'outline' }],
   },
 };
+
+const PROTECTED_ACTION_COPY: Record<string, { title: string; description: string; acknowledgement: string }> = {
+  EXECUTING: {
+    title: '确认开始执行合同？',
+    description: '合同状态将变为“执行中”，并进入执行批次、通知、物流及出入库等履约流程。',
+    acknowledgement: '我已核对合同已审批通过，可以进入履约执行',
+  },
+  COMPLETED: {
+    title: '确认标记合同完成？',
+    description: '请先确认合同数量、金额及全部下游履约单据均已处理完成。',
+    acknowledgement: '我已核对合同履约数据，确认合同已完成',
+  },
+  CLOSED: {
+    title: '确认关闭合同？',
+    description: '关闭后合同进入归档状态，不能再新建执行批次或继续生成下游业务单据。',
+    acknowledgement: '',
+  },
+};
+
+function ProtectedStatusDialog({ action, contractNo, onCancel, onConfirm }: {
+  action: ContractAction;
+  contractNo: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [confirmationNo, setConfirmationNo] = useState('');
+  const copy = PROTECTED_ACTION_COPY[action.next];
+  const requiresContractNo = action.next === 'CLOSED';
+  const canConfirm = requiresContractNo
+    ? confirmationNo.trim() === contractNo
+    : acknowledged;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <ShieldAlert className="h-5 w-5" />
+          </div>
+          <DialogTitle>{copy.title}</DialogTitle>
+          <DialogDescription>{copy.description}</DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-md border bg-muted/40 p-3 text-sm">
+          <div className="text-xs text-muted-foreground">当前合同</div>
+          <div className="mt-1 font-mono font-medium">{contractNo}</div>
+        </div>
+
+        {requiresContractNo ? (
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="contract-close-confirmation">
+              请输入合同编号 <span className="font-mono">{contractNo}</span> 以确认关闭
+            </label>
+            <Input
+              id="contract-close-confirmation"
+              value={confirmationNo}
+              onChange={(event) => setConfirmationNo(event.target.value)}
+              placeholder="输入合同编号"
+              autoComplete="off"
+              autoFocus
+            />
+          </div>
+        ) : (
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-input"
+              checked={acknowledged}
+              onChange={(event) => setAcknowledged(event.target.checked)}
+            />
+            <span>{copy.acknowledgement}</span>
+          </label>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>取消</Button>
+          <Button
+            variant={requiresContractNo ? 'destructive' : 'default'}
+            disabled={!canConfirm}
+            onClick={onConfirm}
+          >
+            确认{action.label}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function ApprovalModal({ onConfirm, onCancel, action }: {
   onConfirm: (comment: string) => void;
@@ -390,7 +503,8 @@ export default function ContractDetailPage() {
   const params = useParams();
   const [contract, setContract] = useState<ContractDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pendingAction, setPendingAction] = useState<{ next: string; label: string; variant: string; needsComment?: boolean } | null>(null);
+  const [pendingAction, setPendingAction] = useState<ContractAction | null>(null);
+  const [protectedAction, setProtectedAction] = useState<ContractAction | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: string; role: string; name: string } | null>(null);
 
   useEffect(() => {
@@ -414,6 +528,7 @@ export default function ContractDetailPage() {
     try {
       await api.patch(`/contracts/${params.id}/status`, { status, comment });
       setPendingAction(null);
+      setProtectedAction(null);
       fetchContract();
     } catch (e: any) { alert(e.message || '操作失败'); }
   };
@@ -430,6 +545,10 @@ export default function ContractDetailPage() {
 
   const handleActionClick = (action: typeof pendingAction) => {
     if (!action) return;
+    if (PROTECTED_STATUS_ACTIONS.has(action.next)) {
+      setProtectedAction(action);
+      return;
+    }
     if (action.next === 'VOIDED' && !window.confirm('确定作废此合同吗？作废后不能恢复，如需删除还必须由系统管理员操作。')) {
       return;
     }
@@ -471,6 +590,8 @@ export default function ContractDetailPage() {
     );
   }
   const canEdit = ['DRAFT', 'REJECTED'].includes(c.status) && ['SALESPERSON', 'MANAGER', 'ADMIN', 'USER'].includes(userRole);
+  const directActions = actions.filter((action) => !PROTECTED_STATUS_ACTIONS.has(action.next));
+  const protectedActions = actions.filter((action) => PROTECTED_STATUS_ACTIONS.has(action.next));
 
   return (
     <div className="space-y-6">
@@ -479,6 +600,15 @@ export default function ContractDetailPage() {
           action={pendingAction}
           onCancel={() => setPendingAction(null)}
           onConfirm={(comment) => handleStatusChange(pendingAction.next, comment)}
+        />
+      )}
+      {protectedAction && (
+        <ProtectedStatusDialog
+          key={`${protectedAction.next}-${c.id}`}
+          action={protectedAction}
+          contractNo={c.contractNo}
+          onCancel={() => setProtectedAction(null)}
+          onConfirm={() => void handleStatusChange(protectedAction.next)}
         />
       )}
 
@@ -558,11 +688,29 @@ export default function ContractDetailPage() {
                 <User className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">当前角色: {userRole}</span>
                 <div className="flex gap-2 ml-4">
-                  {actions.map((a) => (
+                  {directActions.map((a) => (
                     <Button key={a.next} variant={a.variant} onClick={() => handleActionClick(a)}>
                       {a.label}
                     </Button>
                   ))}
+                  {protectedActions.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline">
+                          <MoreHorizontal className="mr-1 h-4 w-4" />合同状态操作
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">以下操作需要再次确认</div>
+                        {protectedActions.map((action) => (
+                          <DropdownMenuItem key={action.next} onSelect={() => setProtectedAction(action)}>
+                            <ShieldAlert className="mr-2 h-4 w-4 text-amber-600" />
+                            {action.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </div>
             </>

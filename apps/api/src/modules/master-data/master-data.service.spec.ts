@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { MasterDataService } from './master-data.service';
+import {
+  buildStandardCommodityFingerprint,
+  buildStandardCommodityName,
+  MasterDataService,
+} from './master-data.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { mockDeep } from 'jest-mock-extended';
 import { Prisma } from '@prisma/client';
@@ -14,9 +18,18 @@ describe('MasterDataService', () => {
   };
   const mockMaterial = {
     id: 'm-1', code: 'MT-000001', name: '萤石粉', categoryId: 'cat-1',
+    standardCommodityId: 'std-1', referenceType: 'TRADING_GOODS', commodityForm: '精粉',
     grade: 'CaF₂≥97%', unit: 'TON', spec: null, sourceRegion: null,
-    packageType: null, status: 'ACTIVE', remark: null,
+    packageType: '散装', isVirtual: false, specs: null, hsCode: null, taxCode: null,
+    internalCode: null, qcTemplate: null, status: 'ACTIVE', remark: null,
     createdAt: new Date(), updatedAt: new Date(), deletedAt: null,
+  };
+  const mockStandard = {
+    id: 'std-1', code: 'STD000001', name: '萤石精粉-CaF₂≥97%',
+    categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉',
+    coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97', coreSpecUnit: '%',
+    packageType: '散装', unit: '吨', fingerprint: 'fp-1', status: 'ACTIVE',
+    createdAt: new Date(), updatedAt: new Date(),
   };
   const mockWarehouse = {
     id: 'w-1', code: 'WH-001', name: '金华仓', type: 'SELF', partnerId: null,
@@ -106,6 +119,11 @@ describe('MasterDataService', () => {
   });
 
   describe('Materials', () => {
+    beforeEach(() => {
+      prisma.standardCommodity.findUnique.mockResolvedValue(mockStandard as any);
+      prisma.material.findFirst.mockResolvedValue(null);
+    });
+
     it('创建物料', async () => {
       prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
       prisma.material.create.mockResolvedValue({ ...mockMaterial, category: mockCategory } as any);
@@ -117,20 +135,20 @@ describe('MasterDataService', () => {
 
     it('系统编码重复时自动重新分配，不返回 500', async () => {
       prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
-      prisma.material.findMany.mockResolvedValue([{ code: 'MAT0001' }] as any);
+      prisma.material.findMany.mockResolvedValue([{ code: 'TRD000001' }] as any);
       prisma.material.create
         .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('编码重复', {
           code: 'P2002', clientVersion: '5.22.0', meta: { target: ['code'] },
         }))
-        .mockResolvedValueOnce({ ...mockMaterial, code: 'MAT0002', category: mockCategory } as any);
+        .mockResolvedValueOnce({ ...mockMaterial, code: 'TRD000002', category: mockCategory } as any);
 
       const result = await service.createMaterial({
-        code: 'MAT0001', name: '萤石粉', categoryId: 'cat-1',
+        code: 'TRD000001', name: '萤石粉', categoryId: 'cat-1',
       });
 
-      expect(result.code).toBe('MAT0002');
+      expect(result.code).toBe('TRD000002');
       expect(prisma.material.create).toHaveBeenLastCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ code: 'MAT0002' }),
+        data: expect.objectContaining({ code: 'TRD000002' }),
       }));
     });
 
@@ -142,11 +160,79 @@ describe('MasterDataService', () => {
       expect(prisma.material.create).not.toHaveBeenCalled();
     });
 
-    it('下一个物料编码按全部 MAT 数字编码最大值生成', async () => {
+    it('下一个物料编码按参考类型前缀的最大值生成', async () => {
       prisma.material.findMany.mockResolvedValue([
-        { code: 'MAT0009' }, { code: 'MAT-0012' }, { code: 'MAT-ZZ' },
+        { code: 'TRD000009' }, { code: 'TRD-000012' }, { code: 'TRD-ZZ' },
       ] as any);
-      await expect(service.generateNextMaterialCode()).resolves.toBe('MAT0013');
+      await expect(service.generateNextMaterialCode()).resolves.toBe('TRD000013');
+    });
+
+    it('无相同标准商品时自动创建并生成名称与编码', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
+      prisma.standardCommodity.findUnique.mockResolvedValue(null);
+      prisma.standardCommodity.findMany.mockResolvedValue([] as any);
+      prisma.standardCommodity.create.mockResolvedValue(mockStandard as any);
+      prisma.material.findMany.mockResolvedValue([] as any);
+      prisma.material.create.mockResolvedValue({
+        ...mockMaterial, code: 'TRD000001', name: mockStandard.name,
+        standardCommodity: mockStandard, category: mockCategory,
+      } as any);
+
+      await service.createMaterial({
+        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉',
+        coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
+        coreSpecUnit: '%', packageType: '散装', unit: '吨',
+      });
+
+      expect(prisma.standardCommodity.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ name: '萤石精粉-CaF₂≥97%' }),
+      }));
+      expect(prisma.material.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ code: 'TRD000001', standardCommodityId: 'std-1' }),
+      }));
+    });
+
+    it('结构化建档以所选分类名称生成商品名称', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1', name: '萤石' } as any);
+      prisma.material.findMany.mockResolvedValue([] as any);
+      prisma.material.create.mockResolvedValue({ ...mockMaterial, name: '萤石精粉-CaF₂≥97%' } as any);
+
+      await service.createMaterial({
+        categoryId: 'cat-1', baseName: '不应使用的手工名称', commodityForm: '精粉',
+        coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
+        coreSpecUnit: '%', packageType: '吨袋', unit: '吨',
+      });
+
+      expect(prisma.material.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ name: '萤石精粉-CaF₂≥97%' }),
+      }));
+    });
+
+    it('相同标准商品和参考类型不重复建档', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
+      prisma.material.findFirst.mockResolvedValue({
+        id: 'm-existing', code: 'TRD000001', name: mockStandard.name,
+      } as any);
+
+      await expect(service.createMaterial({
+        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉',
+        coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
+        coreSpecUnit: '%', packageType: '散装',
+      })).rejects.toThrow('该物料已存在：TRD000001');
+      expect(prisma.material.create).not.toHaveBeenCalled();
+    });
+
+    it('相同标准商品允许使用不同参考类型建立业务物料', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
+      prisma.material.findMany.mockResolvedValue([] as any);
+      prisma.material.create.mockResolvedValue({ ...mockMaterial, code: 'FGD000001', referenceType: 'FINISHED_GOODS' } as any);
+
+      const result = await service.createMaterial({
+        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉', referenceType: 'FINISHED_GOODS',
+        coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
+        coreSpecUnit: '%', packageType: '散装',
+      });
+      expect(result.code).toBe('FGD000001');
     });
 
     it('查询物料列表（分页）', async () => {
@@ -163,6 +249,41 @@ describe('MasterDataService', () => {
       await service.findAllMaterials({ categoryId: 'cat-1' });
       expect(prisma.material.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ categoryId: 'cat-1' }) }),
+      );
+    });
+
+    it('维护物料时不允许通过接口改写物料身份', async () => {
+      prisma.material.findUnique.mockResolvedValue({
+        ...mockMaterial, category: mockCategory, standardCommodity: mockStandard,
+      } as any);
+      prisma.material.update.mockResolvedValue({
+        ...mockMaterial, status: 'INACTIVE', category: mockCategory, standardCommodity: mockStandard,
+      } as any);
+
+      await service.updateMaterial('m-1', {
+        name: '不应生效的名称', categoryId: 'other-category', unit: '千克', status: 'INACTIVE',
+      } as any);
+
+      expect(prisma.material.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.not.objectContaining({
+          name: expect.anything(), categoryId: expect.anything(), unit: expect.anything(),
+        }),
+      }));
+    });
+  });
+
+  describe('标准商品规则', () => {
+    it('商品名称按品名、形态和核心规格拼接，不包含包装', () => {
+      expect(buildStandardCommodityName({
+        baseName: '萤石', commodityForm: '精粉', coreSpecName: 'CaF₂',
+        coreSpecOperator: '≥', coreSpecValue: '97', coreSpecUnit: '%', packageType: '1吨吨袋',
+      })).toBe('萤石精粉-CaF₂≥97%');
+    });
+
+    it('查重指纹忽略空格和大小写', () => {
+      const base = { categoryId: 'cat-1', baseName: ' Fluorite ', commodityForm: 'Powder', unit: '吨' };
+      expect(buildStandardCommodityFingerprint(base)).toBe(
+        buildStandardCommodityFingerprint({ ...base, baseName: 'fluorite', commodityForm: ' powder ' }),
       );
     });
   });

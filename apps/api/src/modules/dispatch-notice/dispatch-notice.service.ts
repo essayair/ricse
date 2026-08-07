@@ -81,6 +81,10 @@ export class DispatchNoticeService {
     const availability = await this.getOrderAvailability(dto.orderId, userId, 'execution.manage');
     const order = availability.order;
     const mode = dto.mode || 'STANDARD';
+    const originLocation = dto.originLocation?.trim();
+    const destinationLocation = dto.destinationLocation?.trim();
+    if (!originLocation) throw new BadRequestException('起运地点不能为空');
+    if (!destinationLocation) throw new BadRequestException('目的地点不能为空');
     if (order.type === 'SALES' && mode === 'STANDARD' && !dto.warehouseId) {
       throw new BadRequestException('销售常规出库必须选择发货仓库');
     }
@@ -117,8 +121,8 @@ export class DispatchNoticeService {
         mode,
         warehouseId: dto.warehouseId || null,
         plannedDate: dto.plannedDate ? new Date(dto.plannedDate) : null,
-        originLocation: dto.originLocation,
-        destinationLocation: dto.destinationLocation || order.deliveryLocation,
+        originLocation,
+        destinationLocation,
         totalQuantity: lines.reduce((sum, item) => sum + Number(item.quantity), 0),
         remarks: dto.remarks,
         createdBy: userId,

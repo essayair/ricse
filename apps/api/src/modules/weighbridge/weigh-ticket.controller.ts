@@ -34,6 +34,18 @@ export class WeighTicketController {
     return this.service.eligibleWaybills(userId);
   }
 
+  @Get('management-files')
+  @ApiOperation({ summary: '按物流运单汇总磅单信息列表' })
+  findManagementFiles(@CurrentUser('id') userId: string, @Query('status') status?: string, @Query('abnormal') abnormal?: string, @Query('search') search?: string) {
+    return this.service.findManagementFiles({ status, abnormal, search }, userId);
+  }
+
+  @Get('management-files/:waybillId')
+  @ApiOperation({ summary: '查看运单级磅单信息及其全部称重磅单' })
+  findManagementFile(@Param('waybillId') waybillId: string, @CurrentUser('id') userId: string) {
+    return this.service.findManagementFile(waybillId, userId);
+  }
+
   @Get('attachments/:id/view-url')
   async getAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
     const attachment = await this.service.findAttachmentById(id, userId);
@@ -42,7 +54,7 @@ export class WeighTicketController {
   }
 
   @Patch('waybills/:waybillId/selections/:purpose')
-  @ApiOperation({ summary: '选择运单的入出库或结算有效磅单' })
+  @ApiOperation({ summary: '兼容接口：统一选择运单的结算入库磅单' })
   selectWaybillWeight(
     @Param('waybillId') waybillId: string,
     @Param('purpose') purpose: string,
@@ -50,6 +62,16 @@ export class WeighTicketController {
     @CurrentUser('id') userId: string,
   ) {
     return this.service.selectForPurpose(waybillId, purpose, dto.weighTicketId, dto.reason, userId);
+  }
+
+  @Patch('waybills/:waybillId/effective-ticket')
+  @ApiOperation({ summary: '统一选择运单的结算入库磅单' })
+  selectEffectiveTicket(
+    @Param('waybillId') waybillId: string,
+    @Body() dto: SelectWaybillWeightDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.selectEffectiveTicket(waybillId, dto.weighTicketId, dto.reason, userId);
   }
 
   @Delete('attachments/:id')

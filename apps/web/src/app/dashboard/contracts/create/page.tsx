@@ -62,7 +62,7 @@ export default function ContractCreatePage() {
     signingPartnerId: '', departmentId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
-    pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '5', shortfallPct: '5',
+    pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: new Date().toISOString().split('T')[0], effectiveAt: '', expireAt: '',
     settlementMethod: 'DELIVERY', settlementBasis: 'WEIGHT',
@@ -132,7 +132,9 @@ export default function ContractCreatePage() {
     departmentId: form.departmentId || undefined,
     externalNo: form.externalNo || undefined,
     contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
-    pricingType: form.pricingType, overfillPct: Number(form.overfillPct) || undefined, shortfallPct: Number(form.shortfallPct) || undefined,
+    pricingType: form.pricingType,
+    overfillPct: form.overfillPct === '' ? undefined : Number(form.overfillPct),
+    shortfallPct: form.shortfallPct === '' ? undefined : Number(form.shortfallPct),
     deliveryMethod: form.deliveryMethod || undefined, deliveryLocation: form.deliveryLocation || undefined,
     signedAt: form.signedAt, effectiveAt: form.effectiveAt || undefined, expireAt: form.expireAt || undefined,
     settlementMethod: form.settlementMethod, settlementBasis: form.settlementBasis,
@@ -277,7 +279,9 @@ export default function ContractCreatePage() {
               </select>
               <span className="text-xs text-muted-foreground">默认带入当前发起人员工档案中的所属部门，可按实际业务调整；同时用于匹配按部门配置的审批节点</span>
             </FormField>
-            <FormField label="外部合同号"><Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="对手方合同号，方便对账" /></FormField>
+            <FormField label="外部合同号">
+              <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
+            </FormField>
           </div>
 
           <SectionTitle>交易对手方</SectionTitle>
@@ -345,8 +349,8 @@ export default function ContractCreatePage() {
               </select>
             </FormField>
             <FormField label="单价（元/吨）"><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
-            <FormField label="溢装比例(%)"><Input type="number" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} /></FormField>
-            <FormField label="短装比例(%)"><Input type="number" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} /></FormField>
+            <FormField label="溢装比例(%)"><Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} /></FormField>
+            <FormField label="短装比例(%)"><Input type="number" min="0" max="100" step="0.01" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} /></FormField>
           </div>
           {form.type === 'BILATERAL' && (
             <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">

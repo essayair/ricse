@@ -54,7 +54,7 @@ function Breadcrumbs() {
     outbound: '出库单管理',
     'inventory-reversals': '库存冲销',
     weighbridge: '磅单管理',
-    quality: '质检单管理',
+    quality: '到货质检任务',
     monitor: '监控录像',
     'master-data': '主数据管理',
     'material-categories': '物料分类管理',
@@ -85,6 +85,8 @@ function Breadcrumbs() {
             ? '物流出库单详情'
           : isDynamicId && previous === 'inventory-reversals'
             ? '库存冲销单详情'
+          : isDynamicId && previous === 'quality'
+            ? '到货质检任务详情'
         : labels[seg] || seg;
     return { label, href: `/${segments.slice(0, index + 2).join('/')}` };
   });

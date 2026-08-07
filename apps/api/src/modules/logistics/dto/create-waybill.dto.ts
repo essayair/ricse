@@ -19,6 +19,7 @@ export class CreateWaybillDto {
   freightMode?: string;
 
   @IsOptional() @IsString() vehicleId?: string;
+  @IsOptional() @IsString() driverId?: string;
   @IsOptional() @IsString() carrierPartnerId?: string;
   @IsOptional() @IsString() carrierName?: string;
   @IsOptional() @IsString() plateNo?: string;

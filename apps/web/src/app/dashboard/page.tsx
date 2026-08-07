@@ -71,7 +71,7 @@ export default function DashboardPage() {
     { label: '执行批次', value: m.activeOrders, suffix: '个执行中', href: '/dashboard/orders', permission: data.permissions.execution, icon: ClipboardList, color: 'blue' as const },
     { label: '物流运输', value: m.inTransitVehicles, suffix: '车在途', href: '/dashboard/waybills', permission: data.permissions.logistics, icon: Truck, color: 'amber' as const },
     { label: '过磅称重', value: m.todayWeighTickets, suffix: '张今日磅单', href: '/dashboard/weighbridge', permission: data.permissions.quality, icon: Scale, color: 'green' as const },
-    { label: '质检化验', value: m.pendingQualityInspections, suffix: '张待完成', href: '/dashboard/quality', permission: data.permissions.quality, icon: FlaskConical, color: 'purple' as const },
+    { label: '到货质检', value: m.pendingQualityInspections, suffix: '项待处理', href: '/dashboard/quality', permission: data.permissions.quality, icon: FlaskConical, color: 'purple' as const },
     { label: '入库作业', value: m.pendingInboundReceipts, suffix: '单待入账', href: '/dashboard/inbound', permission: data.permissions.inventory, icon: Warehouse, color: 'green' as const },
     { label: '出库作业', value: m.pendingOutboundOrders, suffix: '单待完成', href: '/dashboard/outbound', permission: data.permissions.inventory, icon: Package, color: 'amber' as const },
   ];
@@ -79,7 +79,7 @@ export default function DashboardPage() {
     { name: '采销管理', desc: '合同 / 执行批次 / 执行通知', href: '/dashboard/contracts', icon: FileText, color: 'blue' as const, permission: data.permissions.contracts, stats: [['执行中合同', m.activeContracts], ['待审批合同', m.pendingApprovalContracts]] },
     { name: '物流管理', desc: '通知 / 调度 / 运单', href: '/dashboard/waybills', icon: Truck, color: 'amber' as const, permission: data.permissions.logistics, stats: [['当前在途', m.inTransitVehicles], ['超时运单', m.overdueWaybills]] },
     { name: '库存管理', desc: '库存主体 / 仓库 / 批次', href: '/dashboard/inventory', icon: Box, color: 'green' as const, permission: data.permissions.inventory, stats: [['账面库存(吨)', decimal(m.inventoryPhysicalQuantity)], ['有效批次', m.inventoryLotCount]] },
-    { name: '质检化验', desc: '多机构检测 / 报告 / 熔断', href: '/dashboard/quality', icon: FlaskConical, color: 'purple' as const, permission: data.permissions.quality, stats: [['待完成', m.pendingQualityInspections], ['熔断质检', m.fuseQualityInspections]] },
+    { name: '到货质检', desc: '任务 / 多机构报告 / 最终判定', href: '/dashboard/quality', icon: FlaskConical, color: 'purple' as const, permission: data.permissions.quality, stats: [['待处理', m.pendingQualityInspections], ['熔断任务', m.fuseQualityInspections]] },
     { name: '地磅管理', desc: '称重 / 复磅 / 偏差复核', href: '/dashboard/weighbridge', icon: Scale, color: 'blue' as const, permission: data.permissions.quality, stats: [['今日磅单', m.todayWeighTickets], ['偏差异常', m.abnormalWeighTickets]] },
     { name: '出入库作业', desc: '到货入库 / 销售出库', href: '/dashboard/inbound', icon: Warehouse, color: 'green' as const, permission: data.permissions.inventory, stats: [['待入库', m.pendingInboundReceipts], ['待出库', m.pendingOutboundOrders]] },
   ];

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, FileText, FlaskConical, Link2, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, FileText, FlaskConical, Link2, Plus, Scale, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { formatDateTimeToSecond } from '@/lib/date-time';
@@ -12,128 +12,148 @@ import { Card } from '@/components/ui/card';
 
 interface Indicator { id: string; name: string; operator: string; standardValue: string | null; upperValue: string | null; fuseValue: string | null; unit: string; measuredValue: string | null; result: string }
 interface Attachment { id: string; originalName: string; mimeType: string; size: number; category: string; createdAt: string }
-interface RelatedInspection { id: string; inspectionNo: string; institutionType: string; institutionName: string; reportNo: string; testedAt: string; status: string; conclusion: string }
-interface Inspection {
-  id: string; inspectionNo: string; status: string; conclusion: string; dataSource: string;
-  institutionType: string; institutionName: string; reportNo: string; testedAt: string;
-  sampledAt: string; samplerName: string; samplingMethod: string | null; sampleNo1: string | null; sampleNo2: string | null; sampleNo3: string | null;
-  materialName: string; materialSpec: string | null; supplierName: string | null; plateNo: string | null; baseWeight: string | null;
-  moistureDeductionWeight: string; impurityDeductionWeight: string; settlementWeight: string | null; deductionAmount: string;
-  fuseReason: string | null; resolution: string | null; resolvedAt: string | null; remarks: string | null;
-  confirmedAt: string | null; creator: { name: string }; confirmer: { name: string } | null; indicators: Indicator[]; attachments: Attachment[];
-  inboundReceipts: Array<{ id: string; receiptNo: string; status: string }>;
-  relatedInspections: RelatedInspection[];
-  weighTicket: { id: string; ticketNo: string; netWeight: string | null; settlementWeight: string | null; waybill: { id: string; waybillNo: string; dispatchNotice: { noticeNo: string; order: { id: string; name: string; orderNo: string; contract: { contractNo: string; title: string } } } } };
+interface Report {
+  id: string; inspectionNo: string; status: string; conclusion: string; institutionType: string; institutionName: string;
+  reportNo: string; testedAt: string; sampleNo: string | null; sampledAt: string; samplerName: string;
+  baseWeight: string | null; moistureDeductionWeight: string; impurityDeductionWeight: string; settlementWeight: string | null;
+  deductionAmount: string; remarks: string | null; indicators: Indicator[]; attachments: Attachment[];
+  creator: { name: string }; confirmer: { name: string } | null; confirmedAt: string | null;
+  weighTicket: { id: string; ticketNo: string; status: string };
+}
+interface Task {
+  id: string; taskNo: string; status: string; plannedReportCount: number; sampledAt: string | null; samplerName: string | null;
+  samplingMethod: string | null; finalConclusion: string; finalizedReportCount: number; decisionReason: string | null;
+  decisionVersion: number; decidedAt: string | null; createdAt: string; handler: { name: string } | null; decider: { name: string } | null;
+  basisInspection: { id: string; inspectionNo: string; institutionName: string; reportNo: string } | null;
+  reports: Report[];
+  waybill: {
+    id: string; waybillNo: string; status: string; plateNo: string | null; driverName: string | null; arrivedAt: string | null;
+    lineItems: Array<{ materialName: string | null; quantity: string; unit: string }>;
+    weighTickets: Array<{ id: string; ticketNo: string; status: string; weighingStage: string; sequence: number; netWeight: string | null; settlementWeight: string | null }>;
+    weightSelections: Array<{ purpose: string; weighTicketId: string; quantity: string }>;
+    inboundReceipts: Array<{ id: string; receiptNo: string; status: string; qualityInspectionId: string | null }>;
+    dispatchNotice: { type: string; noticeNo: string; warehouse: { name: string } | null; order: { id: string; name: string; orderNo: string; contract: { contractNo: string; title: string; seller: { name: string } | null; buyer: { name: string } | null; signingPartner: { name: string } | null } } };
+  };
 }
 
-const STATUS: Record<string, string> = { DRAFT: '草稿', TESTING: '化验中', REPORTED: '已出报告', CONFIRMED: '已确认', VOIDED: '已作废' };
-const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '质检合格', DEDUCTION: '不合格（超标扣款）', FUSE: '质检熔断' };
-const SOURCE: Record<string, string> = { MANUAL: '人工录入', DEVICE: '设备采集', OCR: '附件识别' };
-const INSTITUTION: Record<string, string> = { OUR: '我方检测机构', PARTNER: '合作方检测机构', THIRD_PARTY: '第三方检测机构', OTHER: '其他检测机构' };
-const CATEGORY: Record<string, string> = { REPORT: '检测报告', OUR_REPORT: '检测报告', PARTNER_REPORT: '检测报告', THIRD_REPORT: '检测报告', SAMPLE_PHOTO: '取样照片', OTHER: '其他附件' };
-const UPLOAD_CATEGORY = { REPORT: '检测报告', SAMPLE_PHOTO: '取样照片', OTHER: '其他附件' };
+const TASK_STATUS: Record<string, string> = { PENDING_SAMPLING: '待取样', INSPECTING: '检测中', PENDING_DECISION: '待综合判定', COMPLETED: '已完成', RECHECK_REQUIRED: '待复判', VOIDED: '已作废' };
+const REPORT_STATUS: Record<string, string> = { DRAFT: '草稿', TESTING: '化验中', REPORTED: '已出报告', CONFIRMED: '已确认', VOIDED: '已作废' };
+const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '熔断' };
+const INSTITUTION: Record<string, string> = { OUR: '我方', PARTNER: '合作方', THIRD_PARTY: '第三方', OTHER: '其他' };
 const OPERATOR: Record<string, string> = { GTE: '≥', LTE: '≤', EQ: '=', RANGE: '范围' };
 
-export default function QualityInspectionDetailPage() {
+export default function QualityTaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [item, setItem] = useState<Inspection | null>(null);
+  const [item, setItem] = useState<Task | null>(null);
+  const [basisInspectionId, setBasisInspectionId] = useState('');
+  const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
-  const [uploadCategory, setUploadCategory] = useState('REPORT');
 
   const load = useCallback(async () => {
-    try { setItem(await api.get(`/quality-inspections/${id}`)); }
-    catch (error: any) { alert(error.message || '质检单加载失败'); router.push('/dashboard/quality'); }
+    try {
+      const task = await api.get<Task>(`/quality-tasks/${id}`);
+      setItem(task);
+      if (task.basisInspection?.id) setBasisInspectionId(task.basisInspection.id);
+    } catch (error: any) { alert(error.message || '到货质检任务加载失败'); router.push('/dashboard/quality'); }
   }, [id, router]);
   useEffect(() => { void load(); }, [load]);
 
-  const transition = async (status: string) => {
+  const confirmed = useMemo(() => item?.reports.filter(report => report.status === 'CONFIRMED') || [], [item]);
+  const selectedBasis = confirmed.find(report => report.id === basisInspectionId);
+  const eligibleTicket = item?.waybill.weighTickets.find(ticket => ['COMPLETED', 'REVIEWED'].includes(ticket.status));
+
+  const confirmReport = async (report: Report) => {
     let resolution: string | undefined;
-    if (status === 'CONFIRMED' && item?.conclusion === 'FUSE') {
-      resolution = prompt('请输入熔断处理方案（折价、退货或第三方复检等）')?.trim();
+    if (report.conclusion === 'FUSE') {
+      resolution = prompt('该报告触发熔断，请填写处理方案')?.trim();
       if (!resolution) return;
     }
-    if (!confirm(`确定将质检单更新为“${STATUS[status]}”？`)) return;
+    if (!confirm(`确认检测机构【${report.institutionName}】的报告 ${report.reportNo} 有效？`)) return;
     setSaving(true);
-    try { setItem(await api.patch(`/quality-inspections/${id}/status`, { status, resolution })); }
-    catch (error: any) { alert(error.message || '状态更新失败'); }
+    try { await api.patch(`/quality-inspections/${report.id}/status`, { status: 'CONFIRMED', resolution }); await load(); }
+    catch (error: any) { alert(error.message || '检测报告确认失败'); }
     finally { setSaving(false); }
   };
 
-  const upload = async (files: FileList | null) => {
-    if (!files?.length) return;
-    const selected = Array.from(files);
-    const invalid = selected.find(file => {
-      const extension = file.name.toLowerCase().split('.').pop() || '';
-      return !['jpg', 'jpeg', 'png', 'webp', 'pdf'].includes(extension) || !file.size || file.size > 20 * 1024 * 1024;
-    });
-    if (invalid) return alert(`${invalid.name} 无法上传：仅支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB`);
+  const finalize = async () => {
+    if (!item || !selectedBasis) return alert('请先选择一份已确认报告作为执行口径');
+    const partial = confirmed.length < item.plannedReportCount;
+    if (partial && !reason.trim()) return alert('有效报告少于计划数量，请填写提前判定原因');
+    let message = `本次将依据 ${confirmed.length} 份有效检测报告形成最终结论“${CONCLUSION[selectedBasis.conclusion]}”，并以【${selectedBasis.institutionName} / ${selectedBasis.reportNo}】作为入库和结算执行口径。确认后将影响后续业务，是否继续？`;
+    if (confirmed.length === 1) message = `当前仅有 1 份有效检测报告。确认后，该报告将单独作为本到货批次最终质检依据并影响入库及结算。请确认已核实合同约定、报告真实性和业务风险。是否继续？`;
+    if (selectedBasis.conclusion === 'FUSE') message = `本次最终判定为“熔断”。确认后将阻止货物入库并触发异常处置，请再次核对检测报告。是否继续？`;
+    if (!confirm(message)) return;
     setSaving(true);
     try {
-      for (const file of selected) {
-        const body = new FormData(); body.append('file', file); body.append('category', uploadCategory);
-        await api.upload(`/quality-inspections/${id}/attachments`, body);
-      }
+      await api.patch(`/quality-tasks/${item.id}/finalize`, { conclusion: selectedBasis.conclusion, basisInspectionId: selectedBasis.id, reason: reason.trim() || undefined });
       await load();
-    } catch (error: any) { alert(error.message || '附件上传失败'); }
+    } catch (error: any) { alert(error.message || '最终质检结论确认失败'); }
     finally { setSaving(false); }
   };
+
+  const uploadReportAttachment = async (reportId: string, files: FileList | null) => {
+    if (!files?.length) return;
+    setSaving(true);
+    try {
+      for (const file of Array.from(files)) {
+        const body = new FormData(); body.append('file', file); body.append('category', 'REPORT');
+        await api.upload(`/quality-inspections/${reportId}/attachments`, body);
+      }
+      await load();
+    } catch (error: any) { alert(error.message || '检测报告附件上传失败'); }
+    finally { setSaving(false); }
+  };
+
   const viewAttachment = async (attachmentId: string) => {
     try { await openStoredAttachment(`/quality-inspections/attachments/${attachmentId}/view-url`); }
     catch (error: any) { alert(error.message || '附件打开失败'); }
   };
-  const removeAttachment = async (attachmentId: string) => {
-    if (!confirm('确定删除此附件？')) return;
-    try { await api.delete(`/quality-inspections/attachments/${attachmentId}`); await load(); }
-    catch (error: any) { alert(error.message || '附件删除失败'); }
-  };
 
   if (!item) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
-  const editable = !['CONFIRMED', 'VOIDED'].includes(item.status);
+  const materialNames = item.waybill.lineItems.map(line => line.materialName).filter(Boolean).join('、') || '-';
+  const businessParty = item.waybill.dispatchNotice.type === 'PURCHASE' ? item.waybill.dispatchNotice.order.contract.seller?.name : item.waybill.dispatchNotice.order.contract.buyer?.name;
 
   return <div className="space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{item.inspectionNo}</h1><Badge variant="outline">{STATUS[item.status]}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{item.materialName} · {item.plateNo || '无车牌'} · 创建人 {item.creator.name}</p></div></div><div className="flex gap-2">{item.status === 'REPORTED' && <Button disabled={saving} onClick={() => void transition('CONFIRMED')}>确认质检结论</Button>}{editable && <Button variant="destructive" disabled={saving} onClick={() => void transition('VOIDED')}>作废</Button>}</div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{item.taskNo}</h1><Badge variant="outline">{TASK_STATUS[item.status] || item.status}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{materialNames} · {item.waybill.plateNo || '无车牌'} · {item.reports.length} 份机构检测报告</p></div></div>
+      <Button disabled={!eligibleTicket || item.status === 'VOIDED'} onClick={() => router.push(`/dashboard/quality/create?taskId=${item.id}&weighTicketId=${eligibleTicket?.id || ''}`)}><Plus className="mr-1 h-4 w-4" />追加检测报告</Button>
+    </div>
 
-    <Card className={`flex items-start gap-4 border-l-4 p-5 ${item.conclusion === 'FUSE' ? 'border-l-destructive bg-destructive/5' : item.conclusion === 'PASS' ? 'border-l-primary bg-primary/5' : 'border-l-amber-500 bg-amber-50/50'}`}>
-      {item.conclusion === 'PASS' ? <CheckCircle2 className="mt-1 h-7 w-7 text-primary" /> : <AlertTriangle className="mt-1 h-7 w-7 text-destructive" />}
-      <div><div className="text-lg font-semibold">{CONCLUSION[item.conclusion]}</div><div className="mt-1 text-sm text-muted-foreground">{item.conclusion === 'PASS' ? '本检测机构报告的全部指标符合质量标准，可以作为入库依据。' : item.conclusion === 'DEDUCTION' ? '本检测机构报告存在超标指标，可记录扣款依据，但不能直接入库。' : item.conclusion === 'FUSE' ? item.fuseReason || '本检测机构报告达到拒收红线，后续业务已暂停。' : '等待补充检测数据，暂不能入库。'}</div></div>
+    <Card className={`flex items-start gap-4 border-l-4 p-5 ${item.finalConclusion === 'FUSE' ? 'border-l-destructive bg-destructive/5' : item.finalConclusion === 'PASS' ? 'border-l-primary bg-primary/5' : 'border-l-amber-500 bg-amber-50/50'}`}>
+      {item.finalConclusion === 'PASS' ? <CheckCircle2 className="mt-1 h-7 w-7 text-primary" /> : <AlertTriangle className="mt-1 h-7 w-7 text-amber-600" />}
+      <div><div className="text-lg font-semibold">最终质检结论：{CONCLUSION[item.finalConclusion]}</div><div className="mt-1 text-sm text-muted-foreground">{item.status === 'COMPLETED' ? `已归集 ${item.finalizedReportCount} 份有效报告，判定版本 V${item.decisionVersion}。` : `计划 ${item.plannedReportCount} 份，当前已录入 ${item.reports.length} 份、已确认 ${confirmed.length} 份。至少一份有效报告即可发起最终判定。`}</div></div>
     </Card>
 
-    {item.inboundReceipts?.length > 0 && (
-      <Card className="flex flex-wrap items-center justify-between gap-3 border-primary/30 bg-primary/5 p-4">
-        <div>
-          <div className="font-semibold">已关联入库作业单</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {item.inboundReceipts[0].receiptNo} · {item.inboundReceipts[0].status === 'PENDING' ? '作业中' : item.inboundReceipts[0].status}
-          </div>
-        </div>
-        <Button variant="outline" onClick={() => router.push(`/dashboard/inbound/${item.inboundReceipts[0].id}`)}>查看入库单</Button>
-      </Card>
-    )}
-
     <div className="grid gap-6 lg:grid-cols-2">
-      <Card className="p-5"><Title>基本与关联信息</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="取样时间" value={formatDateTimeToSecond(item.sampledAt)} /><Info label="取样人" value={item.samplerName} /><Info label="取样方法" value={item.samplingMethod || '-'} /><Info label="数据来源" value={SOURCE[item.dataSource] || item.dataSource} /><Info label="物料/规格" value={`${item.materialName}${item.materialSpec ? ` / ${item.materialSpec}` : ''}`} /><Info label="供应商" value={item.supplierName || '-'} /><Info label="车牌号" value={item.plateNo || '-'} /><Info label="留样编号" value={[item.sampleNo1, item.sampleNo2, item.sampleNo3].filter(Boolean).join(' / ') || '-'} /></div><div className="mt-5 grid gap-2 border-t pt-4 sm:grid-cols-2"><BusinessLink label="合同" value={`${item.weighTicket.waybill.dispatchNotice.order.contract.contractNo} · ${item.weighTicket.waybill.dispatchNotice.order.contract.title}`} /><BusinessLink label="执行批次" value={`${item.weighTicket.waybill.dispatchNotice.order.name} · ${item.weighTicket.waybill.dispatchNotice.order.orderNo}`} href={`/dashboard/orders/${item.weighTicket.waybill.dispatchNotice.order.id}`} /><BusinessLink label="物流运单" value={item.weighTicket.waybill.waybillNo} href={`/dashboard/waybills/${item.weighTicket.waybill.id}`} /><BusinessLink label="磅单" value={item.weighTicket.ticketNo} href={`/dashboard/weighbridge/${item.weighTicket.id}`} /></div></Card>
-      <Card className="p-5"><Title>检测机构与报告</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="机构类型" value={INSTITUTION[item.institutionType] || item.institutionType} /><Info label="检测机构" value={item.institutionName} /><Info label="报告编号" value={item.reportNo} /><Info label="检测时间" value={formatDateTimeToSecond(item.testedAt)} /></div><div className="mt-4 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">本质检单仅对应上述一个检测机构。同车其他机构报告在下方独立列示。</div></Card>
+      <Card className="p-5"><Title>到货与任务信息</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="物流运单" value={item.waybill.waybillNo} /><Info label="到货时间" value={formatDateTimeToSecond(item.waybill.arrivedAt)} /><Info label="车牌号" value={item.waybill.plateNo || '-'} /><Info label="业务单位" value={businessParty || '-'} /><Info label="物料" value={materialNames} /><Info label="目标仓库" value={item.waybill.dispatchNotice.warehouse?.name || '-'} /><Info label="取样人" value={item.samplerName || '待处理'} /><Info label="取样时间" value={formatDateTimeToSecond(item.sampledAt)} /><Info label="取样方法" value={item.samplingMethod || '-'} /><Info label="当前处理人" value={item.handler?.name || '质检管理人员均可处理'} /></div></Card>
+      <Card className="p-5"><Title>上游关联单据</Title><div className="grid gap-4 sm:grid-cols-2"><BusinessLink label="合同" value={`${item.waybill.dispatchNotice.order.contract.contractNo} · ${item.waybill.dispatchNotice.order.contract.title}`} /><BusinessLink label="执行批次" value={`${item.waybill.dispatchNotice.order.name} · ${item.waybill.dispatchNotice.order.orderNo}`} href={`/dashboard/orders/${item.waybill.dispatchNotice.order.id}`} /><BusinessLink label="物流运单" value={item.waybill.waybillNo} href={`/dashboard/waybills/${item.waybill.id}`} /><Info label="磅单进度" value={`${item.waybill.weighTickets.length} 张，已复核 ${item.waybill.weighTickets.filter(ticket => ticket.status === 'REVIEWED').length} 张`} /></div>{item.waybill.inboundReceipts[0] && <Button className="mt-5" variant="outline" onClick={() => router.push(`/dashboard/inbound/${item.waybill.inboundReceipts[0].id}`)}>查看入库作业单 {item.waybill.inboundReceipts[0].receiptNo}</Button>}</Card>
     </div>
 
-    <Card className="overflow-hidden"><div className="p-5 pb-3"><Title>检测指标</Title></div><div className="overflow-x-auto"><table className="min-w-[760px] w-full text-sm"><thead className="border-y bg-muted/50 text-left text-muted-foreground"><tr><th className="px-4 py-3">指标</th><th className="px-4 py-3">质量标准</th><th className="px-4 py-3">熔断线</th><th className="px-4 py-3">检测结果</th><th className="px-4 py-3">判定</th></tr></thead><tbody>{item.indicators.map(indicator => <tr key={indicator.id} className="border-b"><td className="px-4 py-3 font-medium">{indicator.name}</td><td className="px-4 py-3">{standard(indicator)}</td><td className="px-4 py-3">{indicator.fuseValue === null ? '-' : `${OPERATOR[indicator.operator]} ${number(indicator.fuseValue)} ${indicator.unit}`}</td><td className="px-4 py-3 font-medium text-primary">{measure(indicator.measuredValue, indicator.unit)}</td><td className="px-4 py-3"><Badge variant={indicator.result === 'FUSE' ? 'destructive' : indicator.result === 'PASS' ? 'default' : 'secondary'}>{indicator.result === 'PASS' ? '合格' : indicator.result === 'FAIL' ? '超标' : indicator.result === 'FUSE' ? '熔断' : '待判定'}</Badge></td></tr>)}</tbody></table></div></Card>
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="font-semibold">机构检测报告</h2><p className="mt-1 text-xs text-muted-foreground">每份报告对应一个样品和一家检测机构，可继续追加。</p></div><Badge variant="secondary">{item.reports.length} / 计划 {item.plannedReportCount}</Badge></div>
+      {!item.reports.length ? <div className="border-t p-12 text-center text-muted-foreground"><FlaskConical className="mx-auto mb-2 h-8 w-8 opacity-40" />尚未录入检测报告<br /><span className="text-xs">完成磅单称重后可从右上角追加第一份报告。</span></div> : <div className="space-y-5 border-t p-5">{item.reports.map((report, index) => {
+        const editable = !['CONFIRMED', 'VOIDED'].includes(report.status);
+        return <Card key={report.id} className={`overflow-hidden ${report.id === basisInspectionId ? 'ring-2 ring-primary/30' : ''}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/30 p-4"><div className="flex items-start gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{index + 1}</div><div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{report.institutionName}</span><Badge variant="outline">{INSTITUTION[report.institutionType] || report.institutionType}</Badge><Badge variant={report.conclusion === 'FUSE' ? 'destructive' : report.conclusion === 'PASS' ? 'default' : 'secondary'}>{CONCLUSION[report.conclusion]}</Badge></div><div className="mt-1 font-mono text-xs text-muted-foreground">{report.inspectionNo} · 报告 {report.reportNo} · 样品 {report.sampleNo || '-'}</div></div></div><div className="flex items-center gap-2"><Badge variant="secondary">{REPORT_STATUS[report.status]}</Badge>{report.status === 'REPORTED' && <Button size="sm" disabled={saving} onClick={() => void confirmReport(report)}>确认报告有效</Button>}</div></div>
+          <div className="grid gap-5 p-4 lg:grid-cols-[1.5fr_1fr]">
+            <div><div className="grid gap-3 sm:grid-cols-4"><Info label="检测时间" value={formatDateTimeToSecond(report.testedAt)} /><Info label="取样人" value={report.samplerName} /><Info label="关联磅单" value={report.weighTicket.ticketNo} /><Info label="录入人" value={report.creator.name} /></div><div className="mt-4 overflow-x-auto"><table className="min-w-[640px] w-full text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-3 py-2">指标</th><th className="px-3 py-2">标准</th><th className="px-3 py-2">检测值</th><th className="px-3 py-2">判定</th></tr></thead><tbody>{report.indicators.map(indicator => <tr key={indicator.id} className="border-b"><td className="px-3 py-2 font-medium">{indicator.name}</td><td className="px-3 py-2">{qualityStandard(indicator)}</td><td className="px-3 py-2 text-primary">{measure(indicator.measuredValue, indicator.unit)}</td><td className="px-3 py-2">{indicator.result === 'PASS' ? '合格' : indicator.result === 'FAIL' ? '超标' : indicator.result === 'FUSE' ? '熔断' : '待判定'}</td></tr>)}</tbody></table></div></div>
+            <div className="space-y-3"><div className="flex items-center justify-between"><span className="text-sm font-medium">检测报告附件</span>{editable && <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-2 text-xs text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={saving} onChange={event => { void uploadReportAttachment(report.id, event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-3.5 w-3.5" />上传</label>}</div>{report.attachments.length ? report.attachments.map(attachment => <button key={attachment.id} className="flex w-full items-center gap-2 rounded-md border p-2 text-left hover:bg-muted" onClick={() => void viewAttachment(attachment.id)}><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></button>) : <div className="rounded-md border border-dashed p-5 text-center text-xs text-muted-foreground">暂无检测报告附件</div>}<div className="rounded-md bg-muted/40 p-3 text-xs"><div className="flex justify-between"><span>基准重量</span><b>{weight(report.baseWeight)}</b></div><div className="mt-2 flex justify-between"><span>质检后重量</span><b>{weight(report.settlementWeight)}</b></div><div className="mt-2 flex justify-between"><span>预计扣款</span><b>¥{Number(report.deductionAmount).toLocaleString()}</b></div></div></div>
+          </div>
+        </Card>;
+      })}</div>}
+    </Card>
 
-    <Card className="overflow-hidden"><div className="flex items-center justify-between p-5 pb-3"><Title>同车其他质检单</Title><Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/quality/create?weighTicketId=${item.weighTicket.id}`)}>新增机构质检单</Button></div>{item.relatedInspections.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="border-y bg-muted/50 text-left text-muted-foreground"><tr><th className="px-4 py-3">质检单号</th><th className="px-4 py-3">机构类型</th><th className="px-4 py-3">检测机构</th><th className="px-4 py-3">报告编号</th><th className="px-4 py-3">检测时间</th><th className="px-4 py-3">结论 / 状态</th></tr></thead><tbody>{item.relatedInspections.map(related => <tr key={related.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/quality/${related.id}`)}><td className="px-4 py-3 font-mono text-primary">{related.inspectionNo}</td><td className="px-4 py-3">{INSTITUTION[related.institutionType] || related.institutionType}</td><td className="px-4 py-3">{related.institutionName}</td><td className="px-4 py-3 font-mono text-xs">{related.reportNo}</td><td className="px-4 py-3">{formatDateTimeToSecond(related.testedAt)}</td><td className="px-4 py-3"><Badge variant={related.conclusion === 'FUSE' ? 'destructive' : 'secondary'}>{CONCLUSION[related.conclusion] || related.conclusion}</Badge><span className="ml-2 text-xs text-muted-foreground">{STATUS[related.status] || related.status}</span></td></tr>)}</tbody></table></div> : <div className="border-t p-8 text-center text-sm text-muted-foreground">该车辆暂无其他检测机构的质检单</div>}</Card>
+    {confirmed.length > 0 && item.status !== 'VOIDED' && <Card className="space-y-4 p-5"><div><h2 className="font-semibold">形成最终质检结论</h2><p className="mt-1 text-sm text-muted-foreground">选择一份已确认报告作为入库、扣重和结算执行口径；系统同时留存本次参与判定的全部有效报告。</p></div><div className="grid gap-2">{confirmed.map(report => <label key={report.id} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 ${basisInspectionId === report.id ? 'border-primary bg-primary/5' : ''}`}><input type="radio" name="basis" checked={basisInspectionId === report.id} onChange={() => setBasisInspectionId(report.id)} /><div className="min-w-0 flex-1"><div className="font-medium">{report.institutionName} · {report.reportNo}</div><div className="text-xs text-muted-foreground">{report.inspectionNo} · {CONCLUSION[report.conclusion]} · 质检后重量 {weight(report.settlementWeight)}</div></div></label>)}</div>{confirmed.length < item.plannedReportCount && <div><label className="mb-1 block text-sm font-medium">提前判定原因 *</label><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={reason} onChange={event => setReason(event.target.value)} placeholder={`计划 ${item.plannedReportCount} 份，当前仅有 ${confirmed.length} 份有效报告，请填写采用现有报告判定的原因`} /></div>}<div className="flex justify-end"><Button disabled={saving || !basisInspectionId} onClick={() => void finalize()}>{item.status === 'COMPLETED' ? '重新形成结论' : '确认形成最终结论'}</Button></div></Card>}
 
-    <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
-      <Card className="p-5"><Title>扣水扣杂与结算</Title><div className="space-y-3"><AmountRow label="磅单结算重量" value={weight(item.baseWeight)} /><AmountRow label="扣水数量" value={`-${weight(item.moistureDeductionWeight)}`} danger /><AmountRow label="扣杂数量" value={`-${weight(item.impurityDeductionWeight)}`} danger /><AmountRow label="质检后结算重量" value={weight(item.settlementWeight)} primary /><AmountRow label="预计扣款" value={`¥${Number(item.deductionAmount).toLocaleString()}`} danger /></div></Card>
-      <Card className="p-5"><div className="flex flex-wrap items-center justify-between gap-3"><Title>质检附件</Title>{editable && <div className="flex gap-2"><select className="h-9 rounded-md border bg-background px-2 text-sm" value={uploadCategory} onChange={event => setUploadCategory(event.target.value)}>{Object.entries(UPLOAD_CATEGORY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="inline-flex h-9 cursor-pointer items-center rounded-md bg-primary px-3 text-sm text-primary-foreground"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={saving} onChange={event => { void upload(event.currentTarget.files); event.currentTarget.value = ''; }} /><FileText className="mr-1 h-4 w-4" />上传</label></div>}</div>{item.attachments.length ? <div className="mt-3 space-y-2">{item.attachments.map(attachment => <div key={attachment.id} className="flex items-center gap-3 rounded-md border p-3"><Badge variant="outline">{CATEGORY[attachment.category] || attachment.category}</Badge><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{attachment.originalName}</div><div className="text-xs text-muted-foreground">{Math.max(1, Math.round(attachment.size / 1024))} KB · {formatDateTimeToSecond(attachment.createdAt)}</div></div><Button variant="ghost" size="sm" onClick={() => void viewAttachment(attachment.id)}><Eye className="mr-1 h-4 w-4" />查看</Button>{editable && <Button variant="ghost" size="icon" onClick={() => void removeAttachment(attachment.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}</div>)}</div> : <div className="mt-4 rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">暂无附件</div>}</Card>
-    </div>
-
-    {(item.remarks || item.resolution || item.confirmedAt) && <Card className="p-5"><Title>备注与处理记录</Title><div className="grid gap-4 sm:grid-cols-3"><Info label="备注" value={item.remarks || '-'} /><Info label="熔断处理方案" value={item.resolution || '-'} /><Info label="确认信息" value={item.confirmedAt ? `${item.confirmer?.name || '-'} · ${formatDateTimeToSecond(item.confirmedAt)}` : '-'} /></div></Card>}
+    {item.decidedAt && <Card className="p-5"><Title>最终判定记录</Title><div className="grid gap-4 sm:grid-cols-4"><Info label="最终结论" value={CONCLUSION[item.finalConclusion]} /><Info label="执行口径报告" value={item.basisInspection ? `${item.basisInspection.institutionName} · ${item.basisInspection.reportNo}` : '-'} /><Info label="判定人 / 时间" value={`${item.decider?.name || '-'} · ${formatDateTimeToSecond(item.decidedAt)}`} /><Info label="判定原因" value={item.decisionReason || '-'} /></div></Card>}
   </div>;
 }
 
 function Title({ children }: { children: React.ReactNode }) { return <h2 className="mb-4 flex items-center gap-2 font-semibold"><FlaskConical className="h-4 w-4 text-primary" />{children}</h2>; }
 function Info({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 break-words text-sm font-medium">{value}</div></div>; }
 function BusinessLink({ label, value, href }: { label: string; value: string; href?: string }) { const content = <><Link2 className="h-3.5 w-3.5" /><span className="truncate">{value}</span></>; return <div><div className="text-xs text-muted-foreground">{label}</div>{href ? <a className="mt-1 flex items-center gap-1 text-sm text-primary hover:underline" href={href}>{content}</a> : <div className="mt-1 flex items-center gap-1 text-sm">{content}</div>}</div>; }
-function AmountRow({ label, value, danger, primary }: { label: string; value: string; danger?: boolean; primary?: boolean }) { return <div className="flex items-center justify-between border-b pb-3 last:border-0"><span className="text-sm text-muted-foreground">{label}</span><span className={`font-semibold ${danger ? 'text-destructive' : primary ? 'text-primary' : ''}`}>{value}</span></div>; }
-function standard(item: Indicator) { if (item.standardValue === null) return '-'; return item.operator === 'RANGE' ? `${number(item.standardValue)}—${number(item.upperValue)} ${item.unit}` : `${OPERATOR[item.operator]} ${number(item.standardValue)} ${item.unit}`; }
-function measure(value: string | null, unit: string) { return value === null ? '-' : `${number(value)} ${unit}`; }
 function number(value: string | number | null) { return value === null ? '-' : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 }); }
 function weight(value: string | null) { return value === null ? '-' : `${number(value)} 吨`; }
+function measure(value: string | null, unit: string) { return value === null ? '-' : `${number(value)} ${unit}`; }
+function qualityStandard(item: Indicator) { if (item.standardValue === null) return '-'; return item.operator === 'RANGE' ? `${number(item.standardValue)}—${number(item.upperValue)} ${item.unit}` : `${OPERATOR[item.operator]} ${number(item.standardValue)} ${item.unit}`; }

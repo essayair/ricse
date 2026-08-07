@@ -4,10 +4,11 @@ import { CommonModule } from '../common/common.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { QualityInspectionController } from './quality-inspection.controller';
 import { QualityInspectionService } from './quality-inspection.service';
+import { QualityTaskController } from './quality-task.controller';
 
 @Module({
   imports: [CommonModule, AccessControlModule, InventoryModule],
-  controllers: [QualityInspectionController],
+  controllers: [QualityInspectionController, QualityTaskController],
   providers: [QualityInspectionService],
   exports: [QualityInspectionService],
 })

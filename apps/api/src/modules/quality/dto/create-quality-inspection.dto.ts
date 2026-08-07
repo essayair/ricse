@@ -16,10 +16,12 @@ export class QualityIndicatorDto {
 }
 
 export class CreateQualityInspectionDto {
+  @IsString() qualityTaskId: string;
   @IsString() weighTicketId: string;
   @IsDateString() sampledAt: string;
   @IsString() @MaxLength(100) samplerName: string;
   @IsOptional() @IsString() @MaxLength(100) samplingMethod?: string;
+  @IsOptional() @IsString() @MaxLength(100) sampleNo?: string;
   @IsOptional() @IsString() @MaxLength(100) sampleNo1?: string;
   @IsOptional() @IsString() @MaxLength(100) sampleNo2?: string;
   @IsOptional() @IsString() @MaxLength(100) sampleNo3?: string;

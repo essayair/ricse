@@ -477,7 +477,7 @@ export class OutboundService {
       where: { waybillId: waybill.id, purpose: 'INVENTORY', isCurrent: true },
     });
     if (currentWeightSelection && currentWeightSelection.weighTicketId !== ticket.id) {
-      throw new BadRequestException('所选磅单不是当前入出库有效磅单，请先在物流运单详情中变更选用依据');
+      throw new BadRequestException('所选磅单不是当前结算入库磅单，请先在磅单信息详情中变更选用依据');
     }
     if (!dto.operatorName.trim()) throw new BadRequestException('请填写出库操作人');
 
@@ -705,7 +705,7 @@ export class OutboundService {
       where: { waybillId: receipt.waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (!currentWeight || currentWeight.weighTicketId !== receipt.weighTicketId) {
-      throw new BadRequestException('出库作业关联磅单与当前入出库有效磅单不一致，不能扣减库存');
+      throw new BadRequestException('出库作业关联磅单与当前结算入库磅单不一致，不能扣减库存');
     }
     const allocated = receipt.allocations.reduce((sum, item) => sum + Number(item.quantity), 0);
     if (Math.abs(allocated - Number(receipt.outboundQuantity)) > 0.0005) {

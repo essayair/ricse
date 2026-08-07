@@ -77,8 +77,8 @@ export class WaybillController {
 
   @Patch(':id/assignment')
   assign(@Param('id') id: string, @Body() data: {
-    freightMode?: string; vehicleId?: string; carrierPartnerId?: string; carrierName?: string;
-    plateNo?: string; driverName?: string; driverPhone?: string;
+    freightMode?: string; vehicleId?: string | null; driverId?: string | null; carrierPartnerId?: string | null; carrierName?: string | null;
+    plateNo?: string | null; driverName?: string | null; driverPhone?: string | null;
     plannedDepartureAt?: string; plannedArrivalAt?: string;
   }, @CurrentUser('id') userId: string) {
     return this.service.assign(id, data, userId);

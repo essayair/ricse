@@ -106,7 +106,7 @@ export class CreateContractDto {
   @IsOptional() @IsString()
   departmentId?: string;
 
-  @ApiPropertyOptional({ description: '外部合同号' })
+  @ApiPropertyOptional({ description: '纸质合同或其他系统合同编号' })
   @IsOptional() @IsString()
   externalNo?: string;
 
@@ -128,11 +128,11 @@ export class CreateContractDto {
   @IsOptional() @IsString()
   pricingType?: string;
 
-  @ApiPropertyOptional({ description: '溢装比例' })
+  @ApiPropertyOptional({ description: '溢装比例（%）', default: 10 })
   @IsOptional() @IsNumber()
   overfillPct?: number;
 
-  @ApiPropertyOptional({ description: '短装比例' })
+  @ApiPropertyOptional({ description: '短装比例（%）', default: 10 })
   @IsOptional() @IsNumber()
   shortfallPct?: number;
 

@@ -356,6 +356,10 @@ export class AccessControlService {
     return { weighTicket: await this.getWeighTicketScope(userId) };
   }
 
+  async getQualityTaskScope(userId: string): Promise<Prisma.QualityTaskWhereInput> {
+    return { waybill: await this.getWaybillScope(userId) };
+  }
+
   async getInboundReceiptScope(userId: string): Promise<Prisma.InboundReceiptWhereInput> {
     return { waybill: await this.getWaybillScope(userId) };
   }

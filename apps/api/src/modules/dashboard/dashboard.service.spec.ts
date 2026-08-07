@@ -7,7 +7,7 @@ describe('DashboardService', () => {
     dispatchNotice: { count: jest.fn() },
     waybill: { count: jest.fn(), findMany: jest.fn() },
     weighTicket: { count: jest.fn(), findMany: jest.fn() },
-    qualityInspection: { count: jest.fn(), findMany: jest.fn() },
+    qualityTask: { count: jest.fn(), findMany: jest.fn() },
     inventoryLot: { aggregate: jest.fn(), count: jest.fn() },
     inboundReceipt: { count: jest.fn() },
     outboundOrder: { count: jest.fn() },
@@ -20,7 +20,7 @@ describe('DashboardService', () => {
     getDispatchNoticeScope: jest.fn().mockResolvedValue({}),
     getWaybillScope: jest.fn().mockResolvedValue({}),
     getWeighTicketScope: jest.fn().mockResolvedValue({}),
-    getQualityInspectionScope: jest.fn().mockResolvedValue({}),
+    getQualityTaskScope: jest.fn().mockResolvedValue({}),
     getInventoryLotScope: jest.fn().mockResolvedValue({}),
     getInboundReceiptScope: jest.fn().mockResolvedValue({}),
     getBusinessInboundScope: jest.fn().mockResolvedValue({}),
@@ -43,7 +43,7 @@ describe('DashboardService', () => {
     prisma.dispatchNotice.count.mockResolvedValueOnce(5);
     prisma.waybill.count.mockResolvedValueOnce(6).mockResolvedValueOnce(1);
     prisma.weighTicket.count.mockResolvedValueOnce(7).mockResolvedValueOnce(2);
-    prisma.qualityInspection.count.mockResolvedValueOnce(8).mockResolvedValueOnce(3);
+    prisma.qualityTask.count.mockResolvedValueOnce(8).mockResolvedValueOnce(3);
     prisma.inventoryLot.aggregate.mockResolvedValue({ _sum: { availableQuantity: 125.5 } });
     prisma.inventoryLot.count.mockResolvedValue(9);
     prisma.inboundReceipt.count.mockResolvedValue(10);

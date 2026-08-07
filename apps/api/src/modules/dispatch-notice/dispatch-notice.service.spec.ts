@@ -42,11 +42,18 @@ describe('DispatchNoticeService', () => {
     prisma.dispatchNotice.create.mockResolvedValue({ id: 'notice-1', noticeNo: 'PI-20260717-0001' } as any);
     const result = await service.create({
       orderId: order.id,
+      originLocation: '供应商装货地',
+      destinationLocation: '我方收货地',
       lineItems: [{ orderLineItemId: 'line-1', quantity: 3 }],
     }, 'user-1');
     expect(result.noticeNo).toBe('PI-20260717-0001');
     expect(prisma.dispatchNotice.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ type: 'PURCHASE', totalQuantity: 3 }),
+      data: expect.objectContaining({
+        type: 'PURCHASE',
+        totalQuantity: 3,
+        originLocation: '供应商装货地',
+        destinationLocation: '我方收货地',
+      }),
     }));
   });
 
@@ -55,7 +62,26 @@ describe('DispatchNoticeService', () => {
     await expect(service.create({
       orderId: order.id,
       mode: 'STANDARD',
+      originLocation: '我方发货地',
+      destinationLocation: '客户收货地',
       lineItems: [{ orderLineItemId: 'line-1', quantity: 3 }],
     }, 'user-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('起运地点或目的地点为空时拒绝创建', async () => {
+    prisma.order.findFirst.mockResolvedValue(order as any);
+    await expect(service.create({
+      orderId: order.id,
+      originLocation: ' ',
+      destinationLocation: '目的地',
+      lineItems: [{ orderLineItemId: 'line-1', quantity: 3 }],
+    }, 'user-1')).rejects.toThrow('起运地点不能为空');
+
+    await expect(service.create({
+      orderId: order.id,
+      originLocation: '起运地',
+      destinationLocation: '',
+      lineItems: [{ orderLineItemId: 'line-1', quantity: 3 }],
+    }, 'user-1')).rejects.toThrow('目的地点不能为空');
   });
 });

@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { OutboundService } from '../inventory/outbound.service';
+import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { CreateWaybillDto } from './dto/create-waybill.dto';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class WaybillService {
     private readonly accessControl: AccessControlService,
     private readonly inventoryService: InventoryService,
     private readonly outboundService: OutboundService,
+    private readonly qualityService: QualityInspectionService,
   ) {}
 
   private readonly include = {
@@ -27,6 +29,7 @@ export class WaybillService {
       },
     },
     vehicle: { select: { id: true, plateNo: true, driverName: true, driverPhone: true, loadCapacity: true } },
+    driver: { select: { id: true, name: true, phone: true, licenseNo: true, licenseClass: true } },
     carrierPartner: { select: { id: true, code: true, name: true, roles: true } },
     creator: { select: { id: true, name: true } },
     lineItems: { orderBy: { createdAt: 'asc' as const } },
@@ -50,6 +53,13 @@ export class WaybillService {
       orderBy: { selectedAt: 'desc' as const },
     },
     attachments: { orderBy: { createdAt: 'desc' as const } },
+    qualityTask: {
+      select: {
+        id: true, taskNo: true, status: true, finalConclusion: true,
+        plannedReportCount: true, finalizedReportCount: true,
+        _count: { select: { reports: true } },
+      },
+    },
     outboundReceipts: {
       where: { deletedAt: null, status: { not: 'CANCELLED' } },
       select: { id: true, receiptNo: true, status: true },
@@ -81,6 +91,46 @@ export class WaybillService {
     });
     if (!profile) throw new BadRequestException('所选物流承运商不存在、已停用或合作伙伴不具备供应商角色');
     return profile.partner;
+  }
+
+  private validateVehicleAssignment(vehicle: { ownerType: string; ownerId: string | null }, freightMode: string, carrier: { id: string } | null) {
+    if (freightMode === 'SELF' && vehicle.ownerType !== 'SELF') {
+      throw new BadRequestException('自有运力只能选择自有车辆');
+    }
+    if (freightMode === 'THIRD_PARTY') {
+      if (vehicle.ownerType !== 'OUTSOURCED') throw new BadRequestException('第三方承运只能选择外协车辆');
+      if (!carrier || vehicle.ownerId !== carrier.id) throw new BadRequestException('所选车辆不属于当前物流承运商');
+    }
+  }
+
+  private validateDriverAssignment(driver: {
+    serviceOrganization: { partnerId: string; partner: { isInternal: boolean } };
+  }, freightMode: string, carrier: { id: string } | null) {
+    if (freightMode === 'SELF' && !driver.serviceOrganization.partner.isInternal) {
+      throw new BadRequestException('自有运力只能选择内部物流服务商维护的司机');
+    }
+    if (freightMode === 'THIRD_PARTY' && (!carrier || driver.serviceOrganization.partnerId !== carrier.id)) {
+      throw new BadRequestException('所选司机不属于当前物流承运商');
+    }
+  }
+
+  private async findAvailableDriver(driverId: string) {
+    const driver = await this.prisma.driver.findFirst({
+      where: {
+        id: driverId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        serviceOrganization: {
+          organizationType: 'LOGISTICS_CARRIER',
+          status: 'ACTIVE',
+          deletedAt: null,
+          partner: { status: 'ACTIVE', deletedAt: null },
+        },
+      },
+      include: { serviceOrganization: { include: { partner: { select: { isInternal: true } } } } },
+    });
+    if (!driver) throw new BadRequestException('所选司机不存在或不可用');
+    return driver;
   }
 
   async getNoticeAvailability(dispatchNoticeId: string, userId: string, permission = 'logistics.view') {
@@ -120,7 +170,8 @@ export class WaybillService {
 
   async create(dto: CreateWaybillDto, userId: string) {
     const availability = await this.getNoticeAvailability(dto.dispatchNoticeId, userId, 'logistics.manage');
-    const carrier = await this.resolveCarrier(dto.freightMode, dto.carrierPartnerId);
+    const freightMode = dto.freightMode || 'SELF';
+    const carrier = await this.resolveCarrier(freightMode, dto.carrierPartnerId);
     if (!dto.lineItems.length) throw new BadRequestException('请至少填写一条运单明细');
     if (dto.plannedDepartureAt && dto.plannedArrivalAt
       && new Date(dto.plannedArrivalAt) <= new Date(dto.plannedDepartureAt)) {
@@ -132,6 +183,12 @@ export class WaybillService {
         where: { id: dto.vehicleId, status: 'ACTIVE', deletedAt: null },
       });
       if (!vehicle) throw new BadRequestException('所选车辆不存在或不可用');
+      this.validateVehicleAssignment(vehicle, freightMode, carrier);
+    }
+    let driver: any = null;
+    if (dto.driverId) {
+      driver = await this.findAvailableDriver(dto.driverId);
+      this.validateDriverAssignment(driver, freightMode, carrier);
     }
     const sources = new Map(availability.lineItems.map(item => [item.dispatchNoticeLineItemId, item]));
     const seen = new Set<string>();
@@ -155,13 +212,14 @@ export class WaybillService {
       data: {
         waybillNo: await this.generateNo(),
         dispatchNoticeId: notice.id,
-        freightMode: dto.freightMode || 'SELF',
+        freightMode,
         vehicleId: dto.vehicleId || null,
+        driverId: dto.driverId || null,
         carrierPartnerId: carrier?.id || null,
         carrierName: carrier?.name || null,
         plateNo: dto.plateNo || vehicle?.plateNo,
-        driverName: dto.driverName || vehicle?.driverName,
-        driverPhone: dto.driverPhone || vehicle?.driverPhone,
+        driverName: dto.driverName || driver?.name || vehicle?.driverName,
+        driverPhone: dto.driverPhone || driver?.phone || vehicle?.driverPhone,
         originLocation: dto.originLocation || notice.originLocation || notice.warehouse?.address,
         destinationLocation: dto.destinationLocation || notice.destinationLocation,
         totalQuantity: lines.reduce((sum, item) => sum + Number(item.quantity), 0),
@@ -210,8 +268,8 @@ export class WaybillService {
   }
 
   async assign(id: string, data: {
-    freightMode?: string; vehicleId?: string; carrierPartnerId?: string; carrierName?: string;
-    plateNo?: string; driverName?: string; driverPhone?: string;
+    freightMode?: string; vehicleId?: string | null; driverId?: string | null; carrierPartnerId?: string | null; carrierName?: string | null;
+    plateNo?: string | null; driverName?: string | null; driverPhone?: string | null;
     plannedDepartureAt?: string; plannedArrivalAt?: string;
   }, userId: string) {
     const waybill = await this.findOne(id, userId, 'logistics.manage');
@@ -222,27 +280,39 @@ export class WaybillService {
       throw new BadRequestException('预计到达时间必须晚于计划发运时间');
     }
     const freightMode = data.freightMode || waybill.freightMode;
+    const carrierPartnerId = data.carrierPartnerId === undefined
+      ? waybill.carrierPartnerId ?? undefined
+      : data.carrierPartnerId || undefined;
     const carrier = await this.resolveCarrier(
       freightMode,
-      data.carrierPartnerId ?? waybill.carrierPartnerId ?? undefined,
+      carrierPartnerId,
     );
+    const vehicleId = data.vehicleId === undefined ? waybill.vehicleId : data.vehicleId;
     let vehicle: any = null;
-    if (data.vehicleId) {
+    if (vehicleId) {
       vehicle = await this.prisma.vehicle.findFirst({
-        where: { id: data.vehicleId, status: 'ACTIVE', deletedAt: null },
+        where: { id: vehicleId, status: 'ACTIVE', deletedAt: null },
       });
       if (!vehicle) throw new BadRequestException('所选车辆不存在或不可用');
+      this.validateVehicleAssignment(vehicle, freightMode, carrier);
+    }
+    const driverId = data.driverId === undefined ? waybill.driverId : data.driverId;
+    let driver: any = null;
+    if (driverId) {
+      driver = await this.findAvailableDriver(driverId);
+      this.validateDriverAssignment(driver, freightMode, carrier);
     }
     return this.prisma.waybill.update({
       where: { id },
       data: {
         freightMode,
-        vehicleId: data.vehicleId,
+        vehicleId: vehicleId || null,
+        driverId: driverId || null,
         carrierPartnerId: carrier?.id || null,
         carrierName: carrier?.name || null,
-        plateNo: data.plateNo || vehicle?.plateNo,
-        driverName: data.driverName || vehicle?.driverName,
-        driverPhone: data.driverPhone || vehicle?.driverPhone,
+        plateNo: data.plateNo === undefined ? vehicle?.plateNo ?? waybill.plateNo : data.plateNo?.trim() || null,
+        driverName: data.driverName === undefined ? driver?.name ?? vehicle?.driverName ?? waybill.driverName : data.driverName?.trim() || null,
+        driverPhone: data.driverPhone === undefined ? driver?.phone ?? vehicle?.driverPhone ?? waybill.driverPhone : data.driverPhone?.trim() || null,
         plannedDepartureAt: data.plannedDepartureAt ? new Date(data.plannedDepartureAt) : undefined,
         plannedArrivalAt: data.plannedArrivalAt ? new Date(data.plannedArrivalAt) : undefined,
       },
@@ -310,6 +380,9 @@ export class WaybillService {
       && ['IN_TRANSIT', 'ARRIVED', 'SIGNED'].includes(status)
     ) {
       await this.inventoryService.ensurePendingReceiptForWaybill(id, userId);
+    }
+    if (['ARRIVED', 'SIGNED'].includes(status)) {
+      await this.qualityService.ensureTaskForWaybill(id, userId);
     }
     return updated;
   }

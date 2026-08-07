@@ -68,7 +68,7 @@ export default function ContractEditPage() {
     type: 'PURCHASE', title: '',
     signingPartnerId: '', departmentId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
-    pricingType: 'FIXED', overfillPct: '5', shortfallPct: '5',
+    pricingType: 'FIXED', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: '', effectiveAt: '', expireAt: '',
     settlementMethod: 'DELIVERY', settlementBasis: 'WEIGHT',
@@ -118,8 +118,8 @@ export default function ContractEditPage() {
         contactPerson: contract.contactPerson || '',
         contactPhone: contract.contactPhone || '',
         pricingType: contract.pricingType || 'FIXED',
-        overfillPct: contract.overfillPct || '5',
-        shortfallPct: contract.shortfallPct || '5',
+        overfillPct: contract.overfillPct ?? '10',
+        shortfallPct: contract.shortfallPct ?? '10',
         deliveryMethod: contract.deliveryMethod || '',
         deliveryLocation: contract.deliveryLocation || '',
         signedAt: contract.signedAt ? contract.signedAt.split('T')[0] : '',
@@ -190,8 +190,8 @@ export default function ContractEditPage() {
       await api.patch(`/contracts/${contractId}`, {
         ...form,
         totalAmount,
-        overfillPct: Number(form.overfillPct) || undefined,
-        shortfallPct: Number(form.shortfallPct) || undefined,
+        overfillPct: form.overfillPct === '' ? undefined : Number(form.overfillPct),
+        shortfallPct: form.shortfallPct === '' ? undefined : Number(form.shortfallPct),
         prepayPct: Number(form.prepayPct) || undefined,
         paymentDays: Number(form.paymentDays) || undefined,
         signedAt: form.signedAt || undefined,
@@ -322,7 +322,7 @@ export default function ContractEditPage() {
               </div>
             </FormField>
             <FormField label="外部合同号">
-              <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="对手方合同号" />
+              <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
             </FormField>
             <FormField label="我方签约主体（内部）">
               <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className={SELECT_CLS}>
@@ -439,10 +439,10 @@ export default function ContractEditPage() {
               </select>
             </FormField>
             <FormField label="溢装比例(%)">
-              <Input type="number" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} />
+              <Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} />
             </FormField>
             <FormField label="短装比例(%)">
-              <Input type="number" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} />
+              <Input type="number" min="0" max="100" step="0.01" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} />
             </FormField>
           </div>
 

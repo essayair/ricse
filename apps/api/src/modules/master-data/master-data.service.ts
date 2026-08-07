@@ -2,6 +2,45 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 
+export const MATERIAL_REFERENCE_TYPES = {
+  TRADING_GOODS: { prefix: 'TRD', label: '贸易商品' },
+  RAW_MATERIAL: { prefix: 'RAW', label: '原材料' },
+  SEMI_FINISHED: { prefix: 'SFG', label: '半成品' },
+  FINISHED_GOODS: { prefix: 'FGD', label: '产成品' },
+  AUXILIARY: { prefix: 'AUX', label: '辅助材料' },
+  PACKAGING: { prefix: 'PKG', label: '包装材料' },
+  SERVICE: { prefix: 'SRV', label: '服务项目' },
+  OTHER: { prefix: 'OTH', label: '其他物料' },
+} as const;
+
+type MaterialReferenceType = keyof typeof MATERIAL_REFERENCE_TYPES;
+
+function normalizedFingerprintPart(value?: string) {
+  return (value || '').trim().replace(/\s+/g, '').toLocaleLowerCase('zh-CN');
+}
+
+export function buildStandardCommodityFingerprint(data: {
+  categoryId: string; baseName: string; commodityForm?: string;
+  coreSpecName?: string; coreSpecOperator?: string; coreSpecValue?: string;
+  coreSpecUnit?: string; packageType?: string; unit?: string;
+}) {
+  return [
+    data.categoryId, data.baseName, data.commodityForm, data.coreSpecName,
+    data.coreSpecOperator, data.coreSpecValue, data.coreSpecUnit,
+    data.packageType, data.unit || '吨',
+  ].map(normalizedFingerprintPart).join('|');
+}
+
+export function buildStandardCommodityName(data: {
+  baseName: string; commodityForm?: string; coreSpecName?: string;
+  coreSpecOperator?: string; coreSpecValue?: string; coreSpecUnit?: string;
+  packageType?: string;
+}) {
+  const base = `${data.baseName.trim()}${(data.commodityForm || '').trim()}`;
+  const coreSpec = `${(data.coreSpecName || '').trim()}${(data.coreSpecOperator || '').trim()}${(data.coreSpecValue || '').trim()}${(data.coreSpecUnit || '').trim()}`;
+  return [base, coreSpec].filter(Boolean).join('-');
+}
+
 @Injectable()
 export class MasterDataService {
   constructor(private prisma: PrismaService) {}
@@ -52,23 +91,77 @@ export class MasterDataService {
 
   // ===== 物料 =====
 
-  async generateNextMaterialCode(): Promise<string> {
+  async generateNextMaterialCode(referenceType = 'TRADING_GOODS'): Promise<string> {
+    const config = MATERIAL_REFERENCE_TYPES[referenceType as MaterialReferenceType];
+    if (!config) throw new BadRequestException('物料参考类型无效');
     const materials = await this.prisma.material.findMany({
-      where: { code: { startsWith: 'MAT', mode: 'insensitive' } },
+      where: { code: { startsWith: config.prefix, mode: 'insensitive' } },
       select: { code: true },
     });
     const max = materials.reduce((value, item) => {
-      const matched = item.code.match(/^MAT[-_ ]?(\d+)$/i);
+      const matched = item.code.match(new RegExp(`^${config.prefix}[-_ ]?(\\d+)$`, 'i'));
       return matched ? Math.max(value, Number(matched[1])) : value;
     }, 0);
     const nextNum = max + 1;
-    return `MAT${String(nextNum).padStart(4, '0')}`;
+    return `${config.prefix}${String(nextNum).padStart(6, '0')}`;
+  }
+
+  private async generateNextStandardCommodityCode(): Promise<string> {
+    const commodities = await this.prisma.standardCommodity.findMany({
+      where: { code: { startsWith: 'STD', mode: 'insensitive' } },
+      select: { code: true },
+    });
+    const max = commodities.reduce((value, item) => {
+      const matched = item.code.match(/^STD[-_ ]?(\d+)$/i);
+      return matched ? Math.max(value, Number(matched[1])) : value;
+    }, 0);
+    return `STD${String(max + 1).padStart(6, '0')}`;
+  }
+
+  private async findOrCreateStandardCommodity(data: {
+    categoryId: string; baseName: string; commodityForm: string;
+    coreSpecName: string; coreSpecOperator: string; coreSpecValue: string;
+    coreSpecUnit: string; packageType: string; unit: string; status: string;
+  }) {
+    const fingerprint = buildStandardCommodityFingerprint(data);
+    const existing = await this.prisma.standardCommodity.findUnique({ where: { fingerprint } });
+    if (existing) return existing;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await this.prisma.standardCommodity.create({
+          data: {
+            code: await this.generateNextStandardCommodityCode(),
+            name: buildStandardCommodityName(data), fingerprint,
+            categoryId: data.categoryId, baseName: data.baseName,
+            commodityForm: data.commodityForm, coreSpecName: data.coreSpecName,
+            coreSpecOperator: data.coreSpecOperator, coreSpecValue: data.coreSpecValue,
+            coreSpecUnit: data.coreSpecUnit, packageType: data.packageType,
+            unit: data.unit, status: data.status,
+          },
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          const concurrent = await this.prisma.standardCommodity.findUnique({ where: { fingerprint } });
+          if (concurrent) return concurrent;
+          if (attempt < 3) continue;
+        }
+        throw error;
+      }
+    }
+    throw new BadRequestException('平台标准商品编码生成冲突，请重新提交');
   }
 
   async createMaterial(data: {
     code?: string;
-    name: string;
+    name?: string;
+    baseName?: string;
     categoryId: string;
+    commodityForm?: string;
+    coreSpecName?: string;
+    coreSpecOperator?: string;
+    coreSpecValue?: string;
+    coreSpecUnit?: string;
+    referenceType?: string;
     grade?: string;
     unit?: string;
     spec?: string;
@@ -83,37 +176,70 @@ export class MasterDataService {
     status?: string;
     remark?: string;
   }) {
-    const name = data.name?.trim();
+    const requestedBaseName = data.baseName?.trim() || data.name?.trim();
     const categoryId = data.categoryId?.trim();
-    if (!name) throw new BadRequestException('物料品名不能为空');
+    if (!requestedBaseName) throw new BadRequestException('商品名称不能为空');
     if (!categoryId) throw new BadRequestException('请选择物料大类');
+    const referenceType = (data.referenceType || 'TRADING_GOODS') as MaterialReferenceType;
+    if (!MATERIAL_REFERENCE_TYPES[referenceType]) throw new BadRequestException('物料参考类型无效');
     const category = await this.prisma.materialCategory.findUnique({
       where: { id: categoryId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!category) throw new BadRequestException('所选物料大类不存在或已被删除，请刷新后重新选择');
+    // 新版结构化建档的基础名称以所选分类名称为准，避免重复录入“分类/品名”。
+    const baseName = data.baseName ? category.name?.trim() || requestedBaseName : requestedBaseName;
 
-    let code = data.code?.trim() || await this.generateNextMaterialCode();
-    const systemManagedCode = /^MAT[-_ ]?\d+$/i.test(code);
+    const commodityForm = clean(data.commodityForm) || '';
+    const coreSpecName = clean(data.coreSpecName) || '';
+    const coreSpecOperator = clean(data.coreSpecOperator) || '';
+    const coreSpecValue = clean(data.coreSpecValue) || '';
+    const coreSpecUnit = clean(data.coreSpecUnit) || '';
+    const packageType = clean(data.packageType) || '';
+    const unit = clean(data.unit) || '吨';
+    if (data.baseName && (!commodityForm || !coreSpecName || !coreSpecValue || !coreSpecUnit || !packageType)) {
+      throw new BadRequestException('请完整填写商品形态、核心规格及包装方式');
+    }
+    const standardCommodity = await this.findOrCreateStandardCommodity({
+      categoryId, baseName, commodityForm, coreSpecName, coreSpecOperator,
+      coreSpecValue, coreSpecUnit, packageType, unit, status: data.status || 'ACTIVE',
+    });
+    const duplicate = await this.prisma.material.findFirst({
+      where: {
+        standardCommodityId: standardCommodity.id, referenceType, deletedAt: null,
+      },
+      select: { id: true, code: true, name: true },
+    });
+    if (duplicate) {
+      throw new BadRequestException(`该物料已存在：${duplicate.code} ${duplicate.name}`);
+    }
+    const name = buildStandardCommodityName({
+      baseName, commodityForm, coreSpecName, coreSpecOperator,
+      coreSpecValue, coreSpecUnit, packageType,
+    });
+    let code = data.code?.trim() || await this.generateNextMaterialCode(referenceType);
+    const systemManagedCode = new RegExp(`^${MATERIAL_REFERENCE_TYPES[referenceType].prefix}[-_ ]?\\d+$`, 'i').test(code);
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
         return await this.prisma.material.create({
           data: {
-            code, name, categoryId,
-            grade: clean(data.grade), unit: clean(data.unit) || 'TON',
+            code, name, categoryId, standardCommodityId: standardCommodity.id,
+            referenceType, commodityForm: commodityForm || null,
+            grade: clean(data.grade) || `${coreSpecName}${coreSpecOperator}${coreSpecValue}${coreSpecUnit}` || null,
+            unit,
             spec: clean(data.spec), sourceRegion: clean(data.sourceRegion),
-            packageType: clean(data.packageType), isVirtual: data.isVirtual ?? false,
+            packageType: packageType || null, isVirtual: data.isVirtual ?? false,
             specs: data.specs as Prisma.InputJsonValue | undefined,
             hsCode: clean(data.hsCode), taxCode: clean(data.taxCode),
             internalCode: clean(data.internalCode), qcTemplate: clean(data.qcTemplate),
             status: data.status || 'ACTIVE', remark: clean(data.remark),
           },
-          include: { category: true },
+          include: { category: true, standardCommodity: true },
         });
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
           if (systemManagedCode && attempt < 3) {
-            code = await this.generateNextMaterialCode();
+            code = await this.generateNextMaterialCode(referenceType);
             continue;
           }
           throw new BadRequestException('物料编码已存在，请刷新页面后重试');
@@ -144,13 +270,15 @@ export class MasterDataService {
         { code: { contains: params.search } },
         { name: { contains: params.search } },
         { grade: { contains: params.search } },
+        { commodityForm: { contains: params.search } },
+        { standardCommodity: { code: { contains: params.search } } },
       ];
     }
 
     const [items, total] = await Promise.all([
       this.prisma.material.findMany({
         where,
-        include: { category: true },
+        include: { category: true, standardCommodity: true },
         skip,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
@@ -167,30 +295,31 @@ export class MasterDataService {
   async findMaterialById(id: string) {
     const m = await this.prisma.material.findUnique({
       where: { id },
-      include: { category: true },
+      include: { category: true, standardCommodity: true },
     });
     if (!m || m.deletedAt) throw new NotFoundException('物料不存在');
     return m;
   }
 
   async updateMaterial(id: string, data: {
-    name?: string; categoryId?: string; grade?: string; unit?: string;
-    spec?: string; sourceRegion?: string; packageType?: string;
-    isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
-    internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
+    isVirtual?: boolean; specs?: object; hsCode?: string | null; taxCode?: string | null;
+    internalCode?: string | null; qcTemplate?: string | null; status?: string; remark?: string | null;
   }) {
     await this.findMaterialById(id);
-    if (data.categoryId) {
-      const category = await this.prisma.materialCategory.findUnique({
-        where: { id: data.categoryId }, select: { id: true },
-      });
-      if (!category) throw new BadRequestException('所选物料大类不存在或已被删除，请刷新后重新选择');
-    }
     try {
       return await this.prisma.material.update({
         where: { id },
-        data,
-        include: { category: true },
+        data: {
+          isVirtual: data.isVirtual,
+          specs: data.specs as Prisma.InputJsonValue | undefined,
+          hsCode: cleanForUpdate(data.hsCode),
+          taxCode: cleanForUpdate(data.taxCode),
+          internalCode: cleanForUpdate(data.internalCode),
+          qcTemplate: cleanForUpdate(data.qcTemplate),
+          status: data.status,
+          remark: cleanForUpdate(data.remark),
+        },
+        include: { category: true, standardCommodity: true },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
@@ -335,4 +464,9 @@ export class MasterDataService {
 
 function clean(value?: string) {
   return value?.trim() || undefined;
+}
+
+function cleanForUpdate(value?: string | null) {
+  if (value === undefined) return undefined;
+  return value?.trim() || null;
 }

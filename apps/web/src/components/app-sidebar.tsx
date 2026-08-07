@@ -63,7 +63,7 @@ const NAV_ITEMS: NavGroup[] = [
     icon: FlaskConical,
     children: [
       { href: '/dashboard/weighbridge', label: '磅单管理' },
-      { href: '/dashboard/quality', label: '质检单管理' },
+      { href: '/dashboard/quality', label: '质检管理' },
       { href: '/dashboard/monitor', label: '监控录像' },
     ],
   },

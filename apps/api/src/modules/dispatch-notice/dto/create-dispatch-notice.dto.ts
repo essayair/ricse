@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsIn, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 
 export class CreateDispatchNoticeLineDto {
   @IsString()
@@ -26,13 +26,15 @@ export class CreateDispatchNoticeDto {
   @IsDateString()
   plannedDate?: string;
 
-  @IsOptional()
   @IsString()
-  originLocation?: string;
+  @IsNotEmpty()
+  @MaxLength(200)
+  originLocation: string;
 
-  @IsOptional()
   @IsString()
-  destinationLocation?: string;
+  @IsNotEmpty()
+  @MaxLength(200)
+  destinationLocation: string;
 
   @IsOptional()
   @IsString()

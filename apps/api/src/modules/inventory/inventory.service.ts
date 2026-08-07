@@ -30,6 +30,12 @@ export class InventoryService {
     },
     waybill: {
       include: {
+        qualityTask: {
+          select: {
+            id: true, taskNo: true, status: true, finalConclusion: true,
+            basisInspectionId: true, finalizedReportCount: true,
+          },
+        },
         lineItems: { orderBy: { createdAt: 'asc' as const } },
         weighTickets: {
           where: { deletedAt: null },
@@ -40,7 +46,7 @@ export class InventoryService {
               where: { deletedAt: null },
               select: {
                 id: true, inspectionNo: true, institutionName: true, reportNo: true,
-                status: true, conclusion: true, testedAt: true, confirmedAt: true,
+                status: true, conclusion: true, testedAt: true, confirmedAt: true, qualityTaskId: true,
               },
               orderBy: { testedAt: 'desc' as const },
             },
@@ -89,6 +95,7 @@ export class InventoryService {
     const activeTickets = tickets.filter((ticket: any) => ticket.status !== 'VOIDED');
     const reviewedTickets = activeTickets.filter((ticket: any) => ticket.status === 'REVIEWED');
     const inspections = reviewedTickets.flatMap((ticket: any) => ticket.qualityInspections || []);
+    const qualityTask = waybill.qualityTask;
     const confirmedPass = inspections.find((inspection: any) => inspection.status === 'CONFIRMED' && inspection.conclusion === 'PASS');
     const inProgressQuality = inspections.some((inspection: any) => ['DRAFT', 'TESTING', 'REPORTED'].includes(inspection.status));
     const confirmedException = inspections.find((inspection: any) => (
@@ -120,7 +127,7 @@ export class InventoryService {
     } else if (receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS') {
       stage = 'READY_TO_RECEIVE'; stageLabel = '合格待收货'; blocker = '最终验收质检已合格，可以补齐收货信息并确认收货'; tone = 'success';
     } else if (!inspections.length) {
-      stage = 'WAITING_QUALITY'; stageLabel = '已过磅待质检'; blocker = '磅单已复核，尚未创建质检单'; tone = 'warning';
+      stage = 'WAITING_QUALITY'; stageLabel = '已过磅待质检'; blocker = qualityTask ? '到货质检任务已生成，等待录入检测报告' : '等待系统生成到货质检任务'; tone = 'warning';
     } else if (inProgressQuality) {
       stage = 'QUALITY_IN_PROGRESS'; stageLabel = '质检处理中'; blocker = '质检单尚未确认，等待检测或报告确认'; tone = 'warning';
     } else if (confirmedPass) {
@@ -139,11 +146,11 @@ export class InventoryService {
       : reviewedTickets.length
         ? `${reviewedTickets.length} 张已复核`
         : activeTickets.some((ticket: any) => ticket.status === 'COMPLETED') ? '待复核' : '称重中';
-    const qualityLabel = receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS'
-      ? '最终验收合格'
-      : inspections.length
-        ? `${inspections.length} 张质检单`
-        : '未质检';
+    const qualityLabel = qualityTask?.status === 'COMPLETED'
+      ? `最终${qualityTask.finalConclusion === 'PASS' ? '合格' : qualityTask.finalConclusion === 'DEDUCTION' ? '超标扣款' : qualityTask.finalConclusion === 'FUSE' ? '熔断' : '待判定'}`
+      : qualityTask
+        ? `${qualityTask.taskNo} · ${inspections.length} 份报告`
+        : '未生成质检任务';
 
     return {
       stage, stageLabel, blocker, tone,
@@ -239,7 +246,7 @@ export class InventoryService {
         weighTickets: {
           some: {
             deletedAt: null, status: 'REVIEWED',
-            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS' } },
+            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS', basisForTasks: { some: { status: 'COMPLETED', finalConclusion: 'PASS' } } } },
           },
         },
       },
@@ -250,7 +257,7 @@ export class InventoryService {
           where: { deletedAt: null, status: 'REVIEWED' },
           include: {
             qualityInspections: {
-              where: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS' },
+              where: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS', basisForTasks: { some: { status: 'COMPLETED', finalConclusion: 'PASS' } } },
               orderBy: { testedAt: 'desc' },
             },
           },
@@ -281,7 +288,10 @@ export class InventoryService {
     const weighTicket = await this.prisma.weighTicket.findFirst({ where: { id: dto.weighTicketId, waybillId: waybill.id, deletedAt: null } });
     if (!weighTicket || weighTicket.status !== 'REVIEWED') throw new BadRequestException('请选择该运单已复核的磅单');
     const quality = await this.prisma.qualityInspection.findFirst({
-      where: { id: dto.qualityInspectionId, deletedAt: null, weighTicket: { waybillId: waybill.id } },
+      where: {
+        id: dto.qualityInspectionId, deletedAt: null, weighTicket: { waybillId: waybill.id },
+        qualityTask: { status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: dto.qualityInspectionId },
+      },
     });
     if (!quality || quality.status !== 'CONFIRMED') throw new BadRequestException('请选择该运单下已确认的质检单');
     if (quality.conclusion !== 'PASS') {
@@ -321,6 +331,7 @@ export class InventoryService {
         deletedAt: null,
         status: 'CONFIRMED',
         conclusion: 'PASS',
+        qualityTask: { status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: qualityInspectionId },
       },
       include: {
         weighTicket: {
@@ -349,7 +360,7 @@ export class InventoryService {
         },
       },
     });
-    if (!quality) throw new BadRequestException('只有已确认且质检合格的质检单才能补齐入库作业单验收依据');
+    if (!quality) throw new BadRequestException('只有到货质检任务最终采用的合格报告才能补齐入库作业单验收依据');
 
     const ticket = quality.weighTicket;
     const waybill = ticket.waybill;
@@ -380,8 +391,8 @@ export class InventoryService {
 
     const existing = waybill.inboundReceipts[0];
     if (existing) {
-      // 第一张已确认合格的质检单自动成为最终验收依据；后续可在入库详情中人工切换。
-      if (existing.qualityInspectionId || existing.status !== 'PENDING') {
+      // 仅任务级最终结论可以指定执行口径；复判时允许在待入库阶段同步新口径。
+      if (existing.status !== 'PENDING') {
         return this.decorateReceipt(existing);
       }
       const updated = await this.prisma.inboundReceipt.update({
@@ -425,7 +436,7 @@ export class InventoryService {
           deductionAmount: quality.deductionAmount,
           receivedAt: null,
           receiverName: null,
-          remarks: `历史或异常漏单：由质检单 ${quality.inspectionNo} 确认合格后兜底创建`,
+          remarks: '历史或异常漏单：由到货质检任务最终合格结论兜底创建',
           createdBy: userId,
         },
         include: this.include,
@@ -452,11 +463,12 @@ export class InventoryService {
         deletedAt: null,
         status: 'CONFIRMED',
         conclusion: 'PASS',
+        qualityTask: { status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: qualityInspectionId },
         weighTicket: { waybillId: receipt.waybillId, deletedAt: null, status: 'REVIEWED' },
       },
       include: { weighTicket: true },
     });
-    if (!quality) throw new BadRequestException('只能选择本运单下已确认且合格的质检单');
+    if (!quality) throw new BadRequestException('只能使用本运单到货质检任务最终采用的合格执行口径报告');
     const inventoryTicket = receipt.weighTicket;
     if (!inventoryTicket || inventoryTicket.status !== 'REVIEWED') {
       throw new BadRequestException('请先在物流运单详情中选用已复核的入库磅单');
@@ -502,7 +514,7 @@ export class InventoryService {
       where: { waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (current && current.weighTicketId !== ticket.id) {
-      throw new BadRequestException('所选磅单不是当前入出库有效磅单，请先在物流运单详情中变更选用依据');
+      throw new BadRequestException('所选磅单不是当前结算入库磅单，请先在磅单信息详情中变更选用依据');
     }
     if (!current) {
       await this.prisma.waybillWeightSelection.create({
@@ -582,7 +594,7 @@ export class InventoryService {
       where: { waybillId: item.waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (!currentWeight || currentWeight.weighTicketId !== item.weighTicketId) {
-      throw new BadRequestException('入库单关联磅单与当前入出库有效磅单不一致，请先在物流运单详情中完成选用');
+      throw new BadRequestException('入库单关联磅单与当前结算入库磅单不一致，请先在磅单信息详情中完成选用');
     }
     const updated = await this.prisma.inboundReceipt.update({ where: { id }, data: { status: 'RECEIVED' }, include: this.include });
     return this.decorateReceipt(updated);
@@ -640,7 +652,7 @@ export class InventoryService {
       where: { waybillId: receipt.waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (!currentWeight || currentWeight.weighTicketId !== receipt.weighTicketId) {
-      throw new BadRequestException('入库单关联磅单与当前入出库有效磅单不一致，不能入账');
+      throw new BadRequestException('入库单关联磅单与当前结算入库磅单不一致，不能入账');
     }
     const warehouseId = receipt.warehouseId;
     const inventoryOwner = receipt.waybill.dispatchNotice.order.contract.signingPartner;

@@ -130,20 +130,20 @@ export class DashboardService {
 
     if (permissions.quality) {
       const weighScope = await this.accessControl.getWeighTicketScope(userId);
-      const qualityScope = await this.accessControl.getQualityInspectionScope(userId);
+      const qualityScope = await this.accessControl.getQualityTaskScope(userId);
       const [todayTickets, abnormalCount, pendingQuality, fuseCount, recentTickets, recentQuality, abnormalItems, fuseItems] = await Promise.all([
         this.prisma.weighTicket.count({ where: { AND: [weighScope, { deletedAt: null, status: { not: 'VOIDED' }, ticketDate: { gte: startOfDay } }] } }),
         this.prisma.weighTicket.count({ where: { AND: [weighScope, { deletedAt: null, status: { not: 'VOIDED' }, abnormal: true }] } }),
-        this.prisma.qualityInspection.count({ where: { AND: [qualityScope, { deletedAt: null, status: { in: ['DRAFT', 'TESTING', 'REPORTED'] } }] } }),
-        this.prisma.qualityInspection.count({ where: { AND: [qualityScope, { deletedAt: null, status: { not: 'VOIDED' }, conclusion: 'FUSE' }] } }),
+        this.prisma.qualityTask.count({ where: { AND: [qualityScope, { deletedAt: null, status: { in: ['PENDING_SAMPLING', 'INSPECTING', 'PENDING_DECISION', 'RECHECK_REQUIRED'] } }] } }),
+        this.prisma.qualityTask.count({ where: { AND: [qualityScope, { deletedAt: null, status: { not: 'VOIDED' }, finalConclusion: 'FUSE' }] } }),
         this.prisma.weighTicket.findMany({
           where: { AND: [weighScope, { deletedAt: null, status: { not: 'VOIDED' } }] },
           select: { id: true, ticketNo: true, plateNo: true, status: true, abnormal: true, updatedAt: true },
           orderBy: { updatedAt: 'desc' }, take: 4,
         }),
-        this.prisma.qualityInspection.findMany({
+        this.prisma.qualityTask.findMany({
           where: { AND: [qualityScope, { deletedAt: null, status: { not: 'VOIDED' } }] },
-          select: { id: true, inspectionNo: true, materialName: true, status: true, conclusion: true, updatedAt: true },
+          select: { id: true, taskNo: true, status: true, finalConclusion: true, updatedAt: true, waybill: { select: { plateNo: true, lineItems: { select: { materialName: true }, take: 1 } } } },
           orderBy: { updatedAt: 'desc' }, take: 4,
         }),
         this.prisma.weighTicket.findMany({
@@ -151,9 +151,9 @@ export class DashboardService {
           select: { id: true, ticketNo: true, plateNo: true, varianceRate: true, updatedAt: true },
           orderBy: { updatedAt: 'desc' }, take: 8,
         }),
-        this.prisma.qualityInspection.findMany({
-          where: { AND: [qualityScope, { deletedAt: null, status: { not: 'VOIDED' }, conclusion: 'FUSE' }] },
-          select: { id: true, inspectionNo: true, materialName: true, fuseReason: true, updatedAt: true },
+        this.prisma.qualityTask.findMany({
+          where: { AND: [qualityScope, { deletedAt: null, status: { not: 'VOIDED' }, finalConclusion: 'FUSE' }] },
+          select: { id: true, taskNo: true, decisionReason: true, updatedAt: true, waybill: { select: { plateNo: true, lineItems: { select: { materialName: true }, take: 1 } } } },
           orderBy: { updatedAt: 'desc' }, take: 8,
         }),
       ]);
@@ -172,10 +172,10 @@ export class DashboardService {
       activities.push(...recentQuality.map((item): Activity => ({
         id: `quality:${item.id}`,
         occurredAt: item.updatedAt,
-        title: `质检单 ${item.inspectionNo} ${this.qualityConclusion(item.conclusion)}`,
-        subtitle: item.materialName,
+        title: `质检任务 ${item.taskNo} ${this.qualityConclusion(item.finalConclusion)}`,
+        subtitle: item.waybill.lineItems[0]?.materialName || item.waybill.plateNo || '到货质检',
         href: `/dashboard/quality/${item.id}`,
-        type: item.conclusion === 'FUSE' ? 'error' : item.conclusion === 'DEDUCTION' ? 'warning' : item.conclusion === 'PASS' ? 'success' : 'info',
+        type: item.finalConclusion === 'FUSE' ? 'error' : item.finalConclusion === 'DEDUCTION' ? 'warning' : item.finalConclusion === 'PASS' ? 'success' : 'info',
       })));
       alerts.push(...abnormalItems.map((item): Activity => ({
         id: `weigh-abnormal:${item.id}`,
@@ -188,8 +188,8 @@ export class DashboardService {
       alerts.push(...fuseItems.map((item): Activity => ({
         id: `quality-fuse:${item.id}`,
         occurredAt: item.updatedAt,
-        title: `质检单 ${item.inspectionNo} 触发熔断`,
-        subtitle: item.fuseReason || item.materialName,
+        title: `质检任务 ${item.taskNo} 触发熔断`,
+        subtitle: item.decisionReason || item.waybill.lineItems[0]?.materialName || '到货质检异常',
         href: `/dashboard/quality/${item.id}`,
         type: 'error',
       })));

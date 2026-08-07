@@ -187,9 +187,9 @@ export default function CreateWeighTicketPage() {
       <div><h2 className="mb-3 border-b pb-2 font-semibold">磅单基本信息</h2><div className="grid gap-4 md:grid-cols-3"><div><label className="mb-1 block text-sm font-medium">磅单日期 *</label><Input type="date" value={ticketDate} onChange={event => setTicketDate(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">车牌号 *</label><Input value={plateNo} onChange={event => setPlateNo(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">司机姓名 *</label><Input value={driverName} onChange={event => setDriverName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">货物名称 *</label><Input value={materialName} onChange={event => setMaterialName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">规格型号 *</label><Input value={materialSpec} onChange={event => setMaterialSpec(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">包/袋数 *</label><Input type="number" min="0" step="1" value={packageCount} onChange={event => setPackageCount(event.target.value)} /><p className="mt-1 text-xs text-muted-foreground">散装货物填写 0</p></div><div><label className="mb-1 block text-sm font-medium">发货单位 *</label><Input value={shipperName} onChange={event => setShipperName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">收货单位 *</label><Input value={receiverName} onChange={event => setReceiverName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">司磅员 *</label><Input value={weighmasterName} onChange={event => setWeighmasterName(event.target.value)} /></div></div></div>
       <div className="grid gap-4 md:grid-cols-2">
         <div><label className="mb-1 block text-sm font-medium">结算重量口径</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={basis} onChange={event => { setBasis(event.target.value); setBasisWeight(''); }}>{BASIS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
-        {basis !== 'RECEIVING' && <div><label className="mb-1 block text-sm font-medium">对应重量（吨）*</label><Input type="number" min="0" step="0.001" value={basisWeight} onChange={event => setBasisWeight(event.target.value)} /></div>}
+        {basis !== 'RECEIVING' && <div><label className="mb-1 block text-sm font-medium">对应重量（吨）*</label><Input type="text" inputMode="decimal" value={basisWeight} onChange={event => setBasisWeight(decimalInput(event.target.value))} /></div>}
       </div>
-      <p className="text-xs text-muted-foreground">这里确定本张磅单内部的有效净重；运单最终用于入出库、结算的完整磅单，在运单详情中分别选用并留痕。</p>
+      <p className="text-xs text-muted-foreground">这里确定本张磅单内部的有效净重；运单最终采用哪张完整磅单，请在“磅单信息”详情统一选为结算入库磅单并留痕。</p>
       <div><label className="mb-1 block text-sm font-medium">备注</label><textarea className="min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={remarks} onChange={event => setRemarks(event.target.value)} /></div>
       <div className="space-y-3"><div><label className="block text-sm font-medium">磅单附件 *</label><p className="mt-1 text-xs text-muted-foreground">上传现场磅单照片、设备磅单或扫描件，支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB</p></div><label className="flex cursor-pointer items-center justify-center rounded-md border border-dashed p-5 text-sm text-primary hover:bg-primary/5"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={event => { addFiles(event.currentTarget.files); event.currentTarget.value = ''; }} /><Paperclip className="mr-2 h-4 w-4" />选择磅单附件</label>{files.length > 0 && <div className="space-y-2">{files.map((file, index) => <div key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between rounded-md bg-muted px-3 py-2 text-sm"><span className="min-w-0 truncate">{file.name}<span className="ml-2 text-xs text-muted-foreground">{formatFileSize(file.size)}</span></span><button type="button" className="ml-3 text-destructive" onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4" /></button></div>)}</div>}</div>
     </Card>
@@ -200,6 +200,13 @@ export default function CreateWeighTicketPage() {
 function stageAllowed(stage: 'SHIPPING' | 'RECEIVING', status?: string) {
   if (!status || status === 'CANCELLED') return false;
   return stage === 'SHIPPING' || ['ARRIVED', 'SIGNED'].includes(status);
+}
+
+function decimalInput(value: string) {
+  const normalized = value.replace(/,/g, '').replace(/[^\d.]/g, '');
+  const [integer = '', ...fractionParts] = normalized.split('.');
+  if (!fractionParts.length) return integer;
+  return `${integer}.${fractionParts.join('').slice(0, 3)}`;
 }
 
 function formatFileSize(size: number) {

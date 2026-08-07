@@ -347,7 +347,7 @@ export default function WeighTicketDetailPage() {
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/weighbridge')}><ArrowLeft className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => router.push(`/dashboard/weighbridge/management/${ticket.waybill.id}`)}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
           <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold">{ticket.ticketNo}</h1><Badge variant="outline">{ticket.weighingStage === 'SHIPPING' ? '发货称重' : '收货称重'} · 第 {ticket.sequence} 张</Badge>{ticket.isSupplementary && <Badge variant="outline">追加磅单</Badge>}<Badge variant={ticket.abnormal ? 'destructive' : 'default'}>{STATUS[ticket.status]}</Badge>{ticket.abnormal && <Badge variant="destructive">磅差异常</Badge>}</div>
           <p className="mt-1 text-sm text-muted-foreground">{ticket.direction === 'INBOUND' ? '采购入场' : '销售出场'} · {ticket.waybill.plateNo || '无车牌'}</p>
@@ -449,8 +449,8 @@ export default function WeighTicketDetailPage() {
                     />
                     <div>
                       <label className="mb-1 block text-sm">重量（吨）</label>
-                      <Input type="number" min="0" step="0.001" value={record.weight}
-                        onChange={event => updateRecordDraft(record.key, { weight: event.target.value })} />
+                      <Input type="text" inputMode="decimal" value={record.weight}
+                        onChange={event => updateRecordDraft(record.key, { weight: decimalInput(event.target.value, 3) })} />
                     </div>
                     <FieldSelect
                       label="数据来源"
@@ -536,7 +536,14 @@ function FieldSelect({ label, value, onChange, options, disabled }: { label: str
   return <div><label className="mb-1 block text-sm">{label}</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm disabled:opacity-60" value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></div>;
 }
 function WeightInput({ label, value, setValue, disabled, step = '0.001' }: { label: string; value: string; setValue: (value: string) => void; disabled?: boolean; step?: string }) {
-  return <div><label className="mb-1 block text-sm">{label}</label><Input type="number" min="0" step={step} value={value} disabled={disabled} onChange={event => setValue(event.target.value)} /></div>;
+  const decimalPlaces = step === '0.01' ? 2 : 3;
+  return <div><label className="mb-1 block text-sm">{label}</label><Input type="text" inputMode="decimal" value={value} disabled={disabled} onChange={event => setValue(decimalInput(event.target.value, decimalPlaces))} /></div>;
+}
+function decimalInput(value: string, decimalPlaces: number) {
+  const normalized = value.replace(/,/g, '').replace(/[^\d.]/g, '');
+  const [integer = '', ...fractionParts] = normalized.split('.');
+  if (!fractionParts.length) return integer;
+  return `${integer}.${fractionParts.join('').slice(0, decimalPlaces)}`;
 }
 function SmallField({ label, value }: { label: string; value: string }) {
   return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-sm">{value}</div></div>;

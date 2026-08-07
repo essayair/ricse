@@ -4,7 +4,7 @@ export class CreateWeighRecordDto {
   @IsIn(['GROSS', 'TARE'])
   weighingType: string;
 
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 3 })
   @Min(0.001)
   weight: number;
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { WandSparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -14,16 +15,25 @@ interface Available {
   notice: Notice & { originLocation?: string; destinationLocation?: string; warehouse?: { address?: string } | null };
   lineItems: Array<{ dispatchNoticeLineItemId: string; materialName: string | null; materialId: string; unit: string; noticeQuantity: number; availableQuantity: number }>;
 }
-interface Vehicle { id: string; plateNo: string; driverName?: string; driverPhone?: string; loadCapacity: string }
+interface Vehicle {
+  id: string; plateNo: string; vehicleType: string; brand?: string; driverName?: string; driverPhone?: string; loadCapacity: string;
+  ownerType: string; owner: { id: string; name: string } | null;
+  drivers: Array<{ role: string; driver: { id: string; name: string; phone: string } }>;
+}
 interface CarrierProfile { id: string; partnerId: string; partner: { id: string; code: string; name: string } }
+interface Driver {
+  id: string; name: string; phone: string; licenseClass?: string | null;
+  serviceOrganization: { id: string; partnerId: string; partner: { id: string; name: string; isInternal: boolean } };
+}
 
 export default function CreateWaybillPage() {
   const router = useRouter(); const params = useSearchParams();
   const [notices, setNotices] = useState<Notice[]>([]); const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [carriers, setCarriers] = useState<CarrierProfile[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [data, setData] = useState<Available | null>(null); const [freightMode, setFreightMode] = useState('SELF');
   const [vehicleId, setVehicleId] = useState(''); const [carrierPartnerId, setCarrierPartnerId] = useState(''); const [carrierName, setCarrierName] = useState('');
-  const [plateNo, setPlateNo] = useState(''); const [driverName, setDriverName] = useState(''); const [driverPhone, setDriverPhone] = useState('');
+  const [plateNo, setPlateNo] = useState(''); const [driverId, setDriverId] = useState(''); const [driverSearch, setDriverSearch] = useState(''); const [driverName, setDriverName] = useState(''); const [driverPhone, setDriverPhone] = useState('');
   const [originLocation, setOriginLocation] = useState(''); const [destinationLocation, setDestinationLocation] = useState('');
   const [plannedDepartureAt, setPlannedDepartureAt] = useState(''); const [plannedArrivalAt, setPlannedArrivalAt] = useState(''); const [remarks, setRemarks] = useState('');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -35,7 +45,8 @@ export default function CreateWaybillPage() {
       api.get<{ items: Notice[] }>('/dispatch-notices?status=IN_PROGRESS'),
       api.get<{ items: Vehicle[] }>('/partners/vehicles?status=ACTIVE&pageSize=100'),
       api.get<{ items: CarrierProfile[] }>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE&pageSize=200'),
-    ]).then(([issued, active, vehicleData, carrierData]) => { setNotices([...issued.items, ...active.items]); setVehicles(vehicleData.items); setCarriers(carrierData.items || []); }).catch(error => alert(error.message));
+      api.get<{ items: Driver[] }>('/drivers?status=ACTIVE&pageSize=200'),
+    ]).then(([issued, active, vehicleData, carrierData, driverData]) => { setNotices([...issued.items, ...active.items]); setVehicles(vehicleData.items); setCarriers(carrierData.items || []); setDrivers(driverData.items || []); }).catch(error => alert(error.message));
   }, []);
   const selectNotice = async (id: string) => {
     if (!id) { setData(null); return null; }
@@ -52,7 +63,45 @@ export default function CreateWaybillPage() {
   }, [notices, params, data]);
   const selectVehicle = (id: string) => {
     setVehicleId(id); const vehicle = vehicles.find(item => item.id === id);
-    if (vehicle) { setPlateNo(vehicle.plateNo); setDriverName(vehicle.driverName || ''); setDriverPhone(vehicle.driverPhone || ''); }
+    if (vehicle) {
+      setPlateNo(vehicle.plateNo);
+      if (!driverId) {
+        const primary = vehicle.drivers?.find(item => item.role === 'PRIMARY')?.driver;
+        if (primary) { setDriverId(primary.id); setDriverName(primary.name); setDriverPhone(primary.phone); }
+        else { setDriverName(vehicle.driverName || ''); setDriverPhone(vehicle.driverPhone || ''); }
+      }
+      if (vehicle.ownerType === 'OUTSOURCED' && vehicle.owner) {
+        const carrier = carriers.find(item => item.partnerId === vehicle.owner!.id);
+        if (carrier) { setCarrierPartnerId(carrier.partnerId); setCarrierName(carrier.partner.name); }
+      }
+    }
+  };
+  const selectableVehicles = useMemo(() => vehicles.filter(vehicle => {
+    if (freightMode === 'SELF') return vehicle.ownerType === 'SELF';
+    if (vehicle.ownerType !== 'OUTSOURCED') return false;
+    return !carrierPartnerId || vehicle.owner?.id === carrierPartnerId;
+  }), [carrierPartnerId, freightMode, vehicles]);
+  const selectableDrivers = useMemo(() => {
+    const keyword = driverSearch.trim().toLowerCase();
+    const linkedIds = new Set(vehicles.find(item => item.id === vehicleId)?.drivers?.map(item => item.driver.id) || []);
+    return drivers.filter(driver => {
+      const matchesOwner = freightMode === 'SELF'
+        ? driver.serviceOrganization.partner.isInternal
+        : Boolean(carrierPartnerId) && driver.serviceOrganization.partnerId === carrierPartnerId;
+      if (!matchesOwner) return false;
+      if (!keyword) return true;
+      return [driver.name, driver.phone, driver.serviceOrganization.partner.name, driver.licenseClass || '']
+        .some(value => value.toLowerCase().includes(keyword));
+    }).sort((left, right) => Number(linkedIds.has(right.id)) - Number(linkedIds.has(left.id)) || left.name.localeCompare(right.name, 'zh-CN'));
+  }, [carrierPartnerId, driverSearch, drivers, freightMode, vehicleId, vehicles]);
+  const selectDriver = (id: string) => {
+    setDriverId(id);
+    const driver = drivers.find(item => item.id === id);
+    if (driver) { setDriverName(driver.name); setDriverPhone(driver.phone); }
+  };
+  const changeFreightMode = (value: string) => {
+    setFreightMode(value); setVehicleId(''); setPlateNo(''); setDriverId(''); setDriverSearch(''); setDriverName(''); setDriverPhone('');
+    if (value === 'SELF') { setCarrierPartnerId(''); setCarrierName(''); }
   };
   const total = useMemo(() => Object.values(quantities).reduce((sum, value) => sum + (value || 0), 0), [quantities]);
   const recognizeText = async () => {
@@ -78,7 +127,7 @@ export default function CreateWaybillPage() {
       if (vehicle) selectVehicle(vehicle.id); else { setVehicleId(''); setPlateNo(plate); }
       recognized.push(`车牌：${plate}`);
     }
-    if (driver) { setDriverName(driver); recognized.push(`司机：${driver}`); }
+    if (driver) { setDriverId(''); setDriverName(driver); setDriverSearch(driver); recognized.push(`司机：${driver}`); }
     if (phone) { setDriverPhone(phone); recognized.push(`电话：${phone}`); }
     if (carrier) {
       const matchedCarrier = carriers.find(item => item.partner.name.includes(carrier) || carrier.includes(item.partner.name));
@@ -122,7 +171,7 @@ export default function CreateWaybillPage() {
     if (freightMode === 'THIRD_PARTY' && !carrierPartnerId) return alert('请选择已维护的物流承运商');
     const lineItems = data.lineItems.filter(item => quantities[item.dispatchNoticeLineItemId] > 0).map(item => ({ dispatchNoticeLineItemId: item.dispatchNoticeLineItemId, quantity: quantities[item.dispatchNoticeLineItemId] }));
     try {
-      const waybill = await api.post<{ id: string }>('/waybills', { dispatchNoticeId: data.notice.id, freightMode, vehicleId: vehicleId || undefined, carrierPartnerId: carrierPartnerId || undefined, plateNo: plateNo || undefined, driverName: driverName || undefined, driverPhone: driverPhone || undefined, originLocation, destinationLocation, plannedDepartureAt: plannedDepartureAt || undefined, plannedArrivalAt: plannedArrivalAt || undefined, remarks: remarks || undefined, lineItems });
+      const waybill = await api.post<{ id: string }>('/waybills', { dispatchNoticeId: data.notice.id, freightMode, vehicleId: vehicleId || undefined, driverId: driverId || undefined, carrierPartnerId: carrierPartnerId || undefined, plateNo: plateNo || undefined, driverName: driverName || undefined, driverPhone: driverPhone || undefined, originLocation, destinationLocation, plannedDepartureAt: plannedDepartureAt || undefined, plannedArrivalAt: plannedArrivalAt || undefined, remarks: remarks || undefined, lineItems });
       router.push(`/dashboard/waybills/${waybill.id}`);
     } catch (error: any) { alert(error.message); }
   };
@@ -130,9 +179,9 @@ export default function CreateWaybillPage() {
     <Card className="space-y-4 p-6"><div className="flex items-center gap-2"><WandSparkles className="h-5 w-5 text-primary" /><div><h2 className="font-semibold">文字信息自动识别</h2><p className="text-xs text-muted-foreground">粘贴微信、短信或调度信息，系统识别后回填下方表单，请核对后再创建</p></div></div><textarea className="min-h-32 w-full rounded-md border bg-background p-3 text-sm" value={recognitionText} onChange={event => setRecognitionText(event.target.value)} placeholder={'示例：\\n执行通知：PI-20260720-0001\\n车牌：甘A12345，司机：张师傅，电话：13800138000\\n承运单位：某某物流，运输数量：32.5吨\\n起运地：兰州，目的地：衢州\\n计划发运时间：2026-07-21 08:30，预计到达时间：2026-07-22 16:00'} /><div className="flex items-center justify-between gap-3"><div className="text-xs text-muted-foreground">{recognitionResult || '支持通知号、批次号、合同号、车牌、司机、电话、地点、数量和时间。'}</div><Button type="button" variant="outline" onClick={() => void recognizeText()}><WandSparkles className="mr-2 h-4 w-4" />识别并填入</Button></div></Card>
     <Card className="space-y-5 p-6">
     <div><label className="mb-1 block text-sm font-medium">执行通知 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={data?.notice.id || ''} onChange={e => void selectNotice(e.target.value)}><option value="">请选择</option>{notices.map(item => <option key={item.id} value={item.id}>{item.order.name} · {item.noticeNo} · {item.order.orderNo} · {item.order.contract.contractNo}</option>)}</select><p className="mt-1 text-xs text-muted-foreground">优先显示执行批次名称，同时保留通知号、批次编号和合同号便于核对。</p></div>
-    {data && <><div className="grid gap-4 md:grid-cols-4"><div><label className="mb-1 block text-sm font-medium">运输方式</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={freightMode} onChange={e => setFreightMode(e.target.value)}><option value="SELF">自有运力</option><option value="THIRD_PARTY">第三方承运</option></select></div><div><label className="mb-1 block text-sm font-medium">车辆</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={vehicleId} onChange={e => selectVehicle(e.target.value)}><option value="">稍后调度</option>{vehicles.map(item => <option key={item.id} value={item.id}>{item.plateNo} · 载重 {Number(item.loadCapacity)} 吨</option>)}</select></div><div><label className="mb-1 block text-sm font-medium">计划发运时间</label><Input type="datetime-local" value={plannedDepartureAt} onChange={e => setPlannedDepartureAt(e.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">预计到达时间</label><Input type="datetime-local" min={plannedDepartureAt || undefined} value={plannedArrivalAt} onChange={e => setPlannedArrivalAt(e.target.value)} /></div></div>
-      {freightMode === 'THIRD_PARTY' && <div><label className="mb-1 block text-sm font-medium">物流承运商 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={carrierPartnerId} onChange={e => { const id = e.target.value; const item = carriers.find(value => value.partnerId === id); setCarrierPartnerId(id); setCarrierName(item?.partner.name || ''); }}><option value="">请选择已维护的物流承运商</option>{carriers.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {item.partner.name}</option>)}</select>{carrierName && !carrierPartnerId && <p className="mt-1 text-xs text-amber-600">识别到“{carrierName}”，但未匹配主数据，请选择或先到主数据维护。</p>}</div>}
-      <div className="grid gap-4 md:grid-cols-3"><div><label className="mb-1 block text-sm font-medium">车牌号</label><Input value={plateNo} onChange={e => setPlateNo(e.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">司机</label><Input value={driverName} onChange={e => setDriverName(e.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">司机电话</label><Input value={driverPhone} onChange={e => setDriverPhone(e.target.value)} /></div></div>
+    {data && <><div className="grid gap-4 md:grid-cols-4"><div><label className="mb-1 block text-sm font-medium">运输方式</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={freightMode} onChange={e => changeFreightMode(e.target.value)}><option value="SELF">自有运力</option><option value="THIRD_PARTY">第三方承运</option></select></div><div><div className="mb-1 flex items-center justify-between"><label className="block text-sm font-medium">车辆</label><Link href="/dashboard/master-data/vehicles/new" className="text-xs text-primary hover:underline">维护车辆</Link></div><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={vehicleId} onChange={e => selectVehicle(e.target.value)}><option value="">稍后调度或手工填写</option>{selectableVehicles.map(item => <option key={item.id} value={item.id}>{item.plateNo} · {item.brand || vehicleTypeLabel(item.vehicleType)} · 载重 {Number(item.loadCapacity)} 吨{item.owner?.name ? ` · ${item.owner.name}` : ''}</option>)}</select></div><div><label className="mb-1 block text-sm font-medium">计划发运时间</label><Input type="datetime-local" value={plannedDepartureAt} onChange={e => setPlannedDepartureAt(e.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">预计到达时间</label><Input type="datetime-local" min={plannedDepartureAt || undefined} value={plannedArrivalAt} onChange={e => setPlannedArrivalAt(e.target.value)} /></div></div>
+      {freightMode === 'THIRD_PARTY' && <div><label className="mb-1 block text-sm font-medium">物流承运商 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={carrierPartnerId} onChange={e => { const id = e.target.value; const item = carriers.find(value => value.partnerId === id); setCarrierPartnerId(id); setCarrierName(item?.partner.name || ''); setVehicleId(''); setPlateNo(''); setDriverId(''); setDriverSearch(''); setDriverName(''); setDriverPhone(''); }}><option value="">请选择已维护的物流承运商</option>{carriers.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {item.partner.name}</option>)}</select>{carrierName && !carrierPartnerId && <p className="mt-1 text-xs text-amber-600">识别到“{carrierName}”，但未匹配主数据，请选择或先到主数据维护。</p>}</div>}
+      <div className="grid gap-4 md:grid-cols-5"><div><label className="mb-1 block text-sm font-medium">车牌号</label><Input value={plateNo} onChange={e => setPlateNo(e.target.value)} /></div><div><div className="mb-1 flex items-center justify-between"><label className="block text-sm font-medium">司机搜索</label><Link href="/dashboard/master-data/service-organizations?type=LOGISTICS_CARRIER" className="text-xs text-primary hover:underline">维护司机</Link></div><Input value={driverSearch} onChange={e => setDriverSearch(e.target.value)} placeholder="姓名、手机号、服务商" /></div><div><label className="mb-1 block text-sm font-medium">选择司机</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={driverId} onChange={e => selectDriver(e.target.value)}><option value="">手工填写</option>{selectableDrivers.map(item => <option key={item.id} value={item.id}>{item.name} · {item.phone} · {item.serviceOrganization.partner.name}</option>)}</select></div><div><label className="mb-1 block text-sm font-medium">司机姓名</label><Input value={driverName} onChange={e => { setDriverId(''); setDriverName(e.target.value); }} /></div><div><label className="mb-1 block text-sm font-medium">司机电话</label><Input value={driverPhone} onChange={e => { setDriverId(''); setDriverPhone(e.target.value); }} /></div></div>
       <div className="grid gap-4 md:grid-cols-2"><div><label className="mb-1 block text-sm font-medium">起运地点</label><Input value={originLocation} onChange={e => setOriginLocation(e.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">目的地点</label><Input value={destinationLocation} onChange={e => setDestinationLocation(e.target.value)} /></div></div>
       <div><h2 className="mb-2 font-semibold">运单明细</h2><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-3 py-2 text-left">物料</th><th className="px-3 py-2 text-right">通知数量</th><th className="px-3 py-2 text-right">剩余可运输</th><th className="px-3 py-2 text-right">本车数量</th></tr></thead><tbody>{data.lineItems.map(item => <tr key={item.dispatchNoticeLineItemId} className="border-b"><td className="px-3 py-2">{item.materialName || item.materialId}</td><td className="px-3 py-2 text-right">{item.noticeQuantity} {unitLabel(item.unit)}</td><td className="px-3 py-2 text-right">{item.availableQuantity} {unitLabel(item.unit)}</td><td className="px-3 py-2"><Input className="ml-auto w-36 text-right" type="number" min="0" max={item.availableQuantity} value={quantities[item.dispatchNoticeLineItemId] || 0} onChange={e => setQuantities(current => ({ ...current, [item.dispatchNoticeLineItemId]: Number(e.target.value) }))} /></td></tr>)}</tbody></table><div className="mt-3 text-right font-bold">本车总数量：{total.toLocaleString()} 吨</div></div>
       <div><label className="mb-1 block text-sm font-medium">备注</label><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={remarks} onChange={e => setRemarks(e.target.value)} /></div>
@@ -153,4 +202,8 @@ function matchDateField(text: string, labels: string[]) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function vehicleTypeLabel(value: string) {
+  return ({ SEMI_TRAILER: '半挂车', HEAVY_SEMI_TRAILER: '超重半挂', BOX_TRUCK: '厢式货车', DUMP_TRUCK: '自卸车', TANK_TRUCK: '槽罐车', TRUCK: '自卸车', TANK: '罐车', TRAILER: '挂车' } as Record<string, string>)[value] || value;
 }

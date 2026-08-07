@@ -49,6 +49,7 @@ const STATUS_MAP: Record<string, { label: string; variant: string }> = {
   REJECTED: { label: '已驳回', variant: 'destructive' },
   EXECUTING: { label: '执行中', variant: 'default' },
   COMPLETED: { label: '已完成', variant: 'default' },
+  CLOSED: { label: '已关闭', variant: 'outline' },
   VOIDED: { label: '已作废', variant: 'outline' },
 };
 
@@ -170,7 +171,7 @@ export default function ContractsPage() {
         </div>
         {/* 状态筛选 */}
         <div className="flex items-center gap-1.5">
-          {['', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'EXECUTING', 'COMPLETED', 'VOIDED'].map((s) => (
+          {['', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'VOIDED'].map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
