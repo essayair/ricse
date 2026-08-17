@@ -41,6 +41,9 @@ export class OutboundService {
         inventoryLot: {
           include: {
             businessInbound: { select: { inboundNo: true, postedAt: true } },
+            productionCompletion: {
+              select: { completionNo: true, postedAt: true, task: { select: { taskNo: true } } },
+            },
           },
         },
       },
@@ -68,6 +71,23 @@ export class OutboundService {
         ? await db.outboundReceipt.count({ where: { createdAt: { gte: start, lt: end } } })
         : await db.salesOutbound.count({ where: { createdAt: { gte: start, lt: end } } });
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  private async productionReservedQuantity(
+    warehouseId: string,
+    ownerPartnerId: string,
+    materialId: string,
+    db: any = this.prisma,
+  ) {
+    const result = await db.productionMaterialAllocation.aggregate({
+      where: {
+        issuedQuantity: 0,
+        inventoryLot: { warehouseId, ownerPartnerId, materialId },
+        taskInput: { task: { deletedAt: null, status: { in: ['RELEASED', 'MATERIAL_PREPARED'] } } },
+      },
+      _sum: { reservedQuantity: true },
+    });
+    return Number(result?._sum?.reservedQuantity || 0);
   }
 
   private orderInclude() {
@@ -165,7 +185,13 @@ export class OutboundService {
           (sum: number, item: any) => sum + Math.max(0, Number(item.reservedQuantity) - Number(item.actualQuantity)),
           0,
         );
-        available = Math.max(0, Number(physical._sum.availableQuantity || 0) - reservedByOthers);
+        const reservedByProduction = await this.productionReservedQuantity(
+          notice.warehouseId,
+          ownerPartnerId,
+          line.materialId,
+          db,
+        );
+        available = Math.max(0, Number(physical._sum.availableQuantity || 0) - reservedByOthers - reservedByProduction);
       }
       const planned = Number(line.quantity);
       lines.push({
@@ -398,6 +424,9 @@ export class OutboundService {
         warehouse: { select: { code: true, name: true } },
         material: { select: { code: true, name: true, unit: true } },
         businessInbound: { select: { inboundNo: true, postedAt: true } },
+        productionCompletion: {
+          select: { completionNo: true, postedAt: true, task: { select: { taskNo: true } } },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -418,10 +447,28 @@ export class OutboundService {
       _sum: { quantity: true },
     });
     const allocatedMap = new Map(allocated.map(item => [item.inventoryLotId, Number(item._sum.quantity || 0)]));
+    const productionReserved = await this.prisma.productionMaterialAllocation.groupBy({
+      by: ['inventoryLotId'],
+      where: {
+        inventoryLotId: { in: lots.map(lot => lot.id) },
+        issuedQuantity: 0,
+        taskInput: { task: { deletedAt: null, status: { in: ['RELEASED', 'MATERIAL_PREPARED'] } } },
+      },
+      _sum: { reservedQuantity: true },
+    }) || [];
+    const productionReservedMap = new Map(
+      productionReserved.map(item => [item.inventoryLotId, Number(item._sum.reservedQuantity || 0)]),
+    );
     return lots.map(lot => ({
       ...lot,
       physicalQuantity: lot.availableQuantity,
-      availableQuantity: Math.max(0, Number(lot.availableQuantity) - (allocatedMap.get(lot.id) || 0)),
+      reservedProductionQuantity: productionReservedMap.get(lot.id) || 0,
+      availableQuantity: Math.max(
+        0,
+        Number(lot.availableQuantity)
+          - (allocatedMap.get(lot.id) || 0)
+          - (productionReservedMap.get(lot.id) || 0),
+      ),
     }));
   }
 
@@ -633,7 +680,15 @@ export class OutboundService {
       const reservedByOthers = others.reduce(
         (sum, item) => sum + Math.max(0, Number(item.reservedQuantity) - Number(item.actualQuantity)), 0,
       );
-      const remainingPhysical = Math.max(0, Number(physical._sum.availableQuantity || 0) - reservedByOthers);
+      const reservedByProduction = await this.productionReservedQuantity(
+        order.warehouseId,
+        order.ownerPartnerId,
+        line.materialId,
+      );
+      const remainingPhysical = Math.max(
+        0,
+        Number(physical._sum.availableQuantity || 0) - reservedByOthers - reservedByProduction,
+      );
       const actual = Number(line.actualQuantity);
       const planned = Number(line.plannedQuantity);
       updates.push({ id: line.id, planned, reserved: actual + Math.min(Math.max(0, planned - actual), remainingPhysical) });

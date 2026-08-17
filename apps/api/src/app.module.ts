@@ -13,6 +13,7 @@ import { QualityModule } from './modules/quality/quality.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { AccessControlModule } from './modules/access-control/access-control.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ProductionModule } from './modules/production/production.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     InventoryModule,
     AccessControlModule,
     DashboardModule,
+    ProductionModule,
   ],
 })
 export class AppModule {}

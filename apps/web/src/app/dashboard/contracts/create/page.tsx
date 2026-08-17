@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, TrendingDown, TrendingUp, Zap, Save } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment } from '@/lib/attachment-preview';
+import { SETTLEMENT_METHOD_SUGGESTIONS } from '@/lib/contract-settlement';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -65,7 +66,7 @@ export default function ContractCreatePage() {
     pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: new Date().toISOString().split('T')[0], effectiveAt: '', expireAt: '',
-    settlementMethod: 'DELIVERY', settlementBasis: 'WEIGHT',
+    settlementMethod: '按交货结算', settlementBasis: 'WEIGHT',
     prepayPct: '', paymentDays: '30', paymentMethod: 'T/T',
     moistureRule: '', impurityRule: '', remarks: '',
   });
@@ -137,7 +138,7 @@ export default function ContractCreatePage() {
     shortfallPct: form.shortfallPct === '' ? undefined : Number(form.shortfallPct),
     deliveryMethod: form.deliveryMethod || undefined, deliveryLocation: form.deliveryLocation || undefined,
     signedAt: form.signedAt, effectiveAt: form.effectiveAt || undefined, expireAt: form.expireAt || undefined,
-    settlementMethod: form.settlementMethod, settlementBasis: form.settlementBasis,
+    settlementMethod: form.settlementMethod.trim() || '按交货结算', settlementBasis: form.settlementBasis,
     prepayPct: Number(form.prepayPct) || undefined, paymentDays: Number(form.paymentDays) || undefined,
     paymentMethod: form.paymentMethod || undefined,
     moistureRule: form.moistureRule || undefined, impurityRule: form.impurityRule || undefined,
@@ -397,9 +398,16 @@ export default function ContractCreatePage() {
               </select>
             </FormField>
             <FormField label="结算方式">
-              <select value={form.settlementMethod} onChange={e => set('settlementMethod', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="DELIVERY">按交货结算</option><option value="PREPAY">预付</option><option value="INSTALLMENT">分期</option><option value="MONTHLY_30">月结30天</option><option value="MONTHLY_60">月结60天</option>
-              </select>
+              <Input
+                list="contract-settlement-methods"
+                value={form.settlementMethod}
+                onChange={e => set('settlementMethod', e.target.value)}
+                maxLength={100}
+                placeholder="选择常用方式或手动填写"
+              />
+              <datalist id="contract-settlement-methods">
+                {SETTLEMENT_METHOD_SUGGESTIONS.map(method => <option key={method} value={method} />)}
+              </datalist>
             </FormField>
             <FormField label="预付比例(%)"><Input type="number" value={form.prepayPct} onChange={e => set('prepayPct', e.target.value)} /></FormField>
             <FormField label="尾款账期（天）"><Input type="number" value={form.paymentDays} onChange={e => set('paymentDays', e.target.value)} /></FormField>

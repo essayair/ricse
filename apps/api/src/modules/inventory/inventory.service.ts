@@ -724,9 +724,30 @@ export class InventoryService {
         inventoryOwner: { select: { id: true, code: true, name: true } },
         material: { select: { code: true, unit: true } },
         businessInbound: { select: { inboundNo: true, postedAt: true } },
+        productionCompletion: {
+          select: {
+            completionNo: true,
+            postedAt: true,
+            task: { select: { id: true, taskNo: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+    const productionReservations = await this.prisma.productionMaterialAllocation.groupBy({
+      by: ['inventoryLotId'],
+      where: {
+        inventoryLotId: { in: lots.map(item => item.id) },
+        issuedQuantity: 0,
+        taskInput: {
+          task: { deletedAt: null, status: { in: ['RELEASED', 'MATERIAL_PREPARED'] } },
+        },
+      },
+      _sum: { reservedQuantity: true },
+    }) || [];
+    const productionReservedByLot = new Map(
+      productionReservations.map(item => [item.inventoryLotId, Number(item._sum.reservedQuantity || 0)]),
+    );
     const reservations = await this.prisma.outboundOrderLine.findMany({
       where: {
         outboundOrder: {
@@ -750,17 +771,28 @@ export class InventoryService {
     const reservedByLot = new Map<string, number>();
     for (const lot of [...lots].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
       const key = `${lot.ownerPartnerId || 'UNASSIGNED'}:${lot.warehouseId}:${lot.materialId}`;
-      const reserved = Math.min(Number(lot.availableQuantity), remainingByGroup.get(key) || 0);
+      const remainingAfterProduction = Math.max(
+        0,
+        Number(lot.availableQuantity) - (productionReservedByLot.get(lot.id) || 0),
+      );
+      const reserved = Math.min(remainingAfterProduction, remainingByGroup.get(key) || 0);
       reservedByLot.set(lot.id, reserved);
       remainingByGroup.set(key, Math.max(0, (remainingByGroup.get(key) || 0) - reserved));
     }
-    const enrichedLots = lots.map(lot => ({
-      ...lot,
-      reservedOutboundQuantity: reservedByLot.get(lot.id) || 0,
-      availableToPromiseQuantity: Math.max(0, Number(lot.availableQuantity) - (reservedByLot.get(lot.id) || 0)),
-    }));
+    const enrichedLots = lots.map(lot => {
+      const reservedOutboundQuantity = reservedByLot.get(lot.id) || 0;
+      const reservedProductionQuantity = productionReservedByLot.get(lot.id) || 0;
+      const totalReservedQuantity = reservedOutboundQuantity + reservedProductionQuantity;
+      return {
+        ...lot,
+        reservedOutboundQuantity,
+        reservedProductionQuantity,
+        totalReservedQuantity,
+        availableToPromiseQuantity: Math.max(0, Number(lot.availableQuantity) - totalReservedQuantity),
+      };
+    });
     const totalPhysicalQuantity = lots.reduce((sum, lot) => sum + Number(lot.availableQuantity), 0);
-    const totalReservedQuantity = enrichedLots.reduce((sum, lot) => sum + lot.reservedOutboundQuantity, 0);
+    const totalReservedQuantity = enrichedLots.reduce((sum, lot) => sum + lot.totalReservedQuantity, 0);
     const totalAvailableQuantity = totalPhysicalQuantity - totalReservedQuantity;
     const ownerGroups = new Map<string, any>();
     const warehouseGroups = new Map<string, any>();
@@ -782,7 +814,7 @@ export class InventoryService {
       owner.materialIds.add(lot.materialId);
       owner.warehouseIds.add(lot.warehouseId);
       owner.totalPhysicalQuantity += Number(lot.availableQuantity);
-      owner.totalReservedQuantity += lot.reservedOutboundQuantity;
+      owner.totalReservedQuantity += lot.totalReservedQuantity;
       owner.totalAvailableQuantity += lot.availableToPromiseQuantity;
       ownerGroups.set(ownerKey, owner);
 
@@ -801,7 +833,7 @@ export class InventoryService {
       warehouse.materialIds.add(lot.materialId);
       warehouse.ownerIds.add(ownerKey);
       warehouse.totalPhysicalQuantity += Number(lot.availableQuantity);
-      warehouse.totalReservedQuantity += lot.reservedOutboundQuantity;
+      warehouse.totalReservedQuantity += lot.totalReservedQuantity;
       warehouse.totalAvailableQuantity += lot.availableToPromiseQuantity;
       warehouseGroups.set(lot.warehouseId, warehouse);
 
@@ -822,7 +854,7 @@ export class InventoryService {
       ownerWarehouse.lotCount += 1;
       ownerWarehouse.materialIds.add(lot.materialId);
       ownerWarehouse.totalPhysicalQuantity += Number(lot.availableQuantity);
-      ownerWarehouse.totalReservedQuantity += lot.reservedOutboundQuantity;
+      ownerWarehouse.totalReservedQuantity += lot.totalReservedQuantity;
       ownerWarehouse.totalAvailableQuantity += lot.availableToPromiseQuantity;
       ownerWarehouseGroups.set(ownerWarehouseKey, ownerWarehouse);
     }

@@ -25,34 +25,39 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company                     Company?                 @relation(fields: [companyId], references: [id])
-  employee                    Employee?                @relation(fields: [employeeId], references: [id])
-  roleAssignments             UserRoleAssignment[]
-  createdContracts            Contract[]               @relation("ContractCreator")
-  createdPartners             Partner[]                @relation("PartnerCreator")
-  approvalTasks               Approval[]               @relation("ApprovalAssignee")
-  actedApprovals              Approval[]               @relation("ApprovalActor")
-  createdOrders               Order[]                  @relation("OrderCreator")
-  createdDispatchNotices      DispatchNotice[]         @relation("DispatchNoticeCreator")
-  createdWaybills             Waybill[]                @relation("WaybillCreator")
-  createdWeighTickets         WeighTicket[]            @relation("WeighTicketCreator")
-  reviewedWeighTickets        WeighTicket[]            @relation("WeighTicketReviewer")
-  weighTicketSelections       WaybillWeightSelection[] @relation("WaybillWeightSelector")
-  weighRecords                WeighRecord[]            @relation("WeighRecordOperator")
-  createdQualityInspections   QualityInspection[]      @relation("QualityInspectionCreator")
-  confirmedQualityInspections QualityInspection[]      @relation("QualityInspectionConfirmer")
-  createdQualityTasks         QualityTask[]            @relation("QualityTaskCreator")
-  handledQualityTasks         QualityTask[]            @relation("QualityTaskHandler")
-  decidedQualityTasks         QualityTask[]            @relation("QualityTaskDecider")
-  createdInboundReceipts      InboundReceipt[]         @relation("InboundReceiptCreator")
-  createdBusinessInbounds     BusinessInbound[]        @relation("BusinessInboundCreator")
-  createdOutboundOrders       OutboundOrder[]          @relation("OutboundOrderCreator")
-  createdOutboundReceipts     OutboundReceipt[]        @relation("OutboundReceiptCreator")
-  createdSalesOutbounds       SalesOutbound[]          @relation("SalesOutboundCreator")
-  inventoryLedgerEntries      InventoryLedger[]        @relation("InventoryLedgerCreator")
-  createdInventoryReversals   InventoryReversal[]      @relation("InventoryReversalCreator")
-  approvedInventoryReversals  InventoryReversal[]      @relation("InventoryReversalApprover")
-  postedInventoryReversals    InventoryReversal[]      @relation("InventoryReversalPoster")
+  company                      Company?                 @relation(fields: [companyId], references: [id])
+  employee                     Employee?                @relation(fields: [employeeId], references: [id])
+  roleAssignments              UserRoleAssignment[]
+  createdContracts             Contract[]               @relation("ContractCreator")
+  createdPartners              Partner[]                @relation("PartnerCreator")
+  approvalTasks                Approval[]               @relation("ApprovalAssignee")
+  actedApprovals               Approval[]               @relation("ApprovalActor")
+  createdOrders                Order[]                  @relation("OrderCreator")
+  createdDispatchNotices       DispatchNotice[]         @relation("DispatchNoticeCreator")
+  createdWaybills              Waybill[]                @relation("WaybillCreator")
+  createdWeighTickets          WeighTicket[]            @relation("WeighTicketCreator")
+  reviewedWeighTickets         WeighTicket[]            @relation("WeighTicketReviewer")
+  weighTicketSelections        WaybillWeightSelection[] @relation("WaybillWeightSelector")
+  weighRecords                 WeighRecord[]            @relation("WeighRecordOperator")
+  createdQualityInspections    QualityInspection[]      @relation("QualityInspectionCreator")
+  confirmedQualityInspections  QualityInspection[]      @relation("QualityInspectionConfirmer")
+  createdQualityTasks          QualityTask[]            @relation("QualityTaskCreator")
+  handledQualityTasks          QualityTask[]            @relation("QualityTaskHandler")
+  decidedQualityTasks          QualityTask[]            @relation("QualityTaskDecider")
+  createdInboundReceipts       InboundReceipt[]         @relation("InboundReceiptCreator")
+  createdBusinessInbounds      BusinessInbound[]        @relation("BusinessInboundCreator")
+  createdOutboundOrders        OutboundOrder[]          @relation("OutboundOrderCreator")
+  createdOutboundReceipts      OutboundReceipt[]        @relation("OutboundReceiptCreator")
+  createdSalesOutbounds        SalesOutbound[]          @relation("SalesOutboundCreator")
+  inventoryLedgerEntries       InventoryLedger[]        @relation("InventoryLedgerCreator")
+  createdInventoryReversals    InventoryReversal[]      @relation("InventoryReversalCreator")
+  approvedInventoryReversals   InventoryReversal[]      @relation("InventoryReversalApprover")
+  postedInventoryReversals     InventoryReversal[]      @relation("InventoryReversalPoster")
+  createdProductionRecipes     ProductionRecipe[]       @relation("ProductionRecipeCreator")
+  createdProductionTasks       ProductionTask[]         @relation("ProductionTaskCreator")
+  createdProductionCompletions ProductionCompletion[]   @relation("ProductionCompletionCreator")
+  qualityConfirmedCompletions  ProductionCompletion[]   @relation("ProductionCompletionQualityConfirmer")
+  postedProductionCompletions  ProductionCompletion[]   @relation("ProductionCompletionPoster")
 
   @@map("users")
 }
@@ -308,18 +313,20 @@ model Partner {
   ownedBusinessInbounds   BusinessInbound[]     @relation("BusinessInboundOwner")
   ownedInventoryLots      InventoryLot[]        @relation("InventoryLotOwner")
   ownedOutboundOrders     OutboundOrder[]       @relation("OutboundOrderOwner")
+  ownedProductionRecipes  ProductionRecipe[]    @relation("ProductionRecipeOwner")
+  ownedProductionTasks    ProductionTask[]      @relation("ProductionTaskOwner")
 
   @@unique([taxId, name])
   @@map("partners")
 }
 
 /// 合作伙伴服务生态档案
-/// 一个合作伙伴可分别维护物流承运、质检、仓储与港口三类专业档案
+/// 一个合作伙伴可分别维护物流承运、质检、仓储与港口、加工服务四类专业档案
 model ServiceOrganization {
   id                 String    @id @default(cuid())
   code               String    @unique
   partnerId          String
-  organizationType   String // LOGISTICS_CARRIER | QUALITY_INSTITUTION | WAREHOUSE_PORT
+  organizationType   String // LOGISTICS_CARRIER | QUALITY_INSTITUTION | WAREHOUSE_PORT | PROCESSING_PROVIDER
   licenseNo          String?
   licenseExpiry      DateTime?
   qualificationNo    String?
@@ -346,8 +353,9 @@ model ServiceOrganization {
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
-  partner Partner  @relation(fields: [partnerId], references: [id])
-  drivers Driver[]
+  partner         Partner          @relation(fields: [partnerId], references: [id])
+  drivers         Driver[]
+  productionTasks ProductionTask[]
 
   @@unique([partnerId, organizationType])
   @@index([organizationType, status])
@@ -372,8 +380,8 @@ model Driver {
   deletedAt             DateTime?
 
   serviceOrganization ServiceOrganization @relation(fields: [serviceOrganizationId], references: [id])
-  waybills             Waybill[]
-  vehicleLinks         VehicleDriver[]
+  waybills            Waybill[]
+  vehicleLinks        VehicleDriver[]
 
   @@unique([serviceOrganizationId, phone])
   @@index([serviceOrganizationId, status])
@@ -449,13 +457,18 @@ model Material {
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
 
-  category          MaterialCategory   @relation(fields: [categoryId], references: [id])
-  standardCommodity StandardCommodity? @relation(fields: [standardCommodityId], references: [id])
-  businessInbounds  BusinessInbound[]
-  salesOutbounds    SalesOutbound[]
-  inventoryLots     InventoryLot[]
-  inventoryLedgers  InventoryLedger[]
-  OutboundReceipt   OutboundReceipt[]
+  category                MaterialCategory        @relation(fields: [categoryId], references: [id])
+  standardCommodity       StandardCommodity?      @relation(fields: [standardCommodityId], references: [id])
+  businessInbounds        BusinessInbound[]
+  salesOutbounds          SalesOutbound[]
+  inventoryLots           InventoryLot[]
+  inventoryLedgers        InventoryLedger[]
+  OutboundReceipt         OutboundReceipt[]
+  productionRecipeInputs  ProductionRecipeInput[]
+  productionRecipeOutputs ProductionRecipe[]      @relation("ProductionRecipeOutputMaterial")
+  productionTaskInputs    ProductionTaskInput[]
+  productionTaskOutputs   ProductionTask[]        @relation("ProductionTaskOutputMaterial")
+  productionCompletions   ProductionCompletion[]
 
   @@index([categoryId])
   @@index([standardCommodityId])
@@ -465,35 +478,35 @@ model Material {
 
 /// 车辆管理
 model Vehicle {
-  id                          String    @id @default(cuid())
-  plateNo                     String    @unique
-  vehicleType                 String // SEMI_TRAILER | HEAVY_SEMI_TRAILER | BOX_TRUCK | DUMP_TRUCK | TANK_TRUCK；兼容 TRUCK/TANK/TRAILER
-  brand                       String?
-  tareWeight                  Decimal?  @db.Decimal(10, 2)
-  loadCapacity                Decimal   @db.Decimal(10, 2)
-  plateColor                  String? // YELLOW | GREEN | BLUE | BLACK | OTHER
-  licenseNo                   String?
-  annualInspectionExpiry      DateTime?
-  compulsoryInsuranceExpiry   DateTime?
-  commercialInsuranceExpiry   DateTime?
-  ownerId                     String? // 关联 Partner
-  ownerType                   String    @default("SELF") // SELF | OUTSOURCED
-  ownerName                   String?
-  ownerPhone                  String?
-  driverName                  String? // 兼容旧数据；新数据取主驾快照
-  driverPhone                 String? // 兼容旧数据；新数据取主驾快照
-  deviceType                  String? // BEIDOU | GPS | NONE
-  deviceNo                    String?
-  deviceInstalledAt           DateTime?
-  status                      String    @default("ACTIVE") // ACTIVE | MAINTENANCE | RETIRED
-  remark                      String?
-  createdAt                   DateTime  @default(now())
-  updatedAt                   DateTime  @updatedAt
-  deletedAt                   DateTime?
+  id                        String    @id @default(cuid())
+  plateNo                   String    @unique
+  vehicleType               String // SEMI_TRAILER | HEAVY_SEMI_TRAILER | BOX_TRUCK | DUMP_TRUCK | TANK_TRUCK；兼容 TRUCK/TANK/TRAILER
+  brand                     String?
+  tareWeight                Decimal?  @db.Decimal(10, 2)
+  loadCapacity              Decimal   @db.Decimal(10, 2)
+  plateColor                String? // YELLOW | GREEN | BLUE | BLACK | OTHER
+  licenseNo                 String?
+  annualInspectionExpiry    DateTime?
+  compulsoryInsuranceExpiry DateTime?
+  commercialInsuranceExpiry DateTime?
+  ownerId                   String? // 关联 Partner
+  ownerType                 String    @default("SELF") // SELF | OUTSOURCED
+  ownerName                 String?
+  ownerPhone                String?
+  driverName                String? // 兼容旧数据；新数据取主驾快照
+  driverPhone               String? // 兼容旧数据；新数据取主驾快照
+  deviceType                String? // BEIDOU | GPS | NONE
+  deviceNo                  String?
+  deviceInstalledAt         DateTime?
+  status                    String    @default("ACTIVE") // ACTIVE | MAINTENANCE | RETIRED
+  remark                    String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  deletedAt                 DateTime?
 
-  owner       Partner?        @relation(fields: [ownerId], references: [id])
-  drivers     VehicleDriver[]
-  waybills    Waybill[]
+  owner    Partner?        @relation(fields: [ownerId], references: [id])
+  drivers  VehicleDriver[]
+  waybills Waybill[]
 
   @@index([ownerId])
   @@map("vehicles")
@@ -553,15 +566,17 @@ model Warehouse {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  partner          Partner?          @relation(fields: [partnerId], references: [id])
-  dispatchNotices  DispatchNotice[]
-  inboundReceipts  InboundReceipt[]
-  businessInbounds BusinessInbound[]
-  outboundReceipts OutboundReceipt[]
-  outboundOrders   OutboundOrder[]
-  salesOutbounds   SalesOutbound[]
-  inventoryLots    InventoryLot[]
-  inventoryLedgers InventoryLedger[]
+  partner               Partner?          @relation(fields: [partnerId], references: [id])
+  dispatchNotices       DispatchNotice[]
+  inboundReceipts       InboundReceipt[]
+  businessInbounds      BusinessInbound[]
+  outboundReceipts      OutboundReceipt[]
+  outboundOrders        OutboundOrder[]
+  salesOutbounds        SalesOutbound[]
+  inventoryLots         InventoryLot[]
+  inventoryLedgers      InventoryLedger[]
+  productionSourceTasks ProductionTask[]  @relation("ProductionTaskSourceWarehouse")
+  productionTargetTasks ProductionTask[]  @relation("ProductionTaskTargetWarehouse")
 
   @@index([partnerId])
   @@map("warehouses")
@@ -1144,29 +1159,32 @@ model BusinessInbound {
 }
 
 model InventoryLot {
-  id                String   @id @default(cuid())
-  lotNo             String   @unique
-  businessInboundId String   @unique
-  warehouseId       String
-  ownerPartnerId    String?
-  materialId        String
-  materialName      String
-  supplierName      String?
-  initialQuantity   Decimal  @db.Decimal(15, 3)
-  availableQuantity Decimal  @db.Decimal(15, 3)
-  qualityConclusion String
-  status            String   @default("AVAILABLE") // AVAILABLE | DEPLETED | LOCKED
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  lotNo                  String   @unique
+  businessInboundId      String?  @unique
+  productionCompletionId String?  @unique
+  warehouseId            String
+  ownerPartnerId         String?
+  materialId             String
+  materialName           String
+  supplierName           String?
+  initialQuantity        Decimal  @db.Decimal(15, 3)
+  availableQuantity      Decimal  @db.Decimal(15, 3)
+  qualityConclusion      String
+  status                 String   @default("AVAILABLE") // AVAILABLE | DEPLETED | LOCKED
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  businessInbound     BusinessInbound             @relation(fields: [businessInboundId], references: [id])
-  warehouse           Warehouse                   @relation(fields: [warehouseId], references: [id])
-  inventoryOwner      Partner?                    @relation("InventoryLotOwner", fields: [ownerPartnerId], references: [id])
-  material            Material                    @relation(fields: [materialId], references: [id])
-  ledgers             InventoryLedger[]
-  outboundAllocations OutboundReceiptAllocation[]
-  salesOutboundLines  SalesOutboundLine[]
-  reversalLines       InventoryReversalLine[]
+  businessInbound       BusinessInbound?               @relation(fields: [businessInboundId], references: [id])
+  productionCompletion  ProductionCompletion?          @relation(fields: [productionCompletionId], references: [id])
+  warehouse             Warehouse                      @relation(fields: [warehouseId], references: [id])
+  inventoryOwner        Partner?                       @relation("InventoryLotOwner", fields: [ownerPartnerId], references: [id])
+  material              Material                       @relation(fields: [materialId], references: [id])
+  ledgers               InventoryLedger[]
+  outboundAllocations   OutboundReceiptAllocation[]
+  salesOutboundLines    SalesOutboundLine[]
+  reversalLines         InventoryReversalLine[]
+  productionAllocations ProductionMaterialAllocation[]
 
   @@index([warehouseId])
   @@index([ownerPartnerId])
@@ -1198,6 +1216,196 @@ model InventoryLedger {
   @@index([materialId])
   @@index([businessType])
   @@map("inventory_ledgers")
+}
+
+// ========== 生产管理 ==========
+
+/// 可复用的生产方案；定义一个主产出物料及其标准投入配比。
+model ProductionRecipe {
+  id                  String    @id @default(cuid())
+  recipeNo            String    @unique
+  name                String
+  ownerPartnerId      String
+  outputMaterialId    String
+  baseOutputQuantity  Decimal   @default(1) @db.Decimal(15, 3)
+  expectedYieldRate   Decimal?  @db.Decimal(10, 4)
+  lossToleranceRate   Decimal   @default(5) @db.Decimal(10, 4)
+  qualityRequired     Boolean   @default(true)
+  processDescription  String?
+  qualityRequirements String?
+  status              String    @default("ACTIVE") // ACTIVE | INACTIVE
+  remark              String?
+  createdBy           String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  ownerPartner   Partner                 @relation("ProductionRecipeOwner", fields: [ownerPartnerId], references: [id])
+  outputMaterial Material                @relation("ProductionRecipeOutputMaterial", fields: [outputMaterialId], references: [id])
+  creator        User                    @relation("ProductionRecipeCreator", fields: [createdBy], references: [id])
+  inputs         ProductionRecipeInput[]
+  tasks          ProductionTask[]
+
+  @@index([ownerPartnerId])
+  @@index([outputMaterialId])
+  @@index([status])
+  @@map("production_recipes")
+}
+
+model ProductionRecipeInput {
+  id           String   @id @default(cuid())
+  recipeId     String
+  materialId   String
+  materialRole String   @default("RAW") // RAW | AUXILIARY | PACKAGING
+  quantity     Decimal  @db.Decimal(15, 3) // 每 baseOutputQuantity 产出所需投入量
+  unit         String   @default("TON")
+  sort         Int      @default(0)
+  remark       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  recipe   ProductionRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  material Material         @relation(fields: [materialId], references: [id])
+
+  @@unique([recipeId, materialId])
+  @@index([materialId])
+  @@map("production_recipe_inputs")
+}
+
+/// 自营生产与委外加工共用的任务主单。
+model ProductionTask {
+  id                      String    @id @default(cuid())
+  taskNo                  String    @unique
+  name                    String
+  mode                    String    @default("INTERNAL") // INTERNAL | OUTSOURCED
+  status                  String    @default("DRAFT") // DRAFT | RELEASED | MATERIAL_PREPARED | IN_PROGRESS | PENDING_QC | PARTIAL_COMPLETED | COMPLETED | CLOSED | CANCELLED
+  recipeId                String
+  ownerPartnerId          String
+  processorOrganizationId String?
+  sourceWarehouseId       String
+  targetWarehouseId       String
+  outputMaterialId        String
+  sourceType              String    @default("MANUAL") // MANUAL | SALES_ORDER
+  sourceOrderId           String?
+  sourceOrderNo           String?
+  plannedOutputQuantity   Decimal   @db.Decimal(15, 3)
+  completedQuantity       Decimal   @default(0) @db.Decimal(15, 3)
+  qualifiedQuantity       Decimal   @default(0) @db.Decimal(15, 3)
+  actualYieldRate         Decimal?  @db.Decimal(10, 4)
+  lossToleranceRate       Decimal   @default(5) @db.Decimal(10, 4)
+  qualityRequired         Boolean   @default(true)
+  processingFeeRate       Decimal?  @db.Decimal(15, 2)
+  operatorName            String?
+  plannedStartAt          DateTime?
+  plannedEndAt            DateTime?
+  releasedAt              DateTime?
+  actualStartAt           DateTime?
+  actualEndAt             DateTime?
+  remarks                 String?
+  createdBy               String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  deletedAt               DateTime?
+
+  recipe                ProductionRecipe       @relation(fields: [recipeId], references: [id])
+  ownerPartner          Partner                @relation("ProductionTaskOwner", fields: [ownerPartnerId], references: [id])
+  processorOrganization ServiceOrganization?   @relation(fields: [processorOrganizationId], references: [id])
+  sourceWarehouse       Warehouse              @relation("ProductionTaskSourceWarehouse", fields: [sourceWarehouseId], references: [id])
+  targetWarehouse       Warehouse              @relation("ProductionTaskTargetWarehouse", fields: [targetWarehouseId], references: [id])
+  outputMaterial        Material               @relation("ProductionTaskOutputMaterial", fields: [outputMaterialId], references: [id])
+  creator               User                   @relation("ProductionTaskCreator", fields: [createdBy], references: [id])
+  inputs                ProductionTaskInput[]
+  completions           ProductionCompletion[]
+
+  @@index([status])
+  @@index([mode])
+  @@index([recipeId])
+  @@index([ownerPartnerId])
+  @@index([processorOrganizationId])
+  @@index([sourceWarehouseId])
+  @@index([targetWarehouseId])
+  @@index([outputMaterialId])
+  @@index([sourceOrderId])
+  @@map("production_tasks")
+}
+
+model ProductionTaskInput {
+  id               String   @id @default(cuid())
+  taskId           String
+  materialId       String
+  materialRole     String   @default("RAW")
+  plannedQuantity  Decimal  @db.Decimal(15, 3)
+  reservedQuantity Decimal  @default(0) @db.Decimal(15, 3)
+  issuedQuantity   Decimal  @default(0) @db.Decimal(15, 3)
+  consumedQuantity Decimal  @default(0) @db.Decimal(15, 3)
+  returnedQuantity Decimal  @default(0) @db.Decimal(15, 3)
+  unit             String   @default("TON")
+  sort             Int      @default(0)
+  remark           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  task        ProductionTask                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  material    Material                       @relation(fields: [materialId], references: [id])
+  allocations ProductionMaterialAllocation[]
+
+  @@unique([taskId, materialId])
+  @@index([materialId])
+  @@map("production_task_inputs")
+}
+
+/// 指定原料批次的预占、领用、耗用和退料累计值，是批次追溯的核心。
+model ProductionMaterialAllocation {
+  id               String   @id @default(cuid())
+  taskInputId      String
+  inventoryLotId   String
+  reservedQuantity Decimal  @db.Decimal(15, 3)
+  issuedQuantity   Decimal  @default(0) @db.Decimal(15, 3)
+  consumedQuantity Decimal  @default(0) @db.Decimal(15, 3)
+  returnedQuantity Decimal  @default(0) @db.Decimal(15, 3)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  taskInput    ProductionTaskInput @relation(fields: [taskInputId], references: [id], onDelete: Cascade)
+  inventoryLot InventoryLot        @relation(fields: [inventoryLotId], references: [id])
+
+  @@unique([taskInputId, inventoryLotId])
+  @@index([inventoryLotId])
+  @@map("production_material_allocations")
+}
+
+/// 每次完工申报形成一条独立记录；合格并过账后对应一个产成品库存批次。
+model ProductionCompletion {
+  id                 String    @id @default(cuid())
+  completionNo       String    @unique
+  taskId             String
+  materialId         String
+  quantity           Decimal   @db.Decimal(15, 3)
+  status             String    @default("PENDING_QC") // PENDING_QC | READY_TO_POST | REWORK | SCRAPPED | POSTED
+  qualityConclusion  String    @default("PENDING") // PENDING | PASS | REWORK | SCRAP
+  qualityRemark      String?
+  producedAt         DateTime  @default(now())
+  qualityConfirmedBy String?
+  qualityConfirmedAt DateTime?
+  postedBy           String?
+  postedAt           DateTime?
+  remarks            String?
+  createdBy          String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  task             ProductionTask @relation(fields: [taskId], references: [id])
+  material         Material       @relation(fields: [materialId], references: [id])
+  creator          User           @relation("ProductionCompletionCreator", fields: [createdBy], references: [id])
+  qualityConfirmer User?          @relation("ProductionCompletionQualityConfirmer", fields: [qualityConfirmedBy], references: [id])
+  poster           User?          @relation("ProductionCompletionPoster", fields: [postedBy], references: [id])
+  inventoryLot     InventoryLot?
+
+  @@index([taskId])
+  @@index([materialId])
+  @@index([status])
+  @@index([qualityConclusion])
+  @@map("production_completions")
 }
 
 // ========== 销售出库与库存扣减 ==========

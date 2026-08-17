@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2, Plus, ShieldAlert, MoreHorizontal } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
+import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import {
   DropdownMenu,
@@ -670,7 +671,7 @@ export default function ContractDetailPage() {
               <h4 className="text-sm font-semibold mb-3">结算条款</h4>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <Field label="结算依据" value={c.settlementBasis === 'WEIGHT' ? '地磅净重' : c.settlementBasis === 'QUALITY' ? '质检干重' : '合同量'} />
-                <Field label="结算方式" value={c.settlementMethod} />
+                <Field label="结算方式" value={settlementMethodLabel(c.settlementMethod)} />
                 <Field label="预付比例" value={c.prepayPct ? `${c.prepayPct}%` : '—'} />
                 <Field label="尾款账期" value={c.paymentDays ? `${c.paymentDays} 天` : '—'} />
                 <Field label="付款方式" value={c.paymentMethod || '—'} />

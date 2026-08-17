@@ -54,4 +54,32 @@ describe('ServiceOrganizationService', () => {
       }),
     }));
   });
+
+  it('加工服务商使用 JG 前缀并保留统一供应商合作伙伴', async () => {
+    prisma.partner.findFirst.mockResolvedValue({
+      id: 'partner-2', code: '00000002', name: '加工企业',
+      roles: ['SUPPLIER'], status: 'ACTIVE',
+    } as any);
+    prisma.serviceOrganization.findFirst.mockResolvedValue(null);
+    prisma.serviceOrganization.count.mockResolvedValue(2);
+    prisma.serviceOrganization.create.mockResolvedValue({
+      id: 'processor-1', code: 'JG000003', partnerId: 'partner-2',
+      organizationType: 'PROCESSING_PROVIDER',
+    } as any);
+
+    const result = await service.create({
+      partnerId: 'partner-2',
+      organizationType: 'PROCESSING_PROVIDER',
+      supportedMaterials: '萤石原料',
+    });
+
+    expect(result.code).toBe('JG000003');
+    expect(prisma.serviceOrganization.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        code: 'JG000003',
+        organizationType: 'PROCESSING_PROVIDER',
+        partnerId: 'partner-2',
+      }),
+    }));
+  });
 });

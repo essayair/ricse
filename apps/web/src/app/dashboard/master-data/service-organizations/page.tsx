@@ -48,7 +48,7 @@ function PageContent() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">服务生态</h1><p className="mt-1 text-sm text-muted-foreground">统一维护物流承运、质检、仓储与港口服务档案</p></div>
+      <div><h1 className="text-2xl font-bold">服务生态</h1><p className="mt-1 text-sm text-muted-foreground">统一维护物流承运、质检、仓储与港口、加工服务档案</p></div>
       <Link href={`/dashboard/master-data/service-organizations/new?type=${type}`}><Button><Plus className="mr-1 h-4 w-4" />新建{ORGANIZATION_TYPES[type as keyof typeof ORGANIZATION_TYPES]}</Button></Link>
     </div>
     <div className="flex flex-wrap items-center gap-2 border-b">

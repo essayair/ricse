@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save, Plus, Trash2, Paperclip, Loader2, Pencil, X } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
+import { SETTLEMENT_METHOD_SUGGESTIONS, settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -71,7 +72,7 @@ export default function ContractEditPage() {
     pricingType: 'FIXED', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: '', effectiveAt: '', expireAt: '',
-    settlementMethod: 'DELIVERY', settlementBasis: 'WEIGHT',
+    settlementMethod: '按交货结算', settlementBasis: 'WEIGHT',
     prepayPct: '', paymentDays: '30', paymentMethod: 'T/T',
     moistureRule: '', impurityRule: '', remarks: '',
   });
@@ -125,7 +126,7 @@ export default function ContractEditPage() {
         signedAt: contract.signedAt ? contract.signedAt.split('T')[0] : '',
         effectiveAt: contract.effectiveAt ? contract.effectiveAt.split('T')[0] : '',
         expireAt: contract.expireAt ? contract.expireAt.split('T')[0] : '',
-        settlementMethod: contract.settlementMethod || 'DELIVERY',
+        settlementMethod: settlementMethodLabel(contract.settlementMethod),
         settlementBasis: contract.settlementBasis || 'WEIGHT',
         prepayPct: contract.prepayPct || '',
         paymentDays: contract.paymentDays || '30',
@@ -189,6 +190,7 @@ export default function ContractEditPage() {
     try {
       await api.patch(`/contracts/${contractId}`, {
         ...form,
+        settlementMethod: form.settlementMethod.trim() || '按交货结算',
         totalAmount,
         overfillPct: form.overfillPct === '' ? undefined : Number(form.overfillPct),
         shortfallPct: form.shortfallPct === '' ? undefined : Number(form.shortfallPct),
@@ -491,13 +493,16 @@ export default function ContractEditPage() {
               </select>
             </FormField>
             <FormField label="结算方式">
-              <select value={form.settlementMethod} onChange={e => set('settlementMethod', e.target.value)} className={SELECT_CLS}>
-                <option value="DELIVERY">按交货结算</option>
-                <option value="PREPAY">预付</option>
-                <option value="INSTALLMENT">分期</option>
-                <option value="MONTHLY_30">月结30天</option>
-                <option value="MONTHLY_60">月结60天</option>
-              </select>
+              <Input
+                list="contract-settlement-methods"
+                value={form.settlementMethod}
+                onChange={e => set('settlementMethod', e.target.value)}
+                maxLength={100}
+                placeholder="选择常用方式或手动填写"
+              />
+              <datalist id="contract-settlement-methods">
+                {SETTLEMENT_METHOD_SUGGESTIONS.map(method => <option key={method} value={method} />)}
+              </datalist>
             </FormField>
             <FormField label="预付比例(%)">
               <Input type="number" value={form.prepayPct} onChange={e => set('prepayPct', e.target.value)} />

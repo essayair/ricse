@@ -5,6 +5,7 @@ export const SERVICE_ORGANIZATION_TYPES = [
   'LOGISTICS_CARRIER',
   'QUALITY_INSTITUTION',
   'WAREHOUSE_PORT',
+  'PROCESSING_PROVIDER',
 ] as const;
 
 type OrganizationType = typeof SERVICE_ORGANIZATION_TYPES[number];
@@ -98,6 +99,7 @@ export class ServiceOrganizationService {
       LOGISTICS_CARRIER: 'CY',
       QUALITY_INSTITUTION: 'ZJ',
       WAREHOUSE_PORT: 'CG',
+      PROCESSING_PROVIDER: 'JG',
     };
     const count = await this.prisma.serviceOrganization.count({
       where: { organizationType: type },

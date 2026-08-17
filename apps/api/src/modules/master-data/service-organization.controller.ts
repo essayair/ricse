@@ -14,7 +14,7 @@ export class ServiceOrganizationController {
 
   @Post()
   @RequirePermission('master_data.manage')
-  @ApiOperation({ summary: '创建物流承运商、质检机构或仓储与港口服务商档案' })
+  @ApiOperation({ summary: '创建物流承运商、质检机构、仓储与港口或加工服务商档案' })
   create(@Body() dto: ServiceOrganizationInput) {
     return this.service.create(dto);
   }

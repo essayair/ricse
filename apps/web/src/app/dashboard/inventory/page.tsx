@@ -31,7 +31,7 @@ export default function InventoryPage() {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <Summary label="总账面库存" value={`${Number(data.summary.totalPhysicalQuantity || 0).toLocaleString()} 吨`} />
-        <Summary label="待出库冻结" value={`${Number(data.summary.totalReservedQuantity || 0).toLocaleString()} 吨`} />
+        <Summary label="业务预占" value={`${Number(data.summary.totalReservedQuantity || 0).toLocaleString()} 吨`} />
         <Summary label="可用库存" value={`${Number(data.summary.totalAvailableQuantity || 0).toLocaleString()} 吨`} />
         <Summary label="库存主体" value={data.summary.ownerCount || 0} />
         <Summary label="库存批次" value={data.summary.lotCount || 0} />
@@ -75,7 +75,7 @@ export default function InventoryPage() {
         <div className="border-b p-4"><div className="font-semibold">主体×仓库库存明细</div><div className="mt-1 text-xs text-muted-foreground">同一采购主体可分布在多个仓库；同一仓库内的不同主体库存分行核算，不会混用。</div></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1050px] text-sm">
-            <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">库存主体</th><th className="p-3">仓库位置</th><th className="p-3 text-right">账面库存</th><th className="p-3 text-right">待出库冻结</th><th className="p-3 text-right">可用库存</th><th className="p-3 text-right">批次数</th><th className="p-3 text-right">物料种类</th></tr></thead>
+            <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">库存主体</th><th className="p-3">仓库位置</th><th className="p-3 text-right">账面库存</th><th className="p-3 text-right">业务预占</th><th className="p-3 text-right">可用库存</th><th className="p-3 text-right">批次数</th><th className="p-3 text-right">物料种类</th></tr></thead>
             <tbody>{data.ownerWarehouseSummaries.map((row: any) => <tr key={`${row.ownerPartnerId || 'unassigned'}:${row.warehouseId}`} className="border-b">
               <td className="p-3"><div className="font-medium">{row.ownerName}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{row.ownerCode || '未设置主体编码'}</div></td>
               <td className="p-3"><div>{row.warehouseName}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{row.warehouseCode}</div></td>
@@ -97,10 +97,11 @@ export default function InventoryPage() {
                 <th className="p-3">仓库</th>
                 <th className="p-3">物料</th>
                 <th className="p-3">供应商</th>
-                <th className="p-3">业务入库单</th>
+                <th className="p-3">来源单据</th>
                 <th className="p-3 text-right">初始数量</th>
                 <th className="p-3 text-right">账面数量</th>
-                <th className="p-3 text-right">待出库冻结</th>
+                <th className="p-3 text-right">销售预占</th>
+                <th className="p-3 text-right">生产预占</th>
                 <th className="p-3 text-right">可用数量</th>
                 <th className="p-3">质量结论</th>
                 <th className="p-3">状态</th>
@@ -114,10 +115,14 @@ export default function InventoryPage() {
                   <td className="p-3">{lot.warehouse.name}</td>
                   <td className="p-3">{lot.materialName}</td>
                   <td className="p-3">{lot.supplierName || '-'}</td>
-                  <td className="p-3 font-mono text-xs">{lot.businessInbound.inboundNo}</td>
+                  <td className="p-3">
+                    <div className="font-mono text-xs">{lot.businessInbound?.inboundNo || lot.productionCompletion?.completionNo || '-'}</div>
+                    {lot.productionCompletion?.task && <div className="mt-1 text-xs text-muted-foreground">生产任务 {lot.productionCompletion.task.taskNo}</div>}
+                  </td>
                   <td className="p-3 text-right">{weight(lot.initialQuantity)}</td>
                   <td className="p-3 text-right">{weight(lot.availableQuantity)}</td>
                   <td className="p-3 text-right text-amber-600">{weight(lot.reservedOutboundQuantity)}</td>
+                  <td className="p-3 text-right text-violet-600">{weight(lot.reservedProductionQuantity)}</td>
                   <td className="p-3 text-right font-medium text-primary">{weight(lot.availableToPromiseQuantity)}</td>
                   <td className="p-3">{lot.qualityConclusion === 'PASS' ? '合格' : '扣款入库'}</td>
                   <td className="p-3">
@@ -219,6 +224,9 @@ function ledgerType(value: string) {
     OUTBOUND: '出库',
     INBOUND_REVERSAL: '入库冲销',
     OUTBOUND_REVERSAL: '出库冲销',
+    PRODUCTION_ISSUE: '生产领料',
+    PRODUCTION_RETURN: '生产退料',
+    PRODUCTION_INBOUND: '生产入库',
     ADJUSTMENT: '库存调整',
   }[value] || value;
 }

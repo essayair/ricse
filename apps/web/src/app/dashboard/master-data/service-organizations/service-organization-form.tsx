@@ -11,6 +11,7 @@ export const ORGANIZATION_TYPES = {
   LOGISTICS_CARRIER: '物流承运商',
   QUALITY_INSTITUTION: '质检机构',
   WAREHOUSE_PORT: '仓储与港口',
+  PROCESSING_PROVIDER: '加工服务商',
 } as const;
 
 interface Partner { id: string; code: string; name: string }
@@ -156,6 +157,15 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
         <Field label="仓储能力（吨）"><Input type="number" min="0" step="0.001" value={form.storageCapacity} onChange={e => set('storageCapacity', e.target.value)} /></Field>
         <Field label="支持货物类型"><Input value={form.cargoTypes} onChange={e => set('cargoTypes', e.target.value)} /></Field>
         <Field label="结算方式"><Input value={form.settlementMethod} onChange={e => set('settlementMethod', e.target.value)} /></Field>
+      </div>}
+
+      {organizationType === 'PROCESSING_PROVIDER' && <div className="grid gap-4 md:grid-cols-2">
+        <Field label="加工能力/工艺范围"><Input value={form.serviceScope} onChange={e => set('serviceScope', e.target.value)} placeholder="破碎、筛分、混配、精加工等" /></Field>
+        <Field label="支持加工物料"><Input value={form.supportedMaterials} onChange={e => set('supportedMaterials', e.target.value)} /></Field>
+        <Field label="加工项目"><Input value={form.supportedItems} onChange={e => set('supportedItems', e.target.value)} /></Field>
+        <Field label="结算方式"><Input value={form.settlementMethod} onChange={e => set('settlementMethod', e.target.value)} placeholder="按合格产量/投料量/固定金额" /></Field>
+        <Field label="产能说明"><Input value={form.storageCapacity} onChange={e => set('storageCapacity', e.target.value)} placeholder="可填写参考日产能（吨）" /></Field>
+        <Field label="资质编号"><Input value={form.qualificationNo} onChange={e => set('qualificationNo', e.target.value)} /></Field>
       </div>}
     </Card>
 

@@ -21,6 +21,7 @@ import {
   Box,
   Settings2,
   CircleDollarSign,
+  Factory,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -56,6 +57,15 @@ const NAV_ITEMS: NavGroup[] = [
       { href: '/dashboard/inbound', label: '入库单管理' },
       { href: '/dashboard/outbound', label: '出库单管理' },
       { href: '/dashboard/inventory-reversals', label: '库存冲销' },
+    ],
+  },
+  {
+    label: '生产管理',
+    icon: Factory,
+    children: [
+      { href: '/dashboard/production', label: '生产任务' },
+      { href: '/dashboard/production/recipes', label: '生产方案' },
+      { href: '/dashboard/production/ledger', label: '生产台账' },
     ],
   },
   {
@@ -122,6 +132,11 @@ export function AppSidebar({ userRole }: { userRole: string }) {
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
     const [base, qs] = href.split('?');
+
+    if (base === '/dashboard/production' && !qs) {
+      const child = pathname.slice(`${base}/`.length);
+      return pathname === base || child === 'new' || (!!child && !child.includes('/') && !['recipes', 'ledger'].includes(child));
+    }
 
     // Different base path → not active
     if (pathname !== base && !pathname.startsWith(base + '/')) return false;

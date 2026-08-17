@@ -87,9 +87,10 @@ export class CreateContractDto {
   @IsDateString()
   expireAt?: string;
 
-  @ApiPropertyOptional({ description: '结算方式', default: 'DELIVERY' })
+  @ApiPropertyOptional({ description: '结算方式（支持自定义文本）', example: '到货验收后10个工作日内结算', maxLength: 100 })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   settlementMethod?: string;
 
   @ApiPropertyOptional({ description: '备注' })

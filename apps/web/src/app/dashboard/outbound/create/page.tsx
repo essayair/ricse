@@ -207,7 +207,7 @@ export default function CreateOutboundPage() {
               <thead className="border-b bg-muted/50 text-left">
                 <tr>
                   <th className="p-3">库存批次</th>
-                  <th className="p-3">业务入库单</th>
+                  <th className="p-3">库存来源</th>
                   <th className="p-3">供应商</th>
                   <th className="p-3">入库时间</th>
                   <th className="p-3 text-right">可用数量</th>
@@ -218,9 +218,9 @@ export default function CreateOutboundPage() {
                 {lots.map((lot) => (
                   <tr key={lot.id} className="border-b">
                     <td className="p-3 font-mono text-primary">{lot.lotNo}</td>
-                    <td className="p-3 font-mono text-xs">{lot.businessInbound.inboundNo}</td>
+                    <td className="p-3"><div className="font-mono text-xs">{lot.businessInbound?.inboundNo || lot.productionCompletion?.completionNo || '-'}</div>{lot.productionCompletion?.task?.taskNo && <div className="mt-1 text-xs text-muted-foreground">生产任务 {lot.productionCompletion.task.taskNo}</div>}</td>
                     <td className="p-3">{lot.supplierName || '-'}</td>
-                    <td className="p-3">{new Date(lot.businessInbound.postedAt).toLocaleString('zh-CN')}</td>
+                    <td className="p-3">{new Date(lot.businessInbound?.postedAt || lot.productionCompletion?.postedAt || lot.createdAt).toLocaleString('zh-CN')}</td>
                     <td className="p-3 text-right">{weight(lot.availableQuantity)}</td>
                     <td className="p-3">
                       <Input

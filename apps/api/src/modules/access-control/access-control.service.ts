@@ -369,7 +369,39 @@ export class AccessControlService {
   }
 
   async getInventoryLotScope(userId: string): Promise<Prisma.InventoryLotWhereInput> {
-    return { businessInbound: await this.getBusinessInboundScope(userId) };
+    return {
+      OR: [
+        { businessInbound: await this.getBusinessInboundScope(userId) },
+        { productionCompletion: { task: await this.getProductionTaskScope(userId) } },
+      ],
+    };
+  }
+
+  async getProductionTaskScope(userId: string): Promise<Prisma.ProductionTaskWhereInput> {
+    const context = await this.getContext(userId);
+    if (context.isAdmin || context.assignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
+    if (context.isExternal) {
+      if (!context.externalPartnerId) {
+        throw new ForbiddenException('外部企业未关联合作伙伴，无法确定生产任务数据范围');
+      }
+      return {
+        OR: [
+          { ownerPartnerId: context.externalPartnerId },
+          { processorOrganization: { partnerId: context.externalPartnerId } },
+        ],
+      };
+    }
+    const clauses: Prisma.ProductionTaskWhereInput[] = [{ createdBy: userId }];
+    if (context.user.company?.partnerId) clauses.push({ ownerPartnerId: context.user.company.partnerId });
+    return { OR: clauses };
+  }
+
+  async getProductionRecipeScope(userId: string): Promise<Prisma.ProductionRecipeWhereInput> {
+    const context = await this.getContext(userId);
+    if (context.isAdmin || context.assignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
+    if (context.externalPartnerId) return { ownerPartnerId: context.externalPartnerId };
+    if (context.user.company?.partnerId) return { ownerPartnerId: context.user.company.partnerId };
+    return { createdBy: userId };
   }
 
   async getInventoryLedgerScope(userId: string): Promise<Prisma.InventoryLedgerWhereInput> {
