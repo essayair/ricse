@@ -237,6 +237,7 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     '/dashboard/content/contacts': [{ label: '内容运营中心' }, { label: '官网咨询' }],
     '/dashboard/content/data-sources': [{ label: '内容运营中心' }, { label: '数据源管理' }],
     '/dashboard/content/jobs': [{ label: '内容运营中心' }, { label: '采集与 AI' }],
+    '/dashboard/users': [{ label: '用户管理中心' }, { label: '个人用户' }],
   };
   if (exactRoutes[pathname]) return { items: withHome(exactRoutes[pathname]), supported: true };
 

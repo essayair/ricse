@@ -44,8 +44,26 @@ export default function ContentArticlesPage() {
   const beginEdit = (item: any) => {
     setEditingId(item.id);
     setForm({
-      ...EMPTY, ...item, categoryId: item.categoryId || '', tags: (item.tags || []).join('，'),
+      type: item.type || EMPTY.type,
+      title: item.title || '',
+      categoryId: item.categoryId || '',
+      summary: item.summary || '',
+      content: item.content || '',
+      coverUrl: item.coverUrl || '',
+      source: item.source || '',
+      author: item.author || '',
+      tags: Array.isArray(item.tags) ? item.tags.join('，') : (item.tags || ''),
       publishAt: item.publishAt ? new Date(item.publishAt).toISOString().slice(0, 16) : '',
+      productName: item.productName || '',
+      spec: item.spec || '',
+      quantity: item.quantity || '',
+      priceText: item.priceText || '',
+      region: item.region || '',
+      deliveryMethod: item.deliveryMethod || '',
+      requirements: item.requirements || '',
+      company: item.company || '',
+      contactName: item.contactName || '',
+      contactPhone: item.contactPhone || '',
     });
     setOpen(true);
   };
@@ -53,10 +71,26 @@ export default function ContentArticlesPage() {
     if (!form.title.trim()) return alert('请填写标题');
     setSaving(true);
     const payload = {
-      ...form,
-      tags: form.tags.split(/[，,]/).map((item: string) => item.trim()).filter(Boolean),
+      type: form.type,
+      title: form.title,
       categoryId: form.categoryId || undefined,
+      summary: form.summary,
+      content: form.content,
+      coverUrl: form.coverUrl,
+      source: form.source,
+      author: form.author,
+      tags: String(form.tags || '').split(/[，,]/).map((item: string) => item.trim()).filter(Boolean),
       publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : undefined,
+      productName: form.productName,
+      spec: form.spec,
+      quantity: form.quantity,
+      priceText: form.priceText,
+      region: form.region,
+      deliveryMethod: form.deliveryMethod,
+      requirements: form.requirements,
+      company: form.company,
+      contactName: form.contactName,
+      contactPhone: form.contactPhone,
     };
     try {
       if (editingId) await api.patch(`/content/articles/${editingId}`, payload);
@@ -111,7 +145,7 @@ export default function ContentArticlesPage() {
           <td className="p-3"><Badge variant="outline">{ARTICLE_TYPE[item.type] || item.type}</Badge></td><td className="p-3">{item.category?.name || '-'}</td>
           <td className="p-3"><div>{item.source || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.author || '-'}</div></td><td className="p-3 text-xs">{contentDate(item.publishAt)}</td>
           <td className="p-3"><Badge variant={item.status === 'PUBLISHED' ? 'default' : item.status === 'OFFLINE' ? 'destructive' : 'secondary'}>{ARTICLE_STATUS[item.status] || item.status}</Badge></td>
-          <td className="p-3 text-right">{item.viewCount} / {item.likeCount}</td><td className="p-3"><div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => beginEdit(item)}><Edit3 className="h-4 w-4" /></Button>{item.status !== 'PUBLISHED' ? <Button size="sm" variant="ghost" title="发布" onClick={() => changeStatus(item, 'PUBLISHED')}><Send className="h-4 w-4" /></Button> : <Button size="sm" variant="ghost" onClick={() => changeStatus(item, 'OFFLINE')}>下线</Button>}{item.status === 'DRAFT' && <Button size="sm" variant="ghost" onClick={() => remove(item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}</div></td>
+          <td className="p-3 text-right">{item.viewCount} / {item.likeCount}</td><td className="p-3"><div className="flex gap-1"><Button size="sm" variant="ghost" title="编辑" onClick={() => beginEdit(item)}><Edit3 className="h-4 w-4" /></Button>{item.status !== 'PUBLISHED' ? <Button size="sm" variant="ghost" onClick={() => changeStatus(item, 'PUBLISHED')}><Send className="mr-1 h-4 w-4" />发布</Button> : <Button size="sm" variant="ghost" onClick={() => changeStatus(item, 'OFFLINE')}>下线</Button>}{item.status === 'DRAFT' && <Button size="sm" variant="ghost" title="删除草稿" onClick={() => remove(item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}</div></td>
         </tr>)}</tbody>
       </table></div>}
     </Card>
@@ -127,7 +161,9 @@ export default function ContentArticlesPage() {
         <Field label="来源"><Input value={form.source} onChange={e => setForm({ ...form, source: e.target.value })} /></Field><Field label="作者"><Input value={form.author} onChange={e => setForm({ ...form, author: e.target.value })} /></Field>
         <Field label="计划发布时间"><Input type="datetime-local" value={form.publishAt} onChange={e => setForm({ ...form, publishAt: e.target.value })} /></Field>
         {form.type !== 'NEWS' && <><Field label="商品名称"><Input value={form.productName} onChange={e => setForm({ ...form, productName: e.target.value })} /></Field><Field label="规格"><Input value={form.spec} onChange={e => setForm({ ...form, spec: e.target.value })} /></Field><Field label="数量"><Input value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></Field><Field label="价格"><Input value={form.priceText} onChange={e => setForm({ ...form, priceText: e.target.value })} /></Field><Field label="地区"><Input value={form.region} onChange={e => setForm({ ...form, region: e.target.value })} /></Field><Field label="交货方式"><Input value={form.deliveryMethod} onChange={e => setForm({ ...form, deliveryMethod: e.target.value })} /></Field><Field label="企业"><Input value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></Field><Field label="联系人 / 电话"><div className="grid grid-cols-2 gap-2"><Input value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} /><Input value={form.contactPhone} onChange={e => setForm({ ...form, contactPhone: e.target.value })} /></div></Field><Field label="其他要求" className="md:col-span-2"><textarea className="field min-h-20" value={form.requirements} onChange={e => setForm({ ...form, requirements: e.target.value })} /></Field></>}
-      </div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>取消</Button><Button disabled={saving} onClick={save}>{saving ? '保存中…' : '保存草稿'}</Button></DialogFooter>
+      </div>
+      {!editingId && <div className="rounded-md bg-muted p-3 text-xs leading-5 text-muted-foreground">新建内容保存后为草稿，需在列表点击“发布”才会显示到官网和小程序；已发布内容点击“下线”后将立即从公开端隐藏。</div>}
+      <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>取消</Button><Button disabled={saving} onClick={save}>{saving ? '保存中…' : editingId ? '保存修改' : '保存草稿'}</Button></DialogFooter>
     </DialogContent></Dialog>
     <Dialog open={categoryOpen} onOpenChange={setCategoryOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>新增资讯栏目</DialogTitle></DialogHeader><div className="space-y-4"><Field label="栏目编码"><Input value={categoryForm.code} onChange={e => setCategoryForm({ ...categoryForm, code: e.target.value.toUpperCase() })} placeholder="例如 INDUSTRY_NEWS" /></Field><Field label="栏目名称"><Input value={categoryForm.name} onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} placeholder="例如 行业动态" /></Field><div className="rounded-md bg-muted p-3 text-xs text-muted-foreground">已有栏目：{categories.map(item => item.name).join('、') || '暂无'}</div></div><DialogFooter><Button variant="outline" onClick={() => setCategoryOpen(false)}>取消</Button><Button onClick={createCategory}>保存栏目</Button></DialogFooter></DialogContent></Dialog>
   </div>;

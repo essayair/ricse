@@ -23,6 +23,7 @@ import {
   CircleDollarSign,
   Factory,
   Newspaper,
+  Users,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -129,6 +130,16 @@ const CONTENT_ITEMS: NavGroup[] = [
   },
 ];
 
+const USER_ITEMS: NavGroup[] = [
+  {
+    label: '用户管理',
+    icon: Users,
+    children: [
+      { href: '/dashboard/users', label: '个人用户' },
+    ],
+  },
+];
+
 const SYSTEM_ITEMS: NavGroup[] = [
   {
     label: '系统管理',
@@ -213,7 +224,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
 
         {canViewContent && (
           <>
-            {/* 内容运营与交易业务、基础管理分别成组，保持一级导航简洁。 */}
+            {/* 运营类模块与交易业务、基础管理分别成组，保持一级导航简洁。 */}
             <div className="px-3 py-2">
               <div className="h-px bg-border" />
             </div>
@@ -229,6 +240,16 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
             ))}
           </>
         )}
+
+        {userRole === 'ADMIN' && USER_ITEMS.map((group) => (
+          <SidebarGroupItem
+            key={group.label}
+            icon={group.icon}
+            label={group.label}
+            items={group.children}
+            isActive={isActive}
+          />
+        ))}
 
         {/* 基础管理分隔线 */}
         <div className="px-3 py-2">
