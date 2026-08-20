@@ -98,8 +98,8 @@ export default function ContentArticlesPage() {
       <Card className="p-4"><div className="text-xs text-muted-foreground">当前已发布</div><div className="mt-1 text-2xl font-bold text-emerald-600">{data.list.filter((item: any) => item.status === 'PUBLISHED').length}</div></Card>
       <Card className="p-4"><div className="text-xs text-muted-foreground">草稿与下线</div><div className="mt-1 text-2xl font-bold text-amber-600">{data.list.filter((item: any) => item.status !== 'PUBLISHED').length}</div></Card>
     </div>
-    <div className="flex flex-wrap gap-3">
-      <div className="relative min-w-72 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="搜索标题、摘要、商品或企业" value={search} onChange={e => setSearch(e.target.value)} /></div>
+    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_10rem]">
+      <div className="relative min-w-0"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="搜索标题、摘要、商品或企业" value={search} onChange={e => setSearch(e.target.value)} /></div>
       <Select value={type} onChange={setType} options={ARTICLE_TYPE} all="全部类型" />
       <Select value={status} onChange={setStatus} options={ARTICLE_STATUS} all="全部状态" />
     </div>
