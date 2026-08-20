@@ -44,8 +44,9 @@ export class NewsIngestionService {
     return (this.config.get<string>('LEGACY_WEBSITE_API_BASE') || 'https://api.hgyunlian.com').replace(/\/$/, '');
   }
 
-  async sync() {
-    const pageCount = Math.max(1, Number(this.config.get<string>('NEWS_SYNC_PAGES') || 3));
+  async sync(pageCountOverride?: number) {
+    const configuredPages = Number(this.config.get<string>('NEWS_SYNC_PAGES') || 3);
+    const pageCount = Math.min(100, Math.max(1, Number(pageCountOverride || configuredPages)));
     const pageSize = 20;
     let scanned = 0;
     let changed = 0;
@@ -74,27 +75,16 @@ export class NewsIngestionService {
 
   private async ingest(item: LegacyNews) {
     const legacyId = String(item.id);
+    const existing = await this.prisma.contentArticle.findUnique({ where: { legacyId } });
+    const listHash = this.sourceHash(item);
+    if (existing?.sourceHash === listHash) return false;
+
     const detailRes = await fetch(`${this.baseUrl()}/app-api/website/industry-news/get?id=${encodeURIComponent(legacyId)}`, {
       signal: AbortSignal.timeout(20_000),
     });
     const detailBody: any = detailRes.ok ? await detailRes.json() : null;
     const detail: LegacyNews = detailBody?.data || item;
-    const sourceMaterial = JSON.stringify({
-      title: detail.title,
-      summary: detail.summary,
-      content: detail.content,
-      coverImage: detail.coverImage,
-      publishTime: detail.publishTime,
-      type: detail.type,
-      productName: detail.productName,
-      spec: detail.spec,
-      quantity: detail.quantity,
-      price: detail.price,
-      address: detail.address,
-      requirements: detail.requirements,
-    });
-    const sourceHash = crypto.createHash('sha256').update(sourceMaterial).digest('hex');
-    const existing = await this.prisma.contentArticle.findUnique({ where: { legacyId } });
+    const sourceHash = this.sourceHash(detail);
     if (existing?.sourceHash === sourceHash) return false;
 
     const type = detail.type === 2 ? 'SUPPLY' : detail.type === 3 ? 'DEMAND' : 'NEWS';
@@ -144,6 +134,24 @@ export class NewsIngestionService {
       create: { ...data, legacyId },
     });
     return true;
+  }
+
+  private sourceHash(detail: LegacyNews) {
+    const sourceMaterial = JSON.stringify({
+      title: detail.title,
+      summary: detail.summary,
+      content: detail.content,
+      coverImage: detail.coverImage,
+      publishTime: detail.publishTime,
+      type: detail.type,
+      productName: detail.productName,
+      spec: detail.spec,
+      quantity: detail.quantity,
+      price: detail.price,
+      address: detail.address,
+      requirements: detail.requirements,
+    });
+    return crypto.createHash('sha256').update(sourceMaterial).digest('hex');
   }
 
   private date(value?: number | string) {

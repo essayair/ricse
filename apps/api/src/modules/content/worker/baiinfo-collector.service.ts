@@ -14,6 +14,28 @@ const TARGET_IDS = [
   '1588348470396508951',
 ];
 
+interface LegacyMarketRegion {
+  region?: string;
+  province?: string;
+  marketName?: string;
+  shortName?: string;
+  price?: number;
+  date?: string;
+  change?: number;
+  remark?: string;
+  unit?: string;
+}
+
+interface LegacyMarketTrend {
+  marketName?: string;
+  shortName?: string;
+  region?: string;
+  province?: string;
+  unit?: string;
+  remark?: string;
+  points?: Array<{ date?: string; price?: number }>;
+}
+
 @Injectable()
 export class BaiinfoCollectorService {
   private readonly logger = new Logger(BaiinfoCollectorService.name);
@@ -22,6 +44,7 @@ export class BaiinfoCollectorService {
   constructor(private readonly config: ConfigService, private readonly prisma: PrismaService) {}
 
   async sync() {
+    if (!this.hasDirectCredential()) return this.syncLegacyMarket();
     const credential = await this.ensureCredential();
     const end = this.formatDate(new Date());
     const start = this.formatDate(new Date(Date.now() - 180 * 86400000));
@@ -70,6 +93,116 @@ export class BaiinfoCollectorService {
     }
     this.logger.log(`百川行情同步完成 saved=${saved}`);
     return { saved, businessDate: rows[0]?.date || null };
+  }
+
+  private hasDirectCredential() {
+    return Boolean(
+      (this.config.get<string>('BAIINFO_AUTH') && this.config.get<string>('BAIINFO_COOKIE'))
+      || (this.config.get<string>('BAIINFO_USERNAME') && this.config.get<string>('BAIINFO_PASSWORD')),
+    );
+  }
+
+  private legacyMarketBase() {
+    return (this.config.get<string>('LEGACY_MARKET_API_BASE') || 'http://host.docker.internal:3001').replace(/\/$/, '');
+  }
+
+  private async syncLegacyMarket() {
+    const regionsResponse = await fetch(`${this.legacyMarketBase()}/api/market/baiinfo/fluorite/regions`, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!regionsResponse.ok) throw new ServiceUnavailableException(`旧行情接口 HTTP ${regionsResponse.status}`);
+    if (regionsResponse.headers.get('x-ricse-compatibility') === 'true') {
+      throw new ServiceUnavailableException('旧行情地址已指向 RICSE 兼容层，拒绝回环同步');
+    }
+    const markets = await regionsResponse.json() as LegacyMarketRegion[];
+    if (!Array.isArray(markets) || !markets.length) throw new ServiceUnavailableException('旧行情接口没有可迁移数据');
+
+    const product = await this.prisma.contentProductType.upsert({
+      where: { code: 'FLUORITE_97' },
+      update: { name: '萤石粉', spec: 'CaF₂≥97%', unit: '元/吨', status: 'ACTIVE' },
+      create: { code: 'FLUORITE_97', name: '萤石粉', spec: 'CaF₂≥97%', unit: '元/吨' },
+    });
+    const records: Array<{
+      region: string;
+      marketName: string;
+      date: string;
+      price: number;
+      change: number;
+      unit: string;
+      remark: string;
+      rawData: Record<string, string>;
+    }> = [];
+
+    for (const market of markets) {
+      const marketName = String(market.marketName || '').trim();
+      if (!marketName) continue;
+      const trendResponse = await fetch(`${this.legacyMarketBase()}/api/market/baiinfo/fluorite/trend?marketName=${encodeURIComponent(marketName)}`, {
+        signal: AbortSignal.timeout(30_000),
+      });
+      const trend = trendResponse.ok ? await trendResponse.json() as LegacyMarketTrend : {};
+      const points = Array.isArray(trend.points)
+        ? trend.points.filter((point) => this.validDate(point.date) && Number.isFinite(Number(point.price)) && Number(point.price) > 0)
+        : [];
+      if (!points.length && this.validDate(market.date) && Number.isFinite(Number(market.price))) {
+        points.push({ date: market.date, price: Number(market.price) });
+      }
+      const region = String(trend.region || market.region || '全国');
+      const unit = String(trend.unit || market.unit || '元/吨');
+      const remark = String(trend.remark || market.remark || '');
+      const rawData = {
+        shortName: String(trend.shortName || market.shortName || marketName),
+        province: String(trend.province || market.province || region),
+        remark,
+      };
+      points.forEach((point, index) => {
+        const price = Number(point.price);
+        const previous = index > 0 ? Number(points[index - 1].price) : price;
+        records.push({
+          region,
+          marketName,
+          date: String(point.date),
+          price,
+          change: index === points.length - 1 && Number.isFinite(Number(market.change))
+            ? Number(market.change)
+            : Number((price - previous).toFixed(4)),
+          unit,
+          remark,
+          rawData,
+        });
+      });
+    }
+
+    let saved = 0;
+    for (let offset = 0; offset < records.length; offset += 50) {
+      const batch = records.slice(offset, offset + 50);
+      await Promise.all(batch.map((row) => this.prisma.contentProductPrice.upsert({
+        where: { productTypeId_businessDate_region_source_marketName: {
+          productTypeId: product.id,
+          businessDate: new Date(`${row.date}T00:00:00.000Z`),
+          region: row.region,
+          source: 'BAIINFO',
+          marketName: row.marketName,
+        } },
+        update: {
+          price: new Prisma.Decimal(row.price), changeAmount: new Prisma.Decimal(row.change),
+          unit: row.unit, remark: row.remark || null, rawData: row.rawData,
+        },
+        create: {
+          productTypeId: product.id, businessDate: new Date(`${row.date}T00:00:00.000Z`),
+          region: row.region, marketName: row.marketName, spec: 'CaF₂≥97%',
+          price: new Prisma.Decimal(row.price), unit: row.unit,
+          changeAmount: new Prisma.Decimal(row.change), source: 'BAIINFO',
+          remark: row.remark || null, rawData: row.rawData,
+        },
+      })));
+      saved += batch.length;
+    }
+    this.logger.log(`旧行情历史迁移完成 markets=${markets.length} saved=${saved}`);
+    return { saved, markets: markets.length, source: 'LEGACY_MARKET_API' };
+  }
+
+  private validDate(value?: string) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
   }
 
   private fetchExport(start: string, end: string, credential: { token: string; cookie: string }) {

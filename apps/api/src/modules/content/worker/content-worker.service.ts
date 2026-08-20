@@ -30,6 +30,7 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
     });
     this.worker.on('failed', (job, error) => this.logger.error(`任务失败 id=${job?.id}: ${error.message}`));
     this.worker.on('completed', (job) => this.logger.log(`任务完成 id=${job.id} type=${job.name}`));
+    if (process.env.CONTENT_SYNC_ON_STARTUP !== 'false') await this.queue.enqueueStartupSyncs();
     this.logger.log('内容 Worker 已启动并注册定时任务');
   }
 
@@ -53,7 +54,7 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
     });
     try {
       let result: unknown;
-      if (type === 'NEWS_SYNC') result = await this.news.sync();
+      if (type === 'NEWS_SYNC') result = await this.news.sync(Number((job.data.payload || {}).pageCount) || undefined);
       else if (type === 'MARKET_SYNC') result = await this.baiinfo.sync();
       else if (type === 'AI_CLEAN') result = await this.cleanOne((job.data.payload || {}).articleId);
       else if (type === 'DATA_IMPORT') result = await this.dataImport.importPriceFile((job.data.payload || {}).assetId);

@@ -166,8 +166,11 @@ services:
       CONTENT_WORKER_CONCURRENCY: ${CONTENT_WORKER_CONCURRENCY:-1}
       NEWS_SYNC_CRON: ${NEWS_SYNC_CRON:-*/30 * * * *}
       MARKET_SYNC_CRON: ${MARKET_SYNC_CRON:-0 6 * * *}
-      LEGACY_WEBSITE_API_BASE: ${LEGACY_WEBSITE_API_BASE:-https://api.hgyunlian.com}
+      LEGACY_WEBSITE_API_BASE: ${LEGACY_WEBSITE_API_BASE:-http://host.docker.internal:48080}
+      LEGACY_MARKET_API_BASE: ${LEGACY_MARKET_API_BASE:-http://host.docker.internal:3001}
       NEWS_SYNC_PAGES: ${NEWS_SYNC_PAGES:-3}
+      NEWS_INITIAL_SYNC_PAGES: ${NEWS_INITIAL_SYNC_PAGES:-20}
+      CONTENT_SYNC_ON_STARTUP: ${CONTENT_SYNC_ON_STARTUP:-true}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
@@ -189,8 +192,11 @@ services:
         condition: service_healthy
     mem_limit: ${CONTENT_WORKER_MEMORY_LIMIT:-768m}
     cpus: ${CONTENT_WORKER_CPU_LIMIT:-1.0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
+      - egress
 
   web:
     image: ${WEB_IMAGE:-ricse-staging-web}:${IMAGE_TAG:-local}
@@ -253,5 +259,6 @@ volumes:
 
 networks:
   frontend:
+  egress:
   backend:
     internal: true
