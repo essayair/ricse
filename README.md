@@ -32,6 +32,10 @@ pnpm db:seed:blank
 空白初始化只创建系统内置权限、默认审批模板和唯一的 `admin` 管理员，不创建企业、部门、员工、合作伙伴、物料或业务单据。
 
 - **前端**: http://localhost:3001
+- **核心 API**: http://localhost:3000/api/docs
+- **内容 API**: http://localhost:3002/api/content-docs
+
+`pnpm dev` 会同时启动核心 API、内容 API、内容 Worker 和前端；单独调试时可使用下表中的分项命令。
 - **API**: http://localhost:3000/api/v1
 - **API 文档**: http://localhost:3000/api/docs (Swagger)
 - **Prisma Studio**: `pnpm db:studio` → http://localhost:5555
@@ -108,8 +112,10 @@ pnpm db:seed:blank
 | 一键初始化 | `pnpm setup` |
 | 启动基础设施 | `pnpm docker:up` |
 | 停止基础设施 | `pnpm docker:down` |
-| 启动前后端 | `pnpm dev` |
-| 仅启动后端 | `pnpm dev:api` |
+| 启动全部开发服务 | `pnpm dev` |
+| 仅启动核心后端 | `pnpm dev:api` |
+| 仅启动内容 API | `pnpm dev:content` |
+| 仅启动内容 Worker | `pnpm dev:worker` |
 | 仅启动前端 | `pnpm dev:web` |
 | 生成 Prisma 类型 | `pnpm db:generate` |
 | 执行迁移 | `pnpm db:migrate` |

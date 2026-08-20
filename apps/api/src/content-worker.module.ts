@@ -1,0 +1,16 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { PrismaModule } from './prisma/prisma.module';
+import { ContentAiService } from './modules/content/ai.service';
+import { ContentQueueService } from './modules/content/content-queue.service';
+import { BaiinfoCollectorService } from './modules/content/worker/baiinfo-collector.service';
+import { ContentWorkerService } from './modules/content/worker/content-worker.service';
+import { NewsIngestionService } from './modules/content/worker/news-ingestion.service';
+import { ContentDataImportService } from './modules/content/worker/data-import.service';
+import { FileService } from './modules/common/file.service';
+
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule],
+  providers: [ContentQueueService, ContentAiService, BaiinfoCollectorService, NewsIngestionService, ContentDataImportService, FileService, ContentWorkerService],
+})
+export class ContentWorkerModule {}

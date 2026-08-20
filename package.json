@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "pnpm -r --parallel dev",
+    "dev": "concurrently --kill-others -n core,content,worker,web -c blue,cyan,magenta,green \"pnpm dev:api\" \"pnpm dev:content\" \"pnpm dev:worker\" \"pnpm dev:web\"",
     "dev:api": "pnpm --filter @ricse/api dev",
+    "dev:content": "pnpm --filter @ricse/api dev:content",
+    "dev:worker": "pnpm --filter @ricse/api dev:worker",
     "dev:web": "pnpm --filter @ricse/web dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
@@ -34,5 +36,8 @@
   "engines": {
     "node": ">=18"
   },
-  "packageManager": "pnpm@10.33.4"
+  "packageManager": "pnpm@10.33.4",
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
 }

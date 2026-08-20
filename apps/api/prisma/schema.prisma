@@ -1730,3 +1730,234 @@ model Attachment {
   @@index([inventoryReversalId])
   @@map("attachments")
 }
+
+// ========== 内容运营中心 ==========
+
+/// 资讯栏目。legacyId 用于迁移旧官网数字主键及保持历史链接有效。
+model ContentCategory {
+  id        String   @id @default(cuid())
+  legacyId  String?  @unique
+  code      String   @unique
+  name      String
+  sort      Int      @default(0)
+  status    String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  articles ContentArticle[]
+
+  @@index([status, sort])
+  @@map("content_categories")
+}
+
+/// 统一承载行业资讯及平台维护的供应/需求信息。
+model ContentArticle {
+  id             String   @id @default(cuid())
+  legacyId       String?  @unique
+  categoryId     String?
+  type           String   @default("NEWS") // NEWS | SUPPLY | DEMAND
+  title          String
+  summary        String?
+  content        String   @default("")
+  coverUrl       String?
+  source         String?
+  sourceHash     String?
+  author         String?
+  tags           String[] @default([])
+  status         String   @default("DRAFT") // DRAFT | PUBLISHED | OFFLINE
+  publishAt      DateTime?
+  publishedById  String?
+  createdById    String?
+  viewCount      Int      @default(0)
+  likeCount      Int      @default(0)
+  productName    String?
+  spec           String?
+  quantity       String?
+  priceText      String?
+  region         String?
+  deliveryMethod String?
+  requirements   String?
+  company        String?
+  contactName    String?
+  contactPhone   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category ContentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  assets   ContentAsset[]
+
+  @@index([type, status, publishAt])
+  @@index([categoryId, status])
+  @@index([createdAt])
+  @@map("content_articles")
+}
+
+model ContentProductType {
+  id        String   @id @default(cuid())
+  legacyId  String?  @unique
+  code      String   @unique
+  name      String
+  spec      String?
+  unit      String   @default("元/吨")
+  sort      Int      @default(0)
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  prices ContentProductPrice[]
+
+  @@index([status, sort])
+  @@map("content_product_types")
+}
+
+model ContentProductPrice {
+  id            String   @id @default(cuid())
+  legacyId      String?  @unique
+  productTypeId String
+  businessDate  DateTime @db.Date
+  region        String
+  marketName    String?
+  spec          String?
+  price         Decimal  @db.Decimal(15, 4)
+  unit          String   @default("元/吨")
+  changeAmount  Decimal? @db.Decimal(15, 4)
+  source        String   @default("MANUAL") // MANUAL | BAIINFO | IMPORT
+  remark        String?
+  rawData       Json?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  productType ContentProductType @relation(fields: [productTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([productTypeId, businessDate, region, source, marketName])
+  @@index([businessDate, region])
+  @@index([productTypeId, businessDate])
+  @@map("content_product_prices")
+}
+
+model WebsiteContact {
+  id           String   @id @default(cuid())
+  legacyId     String?  @unique
+  name         String
+  phone        String
+  company      String?
+  email        String?
+  message      String
+  sourcePage   String?
+  sourceIp     String?
+  status       String   @default("NEW") // NEW | FOLLOWING | COMPLETED | INVALID
+  assigneeId   String?
+  followUpNote String?
+  handledAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([phone])
+  @@map("website_contacts")
+}
+
+model SupplyDemandPost {
+  id           String   @id @default(cuid())
+  legacyId     String?  @unique
+  type         String // SUPPLY | DEMAND
+  productName  String
+  spec         String?
+  quantity     String?
+  priceText    String?
+  region       String?
+  description  String?
+  contactName  String
+  contactPhone String
+  company      String?
+  wechatOpenId String?
+  status       String   @default("PENDING") // PENDING | PUBLISHED | REJECTED | OFFLINE
+  rejectReason String?
+  source       String   @default("USER") // USER | PLATFORM | MIGRATION
+  reviewedById String?
+  reviewedAt   DateTime?
+  publishedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([type, status, publishedAt])
+  @@index([wechatOpenId, createdAt])
+  @@map("supply_demand_posts")
+}
+
+model ContentAsset {
+  id           String   @id @default(cuid())
+  articleId    String?
+  objectKey    String   @unique
+  originalName String
+  mimeType     String
+  size         Int
+  purpose      String   @default("ATTACHMENT") // COVER | INLINE | ATTACHMENT | DATASET
+  createdById  String?
+  createdAt    DateTime @default(now())
+
+  article ContentArticle? @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId, purpose])
+  @@map("content_assets")
+}
+
+model ContentDataSource {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  name          String
+  type          String // MANUAL | BAIINFO | API | EXCEL
+  status        String   @default("ACTIVE")
+  schedule      String?
+  config        Json?
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  jobs ContentJob[]
+
+  @@index([status, type])
+  @@map("content_data_sources")
+}
+
+model ContentJob {
+  id           String   @id @default(cuid())
+  sourceId     String?
+  type         String // NEWS_SYNC | AI_CLEAN | MARKET_SYNC | DATA_IMPORT
+  businessKey  String   @unique
+  status       String   @default("PENDING") // PENDING | RUNNING | SUCCEEDED | FAILED | CANCELLED
+  payload      Json?
+  result       Json?
+  attempts     Int      @default(0)
+  maxAttempts  Int      @default(3)
+  scheduledAt  DateTime @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  nextRetryAt  DateTime?
+  errorMessage String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  source ContentDataSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([sourceId, createdAt])
+  @@map("content_jobs")
+}
+
+model WechatIdentity {
+  id        String   @id @default(cuid())
+  openId    String   @unique
+  unionId   String?
+  status    String   @default("ACTIVE")
+  lastLogin DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([unionId])
+  @@map("wechat_identities")
+}

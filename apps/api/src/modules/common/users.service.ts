@@ -180,6 +180,18 @@ export class UsersService {
     });
   }
 
+  async getActiveAccess(userId: string) {
+    const now = new Date();
+    const assignments = await this.prisma.userRoleAssignment.findMany({
+      where: { userId, status: 'ACTIVE', effectiveAt: { lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }], role: { status: 'ACTIVE' } },
+      select: { role: { select: { code: true, permissions: { select: { permission: { select: { code: true } } } } } } },
+    });
+    return {
+      roles: [...new Set(assignments.map((item) => item.role.code))],
+      permissions: [...new Set(assignments.flatMap((item) => item.role.permissions.map((entry) => entry.permission.code)))],
+    };
+  }
+
   async update(id: string, data: { role?: string; status?: string; name?: string; username?: string; phone?: string; email?: string }) {
     const username = data.username?.trim();
     if (username !== undefined) {

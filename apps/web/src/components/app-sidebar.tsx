@@ -22,6 +22,7 @@ import {
   Settings2,
   CircleDollarSign,
   Factory,
+  Newspaper,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -113,6 +114,21 @@ const BASE_ITEMS: NavGroup[] = [
   },
 ];
 
+const CONTENT_ITEMS: NavGroup[] = [
+  {
+    label: '内容运营',
+    icon: Newspaper,
+    children: [
+      { href: '/dashboard/content/articles', label: '资讯管理' },
+      { href: '/dashboard/content/supply-demand', label: '供需信息' },
+      { href: '/dashboard/content/prices', label: '价格行情' },
+      { href: '/dashboard/content/contacts', label: '官网咨询' },
+      { href: '/dashboard/content/data-sources', label: '数据源管理' },
+      { href: '/dashboard/content/jobs', label: '采集与 AI' },
+    ],
+  },
+];
+
 const SYSTEM_ITEMS: NavGroup[] = [
   {
     label: '系统管理',
@@ -124,10 +140,12 @@ const SYSTEM_ITEMS: NavGroup[] = [
   },
 ];
 
-export function AppSidebar({ userRole }: { userRole: string }) {
+export function AppSidebar({ userRole, permissions = [] }: { userRole: string; permissions?: string[] }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { open } = useSidebar();
+  const canViewContent = ['ADMIN', 'CONTENT_OPERATOR'].includes(userRole)
+    || permissions.some((code) => code.startsWith('content.'));
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
@@ -193,8 +211,27 @@ export function AppSidebar({ userRole }: { userRole: string }) {
           />
         ))}
 
-        {/* 分隔线 */}
-        <div className="px-3 py-1">
+        {canViewContent && (
+          <>
+            {/* 内容运营与交易业务、基础管理分别成组，保持一级导航简洁。 */}
+            <div className="px-3 py-2">
+              <div className="h-px bg-border" />
+            </div>
+
+            {CONTENT_ITEMS.map((group) => (
+              <SidebarGroupItem
+                key={group.label}
+                icon={group.icon}
+                label={group.label}
+                items={group.children}
+                isActive={isActive}
+              />
+            ))}
+          </>
+        )}
+
+        {/* 基础管理分隔线 */}
+        <div className="px-3 py-2">
           <div className="h-px bg-border" />
         </div>
 

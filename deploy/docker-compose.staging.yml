@@ -105,6 +105,93 @@ services:
     networks:
       - backend
 
+  content-api:
+    image: ${API_IMAGE:-ricse-staging-api}:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    command: ["node", "apps/api/dist/src/content-main.js"]
+    environment:
+      NODE_ENV: production
+      CONTENT_API_PORT: 3002
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=8
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      CORS_ORIGIN: ${PUBLIC_URL}
+      CONTENT_CORS_ORIGIN: ${CONTENT_CORS_ORIGIN:-}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_ENDPOINT: ${PUBLIC_HOST}
+      MINIO_PUBLIC_PORT: ${MINIO_PUBLIC_PORT}
+      MINIO_PUBLIC_USE_SSL: ${MINIO_PUBLIC_USE_SSL}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ricse-attachments}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      WX_APPID: ${WX_APPID:-}
+      WX_SECRET: ${WX_SECRET:-}
+      WECHAT_TOKEN_SECRET: ${WECHAT_TOKEN_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    expose:
+      - "3002"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/api/v1/content-health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: ${CONTENT_API_MEMORY_LIMIT:-512m}
+    cpus: ${CONTENT_API_CPU_LIMIT:-1.0}
+    networks:
+      - backend
+
+  content-worker:
+    image: ${API_IMAGE:-ricse-staging-api}:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    command: ["node", "apps/api/dist/src/worker-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=4
+      REDIS_URL: redis://redis:6379
+      CONTENT_WORKER_CONCURRENCY: ${CONTENT_WORKER_CONCURRENCY:-1}
+      NEWS_SYNC_CRON: ${NEWS_SYNC_CRON:-*/30 * * * *}
+      MARKET_SYNC_CRON: ${MARKET_SYNC_CRON:-0 6 * * *}
+      LEGACY_WEBSITE_API_BASE: ${LEGACY_WEBSITE_API_BASE:-https://api.hgyunlian.com}
+      NEWS_SYNC_PAGES: ${NEWS_SYNC_PAGES:-3}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      BAIINFO_AUTH: ${BAIINFO_AUTH:-}
+      BAIINFO_COOKIE: ${BAIINFO_COOKIE:-}
+      BAIINFO_USERNAME: ${BAIINFO_USERNAME:-}
+      BAIINFO_PASSWORD: ${BAIINFO_PASSWORD:-}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ricse-attachments}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: ${CONTENT_WORKER_MEMORY_LIMIT:-768m}
+    cpus: ${CONTENT_WORKER_CPU_LIMIT:-1.0}
+    networks:
+      - backend
+
   web:
     image: ${WEB_IMAGE:-ricse-staging-web}:${IMAGE_TAG:-local}
     build:
@@ -117,6 +204,8 @@ services:
       HOSTNAME: 0.0.0.0
     depends_on:
       api:
+        condition: service_healthy
+      content-api:
         condition: service_healthy
     expose:
       - "3001"
@@ -148,6 +237,8 @@ services:
       - "${RICSE_HTTP_BIND:-127.0.0.1:8080}:80"
     depends_on:
       api:
+        condition: service_healthy
+      content-api:
         condition: service_healthy
       web:
         condition: service_healthy

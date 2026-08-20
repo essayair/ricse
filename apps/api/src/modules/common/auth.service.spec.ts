@@ -37,6 +37,7 @@ describe('AuthService', () => {
       findByRefreshToken: jest.fn(),
       setRefreshToken: jest.fn(),
       clearRefreshToken: jest.fn(),
+      getActiveAccess: jest.fn().mockResolvedValue({ roles: ['USER'], permissions: [] }),
     };
 
     const mockJwtService = {

@@ -51,6 +51,14 @@ mkdir -p deploy/certs
    `deploy/flow-host-deploy.sh`；
 5. 检查 `/api/v1/health` 和 `/login`。
 
+内容运营中心上线后还应检查 `/api/v1/content-health`。同一 API 镜像会分别启动
+`core-api`、`content-api` 和 `content-worker`：第三方采集和批量 AI 只在 Worker 中运行，
+其异常不会阻塞合同、库存等核心 API。部署前需要在云效密钥变量或服务器
+`.env.staging` 配置微信、DeepSeek、百川凭据；不要把真实值提交到 Git。
+
+部署完成后，在“内容运营中心 → 采集与 AI”手工触发一次资讯同步和行情同步；
+历史行情 Excel 可在“数据源管理”的“萤石产业数据文件”上传，执行结果统一在任务列表查看。
+
 开通 ACR 后可切换为镜像发布：
 
 1. 流水线先登录 ACR；

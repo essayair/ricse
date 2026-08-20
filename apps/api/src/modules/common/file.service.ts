@@ -73,10 +73,12 @@ export class FileService {
     buffer: Buffer,
     originalName: string,
     mimeType: string,
+    prefix = 'partner',
   ): Promise<{ fileName: string; size: number }> {
     await this.ensureBucket();
     const ext = originalName.split('.').pop() || 'bin';
-    const fileName = `partner/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const safePrefix = prefix.replace(/[^a-z0-9/_-]/gi, '').replace(/^\/+|\/+$/g, '') || 'misc';
+    const fileName = `${safePrefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
     await this.client.putObject(this.bucket, fileName, buffer, buffer.length, {
       'Content-Type': mimeType,
@@ -87,6 +89,13 @@ export class FileService {
 
   async getUrl(fileName: string): Promise<string> {
     return this.publicClient.presignedGetObject(this.bucket, fileName, 60 * 60); // 1 hour
+  }
+
+  async download(fileName: string): Promise<Buffer> {
+    const stream = await this.client.getObject(this.bucket, fileName);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    return Buffer.concat(chunks);
   }
 
   async delete(fileName: string): Promise<void> {

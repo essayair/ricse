@@ -60,7 +60,7 @@ export class AuthService {
     await this.usersService.clearRefreshToken(userId);
   }
 
-  private generateTokens(user: { id: string; username: string; role: string; name: string }) {
+  private async generateTokens(user: { id: string; username: string; role: string; name: string }) {
     const payload = { sub: user.id, username: user.username, role: user.role };
     const refreshPayload = { sub: user.id, type: 'refresh' };
 
@@ -69,6 +69,7 @@ export class AuthService {
       secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       expiresIn: this.refreshTokenExpiry,
     });
+    const access = await this.usersService.getActiveAccess(user.id);
 
     // Store refresh token hash in DB
     bcrypt.hash(refreshToken, 10).then((hash) => {
@@ -80,6 +81,8 @@ export class AuthService {
       username: user.username,
       name: user.name,
       role: user.role,
+      roles: access.roles,
+      permissions: access.permissions,
       token: accessToken,
       refreshToken,
     };

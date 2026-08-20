@@ -2,10 +2,21 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === 'production' ? '/api/v1' : 'http://localhost:3000/api/v1');
 
+export const CONTENT_API_BASE_URL =
+  process.env.NEXT_PUBLIC_CONTENT_API_URL ||
+  (process.env.NODE_ENV === 'production' ? '/api/v1' : 'http://localhost:3002/api/v1');
+
+function baseUrlFor(path: string) {
+  return path.startsWith('/content') || path.startsWith('/public/content')
+    || path.startsWith('/public/ai') || path.startsWith('/public/wechat')
+    ? CONTENT_API_BASE_URL
+    : API_BASE_URL;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${baseUrlFor(path)}${path}`, {
     ...options,
     cache: 'no-store',
     headers: {
@@ -47,7 +58,7 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: async <T>(path: string, formData: FormData): Promise<T> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    const res = await fetch(`${API_BASE_URL}${path}`, {
+    const res = await fetch(`${baseUrlFor(path)}${path}`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,

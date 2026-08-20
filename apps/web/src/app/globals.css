@@ -67,3 +67,12 @@
       'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   }
 }
+
+@layer components {
+  .field {
+    @apply h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring;
+  }
+  textarea.field {
+    @apply h-auto resize-y;
+  }
+}

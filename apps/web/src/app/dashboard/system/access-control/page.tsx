@@ -58,6 +58,7 @@ const MODULE_LABELS: Record<string, string> = {
   MASTER_DATA: '主数据',
   ORGANIZATION: '组织数据',
   SYSTEM: '系统管理',
+  CONTENT: '内容运营中心',
 };
 
 const SCOPE_LABELS: Record<string, string> = {
