@@ -154,6 +154,7 @@ services:
     cpus: ${CONTENT_API_CPU_LIMIT:-1.0}
     networks:
       - backend
+      - egress
 
   content-worker:
     image: ${API_IMAGE:-ricse-staging-api}:${IMAGE_TAG:-local}
