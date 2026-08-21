@@ -8,9 +8,11 @@ import { ContentWorkerService } from './modules/content/worker/content-worker.se
 import { NewsIngestionService } from './modules/content/worker/news-ingestion.service';
 import { ContentDataImportService } from './modules/content/worker/data-import.service';
 import { FileService } from './modules/common/file.service';
+import { BusinessAnalytiqCollectorService } from './modules/content/worker/business-analytiq-collector.service';
+import { FluorsparTrendCollectorService } from './modules/content/worker/fluorspar-trend-collector.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule],
-  providers: [ContentQueueService, ContentAiService, BaiinfoCollectorService, NewsIngestionService, ContentDataImportService, FileService, ContentWorkerService],
+  providers: [ContentQueueService, ContentAiService, BaiinfoCollectorService, BusinessAnalytiqCollectorService, FluorsparTrendCollectorService, NewsIngestionService, ContentDataImportService, FileService, ContentWorkerService],
 })
 export class ContentWorkerModule {}

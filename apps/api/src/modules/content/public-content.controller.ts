@@ -58,6 +58,12 @@ export class PublicContentController {
     return this.service.marketTrend(marketName);
   }
 
+  @Get('market/hydrofluoric-acid/trend')
+  hydrofluoricAcidTrend() { return this.service.hydrofluoricAcidTrend(); }
+
+  @Get('market/fluorite/price-trend')
+  fluorsparPriceTrend() { return this.service.fluorsparPriceTrend(); }
+
   @Post('contacts')
   async createContact(@Body() dto: CreateContactDto, @Ip() sourceIp: string) {
     await this.rate.assert('contact', sourceIp, 5, 3600);

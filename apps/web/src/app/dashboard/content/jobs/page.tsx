@@ -9,10 +9,54 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
 export default function ContentJobsPage() {
-  const [data, setData] = useState<any>({ list: [], total: 0 }); const [sources, setSources] = useState<any[]>([]); const [type, setType] = useState(''); const [status, setStatus] = useState('');
-  const load = useCallback(() => { const p = new URLSearchParams({ pageSize: '100' }); if (type) p.set('type', type); if (status) p.set('status', status); api.get(`/content/jobs?${p}`).then(setData).catch((e: any) => alert(e.message)); }, [type, status]);
-  useEffect(() => { load(); }, [load]); useEffect(() => { api.get<any[]>('/content/data-sources').then(setSources).catch(() => []); }, []);
-  const trigger = async (jobType: string) => { const sourceCode = jobType === 'NEWS_SYNC' ? 'LEGACY_NEWS' : 'BAIINFO_FLUORITE'; const source = sources.find(item => item.code === sourceCode); try { await api.post('/content/jobs', { type: jobType, sourceId: source?.id }); load(); } catch (e: any) { alert(e.message); } };
-  const retry = async (id: string) => { try { await api.patch(`/content/jobs/${id}/retry`, {}); load(); } catch (e: any) { alert(e.message); } };
-  return <div className="space-y-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">采集与 AI</h1><p className="mt-1 text-sm text-muted-foreground">查看资讯同步、AI 清洗、行情采集和数据导入任务</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => trigger('NEWS_SYNC')}><Play className="mr-1 h-4 w-4" />同步资讯</Button><Button onClick={() => trigger('MARKET_SYNC')}><Play className="mr-1 h-4 w-4" />采集行情</Button></div></div><div className="flex gap-3"><select className="field w-auto" value={type} onChange={e => setType(e.target.value)}><option value="">全部类型</option>{Object.entries(JOB_TYPE).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select><select className="field w-auto" value={status} onChange={e => setStatus(e.target.value)}><option value="">全部状态</option>{Object.entries(JOB_STATUS).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select><Button variant="outline" onClick={load}><RefreshCw className="mr-1 h-4 w-4" />刷新</Button></div><Card className="overflow-hidden">{!data.list.length ? <div className="p-12 text-center text-muted-foreground"><Bot className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无任务记录</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-sm"><thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务类型</th><th className="p-3">数据源</th><th className="p-3">业务键</th><th className="p-3">状态</th><th className="p-3 text-right">执行次数</th><th className="p-3">计划 / 开始</th><th className="p-3">结束时间</th><th className="p-3">结果或错误</th><th className="p-3">操作</th></tr></thead><tbody>{data.list.map((item: any) => <tr key={item.id} className="border-b align-top"><td className="p-3 font-medium">{JOB_TYPE[item.type] || item.type}</td><td className="p-3">{item.source?.name || '-'}</td><td className="max-w-56 truncate p-3 font-mono text-xs">{item.businessKey}</td><td className="p-3"><Badge variant={item.status === 'SUCCEEDED' ? 'default' : item.status === 'FAILED' ? 'destructive' : 'secondary'}>{JOB_STATUS[item.status] || item.status}</Badge></td><td className="p-3 text-right">{item.attempts} / {item.maxAttempts}</td><td className="p-3 text-xs">{contentDate(item.scheduledAt)}<div className="mt-1 text-muted-foreground">{contentDate(item.startedAt)}</div></td><td className="p-3 text-xs">{contentDate(item.finishedAt)}</td><td className="max-w-80 p-3 text-xs"><span className={item.errorMessage ? 'text-destructive' : ''}>{item.errorMessage || (item.result ? JSON.stringify(item.result) : '-')}</span></td><td className="p-3">{['FAILED', 'CANCELLED'].includes(item.status) && <Button size="sm" variant="outline" onClick={() => retry(item.id)}>重试</Button>}</td></tr>)}</tbody></table></div>}</Card></div>;
+  const [data, setData] = useState<any>({ list: [], total: 0 });
+  const [sources, setSources] = useState<any[]>([]);
+  const [type, setType] = useState('');
+  const [status, setStatus] = useState('');
+  const load = useCallback(() => {
+    const params = new URLSearchParams({ pageSize: '100' });
+    if (type) params.set('type', type);
+    if (status) params.set('status', status);
+    api.get(`/content/jobs?${params}`).then(setData).catch((error: any) => alert(error.message));
+  }, [type, status]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.get<any[]>('/content/data-sources').then(setSources).catch(() => []); }, []);
+
+  const trigger = async (jobType: string) => {
+    const sourceCode = jobType === 'NEWS_SYNC' ? 'LEGACY_NEWS'
+      : jobType === 'HF_MARKET_SYNC' ? 'BUSINESS_ANALYTIQ_HF'
+      : jobType === 'FLUORSPAR_TREND_SYNC' ? 'FLUORSPAR_COM_TREND'
+      : 'BAIINFO_FLUORITE';
+    const source = sources.find((item) => item.code === sourceCode);
+    try {
+      await api.post('/content/jobs', { type: jobType, sourceId: source?.id });
+      load();
+    } catch (error: any) { alert(error.message); }
+  };
+  const retry = async (id: string) => {
+    try { await api.patch(`/content/jobs/${id}/retry`, {}); load(); } catch (error: any) { alert(error.message); }
+  };
+
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h1 className="text-2xl font-bold">采集与 AI</h1><p className="mt-1 text-sm text-muted-foreground">查看资讯同步、AI 清洗、行情采集和数据导入任务</p></div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => trigger('NEWS_SYNC')}><Play className="mr-1 h-4 w-4" />同步资讯</Button>
+        <Button variant="outline" onClick={() => trigger('MARKET_SYNC')}><Play className="mr-1 h-4 w-4" />采集萤石行情</Button>
+        <Button variant="outline" onClick={() => trigger('FLUORSPAR_TREND_SYNC')}><Play className="mr-1 h-4 w-4" />采集萤石趋势</Button>
+        <Button onClick={() => trigger('HF_MARKET_SYNC')}><Play className="mr-1 h-4 w-4" />采集国际氢氟酸行情</Button>
+      </div>
+    </div>
+    <div className="flex gap-3">
+      <select className="field w-auto" value={type} onChange={(event) => setType(event.target.value)}><option value="">全部类型</option>{Object.entries(JOB_TYPE).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select>
+      <select className="field w-auto" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(JOB_STATUS).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select>
+      <Button variant="outline" onClick={load}><RefreshCw className="mr-1 h-4 w-4" />刷新</Button>
+    </div>
+    <Card className="overflow-hidden">
+      {!data.list.length ? <div className="p-12 text-center text-muted-foreground"><Bot className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无任务记录</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-sm">
+        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务类型</th><th className="p-3">数据源</th><th className="p-3">业务键</th><th className="p-3">状态</th><th className="p-3 text-right">执行次数</th><th className="p-3">计划 / 开始</th><th className="p-3">结束时间</th><th className="p-3">结果或错误</th><th className="p-3">操作</th></tr></thead>
+        <tbody>{data.list.map((item: any) => <tr key={item.id} className="border-b align-top"><td className="p-3 font-medium">{JOB_TYPE[item.type] || item.type}</td><td className="p-3">{item.source?.name || '-'}</td><td className="max-w-56 truncate p-3 font-mono text-xs">{item.businessKey}</td><td className="p-3"><Badge variant={item.status === 'SUCCEEDED' ? 'default' : item.status === 'FAILED' ? 'destructive' : 'secondary'}>{JOB_STATUS[item.status] || item.status}</Badge></td><td className="p-3 text-right">{item.attempts} / {item.maxAttempts}</td><td className="p-3 text-xs">{contentDate(item.scheduledAt)}<div className="mt-1 text-muted-foreground">{contentDate(item.startedAt)}</div></td><td className="p-3 text-xs">{contentDate(item.finishedAt)}</td><td className="max-w-80 p-3 text-xs"><span className={item.errorMessage ? 'text-destructive' : ''}>{item.errorMessage || (item.result ? JSON.stringify(item.result) : '-')}</span></td><td className="p-3">{['FAILED', 'CANCELLED'].includes(item.status) && <Button size="sm" variant="outline" onClick={() => retry(item.id)}>重试</Button>}</td></tr>)}</tbody>
+      </table></div>}
+    </Card>
+  </div>;
 }

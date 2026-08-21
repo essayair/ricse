@@ -1824,7 +1824,7 @@ model ContentProductPrice {
   price         Decimal  @db.Decimal(15, 4)
   unit          String   @default("元/吨")
   changeAmount  Decimal? @db.Decimal(15, 4)
-  source        String   @default("MANUAL") // MANUAL | BAIINFO | IMPORT
+  source        String   @default("MANUAL") // MANUAL | BAIINFO | BUSINESS_ANALYTIQ | FLUORSPAR_COM | IMPORT
   remark        String?
   rawData       Json?
   createdById   String?
@@ -1929,7 +1929,7 @@ model ContentDataSource {
 model ContentJob {
   id           String   @id @default(cuid())
   sourceId     String?
-  type         String // NEWS_SYNC | AI_CLEAN | MARKET_SYNC | DATA_IMPORT
+  type         String // NEWS_SYNC | AI_CLEAN | MARKET_SYNC | HF_MARKET_SYNC | FLUORSPAR_TREND_SYNC | DATA_IMPORT
   businessKey  String   @unique
   status       String   @default("PENDING") // PENDING | RUNNING | SUCCEEDED | FAILED | CANCELLED
   payload      Json?

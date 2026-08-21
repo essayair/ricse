@@ -88,7 +88,7 @@ export class CreatePriceDto {
   @Type(() => Number) @IsNumber() @Min(0) price: number;
   @IsOptional() @IsString() @MaxLength(20) unit?: string;
   @IsOptional() @Type(() => Number) @IsNumber() changeAmount?: number;
-  @IsOptional() @IsIn(['MANUAL', 'BAIINFO', 'IMPORT']) source?: string;
+  @IsOptional() @IsIn(['MANUAL', 'BAIINFO', 'BUSINESS_ANALYTIQ', 'FLUORSPAR_COM', 'IMPORT']) source?: string;
   @IsOptional() @IsString() @MaxLength(500) remark?: string;
   @IsOptional() @IsObject() rawData?: Record<string, unknown>;
 }
@@ -96,7 +96,7 @@ export class CreatePriceDto {
 export class PriceQueryDto extends PageQueryDto {
   @IsOptional() @IsString() productTypeId?: string;
   @IsOptional() @IsString() region?: string;
-  @IsOptional() @IsIn(['MANUAL', 'BAIINFO', 'IMPORT']) source?: string;
+  @IsOptional() @IsIn(['MANUAL', 'BAIINFO', 'BUSINESS_ANALYTIQ', 'FLUORSPAR_COM', 'IMPORT']) source?: string;
   @IsOptional() @IsDateString() dateFrom?: string;
   @IsOptional() @IsDateString() dateTo?: string;
 }
@@ -146,7 +146,7 @@ export class ReviewSupplyDemandDto {
 }
 
 export class CreateContentJobDto {
-  @IsIn(['NEWS_SYNC', 'AI_CLEAN', 'MARKET_SYNC', 'DATA_IMPORT']) type: string;
+  @IsIn(['NEWS_SYNC', 'AI_CLEAN', 'MARKET_SYNC', 'HF_MARKET_SYNC', 'FLUORSPAR_TREND_SYNC', 'DATA_IMPORT']) type: string;
   @IsOptional() @IsString() sourceId?: string;
   @IsOptional() @IsObject() payload?: Record<string, unknown>;
   @IsOptional() @IsDateString() scheduledAt?: string;

@@ -6,6 +6,8 @@ import { CONTENT_QUEUE, ContentQueueService } from '../content-queue.service';
 import { BaiinfoCollectorService } from './baiinfo-collector.service';
 import { NewsIngestionService } from './news-ingestion.service';
 import { ContentDataImportService } from './data-import.service';
+import { BusinessAnalytiqCollectorService } from './business-analytiq-collector.service';
+import { FluorsparTrendCollectorService } from './fluorspar-trend-collector.service';
 
 @Injectable()
 export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown {
@@ -17,6 +19,8 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
     private readonly queue: ContentQueueService,
     private readonly news: NewsIngestionService,
     private readonly baiinfo: BaiinfoCollectorService,
+    private readonly businessAnalytiq: BusinessAnalytiqCollectorService,
+    private readonly fluorsparTrend: FluorsparTrendCollectorService,
     private readonly ai: ContentAiService,
     private readonly dataImport: ContentDataImportService,
   ) {}
@@ -56,6 +60,8 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
       let result: unknown;
       if (type === 'NEWS_SYNC') result = await this.news.sync(Number((job.data.payload || {}).pageCount) || undefined);
       else if (type === 'MARKET_SYNC') result = await this.baiinfo.sync();
+      else if (type === 'HF_MARKET_SYNC') result = await this.businessAnalytiq.sync();
+      else if (type === 'FLUORSPAR_TREND_SYNC') result = await this.fluorsparTrend.sync();
       else if (type === 'AI_CLEAN') result = await this.cleanOne((job.data.payload || {}).articleId);
       else if (type === 'DATA_IMPORT') result = await this.dataImport.importPriceFile((job.data.payload || {}).assetId);
       else throw new Error(`尚未实现的任务类型：${type}`);
@@ -89,7 +95,11 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
 
   private async scheduledRecord(type: string, job: Job) {
     const bucket = new Date().toISOString().slice(0, type === 'NEWS_SYNC' ? 16 : 10);
-    const sourceCode = type === 'NEWS_SYNC' ? 'LEGACY_NEWS' : type === 'MARKET_SYNC' ? 'BAIINFO_FLUORITE' : undefined;
+    const sourceCode = type === 'NEWS_SYNC' ? 'LEGACY_NEWS'
+      : type === 'MARKET_SYNC' ? 'BAIINFO_FLUORITE'
+      : type === 'HF_MARKET_SYNC' ? 'BUSINESS_ANALYTIQ_HF'
+      : type === 'FLUORSPAR_TREND_SYNC' ? 'FLUORSPAR_COM_TREND'
+      : undefined;
     const source = sourceCode ? await this.prisma.contentDataSource.findUnique({ where: { code: sourceCode } }) : null;
     return this.prisma.contentJob.upsert({
       where: { businessKey: `scheduled:${type}:${bucket}` },

@@ -436,6 +436,72 @@ export class ContentService {
     };
   }
 
+  async hydrofluoricAcidTrend() {
+    const product = await this.prisma.contentProductType.findFirst({
+      where: { code: 'HYDROFLUORIC_ACID', status: 'ACTIVE' },
+    });
+    if (!product) return { latestDate: null, unit: '美元/公斤', sourceUrl: null, series: [] };
+    const rows = await this.prisma.contentProductPrice.findMany({
+      where: { productTypeId: product.id, source: 'BUSINESS_ANALYTIQ' },
+      orderBy: [{ businessDate: 'asc' }, { region: 'asc' }],
+      take: 240,
+    });
+    const grouped = new Map<string, typeof rows>();
+    for (const row of rows) grouped.set(row.region, [...(grouped.get(row.region) || []), row]);
+    const latest = rows.at(-1);
+    const latestRaw = (latest?.rawData || {}) as Record<string, unknown>;
+    return {
+      latestDate: latest?.businessDate.toISOString().slice(0, 10) || null,
+      unit: product.unit,
+      sourceUrl: String(latestRaw.sourceUrl || ''),
+      series: [...grouped.entries()].map(([region, items]) => {
+        const current = items.at(-1)!;
+        const raw = (current.rawData || {}) as Record<string, unknown>;
+        return {
+          region,
+          latestPrice: Number(current.price),
+          change: Number(current.changeAmount || 0),
+          changeRate: Number(raw.changeRate || 0),
+          points: items.map((item) => ({ date: item.businessDate.toISOString().slice(0, 10), price: Number(item.price) })),
+        };
+      }),
+    };
+  }
+
+  async fluorsparPriceTrend() {
+    const product = await this.prisma.contentProductType.findFirst({
+      where: { code: 'FLUORSPAR_TREND_INDEX', status: 'ACTIVE' },
+    });
+    if (!product) return { latestDate: null, unit: '美元/吨', source: 'fluorspar.com', series: [] };
+    const rows = await this.prisma.contentProductPrice.findMany({
+      where: { productTypeId: product.id, source: 'FLUORSPAR_COM' },
+      orderBy: [{ businessDate: 'asc' }, { region: 'asc' }],
+    });
+    const grouped = new Map<string, typeof rows>();
+    for (const row of rows) grouped.set(row.region, [...(grouped.get(row.region) || []), row]);
+    const regionOrder = ['华中', '华东', '北方'];
+    const series = [...grouped.entries()].sort(([left], [right]) => regionOrder.indexOf(left) - regionOrder.indexOf(right)).map(([region, items]) => {
+      const latest = items.at(-1)!;
+      const raw = (latest.rawData || {}) as Record<string, unknown>;
+      return {
+        region,
+        sourceUrl: String(raw.sourceUrl || ''),
+        latestDate: latest.businessDate.toISOString().slice(0, 10),
+        latestPrice: Number(latest.price),
+        points: items.map((item) => {
+          const itemRaw = (item.rawData || {}) as Record<string, unknown>;
+          return {
+            date: item.businessDate.toISOString().slice(0, 10),
+            price: Number(item.price),
+            qualityFlag: itemRaw.qualityFlag || null,
+          };
+        }),
+      };
+    });
+    const latestDate = series.reduce((latest, item) => item.latestDate > latest ? item.latestDate : latest, '');
+    return { latestDate: latestDate || null, unit: product.unit, source: 'fluorspar.com', series };
+  }
+
   async listContacts(query: ContactQueryDto) {
     const { pageNo, pageSize, skip } = this.page(query);
     const where: Prisma.WebsiteContactWhereInput = {

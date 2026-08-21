@@ -49,6 +49,24 @@ export class ContentQueueService implements OnModuleDestroy {
         opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
       },
     );
+    await this.queue.upsertJobScheduler(
+      'schedule-hf-market-sync',
+      { pattern: process.env.HF_MARKET_SYNC_CRON || '15 6 * * *' },
+      {
+        name: 'HF_MARKET_SYNC',
+        data: { type: 'HF_MARKET_SYNC', scheduled: true },
+        opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
+      },
+    );
+    await this.queue.upsertJobScheduler(
+      'schedule-fluorspar-trend-sync',
+      { pattern: process.env.FLUORSPAR_TREND_SYNC_CRON || '5 6 * * *' },
+      {
+        name: 'FLUORSPAR_TREND_SYNC',
+        data: { type: 'FLUORSPAR_TREND_SYNC', scheduled: true },
+        opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
+      },
+    );
   }
 
   async enqueueStartupSyncs() {
@@ -61,6 +79,18 @@ export class ContentQueueService implements OnModuleDestroy {
     });
     await this.queue.add('MARKET_SYNC', {
       type: 'MARKET_SYNC', startup: true,
+    }, {
+      attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 20, removeOnFail: 50,
+    });
+    await this.queue.add('HF_MARKET_SYNC', {
+      type: 'HF_MARKET_SYNC', startup: true,
+    }, {
+      attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 20, removeOnFail: 50,
+    });
+    await this.queue.add('FLUORSPAR_TREND_SYNC', {
+      type: 'FLUORSPAR_TREND_SYNC', startup: true,
     }, {
       attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
       removeOnComplete: 20, removeOnFail: 50,
