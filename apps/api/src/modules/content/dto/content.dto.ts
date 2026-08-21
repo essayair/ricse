@@ -161,4 +161,15 @@ export class UpdateDataSourceDto {
 
 export class WechatLoginDto {
   @IsString() @MaxLength(200) code: string;
+  @IsOptional() @IsString() @MaxLength(100) nickName?: string;
+  @IsOptional() @IsString() @MaxLength(1000) avatarUrl?: string;
+}
+
+export class UpdateWechatProfileDto {
+  @IsOptional() @IsString() @MaxLength(100) nickName?: string;
+  @IsOptional() @IsString() @MaxLength(1000) avatarUrl?: string;
+}
+
+export class WechatPhoneDto {
+  @IsString() @MaxLength(200) code: string;
 }

@@ -14,6 +14,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { AccessControlModule } from './modules/access-control/access-control.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ProductionModule } from './modules/production/production.module';
+import { PlatformUsersModule } from './modules/platform-users/platform-users.module';
+import { MobileWorkspaceModule } from './modules/mobile-workspace/mobile-workspace.module';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { ProductionModule } from './modules/production/production.module';
     AccessControlModule,
     DashboardModule,
     ProductionModule,
+    PlatformUsersModule,
+    MobileWorkspaceModule,
   ],
 })
 export class AppModule {}

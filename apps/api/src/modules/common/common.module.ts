@@ -11,6 +11,7 @@ import { FileService } from './file.service';
 import { AdminGuard } from './admin.guard';
 import { HealthController } from './health.controller';
 import { PermissionGuard } from './permission.guard';
+import { WechatTokenService } from './wechat-token.service';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { PermissionGuard } from './permission.guard';
     }),
   ],
   controllers: [UsersController, AuthController, HealthController],
-  providers: [UsersService, AuthService, JwtStrategy, FileService, AdminGuard, PermissionGuard],
-  exports: [UsersService, AuthService, FileService, AdminGuard, PermissionGuard],
+  providers: [UsersService, AuthService, JwtStrategy, FileService, AdminGuard, PermissionGuard, WechatTokenService],
+  exports: [UsersService, AuthService, FileService, AdminGuard, PermissionGuard, WechatTokenService],
 })
 export class CommonModule {}

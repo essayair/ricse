@@ -28,6 +28,9 @@ model User {
   company                      Company?                 @relation(fields: [companyId], references: [id])
   employee                     Employee?                @relation(fields: [employeeId], references: [id])
   roleAssignments              UserRoleAssignment[]
+  wechatIdentity               WechatIdentity?           @relation("WechatLinkedUser")
+  wechatBindingTargets         WechatAccountBinding[]    @relation("WechatBindingTarget")
+  operatedWechatBindings       WechatAccountBinding[]    @relation("WechatBindingOperator")
   createdContracts             Contract[]               @relation("ContractCreator")
   createdPartners              Partner[]                @relation("PartnerCreator")
   approvalTasks                Approval[]               @relation("ApprovalAssignee")
@@ -1950,14 +1953,45 @@ model ContentJob {
 }
 
 model WechatIdentity {
-  id        String   @id @default(cuid())
-  openId    String   @unique
-  unionId   String?
-  status    String   @default("ACTIVE")
-  lastLogin DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  openId          String   @unique
+  unionId         String?
+  nickName        String?
+  avatarUrl       String?
+  phone           String?
+  phoneVerifiedAt DateTime?
+  source          String   @default("WECHAT_MINI_PROGRAM")
+  status          String   @default("ACTIVE") // ACTIVE | DISABLED
+  lastLogin       DateTime @default(now())
+  linkedUserId    String?  @unique
+  linkedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  linkedUser  User?                  @relation("WechatLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  bindingLogs WechatAccountBinding[]
 
   @@index([unionId])
+  @@index([phone])
+  @@index([status, createdAt])
   @@map("wechat_identities")
+}
+
+/// 微信个人用户与后台账号的绑定审计记录；当前有效关系以 WechatIdentity.linkedUserId 为准。
+model WechatAccountBinding {
+  id               String   @id @default(cuid())
+  wechatIdentityId String
+  userId           String
+  action           String // BIND | REBIND | UNBIND
+  operatedById     String?
+  note             String?
+  createdAt        DateTime @default(now())
+
+  wechatIdentity WechatIdentity @relation(fields: [wechatIdentityId], references: [id], onDelete: Cascade)
+  user           User           @relation("WechatBindingTarget", fields: [userId], references: [id], onDelete: Restrict)
+  operatedBy     User?          @relation("WechatBindingOperator", fields: [operatedById], references: [id], onDelete: SetNull)
+
+  @@index([wechatIdentityId, createdAt])
+  @@index([userId, createdAt])
+  @@map("wechat_account_bindings")
 }

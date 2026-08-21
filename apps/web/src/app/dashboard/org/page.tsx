@@ -24,6 +24,7 @@ interface UserItem {
   employeeId?: string; companyId?: string; businessGroupId?: string;
   employee?: { name: string; department?: { name: string } } | null;
   company?: { code: string; name: string; type?: string } | null;
+  wechatIdentity?: { id: string; nickName?: string; phone?: string; lastLogin: string; linkedAt?: string; status: string } | null;
   roleAssignments?: Array<{
     scopeType: string;
     role: { id: string; code: string; name: string };
@@ -360,6 +361,15 @@ function OrgPageInner() {
       <td className="px-4 py-2.5">
         <Badge variant="secondary" className={u.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>{u.status === 'ACTIVE' ? '正常' : '禁用'}</Badge>
       </td>
+      <td className="px-4 py-2.5 text-xs">
+        {u.wechatIdentity ? (
+          <Link href="/dashboard/users" className="text-primary hover:underline">
+            已关联{u.wechatIdentity.nickName ? ` · ${u.wechatIdentity.nickName}` : ''}
+          </Link>
+        ) : (
+          <Link href="/dashboard/users" className="text-muted-foreground hover:text-primary hover:underline">未关联</Link>
+        )}
+      </td>
       <td className="px-4 py-2.5">
         <button onClick={async () => {
           const newStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
@@ -404,6 +414,7 @@ function OrgPageInner() {
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">关联员工</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">部门</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">状态</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">小程序</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">操作</th>
                   </tr>
                 </thead>

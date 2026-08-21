@@ -118,6 +118,7 @@ export class UsersService {
           },
         },
         company: { select: { id: true, code: true, name: true, type: true, partnerId: true } },
+        wechatIdentity: { select: { id: true, nickName: true, phone: true, lastLogin: true, linkedAt: true, status: true } },
         roleAssignments: {
           where: { status: 'ACTIVE' },
           include: { role: true, scopes: true },
@@ -142,6 +143,7 @@ export class UsersService {
           },
         },
         company: { select: { id: true, code: true, name: true, type: true, partnerId: true } },
+        wechatIdentity: { select: { id: true, nickName: true, phone: true, lastLogin: true, linkedAt: true, status: true } },
         roleAssignments: {
           where: { status: 'ACTIVE' },
           include: { role: true, scopes: true },
