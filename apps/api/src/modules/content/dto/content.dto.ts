@@ -146,7 +146,7 @@ export class ReviewSupplyDemandDto {
 }
 
 export class CreateContentJobDto {
-  @IsIn(['NEWS_SYNC', 'AI_CLEAN', 'MARKET_SYNC', 'HF_MARKET_SYNC', 'FLUORSPAR_TREND_SYNC', 'DATA_IMPORT']) type: string;
+  @IsIn(['AI_CLEAN', 'MARKET_SYNC', 'HF_MARKET_SYNC', 'FLUORSPAR_TREND_SYNC', 'DATA_IMPORT']) type: string;
   @IsOptional() @IsString() sourceId?: string;
   @IsOptional() @IsObject() payload?: Record<string, unknown>;
   @IsOptional() @IsDateString() scheduledAt?: string;

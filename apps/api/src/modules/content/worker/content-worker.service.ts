@@ -4,7 +4,6 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { ContentAiService } from '../ai.service';
 import { CONTENT_QUEUE, ContentQueueService } from '../content-queue.service';
 import { BaiinfoCollectorService } from './baiinfo-collector.service';
-import { NewsIngestionService } from './news-ingestion.service';
 import { ContentDataImportService } from './data-import.service';
 import { BusinessAnalytiqCollectorService } from './business-analytiq-collector.service';
 import { FluorsparTrendCollectorService } from './fluorspar-trend-collector.service';
@@ -17,7 +16,6 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: ContentQueueService,
-    private readonly news: NewsIngestionService,
     private readonly baiinfo: BaiinfoCollectorService,
     private readonly businessAnalytiq: BusinessAnalytiqCollectorService,
     private readonly fluorsparTrend: FluorsparTrendCollectorService,
@@ -58,7 +56,7 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
     });
     try {
       let result: unknown;
-      if (type === 'NEWS_SYNC') result = await this.news.sync(Number((job.data.payload || {}).pageCount) || undefined);
+      if (type === 'NEWS_SYNC') result = { skipped: 'legacy content backend retired' };
       else if (type === 'MARKET_SYNC') result = await this.baiinfo.sync();
       else if (type === 'HF_MARKET_SYNC') result = await this.businessAnalytiq.sync();
       else if (type === 'FLUORSPAR_TREND_SYNC') result = await this.fluorsparTrend.sync();
@@ -94,9 +92,8 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
   }
 
   private async scheduledRecord(type: string, job: Job) {
-    const bucket = new Date().toISOString().slice(0, type === 'NEWS_SYNC' ? 16 : 10);
-    const sourceCode = type === 'NEWS_SYNC' ? 'LEGACY_NEWS'
-      : type === 'MARKET_SYNC' ? 'BAIINFO_FLUORITE'
+    const bucket = new Date().toISOString().slice(0, 10);
+    const sourceCode = type === 'MARKET_SYNC' ? 'BAIINFO_FLUORITE'
       : type === 'HF_MARKET_SYNC' ? 'BUSINESS_ANALYTIQ_HF'
       : type === 'FLUORSPAR_TREND_SYNC' ? 'FLUORSPAR_COM_TREND'
       : undefined;

@@ -49,6 +49,11 @@ export class PublicContentController {
     return this.service.averagePricesByRegion(productTypeId);
   }
 
+  @Get('industry-data/:code')
+  industryDataset(@Param('code') code: string) {
+    return this.service.getPublicIndustryDataset(code);
+  }
+
   @Get('market/fluorite/regions')
   marketRegions() { return this.service.marketRegions(); }
 

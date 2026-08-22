@@ -1839,6 +1839,22 @@ model ContentProductPrice {
   @@map("content_product_prices")
 }
 
+/// 行业数据集用于承载进出口等不适合塞入价格表的结构化公开数据。
+model ContentIndustryDataset {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  source      String?
+  status      String   @default("ACTIVE") // ACTIVE | INACTIVE
+  records     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, code])
+  @@map("content_industry_datasets")
+}
+
 model WebsiteContact {
   id           String   @id @default(cuid())
   legacyId     String?  @unique
@@ -1929,7 +1945,7 @@ model ContentDataSource {
 model ContentJob {
   id           String   @id @default(cuid())
   sourceId     String?
-  type         String // NEWS_SYNC | AI_CLEAN | MARKET_SYNC | HF_MARKET_SYNC | FLUORSPAR_TREND_SYNC | DATA_IMPORT
+  type         String // AI_CLEAN | MARKET_SYNC | HF_MARKET_SYNC | FLUORSPAR_TREND_SYNC | DATA_IMPORT
   businessKey  String   @unique
   status       String   @default("PENDING") // PENDING | RUNNING | SUCCEEDED | FAILED | CANCELLED
   payload      Json?

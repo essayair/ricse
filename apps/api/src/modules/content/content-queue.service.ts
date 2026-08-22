@@ -31,15 +31,7 @@ export class ContentQueueService implements OnModuleDestroy {
   }
 
   async registerSchedules() {
-    await this.queue.upsertJobScheduler(
-      'schedule-news-sync',
-      { pattern: process.env.NEWS_SYNC_CRON || '*/30 * * * *' },
-      {
-        name: 'NEWS_SYNC',
-        data: { type: 'NEWS_SYNC', scheduled: true },
-        opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
-      },
-    );
+    await this.queue.removeJobScheduler('schedule-news-sync');
     await this.queue.upsertJobScheduler(
       'schedule-market-sync',
       { pattern: process.env.MARKET_SYNC_CRON || '0 6 * * *' },
@@ -70,13 +62,6 @@ export class ContentQueueService implements OnModuleDestroy {
   }
 
   async enqueueStartupSyncs() {
-    const newsPages = Math.min(100, Math.max(1, Number(process.env.NEWS_INITIAL_SYNC_PAGES || 20)));
-    await this.queue.add('NEWS_SYNC', {
-      type: 'NEWS_SYNC', startup: true, payload: { pageCount: newsPages },
-    }, {
-      attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
-      removeOnComplete: 20, removeOnFail: 50,
-    });
     await this.queue.add('MARKET_SYNC', {
       type: 'MARKET_SYNC', startup: true,
     }, {
@@ -95,7 +80,7 @@ export class ContentQueueService implements OnModuleDestroy {
       attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
       removeOnComplete: 20, removeOnFail: 50,
     });
-    this.logger.log(`已加入启动同步任务，历史资讯扫描页数=${newsPages}`);
+    this.logger.log('已加入启动行情同步任务');
   }
 
   connectionOptions() { return this.connection; }

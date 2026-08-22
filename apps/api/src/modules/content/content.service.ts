@@ -367,6 +367,21 @@ export class ContentService {
     })) };
   }
 
+  async getPublicIndustryDataset(code: string) {
+    const dataset = await this.prisma.contentIndustryDataset.findUnique({
+      where: { code: code.trim().toUpperCase() },
+    });
+    if (!dataset || dataset.status !== 'ACTIVE') throw new NotFoundException('行业数据集不存在或未启用');
+    return {
+      code: dataset.code,
+      name: dataset.name,
+      description: dataset.description,
+      source: dataset.source,
+      updatedAt: dataset.updatedAt,
+      records: dataset.records,
+    };
+  }
+
   async marketRegions(productTypeCode = 'FLUORITE_97') {
     const product = await this.prisma.contentProductType.findFirst({
       where: { code: productTypeCode, status: 'ACTIVE' },

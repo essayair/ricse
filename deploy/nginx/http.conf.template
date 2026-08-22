@@ -34,40 +34,6 @@ server {
         proxy_set_header Host $http_host;
     }
 
-
-    # 已发布旧版官网/小程序兼容入口；迁移观察期结束后删除。
-    location /api/news/ {
-        rewrite ^/api/news/(.*)$ /api/v1/legacy/news/$1 break;
-        proxy_pass http://content-api:3002;
-    }
-    location /api/market/baiinfo/fluorite/ {
-        rewrite ^/api/market/baiinfo/fluorite/(.*)$ /api/v1/public/content/market/fluorite/$1 break;
-        proxy_pass http://content-api:3002;
-    }
-    location /api/ai/ {
-        rewrite ^/api/ai/(.*)$ /api/v1/public/ai/$1 break;
-        proxy_pass http://content-api:3002;
-        proxy_buffering off;
-        proxy_read_timeout 180s;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-    location = /api/auth/wx-login {
-        proxy_pass http://content-api:3002/api/v1/legacy/auth/wx-login;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-    location /api/supply-demand/ {
-        rewrite ^/api/supply-demand/(.*)$ /api/v1/legacy/supply-demand/$1 break;
-        proxy_pass http://content-api:3002;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-    location = /app-api/website/industry-news/page { proxy_pass http://content-api:3002/api/v1/legacy/website/industry-news/page; add_header X-RICSE-Compatibility true always; }
-    location = /app-api/website/industry-news/get { proxy_pass http://content-api:3002/api/v1/legacy/website/industry-news/get; add_header X-RICSE-Compatibility true always; }
-    location = /app-api/website/price/list { proxy_pass http://content-api:3002/api/v1/legacy/website/price/list; }
-    location = /app-api/website/contact/create {
-        proxy_pass http://content-api:3002/api/v1/legacy/website/contact/create;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
     location /api/ {
         proxy_pass http://api:3000;
         proxy_http_version 1.1;
