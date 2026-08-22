@@ -46,7 +46,7 @@ describe('MobileWorkspaceService', () => {
     access.getContext.mockResolvedValue({
       isAdmin: true,
       user: { id: 'admin', username: 'admin', name: '管理员', company: null, employee: null },
-      roleCodes: ['ADMIN'], permissions: [],
+      roleCodes: ['ADMIN'], roleNames: ['系统管理员'], permissions: [],
     } as any);
     access.getContractScope.mockResolvedValue({});
     prisma.approval.findMany.mockResolvedValue([
@@ -59,6 +59,7 @@ describe('MobileWorkspaceService', () => {
     const result = await service.overview('admin');
 
     expect(result.summary).toEqual({ pendingApprovals: 2, contracts: 9, executingContracts: 3 });
+    expect(result.account.roleNames).toEqual(['系统管理员']);
     expect(prisma.approval.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.not.objectContaining({ assigneeId: expect.anything() }),
     }));

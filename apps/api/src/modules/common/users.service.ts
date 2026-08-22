@@ -186,10 +186,11 @@ export class UsersService {
     const now = new Date();
     const assignments = await this.prisma.userRoleAssignment.findMany({
       where: { userId, status: 'ACTIVE', effectiveAt: { lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }], role: { status: 'ACTIVE' } },
-      select: { role: { select: { code: true, permissions: { select: { permission: { select: { code: true } } } } } } },
+      select: { role: { select: { code: true, name: true, permissions: { select: { permission: { select: { code: true } } } } } } },
     });
     return {
       roles: [...new Set(assignments.map((item) => item.role.code))],
+      roleNames: [...new Set(assignments.map((item) => item.role.name))],
       permissions: [...new Set(assignments.flatMap((item) => item.role.permissions.map((entry) => entry.permission.code)))],
     };
   }

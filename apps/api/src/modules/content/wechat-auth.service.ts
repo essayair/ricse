@@ -66,7 +66,7 @@ export class WechatAuthService {
     );
     const access = workspaceEnabled && linked
       ? await this.users.getActiveAccess(linked.id)
-      : { roles: [], permissions: [] };
+      : { roles: [], roleNames: [], permissions: [] };
     return {
       identity: {
         id: identity.id,
@@ -98,6 +98,7 @@ export class WechatAuthService {
           department: linked.employee.department,
         } : null,
         roles: access.roles,
+        roleNames: access.roleNames,
         permissions: access.permissions,
       } : null,
     };

@@ -130,6 +130,7 @@ export class MobileWorkspaceService {
         company: context.user.company,
         employee: context.user.employee,
         roles: context.roleCodes,
+        roleNames: context.roleNames,
         permissions: context.permissions,
       },
       summary: { pendingApprovals: pendingCount, contracts: contractCount, executingContracts: executingCount },

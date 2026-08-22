@@ -247,7 +247,15 @@ export class AccessControlService {
       && (!assignment.expiresAt || assignment.expiresAt > now),
     );
     const roleCodes = new Set(activeAssignments.map((assignment) => assignment.role.code));
-    if (roleCodes.size === 0 && user.role) roleCodes.add(user.role);
+    const roleNames = new Set(activeAssignments.map((assignment) => assignment.role.name));
+    if (roleCodes.size === 0 && user.role) {
+      roleCodes.add(user.role);
+      const fallbackRole = await this.prisma.role.findUnique({
+        where: { code: user.role },
+        select: { name: true },
+      });
+      if (fallbackRole?.name) roleNames.add(fallbackRole.name);
+    }
     const permissions = new Set(
       activeAssignments.flatMap((assignment) =>
         assignment.role.permissions.map((entry) => entry.permission.code),
@@ -257,6 +265,7 @@ export class AccessControlService {
       user,
       assignments: activeAssignments,
       roleCodes: [...roleCodes],
+      roleNames: [...roleNames],
       permissions: [...permissions],
       isAdmin: roleCodes.has('ADMIN') || user.role === 'ADMIN',
       isExternal: user.company?.type === 'EXTERNAL',
