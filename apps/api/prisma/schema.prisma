@@ -61,8 +61,27 @@ model User {
   createdProductionCompletions ProductionCompletion[]   @relation("ProductionCompletionCreator")
   qualityConfirmedCompletions  ProductionCompletion[]   @relation("ProductionCompletionQualityConfirmer")
   postedProductionCompletions  ProductionCompletion[]   @relation("ProductionCompletionPoster")
+  businessOperationLogs       BusinessOperationLog[]
 
   @@map("users")
+}
+
+/// 业务单据统一操作轨迹：记录谁在什么时间对哪张单据执行了什么动作。
+model BusinessOperationLog {
+  id           String   @id @default(cuid())
+  businessType String
+  businessId   String
+  action       String
+  actionLabel  String
+  operatorId   String
+  details      Json?
+  createdAt    DateTime @default(now())
+
+  operator User @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+
+  @@index([businessType, businessId, createdAt])
+  @@index([operatorId])
+  @@map("business_operation_logs")
 }
 
 // ========== 组织架构 ==========

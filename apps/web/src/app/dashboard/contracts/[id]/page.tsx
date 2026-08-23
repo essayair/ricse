@@ -13,6 +13,7 @@ import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -778,6 +779,7 @@ export default function ContractDetailPage() {
 
       {/* Approval Timeline */}
       <ApprovalTimeline approvals={c.approvals} />
+      <BusinessOperationHistory logs={(c as any).operationLogs} />
         </div>
 
         <FulfillmentProgress contract={c} />

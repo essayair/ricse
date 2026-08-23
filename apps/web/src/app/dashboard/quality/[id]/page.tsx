@@ -9,6 +9,7 @@ import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 interface Indicator { id: string; name: string; operator: string; standardValue: string | null; upperValue: string | null; fuseValue: string | null; unit: string; measuredValue: string | null; result: string }
 interface Attachment { id: string; originalName: string; mimeType: string; size: number; category: string; createdAt: string }
@@ -147,6 +148,7 @@ export default function QualityTaskDetailPage() {
     {confirmed.length > 0 && item.status !== 'VOIDED' && <Card className="space-y-4 p-5"><div><h2 className="font-semibold">形成最终质检结论</h2><p className="mt-1 text-sm text-muted-foreground">选择一份已确认报告作为入库、扣重和结算执行口径；系统同时留存本次参与判定的全部有效报告。</p></div><div className="grid gap-2">{confirmed.map(report => <label key={report.id} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 ${basisInspectionId === report.id ? 'border-primary bg-primary/5' : ''}`}><input type="radio" name="basis" checked={basisInspectionId === report.id} onChange={() => setBasisInspectionId(report.id)} /><div className="min-w-0 flex-1"><div className="font-medium">{report.institutionName} · {report.reportNo}</div><div className="text-xs text-muted-foreground">{report.inspectionNo} · {CONCLUSION[report.conclusion]} · 质检后重量 {weight(report.settlementWeight)}</div></div></label>)}</div>{confirmed.length < item.plannedReportCount && <div><label className="mb-1 block text-sm font-medium">提前判定原因 *</label><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={reason} onChange={event => setReason(event.target.value)} placeholder={`计划 ${item.plannedReportCount} 份，当前仅有 ${confirmed.length} 份有效报告，请填写采用现有报告判定的原因`} /></div>}<div className="flex justify-end"><Button disabled={saving || !basisInspectionId} onClick={() => void finalize()}>{item.status === 'COMPLETED' ? '重新形成结论' : '确认形成最终结论'}</Button></div></Card>}
 
     {item.decidedAt && <Card className="p-5"><Title>最终判定记录</Title><div className="grid gap-4 sm:grid-cols-4"><Info label="最终结论" value={CONCLUSION[item.finalConclusion]} /><Info label="执行口径报告" value={item.basisInspection ? `${item.basisInspection.institutionName} · ${item.basisInspection.reportNo}` : '-'} /><Info label="判定人 / 时间" value={`${item.decider?.name || '-'} · ${formatDateTimeToSecond(item.decidedAt)}`} /><Info label="判定原因" value={item.decisionReason || '-'} /></div></Card>}
+    <BusinessOperationHistory logs={(item as any).operationLogs} />
   </div>;
 }
 

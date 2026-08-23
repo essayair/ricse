@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-panel';
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 interface WeighRecord {
   id: string;
@@ -525,6 +526,7 @@ export default function WeighTicketDetailPage() {
         </Card>
 
       </div>
+      <BusinessOperationHistory logs={(ticket as any).operationLogs} />
     </div>
   </div>;
 }

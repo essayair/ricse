@@ -309,10 +309,10 @@ export function SidebarGroupItem({
   const hasActiveChild = items.some((item) => isActive(item.href));
   const [expanded, setExpanded] = React.useState(defaultOpen || hasActiveChild);
 
-  // Auto-expand when navigating to one of this group's child pages
+  // 路由切换时只保留当前模块自动展开，避免生产管理、执行通知等旧模块继续占据展开状态。
   React.useEffect(() => {
-    if (hasActiveChild) setExpanded(true);
-  }, [hasActiveChild]);
+    setExpanded(defaultOpen || hasActiveChild);
+  }, [defaultOpen, hasActiveChild]);
 
   const handleToggle = () => setExpanded((v) => !v);
 

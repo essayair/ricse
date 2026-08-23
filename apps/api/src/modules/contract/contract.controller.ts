@@ -61,6 +61,12 @@ export class ContractController {
     }, userId);
   }
 
+  @Get('form-options')
+  @ApiOperation({ summary: '合同表单选项（含当前员工默认业务部门）' })
+  getFormOptions(@CurrentUser('id') userId: string) {
+    return this.contractService.getFormOptions(userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '合同详情' })
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {

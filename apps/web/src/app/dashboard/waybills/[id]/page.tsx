@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { unitLabel } from '@/lib/unit';
 import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-panel';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 interface Vehicle { id: string; plateNo: string; vehicleType: string; brand?: string; loadCapacity: string; driverName?: string; driverPhone?: string; ownerType: string; owner: { id: string; name: string } | null; drivers: Array<{ role: string; driver: { id: string; name: string; phone: string } }> }
 interface CarrierProfile { id: string; partnerId: string; partner: { id: string; code: string; name: string } }
@@ -70,6 +71,7 @@ export default function WaybillDetailPage() {
     {waybill.status !== 'CANCELLED' && <Card className="flex flex-wrap items-center justify-between gap-4 p-5"><div><h2 className="font-semibold">物流称重与结算入库磅单</h2><p className="mt-1 text-xs text-muted-foreground">该运单已归集 {waybill.weighTickets.filter(item => item.status !== 'VOIDED').length} 张发货/收货称重磅单；从中统一选择一张作为库存执行和结算依据。</p><div className="mt-3"><WeightSelectionSummary waybill={waybill} /></div></div><div className="flex gap-2"><Button variant="outline" onClick={() => router.push(`/dashboard/weighbridge/create?waybillId=${waybill.id}`)}>新增称重磅单</Button><Button onClick={() => router.push(`/dashboard/weighbridge/management/${waybill.id}`)}>查看磅单信息</Button></div></Card>}
     {['ARRIVED', 'SIGNED'].includes(waybill.status) && <Card className="flex flex-wrap items-center justify-between gap-4 p-5"><div><h2 className="font-semibold">到货质检任务</h2>{waybill.qualityTask ? <p className="mt-1 text-sm"><span className="font-mono text-primary">{waybill.qualityTask.taskNo}</span> · 已归集 {waybill.qualityTask._count.reports} 份检测报告 · {waybill.qualityTask.status === 'COMPLETED' ? '已完成最终判定' : '待质检管理人员处理'}</p> : <p className="mt-1 text-sm text-amber-700">任务正在自动生成，请刷新后查看。</p>}</div>{waybill.qualityTask && <Button onClick={() => router.push(`/dashboard/quality/${waybill.qualityTask!.id}`)}>查看质检任务</Button>}</Card>}
     <Card className="overflow-hidden"><div className="border-b p-5"><h2 className="font-semibold">运单明细</h2></div><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-4 py-3 text-left">物料</th><th className="px-4 py-3 text-right">数量</th></tr></thead><tbody>{waybill.lineItems.map(item => <tr key={item.id} className="border-b"><td className="px-4 py-3">{item.materialName || item.materialId}</td><td className="px-4 py-3 text-right">{Number(item.quantity).toLocaleString()} {unitLabel(item.unit)}</td></tr>)}</tbody></table></Card>
+    <BusinessOperationHistory logs={(waybill as any).operationLogs} />
   </div>;
 }
 function Field({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-sm">{value}</div></div>; }

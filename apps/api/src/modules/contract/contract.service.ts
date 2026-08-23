@@ -155,6 +155,27 @@ export class ContractService {
     };
   }
 
+  async getFormOptions(userId: string) {
+    const access = await this.accessControl.assertPermission(userId, 'contract.create');
+    const companyId = access.user?.company?.id || access.user?.employee?.companyId || null;
+    const defaultDepartmentId = access.user?.employee?.departmentId || null;
+    const departments = await this.prisma.department.findMany({
+      where: companyId ? { companyId } : undefined,
+      select: {
+        id: true,
+        name: true,
+        companyId: true,
+        company: { select: { id: true, name: true } },
+      },
+      orderBy: [{ companyId: 'asc' }, { sort: 'asc' }, { name: 'asc' }],
+    });
+
+    return {
+      defaultDepartmentId,
+      departments,
+    };
+  }
+
   private async validateSigningPartner(signingPartnerId: string | undefined, type: string) {
     if (!signingPartnerId) throw new BadRequestException('请选择我方签约主体');
     const partner = await this.prisma.partner.findFirst({

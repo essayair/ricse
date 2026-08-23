@@ -34,9 +34,9 @@ interface DepartmentItem {
   company?: { id: string; name: string };
 }
 
-interface CurrentUserProfile {
-  companyId?: string | null;
-  employee?: { departmentId?: string | null } | null;
+interface ContractFormOptions {
+  defaultDepartmentId?: string | null;
+  departments: DepartmentItem[];
 }
 
 export default function ContractCreatePage() {
@@ -55,6 +55,8 @@ export default function ContractCreatePage() {
   const [customerPartners, setCustomerPartners] = useState<any[]>([]);
   const [allPartners, setAllPartners] = useState<any[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
+  const [departmentError, setDepartmentError] = useState('');
   const [files, setFiles] = useState<Array<{ file: File; name: string }>>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
 
@@ -90,19 +92,16 @@ export default function ContractCreatePage() {
       setInternalPartners(all.filter((p: any) => p.isInternal));
     }).catch(() => {});
     api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(()=>{});
-    Promise.all([
-      api.get<DepartmentItem[]>('/org/departments'),
-      api.get<CurrentUserProfile>('/auth/profile'),
-    ]).then(([departmentItems, profile]) => {
-      const visibleDepartments = profile.companyId
-        ? departmentItems.filter((item) => item.companyId === profile.companyId)
-        : departmentItems;
-      setDepartments(visibleDepartments);
+    api.get<ContractFormOptions>('/contracts/form-options').then((options) => {
+      setDepartments(options.departments || []);
       setForm(current => ({
         ...current,
-        departmentId: current.departmentId || profile.employee?.departmentId || '',
+        departmentId: current.departmentId || options.defaultDepartmentId || '',
       }));
-    }).catch(() => {});
+      setDepartmentError('');
+    }).catch((error: Error) => {
+      setDepartmentError(error.message || '业务部门加载失败');
+    }).finally(() => setDepartmentsLoading(false));
   }, []);
 
   const qty = Number(form.quantity || 0);
@@ -270,15 +269,17 @@ export default function ContractCreatePage() {
               </select>
             </FormField>
             <FormField label="业务部门" required>
-              <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">请选择业务部门</option>
+              <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} disabled={departmentsLoading} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60">
+                <option value="">{departmentsLoading ? '正在加载业务部门...' : '请选择业务部门'}</option>
                 {departments.map(department => (
                   <option key={department.id} value={department.id}>
                     {department.company?.name ? `${department.company.name} / ` : ''}{department.name}
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-muted-foreground">默认带入当前发起人员工档案中的所属部门，可按实际业务调整；同时用于匹配按部门配置的审批节点</span>
+              <span className={`text-xs ${departmentError ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {departmentError || '默认带入当前发起人员工档案中的所属部门，可按实际业务调整；同时用于匹配按部门配置的审批节点'}
+              </span>
             </FormField>
             <FormField label="外部合同号">
               <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />

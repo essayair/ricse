@@ -16,6 +16,8 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ProductionModule } from './modules/production/production.module';
 import { PlatformUsersModule } from './modules/platform-users/platform-users.module';
 import { MobileWorkspaceModule } from './modules/mobile-workspace/mobile-workspace.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { BusinessOperationInterceptor } from './modules/common/business-operation.interceptor';
 
 @Module({
   imports: [
@@ -36,6 +38,9 @@ import { MobileWorkspaceModule } from './modules/mobile-workspace/mobile-workspa
     ProductionModule,
     PlatformUsersModule,
     MobileWorkspaceModule,
+  ],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: BusinessOperationInterceptor },
   ],
 })
 export class AppModule {}

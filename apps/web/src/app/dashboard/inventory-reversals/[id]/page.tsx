@@ -11,6 +11,7 @@ import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 const STATUS: Record<string, string> = {
   DRAFT: '草稿',
@@ -283,6 +284,7 @@ export default function InventoryReversalDetailPage() {
           ['过账时间', formatDateTimeToSecond(item.postedAt, '-')],
         ]} />
       </Card>
+      <BusinessOperationHistory logs={item.operationLogs} />
     </div>
   );
 }

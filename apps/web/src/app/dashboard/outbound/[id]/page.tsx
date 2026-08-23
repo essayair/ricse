@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 const STATUS: Record<string, string> = {
   PENDING: '待称重/拣配', READY: '待放行', VARIANCE_PENDING: '待差异处理', POSTED: '已出库', CANCELLED: '已取消',
@@ -122,6 +123,7 @@ export default function OutboundOrderDetailPage() {
         </div>;
       })}</div>)}
     </Card>
+    <BusinessOperationHistory logs={item.operationLogs} />
   </div>;
 }
 

@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 const STATUS: Record<string, string> = {
   PENDING: '作业中', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已作废',
@@ -368,6 +369,7 @@ export default function InboundDetail() {
             : '只有已确认且质检合格的货物才能生成业务入库单、库存批次和库存台账。'}
         </Card>
       )}
+      <BusinessOperationHistory logs={item.operationLogs} />
     </div>
   );
 }

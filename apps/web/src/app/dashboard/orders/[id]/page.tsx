@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { api } from '@/lib/api';
 import { ArrowLeft, FileText, Send } from 'lucide-react';
 import { unitLabel } from '@/lib/unit';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 interface OrderDetail {
   id: string;
@@ -137,6 +138,7 @@ export default function OrderDetailPage() {
         {!order.dispatchNotices.length ? <div className="p-8 text-center text-muted-foreground">暂无执行通知；批次确认后可创建供应商发货指令或销售发货通知单</div> :
           <div className="divide-y">{order.dispatchNotices.map(notice => <button key={notice.id} className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50" onClick={() => router.push(`/dashboard/dispatch-notices/${notice.id}`)}><div><div className="font-mono text-sm">{notice.noticeNo}</div><div className="text-xs text-muted-foreground">{notice.type === 'PURCHASE' ? '供应商发货指令' : '销售发货通知单'} · {Number(notice.totalQuantity).toLocaleString()} 吨 · {notice._count.waybills} 张物流运单</div></div><Badge variant="secondary">{{ DRAFT: '草稿', ISSUED: '已下达', IN_PROGRESS: '执行中', COMPLETED: '已完成', CANCELLED: '已取消' }[notice.status] || notice.status}</Badge></button>)}</div>}
       </Card>
+      <BusinessOperationHistory logs={(order as any).operationLogs} />
     </div>
   );
 }

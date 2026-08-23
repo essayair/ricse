@@ -56,6 +56,31 @@ describe('ContractService', () => {
     service = module.get<ContractService>(ContractService);
   });
 
+  describe('getFormOptions', () => {
+    it('应返回当前员工所属部门作为默认值，并仅加载所属企业的部门', async () => {
+      accessControl.assertPermission.mockResolvedValue({
+        isAdmin: false,
+        user: {
+          company: { id: 'company-1' },
+          employee: { companyId: 'company-1', departmentId: 'dept-1' },
+        },
+      } as any);
+      prisma.department.findMany.mockResolvedValue([
+        { id: 'dept-1', name: '业务部', companyId: 'company-1', company: { id: 'company-1', name: '测试企业' } },
+        { id: 'dept-2', name: '风控部', companyId: 'company-1', company: { id: 'company-1', name: '测试企业' } },
+      ] as any);
+
+      const result = await service.getFormOptions('business-user');
+
+      expect(accessControl.assertPermission).toHaveBeenCalledWith('business-user', 'contract.create');
+      expect(prisma.department.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { companyId: 'company-1' },
+      }));
+      expect(result.defaultDepartmentId).toBe('dept-1');
+      expect(result.departments).toHaveLength(2);
+    });
+  });
+
   describe('create', () => {
     it('应该创建合同并生成编号', async () => {
       prisma.partner.findFirst.mockResolvedValue({ roles: ['CUSTOMER'] } as any);

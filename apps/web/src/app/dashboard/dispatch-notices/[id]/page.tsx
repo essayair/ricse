@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { unitLabel } from '@/lib/unit';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 interface Notice {
   id: string; noticeNo: string; type: string; mode: string; status: string; totalQuantity: string;
@@ -52,6 +53,7 @@ export default function DispatchNoticeDetailPage() {
     </div>
     <Card className="overflow-hidden"><div className="border-b p-5"><h2 className="font-semibold">通知明细</h2></div><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-4 py-3 text-left">物料</th><th className="px-4 py-3 text-right">数量</th></tr></thead><tbody>{notice.lineItems.map(item => <tr key={item.id} className="border-b"><td className="px-4 py-3">{item.materialName || item.materialId}</td><td className="px-4 py-3 text-right">{Number(item.quantity).toLocaleString()} {unitLabel(item.unit)}</td></tr>)}</tbody></table></Card>
     <Card className="overflow-hidden"><div className="flex items-center gap-2 border-b p-5"><Truck className="h-4 w-4 text-primary" /><h2 className="font-semibold">关联物流运单</h2></div>{!notice.waybills.length ? <div className="p-8 text-center text-muted-foreground">暂无物流运单</div> : <div className="divide-y">{notice.waybills.map(item => <button key={item.id} className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50" onClick={() => router.push(`/dashboard/waybills/${item.id}`)}><div><div className="font-mono text-sm">{item.waybillNo}</div><div className="text-xs text-muted-foreground">{item.plateNo || '待调度车辆'} · {Number(item.totalQuantity).toLocaleString()} 吨</div></div><Badge variant="secondary">{WAYBILL_STATUS[item.status]}</Badge></button>)}</div>}</Card>
+    <BusinessOperationHistory logs={(notice as any).operationLogs} />
   </div>;
 }
 

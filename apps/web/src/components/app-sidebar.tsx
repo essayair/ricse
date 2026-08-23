@@ -162,13 +162,13 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href === '/dashboard') return pathname === '/dashboard';
     const [base, qs] = href.split('?');
 
+    // 必须先确认当前路径属于该菜单；否则相同长度的其他路径可能被生产管理的特殊规则误判。
+    if (pathname !== base && !pathname.startsWith(base + '/')) return false;
+
     if (base === '/dashboard/production' && !qs) {
       const child = pathname.slice(`${base}/`.length);
       return pathname === base || child === 'new' || (!!child && !child.includes('/') && !['recipes', 'ledger'].includes(child));
     }
-
-    // Different base path → not active
-    if (pathname !== base && !pathname.startsWith(base + '/')) return false;
 
     // 服务生态下的分类由页面内标签切换，侧边导航始终保持选中。
     if (base === '/dashboard/master-data/service-organizations') return true;
