@@ -159,7 +159,7 @@ export class NewsCollectorService {
             content: normalized.content || '',
             source: normalized.sourceName || config.sourceName || source.name,
             status: autoPublish ? 'PUBLISHED' : 'PENDING_REVIEW',
-            publishAt: autoPublish ? new Date() : null,
+            publishAt: autoPublish ? (normalized.publishedAt || new Date()) : null,
             ingestionMode: 'AUTO',
             dataSourceId: source.id,
             externalId: normalized.externalId,
@@ -331,6 +331,7 @@ export class NewsCollectorService {
       if (!title || !content) throw new Error(`生意社详情页结构已变化：${candidate.url.toString()}`);
       const info = $('.news-detail .nd-info').first().text().replace(/\s+/g, ' ').trim();
       const publishedAt = this.parseSunsirsDate(info);
+      if (!publishedAt) throw new Error(`生意社详情页发布时间无法解析：${candidate.url.toString()}`);
       const externalId = candidate.url.pathname.match(/detail-([\d-]+)\.html$/)?.[1] || candidate.url.toString();
       results.push({
         externalId,

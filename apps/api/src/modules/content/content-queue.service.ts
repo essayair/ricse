@@ -74,7 +74,7 @@ export class ContentQueueService implements OnModuleDestroy {
       if (source.status !== 'ACTIVE') continue;
       await this.queue.upsertJobScheduler(
         schedulerId,
-        { pattern: source.schedule || process.env.NEWS_SYNC_CRON || '0 5 * * *', tz: process.env.CONTENT_TIMEZONE || 'Asia/Shanghai' },
+        { pattern: source.schedule || process.env.NEWS_SYNC_CRON || '0 8,12,17 * * *', tz: process.env.CONTENT_TIMEZONE || 'Asia/Shanghai' },
         {
           name: 'NEWS_SYNC',
           data: { type: 'NEWS_SYNC', sourceId: source.id, sourceCode: source.code, scheduled: true },

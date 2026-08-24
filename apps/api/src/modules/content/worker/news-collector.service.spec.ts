@@ -153,7 +153,7 @@ describe('NewsCollectorService', () => {
       sourceUrl: 'https://www.100ppi.com/news/detail-20260821-6101729.html',
       externalId: '20260821-6101729',
       status: 'PUBLISHED',
-      publishAt: expect.any(Date),
+      publishAt: new Date('2026-08-21T02:49:00.000Z'),
       content: '生意社08月21日讯97%萤石粉市场价格上涨。',
     }) });
   });
