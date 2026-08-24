@@ -1777,6 +1777,8 @@ model ContentArticle {
   id             String   @id @default(cuid())
   legacyId       String?  @unique
   categoryId     String?
+  dataSourceId   String?
+  externalId     String?
   type           String   @default("NEWS") // NEWS | SUPPLY | DEMAND
   title          String
   summary        String?
@@ -1786,9 +1788,17 @@ model ContentArticle {
   sourceHash     String?
   author         String?
   tags           String[] @default([])
-  status         String   @default("DRAFT") // DRAFT | PUBLISHED | OFFLINE
+  status         String   @default("DRAFT") // DRAFT | PENDING_REVIEW | PUBLISHED | REJECTED | OFFLINE
+  ingestionMode  String   @default("MANUAL") // MANUAL | AUTO | IMPORT | MIGRATION
+  sourceUrl      String?
+  sourcePublishedAt DateTime?
+  collectedAt    DateTime?
+  rawData        Json?
   publishAt      DateTime?
   publishedById  String?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?
   createdById    String?
   viewCount      Int      @default(0)
   likeCount      Int      @default(0)
@@ -1806,10 +1816,14 @@ model ContentArticle {
   updatedAt      DateTime @updatedAt
 
   category ContentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dataSource ContentDataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
   assets   ContentAsset[]
 
+  @@unique([dataSourceId, externalId])
   @@index([type, status, publishAt])
   @@index([categoryId, status])
+  @@index([ingestionMode, status, collectedAt])
+  @@index([sourceUrl])
   @@index([createdAt])
   @@map("content_articles")
 }
@@ -1945,7 +1959,7 @@ model ContentDataSource {
   id            String   @id @default(cuid())
   code          String   @unique
   name          String
-  type          String // MANUAL | BAIINFO | API | EXCEL
+  type          String // MANUAL | GDELT | RSS | BAIINFO | API | EXCEL
   status        String   @default("ACTIVE")
   schedule      String?
   config        Json?
@@ -1956,6 +1970,7 @@ model ContentDataSource {
   updatedAt     DateTime @updatedAt
 
   jobs ContentJob[]
+  articles ContentArticle[]
 
   @@index([status, type])
   @@map("content_data_sources")
@@ -1964,9 +1979,9 @@ model ContentDataSource {
 model ContentJob {
   id           String   @id @default(cuid())
   sourceId     String?
-  type         String // AI_CLEAN | MARKET_SYNC | HF_MARKET_SYNC | FLUORSPAR_TREND_SYNC | DATA_IMPORT
+  type         String // NEWS_SYNC | AI_CLEAN | MARKET_SYNC | HF_MARKET_SYNC | FLUORSPAR_TREND_SYNC | DATA_IMPORT
   businessKey  String   @unique
-  status       String   @default("PENDING") // PENDING | RUNNING | SUCCEEDED | FAILED | CANCELLED
+  status       String   @default("PENDING") // PENDING | RUNNING | SUCCEEDED | PARTIAL | FAILED | CANCELLED
   payload      Json?
   result       Json?
   attempts     Int      @default(0)

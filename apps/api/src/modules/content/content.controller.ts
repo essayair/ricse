@@ -26,6 +26,7 @@ import {
   CreateArticleDto,
   CreateCategoryDto,
   CreateContentJobDto,
+  CreateDataSourceDto,
   CreatePriceDto,
   CreateSupplyDemandDto,
   PageQueryDto,
@@ -194,6 +195,10 @@ export class ContentController {
   @Get('data-sources')
   @RequirePermission('content.datasource.manage')
   dataSources() { return this.service.listDataSources(); }
+
+  @Post('data-sources')
+  @RequirePermission('content.datasource.manage')
+  createDataSource(@Body() dto: CreateDataSourceDto) { return this.service.createDataSource(dto); }
 
   @Patch('data-sources/:id')
   @RequirePermission('content.datasource.manage')

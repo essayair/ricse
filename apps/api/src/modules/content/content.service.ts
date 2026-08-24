@@ -15,6 +15,7 @@ import {
   CreateCategoryDto,
   CreateContactDto,
   CreateContentJobDto,
+  CreateDataSourceDto,
   CreatePriceDto,
   CreateSupplyDemandDto,
   PageQueryDto,
@@ -105,7 +106,7 @@ export class ContentService {
         where,
         skip,
         take: pageSize,
-        include: { category: true, assets: { orderBy: { createdAt: 'desc' } } },
+        include: { category: true, dataSource: true, assets: { orderBy: { createdAt: 'desc' } } },
         orderBy: [{ publishAt: 'desc' }, { createdAt: 'desc' }],
       }),
     ]);
@@ -119,15 +120,19 @@ export class ContentService {
       where: publicOnly
         ? { AND: [identity, { status: 'PUBLISHED' }, { OR: [{ publishAt: null }, { publishAt: { lte: new Date() } }] }] }
         : identity,
-      include: { category: true, assets: { orderBy: { createdAt: 'desc' } } },
+      include: { category: true, dataSource: true, assets: { orderBy: { createdAt: 'desc' } } },
     });
     if (!article) throw new NotFoundException('内容不存在或尚未发布');
     return publicOnly ? this.publicArticle(article) : article;
   }
 
   private publicArticle<T extends Record<string, any>>(article: T) {
-    const { contactName, contactPhone, createdById, publishedById, sourceHash, ...safe } = article;
-    void contactName; void contactPhone; void createdById; void publishedById; void sourceHash;
+    const {
+      contactName, contactPhone, createdById, publishedById, reviewedById, reviewNote,
+      sourceHash, externalId, dataSourceId, rawData, dataSource, ...safe
+    } = article;
+    void contactName; void contactPhone; void createdById; void publishedById; void reviewedById;
+    void reviewNote; void sourceHash; void externalId; void dataSourceId; void rawData; void dataSource;
     return safe as T;
   }
 
@@ -147,8 +152,13 @@ export class ContentService {
     await this.validateArticle(dto);
     return this.prisma.contentArticle.update({
       where: { id: article.id },
-      data: this.articleData(dto),
-      include: { category: true, assets: true },
+      data: {
+        ...this.articleData(dto),
+        ...(article.ingestionMode === 'AUTO' && article.status === 'REJECTED'
+          ? { status: 'PENDING_REVIEW' }
+          : {}),
+      },
+      include: { category: true, dataSource: true, assets: true },
     });
   }
 
@@ -207,6 +217,18 @@ export class ContentService {
     if (dto.status === 'PUBLISHED' && !article.title.trim()) {
       throw new BadRequestException('标题为空，不能发布');
     }
+    if (dto.status === 'PUBLISHED' && article.ingestionMode === 'AUTO' && !article.summary?.trim() && !article.content.trim()) {
+      throw new BadRequestException('自动采集内容必须补充摘要或正文，审核后才能发布');
+    }
+    if (dto.status === 'REJECTED' && article.status !== 'PENDING_REVIEW') {
+      throw new BadRequestException('只有待审核的自动采集资讯可以驳回');
+    }
+    if (dto.status === 'REJECTED' && !dto.reviewNote?.trim()) {
+      throw new BadRequestException('驳回时必须填写审核意见');
+    }
+    if (dto.status === 'OFFLINE' && article.status !== 'PUBLISHED') {
+      throw new BadRequestException('只有已发布资讯可以下线');
+    }
     return this.prisma.contentArticle.update({
       where: { id: article.id },
       data: {
@@ -215,14 +237,17 @@ export class ContentService {
           ? new Date(dto.publishAt || article.publishAt || new Date())
           : article.publishAt,
         publishedById: dto.status === 'PUBLISHED' ? userId : article.publishedById,
+        reviewedById: ['PUBLISHED', 'REJECTED'].includes(dto.status) ? userId : article.reviewedById,
+        reviewedAt: ['PUBLISHED', 'REJECTED'].includes(dto.status) ? new Date() : article.reviewedAt,
+        reviewNote: dto.reviewNote?.trim() || article.reviewNote,
       },
-      include: { category: true, assets: true },
+      include: { category: true, dataSource: true, assets: true },
     });
   }
 
   async deleteArticle(id: string) {
     const article = await this.getArticle(id);
-    if (article.status !== 'DRAFT') throw new BadRequestException('只有从未发布的草稿可以删除');
+    if (!['DRAFT', 'REJECTED'].includes(article.status)) throw new BadRequestException('只有草稿或已驳回资讯可以删除');
     await this.prisma.contentArticle.delete({ where: { id: article.id } });
   }
 
@@ -632,16 +657,64 @@ export class ContentService {
     return safe;
   }
 
-  listDataSources() {
-    return this.prisma.contentDataSource.findMany({ orderBy: [{ status: 'asc' }, { name: 'asc' }] });
+  async listDataSources() {
+    const sources = await this.prisma.contentDataSource.findMany({ orderBy: { name: 'asc' } });
+    return sources.sort((left, right) => {
+      const leftConfig = left.config && !Array.isArray(left.config) && typeof left.config === 'object' ? left.config as Record<string, unknown> : {};
+      const rightConfig = right.config && !Array.isArray(right.config) && typeof right.config === 'object' ? right.config as Record<string, unknown> : {};
+      return Number(leftConfig.priority || 999) - Number(rightConfig.priority || 999);
+    });
+  }
+
+  async createDataSource(dto: CreateDataSourceDto) {
+    const code = dto.code.trim().toUpperCase();
+    this.validateNewsDataSource(dto.type, dto.config || {});
+    try {
+      const source = await this.prisma.contentDataSource.create({
+        data: {
+          code,
+          name: dto.name.trim(),
+          type: dto.type,
+          status: dto.status || 'ACTIVE',
+          schedule: dto.schedule?.trim() || null,
+          config: (dto.config || {}) as Prisma.InputJsonValue,
+        },
+      });
+      await this.queue.registerNewsSchedules();
+      return source;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('数据源编码已存在');
+      }
+      throw error;
+    }
   }
 
   async updateDataSource(id: string, dto: UpdateDataSourceDto) {
     const source = await this.prisma.contentDataSource.findUnique({ where: { id } });
     if (!source) throw new NotFoundException('数据源不存在');
-    return this.prisma.contentDataSource.update({
+    if (dto.config && ['GDELT', 'RSS'].includes(source.type)) this.validateNewsDataSource(source.type, dto.config);
+    const updated = await this.prisma.contentDataSource.update({
       where: { id }, data: { ...dto, config: dto.config as Prisma.InputJsonValue | undefined },
     });
+    if (source.code === 'SUNSIRS_FLUORITE_NEWS' || ['GDELT', 'RSS'].includes(source.type)) await this.queue.registerNewsSchedules();
+    return updated;
+  }
+
+  private validateNewsDataSource(type: string, config: Record<string, unknown>) {
+    const queries = Array.isArray(config.queries) ? config.queries.map(String).filter((item) => item.trim()) : [];
+    if (type === 'GDELT' && !String(config.query || '').trim() && !queries.length) {
+      throw new BadRequestException('GDELT 数据源必须填写检索表达式 query 或 queries');
+    }
+    if (type === 'RSS') {
+      const endpoint = String(config.endpoint || '').trim();
+      if (!endpoint) throw new BadRequestException('RSS 数据源必须填写订阅地址 endpoint');
+      try {
+        if (new URL(endpoint).protocol !== 'https:') throw new Error();
+      } catch {
+        throw new BadRequestException('RSS 订阅地址必须是有效的 HTTPS URL');
+      }
+    }
   }
 
   listJobs(query: PageQueryDto & { status?: string; type?: string }) {
@@ -657,6 +730,14 @@ export class ContentService {
   }
 
   async createJob(dto: CreateContentJobDto, userId?: string) {
+    if (dto.type === 'NEWS_SYNC') {
+      const activeSources = await this.prisma.contentDataSource.count({
+        where: { code: 'SUNSIRS_FLUORITE_NEWS', status: 'ACTIVE' },
+      });
+      if (!activeSources) {
+        throw new BadRequestException('生意社萤石资讯源尚未启用，当前没有可执行的产业资讯采集源');
+      }
+    }
     const businessKey = `${dto.type}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
     const job = await this.prisma.contentJob.create({
       data: {
@@ -674,8 +755,11 @@ export class ContentService {
   async retryJob(id: string) {
     const job = await this.prisma.contentJob.findUnique({ where: { id } });
     if (!job) throw new NotFoundException('任务不存在');
-    if (job.type === 'NEWS_SYNC') throw new BadRequestException('历史资讯同步已停用，请通过资讯管理或数据导入维护内容');
-    if (!['FAILED', 'CANCELLED'].includes(job.status)) throw new BadRequestException('只有失败或已取消任务可以重试');
+    if (job.type === 'NEWS_SYNC' && job.sourceId) {
+      const source = await this.prisma.contentDataSource.findUnique({ where: { id: job.sourceId } });
+      if (source?.code === 'LEGACY_NEWS') throw new BadRequestException('旧后端资讯同步任务已退役，请新建“产业资讯自动采集”任务');
+    }
+    if (!['FAILED', 'CANCELLED', 'PARTIAL'].includes(job.status)) throw new BadRequestException('只有失败、部分成功或已取消任务可以重试');
     const updated = await this.prisma.contentJob.update({
       where: { id },
       data: { status: 'PENDING', scheduledAt: new Date(), nextRetryAt: null, errorMessage: null, finishedAt: null },

@@ -7,6 +7,7 @@ import { BaiinfoCollectorService } from './baiinfo-collector.service';
 import { ContentDataImportService } from './data-import.service';
 import { BusinessAnalytiqCollectorService } from './business-analytiq-collector.service';
 import { FluorsparTrendCollectorService } from './fluorspar-trend-collector.service';
+import { NewsCollectorService } from './news-collector.service';
 
 @Injectable()
 export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown {
@@ -19,6 +20,7 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
     private readonly baiinfo: BaiinfoCollectorService,
     private readonly businessAnalytiq: BusinessAnalytiqCollectorService,
     private readonly fluorsparTrend: FluorsparTrendCollectorService,
+    private readonly news: NewsCollectorService,
     private readonly ai: ContentAiService,
     private readonly dataImport: ContentDataImportService,
   ) {}
@@ -56,16 +58,20 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
     });
     try {
       let result: unknown;
-      if (type === 'NEWS_SYNC') result = { skipped: 'legacy content backend retired' };
+      if (type === 'NEWS_SYNC') result = await this.news.sync(record.sourceId || undefined);
       else if (type === 'MARKET_SYNC') result = await this.baiinfo.sync();
       else if (type === 'HF_MARKET_SYNC') result = await this.businessAnalytiq.sync();
       else if (type === 'FLUORSPAR_TREND_SYNC') result = await this.fluorsparTrend.sync();
       else if (type === 'AI_CLEAN') result = await this.cleanOne((job.data.payload || {}).articleId);
       else if (type === 'DATA_IMPORT') result = await this.dataImport.importPriceFile((job.data.payload || {}).assetId);
       else throw new Error(`尚未实现的任务类型：${type}`);
+      const completedStatus = type === 'NEWS_SYNC'
+        && Number((result as { failedSources?: number })?.failedSources || 0) > 0
+        ? 'PARTIAL'
+        : 'SUCCEEDED';
       await this.prisma.contentJob.update({
         where: { id: record.id },
-        data: { status: 'SUCCEEDED', result: result as any, finishedAt: new Date(), nextRetryAt: null },
+        data: { status: completedStatus, result: result as any, finishedAt: new Date(), nextRetryAt: null },
       });
       if (record.sourceId) await this.prisma.contentDataSource.update({
         where: { id: record.sourceId }, data: { lastSuccessAt: new Date(), lastError: null },
@@ -92,17 +98,19 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
   }
 
   private async scheduledRecord(type: string, job: Job) {
-    const bucket = new Date().toISOString().slice(0, 10);
+    const bucket = new Date().toISOString().slice(0, type === 'NEWS_SYNC' ? 13 : 10);
     const sourceCode = type === 'MARKET_SYNC' ? 'BAIINFO_FLUORITE'
       : type === 'HF_MARKET_SYNC' ? 'BUSINESS_ANALYTIQ_HF'
       : type === 'FLUORSPAR_TREND_SYNC' ? 'FLUORSPAR_COM_TREND'
       : undefined;
-    const source = sourceCode ? await this.prisma.contentDataSource.findUnique({ where: { code: sourceCode } }) : null;
+    const source = job.data.sourceId
+      ? await this.prisma.contentDataSource.findUnique({ where: { id: String(job.data.sourceId) } })
+      : sourceCode ? await this.prisma.contentDataSource.findUnique({ where: { code: sourceCode } }) : null;
     return this.prisma.contentJob.upsert({
-      where: { businessKey: `scheduled:${type}:${bucket}` },
+      where: { businessKey: `scheduled:${type}:${source?.id || 'all'}:${bucket}` },
       update: {},
       create: {
-        type, businessKey: `scheduled:${type}:${bucket}`, status: 'PENDING',
+        type, businessKey: `scheduled:${type}:${source?.id || 'all'}:${bucket}`, status: 'PENDING',
         sourceId: source?.id, payload: { bullJobId: job.id || null }, maxAttempts: Number(job.opts.attempts || 3),
       },
     });

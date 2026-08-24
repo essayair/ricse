@@ -1,9 +1,9 @@
 export const ARTICLE_TYPE: Record<string, string> = { NEWS: '行业资讯', SUPPLY: '供应信息', DEMAND: '采购需求' };
-export const ARTICLE_STATUS: Record<string, string> = { DRAFT: '草稿', PUBLISHED: '已发布', OFFLINE: '已下线' };
+export const ARTICLE_STATUS: Record<string, string> = { DRAFT: '草稿', PENDING_REVIEW: '待审核', PUBLISHED: '已发布', REJECTED: '已驳回', OFFLINE: '已下线' };
 export const SUPPLY_STATUS: Record<string, string> = { PENDING: '待审核', PUBLISHED: '已发布', REJECTED: '已驳回', OFFLINE: '已下线' };
 export const CONTACT_STATUS: Record<string, string> = { NEW: '待处理', FOLLOWING: '跟进中', COMPLETED: '已完成', INVALID: '无效' };
-export const JOB_STATUS: Record<string, string> = { PENDING: '待执行', RUNNING: '执行中', SUCCEEDED: '成功', FAILED: '失败', CANCELLED: '已取消' };
-export const JOB_TYPE: Record<string, string> = { NEWS_SYNC: '历史资讯同步（已停用）', AI_CLEAN: 'AI 清洗', MARKET_SYNC: '萤石市场行情采集', FLUORSPAR_TREND_SYNC: '萤石区域趋势采集', HF_MARKET_SYNC: '国际氢氟酸行情采集', DATA_IMPORT: '数据导入' };
+export const JOB_STATUS: Record<string, string> = { PENDING: '待执行', RUNNING: '执行中', SUCCEEDED: '执行完成', PARTIAL: '部分成功', FAILED: '失败', CANCELLED: '已取消' };
+export const JOB_TYPE: Record<string, string> = { NEWS_SYNC: '产业资讯自动采集', AI_CLEAN: 'AI 清洗', MARKET_SYNC: '萤石市场行情采集', FLUORSPAR_TREND_SYNC: '萤石区域趋势采集', HF_MARKET_SYNC: '国际氢氟酸行情采集', DATA_IMPORT: '数据导入' };
 
 export function contentDate(value?: string | null) {
   if (!value) return '-';

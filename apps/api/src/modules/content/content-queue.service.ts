@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
+import { PrismaService } from '../../prisma/prisma.service';
 
 export const CONTENT_QUEUE = 'ricse-content-jobs';
 
@@ -11,7 +12,7 @@ export class ContentQueueService implements OnModuleDestroy {
   private readonly connection: IORedis;
   private readonly queue: Queue;
 
-  constructor(config: ConfigService) {
+  constructor(config: ConfigService, private readonly prisma: PrismaService) {
     const redisUrl = config.get<string>('REDIS_URL') || 'redis://localhost:6379';
     this.connection = new IORedis(redisUrl, { maxRetriesPerRequest: null, enableReadyCheck: false });
     this.queue = new Queue(CONTENT_QUEUE, { connection: this.connection });
@@ -31,7 +32,7 @@ export class ContentQueueService implements OnModuleDestroy {
   }
 
   async registerSchedules() {
-    await this.queue.removeJobScheduler('schedule-news-sync');
+    await this.registerNewsSchedules();
     await this.queue.upsertJobScheduler(
       'schedule-market-sync',
       { pattern: process.env.MARKET_SYNC_CRON || '0 6 * * *' },
@@ -61,7 +62,42 @@ export class ContentQueueService implements OnModuleDestroy {
     );
   }
 
+  async registerNewsSchedules() {
+    await this.queue.removeJobScheduler('schedule-news-sync');
+    const sources = await this.prisma.contentDataSource.findMany({
+      where: { OR: [{ code: 'SUNSIRS_FLUORITE_NEWS' }, { type: { in: ['GDELT', 'RSS'] } }] },
+      select: { id: true, code: true, status: true, schedule: true },
+    });
+    for (const source of sources) {
+      const schedulerId = `schedule-news-${source.id}`;
+      await this.queue.removeJobScheduler(schedulerId);
+      if (source.status !== 'ACTIVE') continue;
+      await this.queue.upsertJobScheduler(
+        schedulerId,
+        { pattern: source.schedule || process.env.NEWS_SYNC_CRON || '0 5 * * *', tz: process.env.CONTENT_TIMEZONE || 'Asia/Shanghai' },
+        {
+          name: 'NEWS_SYNC',
+          data: { type: 'NEWS_SYNC', sourceId: source.id, sourceCode: source.code, scheduled: true },
+          opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 50, removeOnFail: 100 },
+        },
+      );
+    }
+  }
+
   async enqueueStartupSyncs() {
+    const activeNewsSources = await this.prisma.contentDataSource.count({
+      where: { code: 'SUNSIRS_FLUORITE_NEWS', status: 'ACTIVE' },
+    });
+    if (activeNewsSources) {
+      await this.queue.add('NEWS_SYNC', {
+        type: 'NEWS_SYNC', startup: true,
+      }, {
+        attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
+        removeOnComplete: 50, removeOnFail: 100,
+      });
+    } else {
+      this.logger.warn('未发现已启用且已配置的产业资讯源，跳过启动自动采集');
+    }
     await this.queue.add('MARKET_SYNC', {
       type: 'MARKET_SYNC', startup: true,
     }, {
@@ -80,7 +116,7 @@ export class ContentQueueService implements OnModuleDestroy {
       attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
       removeOnComplete: 20, removeOnFail: 50,
     });
-    this.logger.log('已加入启动行情同步任务');
+    this.logger.log('已加入启动资讯与行情同步任务');
   }
 
   connectionOptions() { return this.connection; }

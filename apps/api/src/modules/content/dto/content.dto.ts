@@ -23,7 +23,7 @@ export class PageQueryDto {
 
 export class ArticleQueryDto extends PageQueryDto {
   @IsOptional() @IsIn(['NEWS', 'SUPPLY', 'DEMAND']) type?: string;
-  @IsOptional() @IsIn(['DRAFT', 'PUBLISHED', 'OFFLINE']) status?: string;
+  @IsOptional() @IsIn(['DRAFT', 'PENDING_REVIEW', 'PUBLISHED', 'REJECTED', 'OFFLINE']) status?: string;
   @IsOptional() @IsString() categoryId?: string;
 }
 
@@ -66,8 +66,9 @@ export class CreateArticleDto {
 export class UpdateArticleDto extends CreateArticleDto {}
 
 export class UpdateArticleStatusDto {
-  @IsIn(['PUBLISHED', 'OFFLINE']) status: string;
+  @IsIn(['PUBLISHED', 'REJECTED', 'OFFLINE']) status: string;
   @IsOptional() @IsDateString() publishAt?: string;
+  @IsOptional() @IsString() @MaxLength(500) reviewNote?: string;
 }
 
 export class ProductTypeDto {
@@ -146,10 +147,19 @@ export class ReviewSupplyDemandDto {
 }
 
 export class CreateContentJobDto {
-  @IsIn(['AI_CLEAN', 'MARKET_SYNC', 'HF_MARKET_SYNC', 'FLUORSPAR_TREND_SYNC', 'DATA_IMPORT']) type: string;
+  @IsIn(['NEWS_SYNC', 'AI_CLEAN', 'MARKET_SYNC', 'HF_MARKET_SYNC', 'FLUORSPAR_TREND_SYNC', 'DATA_IMPORT']) type: string;
   @IsOptional() @IsString() sourceId?: string;
   @IsOptional() @IsObject() payload?: Record<string, unknown>;
   @IsOptional() @IsDateString() scheduledAt?: string;
+}
+
+export class CreateDataSourceDto {
+  @IsString() @MaxLength(50) code: string;
+  @IsString() @MaxLength(100) name: string;
+  @IsIn(['GDELT', 'RSS']) type: string;
+  @IsOptional() @IsIn(['ACTIVE', 'INACTIVE']) status?: string;
+  @IsOptional() @IsString() @MaxLength(100) schedule?: string;
+  @IsOptional() @IsObject() config?: Record<string, unknown>;
 }
 
 export class UpdateDataSourceDto {
