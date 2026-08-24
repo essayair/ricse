@@ -674,6 +674,7 @@ export class ContentService {
   async retryJob(id: string) {
     const job = await this.prisma.contentJob.findUnique({ where: { id } });
     if (!job) throw new NotFoundException('任务不存在');
+    if (job.type === 'NEWS_SYNC') throw new BadRequestException('历史资讯同步已停用，请通过资讯管理或数据导入维护内容');
     if (!['FAILED', 'CANCELLED'].includes(job.status)) throw new BadRequestException('只有失败或已取消任务可以重试');
     const updated = await this.prisma.contentJob.update({
       where: { id },

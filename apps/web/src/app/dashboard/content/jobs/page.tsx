@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
+type ManualJobType = 'MARKET_SYNC' | 'HF_MARKET_SYNC' | 'FLUORSPAR_TREND_SYNC';
+
 export default function ContentJobsPage() {
   const [data, setData] = useState<any>({ list: [], total: 0 });
   const [sources, setSources] = useState<any[]>([]);
@@ -22,9 +24,8 @@ export default function ContentJobsPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get<any[]>('/content/data-sources').then(setSources).catch(() => []); }, []);
 
-  const trigger = async (jobType: string) => {
-    const sourceCode = jobType === 'NEWS_SYNC' ? 'LEGACY_NEWS'
-      : jobType === 'HF_MARKET_SYNC' ? 'BUSINESS_ANALYTIQ_HF'
+  const trigger = async (jobType: ManualJobType) => {
+    const sourceCode = jobType === 'HF_MARKET_SYNC' ? 'BUSINESS_ANALYTIQ_HF'
       : jobType === 'FLUORSPAR_TREND_SYNC' ? 'FLUORSPAR_COM_TREND'
       : 'BAIINFO_FLUORITE';
     const source = sources.find((item) => item.code === sourceCode);
@@ -39,9 +40,8 @@ export default function ContentJobsPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">采集与 AI</h1><p className="mt-1 text-sm text-muted-foreground">查看资讯同步、AI 清洗、行情采集和数据导入任务</p></div>
+      <div><h1 className="text-2xl font-bold">采集与 AI</h1><p className="mt-1 text-sm text-muted-foreground">查看 AI 清洗、行情采集和数据导入任务；资讯内容统一在资讯管理中维护</p></div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={() => trigger('NEWS_SYNC')}><Play className="mr-1 h-4 w-4" />同步资讯</Button>
         <Button variant="outline" onClick={() => trigger('MARKET_SYNC')}><Play className="mr-1 h-4 w-4" />采集萤石行情</Button>
         <Button variant="outline" onClick={() => trigger('FLUORSPAR_TREND_SYNC')}><Play className="mr-1 h-4 w-4" />采集萤石趋势</Button>
         <Button onClick={() => trigger('HF_MARKET_SYNC')}><Play className="mr-1 h-4 w-4" />采集国际氢氟酸行情</Button>
