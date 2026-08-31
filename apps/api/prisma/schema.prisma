@@ -25,43 +25,46 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company                      Company?                 @relation(fields: [companyId], references: [id])
-  employee                     Employee?                @relation(fields: [employeeId], references: [id])
+  company                      Company?                  @relation(fields: [companyId], references: [id])
+  employee                     Employee?                 @relation(fields: [employeeId], references: [id])
   roleAssignments              UserRoleAssignment[]
   wechatIdentity               WechatIdentity?           @relation("WechatLinkedUser")
   wechatBindingTargets         WechatAccountBinding[]    @relation("WechatBindingTarget")
   operatedWechatBindings       WechatAccountBinding[]    @relation("WechatBindingOperator")
-  createdContracts             Contract[]               @relation("ContractCreator")
-  createdPartners              Partner[]                @relation("PartnerCreator")
-  approvalTasks                Approval[]               @relation("ApprovalAssignee")
-  actedApprovals               Approval[]               @relation("ApprovalActor")
-  createdOrders                Order[]                  @relation("OrderCreator")
-  createdDispatchNotices       DispatchNotice[]         @relation("DispatchNoticeCreator")
-  createdWaybills              Waybill[]                @relation("WaybillCreator")
-  createdWeighTickets          WeighTicket[]            @relation("WeighTicketCreator")
-  reviewedWeighTickets         WeighTicket[]            @relation("WeighTicketReviewer")
-  weighTicketSelections        WaybillWeightSelection[] @relation("WaybillWeightSelector")
-  weighRecords                 WeighRecord[]            @relation("WeighRecordOperator")
-  createdQualityInspections    QualityInspection[]      @relation("QualityInspectionCreator")
-  confirmedQualityInspections  QualityInspection[]      @relation("QualityInspectionConfirmer")
-  createdQualityTasks          QualityTask[]            @relation("QualityTaskCreator")
-  handledQualityTasks          QualityTask[]            @relation("QualityTaskHandler")
-  decidedQualityTasks          QualityTask[]            @relation("QualityTaskDecider")
-  createdInboundReceipts       InboundReceipt[]         @relation("InboundReceiptCreator")
-  createdBusinessInbounds      BusinessInbound[]        @relation("BusinessInboundCreator")
-  createdOutboundOrders        OutboundOrder[]          @relation("OutboundOrderCreator")
-  createdOutboundReceipts      OutboundReceipt[]        @relation("OutboundReceiptCreator")
-  createdSalesOutbounds        SalesOutbound[]          @relation("SalesOutboundCreator")
-  inventoryLedgerEntries       InventoryLedger[]        @relation("InventoryLedgerCreator")
-  createdInventoryReversals    InventoryReversal[]      @relation("InventoryReversalCreator")
-  approvedInventoryReversals   InventoryReversal[]      @relation("InventoryReversalApprover")
-  postedInventoryReversals     InventoryReversal[]      @relation("InventoryReversalPoster")
-  createdProductionRecipes     ProductionRecipe[]       @relation("ProductionRecipeCreator")
-  createdProductionTasks       ProductionTask[]         @relation("ProductionTaskCreator")
-  createdProductionCompletions ProductionCompletion[]   @relation("ProductionCompletionCreator")
-  qualityConfirmedCompletions  ProductionCompletion[]   @relation("ProductionCompletionQualityConfirmer")
-  postedProductionCompletions  ProductionCompletion[]   @relation("ProductionCompletionPoster")
-  businessOperationLogs       BusinessOperationLog[]
+  createdContracts             Contract[]                @relation("ContractCreator")
+  createdPartners              Partner[]                 @relation("PartnerCreator")
+  approvalTasks                Approval[]                @relation("ApprovalAssignee")
+  actedApprovals               Approval[]                @relation("ApprovalActor")
+  createdOrders                Order[]                   @relation("OrderCreator")
+  createdDispatchNotices       DispatchNotice[]          @relation("DispatchNoticeCreator")
+  createdWaybills              Waybill[]                 @relation("WaybillCreator")
+  createdWeighTasks            WeighTask[]               @relation("WeighTaskCreator")
+  createdWeighTickets          WeighTicket[]             @relation("WeighTicketCreator")
+  reviewedWeighTickets         WeighTicket[]             @relation("WeighTicketReviewer")
+  weighTicketSelections        WaybillWeightSelection[]  @relation("WaybillWeightSelector")
+  weighRecords                 WeighRecord[]             @relation("WeighRecordOperator")
+  createdQualityInspections    QualityInspection[]       @relation("QualityInspectionCreator")
+  confirmedQualityInspections  QualityInspection[]       @relation("QualityInspectionConfirmer")
+  createdQualityTasks          QualityTask[]             @relation("QualityTaskCreator")
+  handledQualityTasks          QualityTask[]             @relation("QualityTaskHandler")
+  decidedQualityTasks          QualityTask[]             @relation("QualityTaskDecider")
+  qualityMethodPreferences     QualityMethodPreference[]
+  uploadedAttachments          Attachment[]              @relation("AttachmentUploader")
+  createdInboundReceipts       InboundReceipt[]          @relation("InboundReceiptCreator")
+  createdBusinessInbounds      BusinessInbound[]         @relation("BusinessInboundCreator")
+  createdOutboundOrders        OutboundOrder[]           @relation("OutboundOrderCreator")
+  createdOutboundReceipts      OutboundReceipt[]         @relation("OutboundReceiptCreator")
+  createdSalesOutbounds        SalesOutbound[]           @relation("SalesOutboundCreator")
+  inventoryLedgerEntries       InventoryLedger[]         @relation("InventoryLedgerCreator")
+  createdInventoryReversals    InventoryReversal[]       @relation("InventoryReversalCreator")
+  approvedInventoryReversals   InventoryReversal[]       @relation("InventoryReversalApprover")
+  postedInventoryReversals     InventoryReversal[]       @relation("InventoryReversalPoster")
+  createdProductionRecipes     ProductionRecipe[]        @relation("ProductionRecipeCreator")
+  createdProductionTasks       ProductionTask[]          @relation("ProductionTaskCreator")
+  createdProductionCompletions ProductionCompletion[]    @relation("ProductionCompletionCreator")
+  qualityConfirmedCompletions  ProductionCompletion[]    @relation("ProductionCompletionQualityConfirmer")
+  postedProductionCompletions  ProductionCompletion[]    @relation("ProductionCompletionPoster")
+  businessOperationLogs        BusinessOperationLog[]
 
   @@map("users")
 }
@@ -424,6 +427,7 @@ model MaterialCategory {
   children            MaterialCategory[]  @relation("CategoryParent")
   materials           Material[]
   standardCommodities StandardCommodity[]
+  qualityTemplates    QualityTemplate[]
 
   @@map("material_categories")
 }
@@ -473,29 +477,167 @@ model Material {
   taxCode             String? // 税务商品编码
   internalCode        String? // 内部编码
   qcTemplate          String? // 质检模板ID
+  qualityTemplateId   String? // 结构化质检模板；qcTemplate 保留兼容历史文本
   status              String    @default("ACTIVE")
   remark              String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
 
-  category                MaterialCategory        @relation(fields: [categoryId], references: [id])
-  standardCommodity       StandardCommodity?      @relation(fields: [standardCommodityId], references: [id])
-  businessInbounds        BusinessInbound[]
-  salesOutbounds          SalesOutbound[]
-  inventoryLots           InventoryLot[]
-  inventoryLedgers        InventoryLedger[]
-  OutboundReceipt         OutboundReceipt[]
-  productionRecipeInputs  ProductionRecipeInput[]
-  productionRecipeOutputs ProductionRecipe[]      @relation("ProductionRecipeOutputMaterial")
-  productionTaskInputs    ProductionTaskInput[]
-  productionTaskOutputs   ProductionTask[]        @relation("ProductionTaskOutputMaterial")
-  productionCompletions   ProductionCompletion[]
+  category                 MaterialCategory          @relation(fields: [categoryId], references: [id])
+  standardCommodity        StandardCommodity?        @relation(fields: [standardCommodityId], references: [id])
+  qualityTemplate          QualityTemplate?          @relation(fields: [qualityTemplateId], references: [id])
+  qualityMethodPreferences QualityMethodPreference[]
+  businessInbounds         BusinessInbound[]
+  salesOutbounds           SalesOutbound[]
+  inventoryLots            InventoryLot[]
+  inventoryLedgers         InventoryLedger[]
+  OutboundReceipt          OutboundReceipt[]
+  productionRecipeInputs   ProductionRecipeInput[]
+  productionRecipeOutputs  ProductionRecipe[]        @relation("ProductionRecipeOutputMaterial")
+  productionTaskInputs     ProductionTaskInput[]
+  productionTaskOutputs    ProductionTask[]          @relation("ProductionTaskOutputMaterial")
+  productionCompletions    ProductionCompletion[]
 
   @@index([categoryId])
   @@index([standardCommodityId])
   @@index([referenceType])
+  @@index([qualityTemplateId])
   @@map("materials")
+}
+
+/// 可复用检测指标主数据：定义“检测什么”。
+model QualityIndicatorDefinition {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  name          String
+  symbol        String?
+  defaultUnit   String   @default("%")
+  dataType      String   @default("NUMBER") // NUMBER | TEXT | BOOLEAN
+  decimalPlaces Int      @default(4)
+  status        String   @default("ACTIVE") // ACTIVE | INACTIVE
+  remark        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  methods              QualityIndicatorMethod[]
+  templateItems        QualityTemplateItem[]
+  inspectionIndicators QualityInspectionIndicator[]
+  userPreferences      QualityMethodPreference[]
+
+  @@index([status])
+  @@index([name])
+  @@map("quality_indicator_definitions")
+}
+
+/// 检测方法主数据：定义“如何检测”。
+model QualityMethod {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String
+  standardNo      String?
+  standardVersion String?
+  description     String?
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  indicators           QualityIndicatorMethod[]
+  templateItems        QualityTemplateItem[]
+  inspectionIndicators QualityInspectionIndicator[]
+  userPreferences      QualityMethodPreference[]
+
+  @@index([status])
+  @@index([name])
+  @@map("quality_methods")
+}
+
+/// 指标允许使用的方法；同一指标可以配置多个方法并指定全局默认方法。
+model QualityIndicatorMethod {
+  id          String   @id @default(cuid())
+  indicatorId String
+  methodId    String
+  isDefault   Boolean  @default(false)
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  indicator QualityIndicatorDefinition @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  method    QualityMethod              @relation(fields: [methodId], references: [id], onDelete: Cascade)
+
+  @@unique([indicatorId, methodId])
+  @@index([methodId])
+  @@map("quality_indicator_methods")
+}
+
+/// 面向物料及业务场景的质检模板。
+model QualityTemplate {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  name               String
+  materialCategoryId String?
+  businessScene      String   @default("GENERAL") // GENERAL | PURCHASE | SALES | PRODUCTION
+  version            Int      @default(1)
+  status             String   @default("ACTIVE") // ACTIVE | INACTIVE
+  remark             String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  materialCategory MaterialCategory?     @relation(fields: [materialCategoryId], references: [id])
+  items            QualityTemplateItem[]
+  materials        Material[]
+  qualityTasks     QualityTask[]
+
+  @@index([materialCategoryId])
+  @@index([businessScene, status])
+  @@map("quality_templates")
+}
+
+model QualityTemplateItem {
+  id              String   @id @default(cuid())
+  templateId      String
+  indicatorId     String
+  defaultMethodId String?
+  operator        String   @default("GTE") // GTE | LTE | EQ | RANGE
+  standardValue   Decimal? @db.Decimal(15, 4)
+  upperValue      Decimal? @db.Decimal(15, 4)
+  fuseValue       Decimal? @db.Decimal(15, 4)
+  unit            String   @default("%")
+  required        Boolean  @default(true)
+  core            Boolean  @default(false)
+  participates    Boolean  @default(true)
+  sort            Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  template      QualityTemplate            @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  indicator     QualityIndicatorDefinition @relation(fields: [indicatorId], references: [id], onDelete: Restrict)
+  defaultMethod QualityMethod?             @relation(fields: [defaultMethodId], references: [id], onDelete: SetNull)
+
+  @@unique([templateId, indicatorId])
+  @@index([indicatorId])
+  @@index([defaultMethodId])
+  @@map("quality_template_items")
+}
+
+/// 记住用户在同一物料、同一指标下最近使用的检测方法。
+model QualityMethodPreference {
+  id          String   @id @default(cuid())
+  userId      String
+  materialId  String
+  indicatorId String
+  methodId    String
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  user      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  material  Material                   @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  indicator QualityIndicatorDefinition @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  method    QualityMethod              @relation(fields: [methodId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, materialId, indicatorId])
+  @@index([methodId])
+  @@map("quality_method_preferences")
 }
 
 /// 车辆管理
@@ -834,6 +976,7 @@ model Waybill {
   inboundReceipts  InboundReceipt[]
   outboundReceipts OutboundReceipt[]
   qualityTask      QualityTask?
+  weighTask        WeighTask?
 
   @@index([waybillNo])
   @@index([dispatchNoticeId])
@@ -842,6 +985,26 @@ model Waybill {
   @@index([driverId])
   @@index([carrierPartnerId])
   @@map("waybills")
+}
+
+/// 运单级过磅任务；实际发货、收货及追加称重继续由 WeighTicket 记录。
+model WeighTask {
+  id              String    @id @default(cuid())
+  taskNo          String    @unique
+  waybillId       String    @unique
+  status          String    @default("PENDING_WEIGHING") // PENDING_WEIGHING | IN_PROGRESS | PENDING_CONFIRMATION | COMPLETED | EXCEPTION | VOIDED
+  plannedQuantity Decimal   @db.Decimal(15, 3)
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  waybill     Waybill      @relation(fields: [waybillId], references: [id])
+  creator     User         @relation("WeighTaskCreator", fields: [createdBy], references: [id])
+  attachments Attachment[]
+
+  @@index([status])
+  @@map("weigh_tasks")
 }
 
 model WaybillLineItem {
@@ -983,7 +1146,9 @@ model QualityTask {
   taskNo               String    @unique
   waybillId            String    @unique
   status               String    @default("PENDING_SAMPLING") // PENDING_SAMPLING | INSPECTING | PENDING_DECISION | COMPLETED | RECHECK_REQUIRED | VOIDED
-  plannedReportCount   Int       @default(3)
+  plannedReportCount   Int       @default(1)
+  qualityTemplateId    String?
+  templateSnapshot     Json?
   sampledAt            DateTime?
   samplerName          String?
   samplingMethod       String?
@@ -1008,11 +1173,14 @@ model QualityTask {
   decider         User?               @relation("QualityTaskDecider", fields: [decidedBy], references: [id])
   basisInspection QualityInspection?  @relation("QualityTaskBasisInspection", fields: [basisInspectionId], references: [id])
   reports         QualityInspection[] @relation("QualityTaskReports")
+  qualityTemplate QualityTemplate?    @relation(fields: [qualityTemplateId], references: [id])
+  attachments     Attachment[]
 
   @@index([status])
   @@index([finalConclusion])
   @@index([handlerId])
   @@index([decidedBy])
+  @@index([qualityTemplateId])
   @@map("quality_tasks")
 }
 
@@ -1080,25 +1248,33 @@ model QualityInspection {
 }
 
 model QualityInspectionIndicator {
-  id            String   @id @default(cuid())
-  inspectionId  String
-  code          String
-  name          String
-  operator      String // GTE | LTE | EQ | RANGE
-  standardValue Decimal? @db.Decimal(15, 4)
-  upperValue    Decimal? @db.Decimal(15, 4)
-  fuseValue     Decimal? @db.Decimal(15, 4)
-  unit          String   @default("%")
-  measuredValue Decimal? @db.Decimal(15, 4)
-  result        String   @default("PENDING") // PENDING | PASS | FAIL | FUSE
-  sort          Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  inspectionId          String
+  code                  String
+  name                  String
+  indicatorDefinitionId String?
+  methodId              String?
+  methodCode            String?
+  methodName            String?
+  operator              String // GTE | LTE | EQ | RANGE
+  standardValue         Decimal? @db.Decimal(15, 4)
+  upperValue            Decimal? @db.Decimal(15, 4)
+  fuseValue             Decimal? @db.Decimal(15, 4)
+  unit                  String   @default("%")
+  measuredValue         Decimal? @db.Decimal(15, 4)
+  result                String   @default("PENDING") // PENDING | PASS | FAIL | FUSE
+  sort                  Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  inspection QualityInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspection          QualityInspection           @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  indicatorDefinition QualityIndicatorDefinition? @relation(fields: [indicatorDefinitionId], references: [id], onDelete: SetNull)
+  method              QualityMethod?              @relation(fields: [methodId], references: [id], onDelete: SetNull)
 
   @@unique([inspectionId, code])
   @@index([inspectionId])
+  @@index([indicatorDefinitionId])
+  @@index([methodId])
   @@map("quality_inspection_indicators")
 }
 
@@ -1717,11 +1893,13 @@ model ApprovalFlowNode {
 
 /// 附件/影像
 model Attachment {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   partnerId           String? // 关联合作伙伴
   contractId          String? // 关联合同
   waybillId           String? // 关联物流运单
   weighTicketId       String? // 关联磅单
+  weighTaskId         String? // 关联过磅任务现场影像
+  qualityTaskId       String? // 关联质检任务现场影像
   qualityInspectionId String? // 关联质检单
   inboundReceiptId    String? // 关联物流入库单
   outboundReceiptId   String? // 关联物流出库单
@@ -1731,25 +1909,38 @@ model Attachment {
   mimeType            String
   size                Int // 字节
   category            String // 附件类别
-  createdAt           DateTime @default(now())
+  sourceType          String    @default("WEB_UPLOAD") // MINI_PROGRAM_CAPTURE | RICSE_IMPORT | THIRD_PARTY_WATERMARK | WEB_UPLOAD | EXTERNAL
+  evidenceNode        String?
+  capturedAt          DateTime?
+  uploadedBy          String?
+  fileHash            String?
+  watermarkText       String?
+  createdAt           DateTime  @default(now())
 
   partner           Partner?           @relation(fields: [partnerId], references: [id])
   contract          Contract?          @relation(fields: [contractId], references: [id])
   waybill           Waybill?           @relation(fields: [waybillId], references: [id])
   weighTicket       WeighTicket?       @relation(fields: [weighTicketId], references: [id])
+  weighTask         WeighTask?         @relation(fields: [weighTaskId], references: [id])
+  qualityTask       QualityTask?       @relation(fields: [qualityTaskId], references: [id])
   qualityInspection QualityInspection? @relation(fields: [qualityInspectionId], references: [id])
   inboundReceipt    InboundReceipt?    @relation(fields: [inboundReceiptId], references: [id])
   outboundReceipt   OutboundReceipt?   @relation(fields: [outboundReceiptId], references: [id])
   inventoryReversal InventoryReversal? @relation(fields: [inventoryReversalId], references: [id])
+  uploader          User?              @relation("AttachmentUploader", fields: [uploadedBy], references: [id])
 
   @@index([partnerId])
   @@index([contractId])
   @@index([waybillId])
   @@index([weighTicketId])
+  @@index([weighTaskId])
+  @@index([qualityTaskId])
   @@index([qualityInspectionId])
   @@index([inboundReceiptId])
   @@index([outboundReceiptId])
   @@index([inventoryReversalId])
+  @@index([uploadedBy])
+  @@index([sourceType])
   @@map("attachments")
 }
 
@@ -1774,50 +1965,50 @@ model ContentCategory {
 
 /// 统一承载行业资讯及平台维护的供应/需求信息。
 model ContentArticle {
-  id             String   @id @default(cuid())
-  legacyId       String?  @unique
-  categoryId     String?
-  dataSourceId   String?
-  externalId     String?
-  type           String   @default("NEWS") // NEWS | SUPPLY | DEMAND
-  title          String
-  summary        String?
-  content        String   @default("")
-  coverUrl       String?
-  source         String?
-  sourceHash     String?
-  author         String?
-  tags           String[] @default([])
-  status         String   @default("DRAFT") // DRAFT | PENDING_REVIEW | PUBLISHED | REJECTED | OFFLINE
-  ingestionMode  String   @default("MANUAL") // MANUAL | AUTO | IMPORT | MIGRATION
-  sourceUrl      String?
+  id                String    @id @default(cuid())
+  legacyId          String?   @unique
+  categoryId        String?
+  dataSourceId      String?
+  externalId        String?
+  type              String    @default("NEWS") // NEWS | SUPPLY | DEMAND
+  title             String
+  summary           String?
+  content           String    @default("")
+  coverUrl          String?
+  source            String?
+  sourceHash        String?
+  author            String?
+  tags              String[]  @default([])
+  status            String    @default("DRAFT") // DRAFT | PENDING_REVIEW | PUBLISHED | REJECTED | OFFLINE
+  ingestionMode     String    @default("MANUAL") // MANUAL | AUTO | IMPORT | MIGRATION
+  sourceUrl         String?
   sourcePublishedAt DateTime?
-  collectedAt    DateTime?
-  rawData        Json?
-  publishAt      DateTime?
-  publishedById  String?
-  reviewedById   String?
-  reviewedAt     DateTime?
-  reviewNote     String?
-  createdById    String?
-  viewCount      Int      @default(0)
-  likeCount      Int      @default(0)
-  productName    String?
-  spec           String?
-  quantity       String?
-  priceText      String?
-  region         String?
-  deliveryMethod String?
-  requirements   String?
-  company        String?
-  contactName    String?
-  contactPhone   String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  collectedAt       DateTime?
+  rawData           Json?
+  publishAt         DateTime?
+  publishedById     String?
+  reviewedById      String?
+  reviewedAt        DateTime?
+  reviewNote        String?
+  createdById       String?
+  viewCount         Int       @default(0)
+  likeCount         Int       @default(0)
+  productName       String?
+  spec              String?
+  quantity          String?
+  priceText         String?
+  region            String?
+  deliveryMethod    String?
+  requirements      String?
+  company           String?
+  contactName       String?
+  contactPhone      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  category ContentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category   ContentCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   dataSource ContentDataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
-  assets   ContentAsset[]
+  assets     ContentAsset[]
 
   @@unique([dataSourceId, externalId])
   @@index([type, status, publishAt])
@@ -1889,8 +2080,8 @@ model ContentIndustryDataset {
 }
 
 model WebsiteContact {
-  id           String   @id @default(cuid())
-  legacyId     String?  @unique
+  id           String    @id @default(cuid())
+  legacyId     String?   @unique
   name         String
   phone        String
   company      String?
@@ -1898,12 +2089,12 @@ model WebsiteContact {
   message      String
   sourcePage   String?
   sourceIp     String?
-  status       String   @default("NEW") // NEW | FOLLOWING | COMPLETED | INVALID
+  status       String    @default("NEW") // NEW | FOLLOWING | COMPLETED | INVALID
   assigneeId   String?
   followUpNote String?
   handledAt    DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([status, createdAt])
   @@index([phone])
@@ -1911,8 +2102,8 @@ model WebsiteContact {
 }
 
 model SupplyDemandPost {
-  id           String   @id @default(cuid())
-  legacyId     String?  @unique
+  id           String    @id @default(cuid())
+  legacyId     String?   @unique
   type         String // SUPPLY | DEMAND
   productName  String
   spec         String?
@@ -1924,14 +2115,14 @@ model SupplyDemandPost {
   contactPhone String
   company      String?
   wechatOpenId String?
-  status       String   @default("PENDING") // PENDING | PUBLISHED | REJECTED | OFFLINE
+  status       String    @default("PENDING") // PENDING | PUBLISHED | REJECTED | OFFLINE
   rejectReason String?
-  source       String   @default("USER") // USER | PLATFORM | MIGRATION
+  source       String    @default("USER") // USER | PLATFORM | MIGRATION
   reviewedById String?
   reviewedAt   DateTime?
   publishedAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([type, status, publishedAt])
   @@index([wechatOpenId, createdAt])
@@ -1956,20 +2147,20 @@ model ContentAsset {
 }
 
 model ContentDataSource {
-  id            String   @id @default(cuid())
-  code          String   @unique
+  id            String    @id @default(cuid())
+  code          String    @unique
   name          String
   type          String // MANUAL | GDELT | RSS | BAIINFO | API | EXCEL
-  status        String   @default("ACTIVE")
+  status        String    @default("ACTIVE")
   schedule      String?
   config        Json?
   lastSuccessAt DateTime?
   lastErrorAt   DateTime?
   lastError     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  jobs ContentJob[]
+  jobs     ContentJob[]
   articles ContentArticle[]
 
   @@index([status, type])
@@ -1977,23 +2168,23 @@ model ContentDataSource {
 }
 
 model ContentJob {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   sourceId     String?
   type         String // NEWS_SYNC | AI_CLEAN | MARKET_SYNC | HF_MARKET_SYNC | FLUORSPAR_TREND_SYNC | DATA_IMPORT
-  businessKey  String   @unique
-  status       String   @default("PENDING") // PENDING | RUNNING | SUCCEEDED | PARTIAL | FAILED | CANCELLED
+  businessKey  String    @unique
+  status       String    @default("PENDING") // PENDING | RUNNING | SUCCEEDED | PARTIAL | FAILED | CANCELLED
   payload      Json?
   result       Json?
-  attempts     Int      @default(0)
-  maxAttempts  Int      @default(3)
-  scheduledAt  DateTime @default(now())
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(3)
+  scheduledAt  DateTime  @default(now())
   startedAt    DateTime?
   finishedAt   DateTime?
   nextRetryAt  DateTime?
   errorMessage String?
   createdById  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   source ContentDataSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
@@ -2003,20 +2194,20 @@ model ContentJob {
 }
 
 model WechatIdentity {
-  id              String   @id @default(cuid())
-  openId          String   @unique
+  id              String    @id @default(cuid())
+  openId          String    @unique
   unionId         String?
   nickName        String?
   avatarUrl       String?
   phone           String?
   phoneVerifiedAt DateTime?
-  source          String   @default("WECHAT_MINI_PROGRAM")
-  status          String   @default("ACTIVE") // ACTIVE | DISABLED
-  lastLogin       DateTime @default(now())
-  linkedUserId    String?  @unique
+  source          String    @default("WECHAT_MINI_PROGRAM")
+  status          String    @default("ACTIVE") // ACTIVE | DISABLED
+  lastLogin       DateTime  @default(now())
+  linkedUserId    String?   @unique
   linkedAt        DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   linkedUser  User?                  @relation("WechatLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
   bindingLogs WechatAccountBinding[]

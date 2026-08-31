@@ -5,14 +5,15 @@ import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, FileText, FlaskConical, Link2, Plus, Scale, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
-import { formatDateTimeToSecond } from '@/lib/date-time';
+import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 
 interface Indicator { id: string; name: string; operator: string; standardValue: string | null; upperValue: string | null; fuseValue: string | null; unit: string; measuredValue: string | null; result: string }
-interface Attachment { id: string; originalName: string; mimeType: string; size: number; category: string; createdAt: string }
+interface Attachment { id: string; originalName: string; mimeType: string; size: number; category: string; sourceType?: string | null; evidenceNode?: string | null; capturedAt?: string | null; watermarkText?: string | null; createdAt: string; uploader?: { name: string } | null }
 interface Report {
   id: string; inspectionNo: string; status: string; conclusion: string; institutionType: string; institutionName: string;
   reportNo: string; testedAt: string; sampleNo: string | null; sampledAt: string; samplerName: string;
@@ -25,6 +26,7 @@ interface Task {
   id: string; taskNo: string; status: string; plannedReportCount: number; sampledAt: string | null; samplerName: string | null;
   samplingMethod: string | null; finalConclusion: string; finalizedReportCount: number; decisionReason: string | null;
   decisionVersion: number; decidedAt: string | null; createdAt: string; handler: { name: string } | null; decider: { name: string } | null;
+  qualityTemplate: { id: string; code: string; name: string; version: number } | null; attachments: Attachment[];
   basisInspection: { id: string; inspectionNo: string; institutionName: string; reportNo: string } | null;
   reports: Report[];
   waybill: {
@@ -37,11 +39,13 @@ interface Task {
   };
 }
 
-const TASK_STATUS: Record<string, string> = { PENDING_SAMPLING: '待取样', INSPECTING: '检测中', PENDING_DECISION: '待综合判定', COMPLETED: '已完成', RECHECK_REQUIRED: '待复判', VOIDED: '已作废' };
+const TASK_STATUS: Record<string, string> = { PENDING_SAMPLING: '待取样', PENDING_SENDING: '待送检', INSPECTING: '检测中', PENDING_DECISION: '待综合判定', COMPLETED: '已完成', RECHECK_REQUIRED: '待复判', EXCEPTION: '异常处理中', VOIDED: '已作废' };
 const REPORT_STATUS: Record<string, string> = { DRAFT: '草稿', TESTING: '化验中', REPORTED: '已出报告', CONFIRMED: '已确认', VOIDED: '已作废' };
 const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '熔断' };
 const INSTITUTION: Record<string, string> = { OUR: '我方', PARTNER: '合作方', THIRD_PARTY: '第三方', OTHER: '其他' };
 const OPERATOR: Record<string, string> = { GTE: '≥', LTE: '≤', EQ: '=', RANGE: '范围' };
+const EVIDENCE_CATEGORY: Record<string, string> = { SAMPLING_PHOTO: '取样照片', MIXING_PHOTO: '混样照片', SPLITTING_PHOTO: '分样照片', SEALING_PHOTO: '封样照片', OTHER: '其他影像' };
+const EVIDENCE_SOURCE: Record<string, string> = { WEB_UPLOAD: '电脑上传', RICSE_IMPORT: '系统导入', THIRD_PARTY_WATERMARK: '第三方水印相机', EXTERNAL: '外部影像', MINI_PROGRAM_CAPTURE: '小程序现场拍摄' };
 
 export default function QualityTaskDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -49,6 +53,12 @@ export default function QualityTaskDetailPage() {
   const [item, setItem] = useState<Task | null>(null);
   const [basisInspectionId, setBasisInspectionId] = useState('');
   const [reason, setReason] = useState('');
+  const [sampledAt, setSampledAt] = useState('');
+  const [samplerName, setSamplerName] = useState('');
+  const [samplingMethod, setSamplingMethod] = useState('多点混合取样');
+  const [plannedReportCount, setPlannedReportCount] = useState('1');
+  const [evidenceCategory, setEvidenceCategory] = useState('SAMPLING_PHOTO');
+  const [evidenceSource, setEvidenceSource] = useState('WEB_UPLOAD');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -56,6 +66,10 @@ export default function QualityTaskDetailPage() {
       const task = await api.get<Task>(`/quality-tasks/${id}`);
       setItem(task);
       if (task.basisInspection?.id) setBasisInspectionId(task.basisInspection.id);
+      setSampledAt(toLocalDateTimeInput(task.sampledAt ? new Date(task.sampledAt) : new Date()));
+      setSamplerName(task.samplerName || task.handler?.name || '');
+      setSamplingMethod(task.samplingMethod || '多点混合取样');
+      setPlannedReportCount(String(task.plannedReportCount || 1));
     } catch (error: any) { alert(error.message || '到货质检任务加载失败'); router.push('/dashboard/quality'); }
   }, [id, router]);
   useEffect(() => { void load(); }, [load]);
@@ -111,6 +125,40 @@ export default function QualityTaskDetailPage() {
     catch (error: any) { alert(error.message || '附件打开失败'); }
   };
 
+  const saveSampling = async () => {
+    if (!sampledAt || !samplerName.trim()) return alert('请填写取样时间和取样人');
+    setSaving(true);
+    try {
+      await api.patch(`/quality-tasks/${id}/sampling`, {
+        sampledAt, samplerName: samplerName.trim(), samplingMethod: samplingMethod.trim() || undefined,
+        plannedReportCount: Math.max(1, Number(plannedReportCount) || 1),
+      });
+      await load();
+    } catch (error: any) { alert(error.message || '取样登记保存失败'); }
+    finally { setSaving(false); }
+  };
+
+  const uploadTaskEvidence = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setSaving(true);
+    try {
+      for (const file of Array.from(files)) {
+        const body = new FormData();
+        body.append('file', file); body.append('category', evidenceCategory); body.append('sourceType', evidenceSource);
+        body.append('evidenceNode', EVIDENCE_CATEGORY[evidenceCategory] || evidenceCategory);
+        body.append('capturedAt', new Date().toISOString());
+        await api.upload(`/quality-tasks/${id}/attachments`, body);
+      }
+      await load();
+    } catch (error: any) { alert(error.message || '现场影像上传失败'); }
+    finally { setSaving(false); }
+  };
+
+  const viewTaskAttachment = async (attachmentId: string) => {
+    try { await openStoredAttachment(`/quality-tasks/attachments/${attachmentId}/view-url`); }
+    catch (error: any) { alert(error.message || '现场影像打开失败'); }
+  };
+
   if (!item) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
   const materialNames = item.waybill.lineItems.map(line => line.materialName).filter(Boolean).join('、') || '-';
   const businessParty = item.waybill.dispatchNotice.type === 'PURCHASE' ? item.waybill.dispatchNotice.order.contract.seller?.name : item.waybill.dispatchNotice.order.contract.buyer?.name;
@@ -127,9 +175,13 @@ export default function QualityTaskDetailPage() {
     </Card>
 
     <div className="grid gap-6 lg:grid-cols-2">
-      <Card className="p-5"><Title>到货与任务信息</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="物流运单" value={item.waybill.waybillNo} /><Info label="到货时间" value={formatDateTimeToSecond(item.waybill.arrivedAt)} /><Info label="车牌号" value={item.waybill.plateNo || '-'} /><Info label="业务单位" value={businessParty || '-'} /><Info label="物料" value={materialNames} /><Info label="目标仓库" value={item.waybill.dispatchNotice.warehouse?.name || '-'} /><Info label="取样人" value={item.samplerName || '待处理'} /><Info label="取样时间" value={formatDateTimeToSecond(item.sampledAt)} /><Info label="取样方法" value={item.samplingMethod || '-'} /><Info label="当前处理人" value={item.handler?.name || '质检管理人员均可处理'} /></div></Card>
+      <Card className="p-5"><Title>到货与任务信息</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="物流运单" value={item.waybill.waybillNo} /><Info label="到货时间" value={formatDateTimeToSecond(item.waybill.arrivedAt)} /><Info label="车牌号" value={item.waybill.plateNo || '-'} /><Info label="业务单位" value={businessParty || '-'} /><Info label="物料" value={materialNames} /><Info label="目标仓库" value={item.waybill.dispatchNotice.warehouse?.name || '-'} /><Info label="质检模板" value={item.qualityTemplate ? `${item.qualityTemplate.code} · ${item.qualityTemplate.name}（v${item.qualityTemplate.version}）` : '未关联模板'} /><Info label="取样人" value={item.samplerName || '待处理'} /><Info label="取样时间" value={formatDateTimeToSecond(item.sampledAt)} /><Info label="取样方法" value={item.samplingMethod || '-'} /><Info label="当前处理人" value={item.handler?.name || '质检管理人员均可处理'} /></div></Card>
       <Card className="p-5"><Title>上游关联单据</Title><div className="grid gap-4 sm:grid-cols-2"><BusinessLink label="合同" value={`${item.waybill.dispatchNotice.order.contract.contractNo} · ${item.waybill.dispatchNotice.order.contract.title}`} /><BusinessLink label="执行批次" value={`${item.waybill.dispatchNotice.order.name} · ${item.waybill.dispatchNotice.order.orderNo}`} href={`/dashboard/orders/${item.waybill.dispatchNotice.order.id}`} /><BusinessLink label="物流运单" value={item.waybill.waybillNo} href={`/dashboard/waybills/${item.waybill.id}`} /><Info label="磅单进度" value={`${item.waybill.weighTickets.length} 张，已复核 ${item.waybill.weighTickets.filter(ticket => ticket.status === 'REVIEWED').length} 张`} /></div>{item.waybill.inboundReceipts[0] && <Button className="mt-5" variant="outline" onClick={() => router.push(`/dashboard/inbound/${item.waybill.inboundReceipts[0].id}`)}>查看入库作业单 {item.waybill.inboundReceipts[0].receiptNo}</Button>}</Card>
     </div>
+
+    {!['COMPLETED', 'VOIDED'].includes(item.status) && <Card className="space-y-4 p-5"><div><h2 className="font-semibold">取样与送检登记</h2><p className="mt-1 text-xs text-muted-foreground">第一阶段保持轻量：登记一次取样信息和计划报告数，同一质检人员可继续完成后续送检与报告归集。</p></div><div className="grid gap-4 md:grid-cols-4"><Field label="取样时间"><Input type="datetime-local" step="1" value={sampledAt} onChange={event => setSampledAt(event.target.value)} /></Field><Field label="取样人"><Input value={samplerName} onChange={event => setSamplerName(event.target.value)} /></Field><Field label="取样方法"><Input value={samplingMethod} onChange={event => setSamplingMethod(event.target.value)} /></Field><Field label="计划检测报告数"><Input type="number" min="1" max="20" value={plannedReportCount} onChange={event => setPlannedReportCount(event.target.value)} /></Field></div><div className="flex justify-end"><Button disabled={saving} onClick={() => void saveSampling()}>保存取样登记</Button></div></Card>}
+
+    <Card className="space-y-4 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">现场证据影像</h2><p className="mt-1 text-xs text-muted-foreground">支持小程序现场拍摄，以及第三方水印相机或普通相机影像在电脑端补充上传；系统保留来源、上传人、时间和文件哈希。</p></div>{!['COMPLETED', 'VOIDED'].includes(item.status) && <div className="flex flex-wrap gap-2"><select className="h-9 rounded-md border bg-background px-2 text-sm" value={evidenceCategory} onChange={event => setEvidenceCategory(event.target.value)}>{Object.entries(EVIDENCE_CATEGORY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select className="h-9 rounded-md border bg-background px-2 text-sm" value={evidenceSource} onChange={event => setEvidenceSource(event.target.value)}>{Object.entries(EVIDENCE_SOURCE).filter(([value]) => value !== 'MINI_PROGRAM_CAPTURE').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp" disabled={saving} onChange={event => { void uploadTaskEvidence(event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-4 w-4" />上传影像</label></div>}</div>{item.attachments.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{item.attachments.map(attachment => <button key={attachment.id} className="rounded-md border p-3 text-left hover:bg-muted" onClick={() => void viewTaskAttachment(attachment.id)}><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm font-medium">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></div><div className="mt-2 text-xs text-muted-foreground">{EVIDENCE_CATEGORY[attachment.category] || attachment.category} · {EVIDENCE_SOURCE[attachment.sourceType || ''] || attachment.sourceType || '未知来源'}</div><div className="mt-1 text-xs text-muted-foreground">{attachment.uploader?.name || '-'} · {formatDateTimeToSecond(attachment.capturedAt || attachment.createdAt)}</div></button>)}</div> : <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">暂无现场证据影像</div>}</Card>
 
     <Card className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="font-semibold">机构检测报告</h2><p className="mt-1 text-xs text-muted-foreground">每份报告对应一个样品和一家检测机构，可继续追加。</p></div><Badge variant="secondary">{item.reports.length} / 计划 {item.plannedReportCount}</Badge></div>
@@ -153,6 +205,7 @@ export default function QualityTaskDetailPage() {
 }
 
 function Title({ children }: { children: React.ReactNode }) { return <h2 className="mb-4 flex items-center gap-2 font-semibold"><FlaskConical className="h-4 w-4 text-primary" />{children}</h2>; }
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div><label className="mb-1.5 block text-sm font-medium">{label}</label>{children}</div>; }
 function Info({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 break-words text-sm font-medium">{value}</div></div>; }
 function BusinessLink({ label, value, href }: { label: string; value: string; href?: string }) { const content = <><Link2 className="h-3.5 w-3.5" /><span className="truncate">{value}</span></>; return <div><div className="text-xs text-muted-foreground">{label}</div>{href ? <a className="mt-1 flex items-center gap-1 text-sm text-primary hover:underline" href={href}>{content}</a> : <div className="mt-1 flex items-center gap-1 text-sm">{content}</div>}</div>; }
 function number(value: string | number | null) { return value === null ? '-' : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 }); }

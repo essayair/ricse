@@ -15,11 +15,25 @@ interface EligibleTicket {
   id: string; ticketNo: string; status: string; plateNo: string | null; materialName: string | null; materialSpec: string | null;
   ticketDate: string; settlementWeight: string | null; netWeight: string | null; shipperName: string | null; receiverName: string | null;
   waybill: { waybillNo: string; plateNo: string | null; lineItems: Array<{ materialId: string; materialName: string | null }>; dispatchNotice: { type: string; order: { name: string; orderNo: string; contract: { contractNo: string } } } };
-  materials: Array<{ materialId: string; materialName: string | null; name?: string; spec?: string | null; grade?: string | null; specs?: MaterialSpec[] | null; qcTemplate?: string | null }>;
+  materials: Array<{ materialId: string; materialName: string | null; name?: string; spec?: string | null; grade?: string | null; specs?: MaterialSpec[] | null; qcTemplate?: string | null; qualityTemplateId?: string | null }>;
+}
+interface QualityMethodOption { id: string; code: string; name: string }
+interface IndicatorDefinition {
+  id: string; code: string; name: string; symbol?: string | null; defaultUnit: string;
+  methods: Array<{ isDefault: boolean; method: QualityMethodOption }>;
+}
+interface ResolvedStandard {
+  material: { id: string; name: string };
+  preferences: Array<{ indicatorId: string; methodId: string }>;
+  template: null | { id: string; code: string; name: string; version: number; items: Array<{
+    indicatorId: string; operator: string; standardValue: string | number; upperValue: string | number | null;
+    fuseValue: string | number | null; unit: string; indicator: IndicatorDefinition; defaultMethod: QualityMethodOption | null;
+  }> };
 }
 interface Indicator {
   key: string; code: string; name: string; operator: string; standardValue: string; upperValue: string;
-  fuseValue: string; unit: string; measuredValue: string;
+  fuseValue: string; unit: string; measuredValue: string; indicatorDefinitionId?: string; methodId?: string;
+  allowedMethods?: QualityMethodOption[];
 }
 interface PendingFile { file: File; category: string }
 interface InstitutionProfile { id: string; partnerId: string; partner: { id: string; code: string; name: string } }
@@ -51,6 +65,8 @@ export default function CreateQualityInspectionPage() {
   const [reportNo, setReportNo] = useState('');
   const [testedAt, setTestedAt] = useState('');
   const [indicators, setIndicators] = useState<Indicator[]>(DEFAULT_INDICATORS);
+  const [indicatorDefinitions, setIndicatorDefinitions] = useState<IndicatorDefinition[]>([]);
+  const [resolvedTemplate, setResolvedTemplate] = useState<ResolvedStandard['template']>(null);
   const [remarks, setRemarks] = useState('');
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [fileCategory, setFileCategory] = useState('REPORT');
@@ -83,16 +99,64 @@ export default function CreateQualityInspectionPage() {
   const ticket = tickets.find(item => item.id === weighTicketId);
   useEffect(() => {
     if (!ticket) return;
-    const specs = ticket.materials.flatMap(material => Array.isArray(material.specs) ? material.specs : []);
-    if (specs.length) setIndicators(specs.map((spec, index) => indicator(`spec-${index + 1}`, spec.name, operatorCode(spec.operator), String(spec.value ?? ''), defaultFuse(spec.name, spec.operator, Number(spec.value)))));
-    else setIndicators(DEFAULT_INDICATORS.map(item => ({ ...item, key: `${item.key}-${ticket.id}` })));
+    const materialId = ticket.materials[0]?.materialId || ticket.waybill.lineItems[0]?.materialId;
+    if (!materialId) return;
+    Promise.all([
+      api.get<ResolvedStandard>(`/quality-standards/resolve?materialId=${materialId}&scene=${ticket.waybill.dispatchNotice.type}`),
+      api.get<IndicatorDefinition[]>('/quality-standards/indicators?status=ACTIVE'),
+    ]).then(([resolved, definitions]) => {
+      setIndicatorDefinitions(definitions);
+      setResolvedTemplate(resolved.template);
+      if (resolved.template?.items.length) {
+        setIndicators(resolved.template.items.map((item, index) => {
+          const allowedMethods = item.indicator.methods.map(link => link.method);
+          const preferredMethodId = resolved.preferences.find(value => value.indicatorId === item.indicatorId)?.methodId;
+          const methodId = preferredMethodId && allowedMethods.some(method => method.id === preferredMethodId)
+            ? preferredMethodId
+            : item.defaultMethod?.id || item.indicator.methods.find(link => link.isDefault)?.method.id || allowedMethods[0]?.id;
+          return {
+            key: `template-${item.indicatorId}-${index}`, code: item.indicator.code, name: item.indicator.name,
+            operator: item.operator, standardValue: String(item.standardValue ?? ''), upperValue: String(item.upperValue ?? ''),
+            fuseValue: String(item.fuseValue ?? ''), unit: item.unit || item.indicator.defaultUnit,
+            measuredValue: '', indicatorDefinitionId: item.indicatorId, methodId, allowedMethods,
+          };
+        }));
+        return;
+      }
+      const specs = ticket.materials.flatMap(material => Array.isArray(material.specs) ? material.specs : []);
+      if (specs.length) {
+        setIndicators(specs.map((spec, index) => {
+          const definition = definitions.find(item => item.name === spec.name || item.code === spec.name.toUpperCase());
+          const allowedMethods = definition?.methods.map(link => link.method) || [];
+          return { ...indicator(`spec-${index + 1}`, spec.name, operatorCode(spec.operator), String(spec.value ?? ''), defaultFuse(spec.name, spec.operator, Number(spec.value))), indicatorDefinitionId: definition?.id, methodId: definition?.methods.find(link => link.isDefault)?.method.id || allowedMethods[0]?.id, allowedMethods };
+        }));
+      } else setIndicators(DEFAULT_INDICATORS.map(item => ({ ...item, key: `${item.key}-${ticket.id}` })));
+    }).catch(error => alert(error.message || '质检标准加载失败'));
   }, [ticket]);
 
   const conclusion = useMemo(() => calculateConclusion(indicators), [indicators]);
   const deductions = useMemo(() => calculateDeductions(Number(ticket?.settlementWeight || ticket?.netWeight || 0), indicators), [ticket, indicators]);
 
   const updateIndicator = (key: string, field: keyof Indicator, value: string) => setIndicators(current => current.map(item => item.key === key ? { ...item, [field]: value } : item));
-  const addIndicator = () => setIndicators(current => [...current, indicator(`custom-${Date.now()}`, '', 'LTE', '', '')]);
+  const addIndicator = () => {
+    const definition = indicatorDefinitions[0];
+    const allowedMethods = definition?.methods.map(link => link.method) || [];
+    setIndicators(current => [...current, {
+      ...indicator(`custom-${Date.now()}`, definition?.name || '', 'LTE', '', ''), code: definition?.code || '',
+      unit: definition?.defaultUnit || '%', indicatorDefinitionId: definition?.id,
+      methodId: definition?.methods.find(link => link.isDefault)?.method.id || allowedMethods[0]?.id, allowedMethods,
+    }]);
+  };
+  const selectIndicator = (key: string, definitionId: string) => {
+    const definition = indicatorDefinitions.find(item => item.id === definitionId);
+    if (!definition) return;
+    const allowedMethods = definition.methods.map(link => link.method);
+    setIndicators(current => current.map(item => item.key === key ? {
+      ...item, indicatorDefinitionId: definition.id, code: definition.code, name: definition.name,
+      unit: definition.defaultUnit, allowedMethods,
+      methodId: definition.methods.find(link => link.isDefault)?.method.id || allowedMethods[0]?.id,
+    } : item));
+  };
   const addFiles = (selected: FileList | null) => {
     const accepted = Array.from(selected || []).filter(file => {
       const extension = file.name.toLowerCase().split('.').pop() || '';
@@ -120,6 +184,9 @@ export default function CreateQualityInspectionPage() {
         deductionAmount: deductions.amount, remarks: remarks || undefined, submit: true,
         indicators: indicators.map(item => ({
           code: item.code || item.key, name: item.name, operator: item.operator,
+          indicatorDefinitionId: item.indicatorDefinitionId, methodId: item.methodId,
+          methodCode: item.allowedMethods?.find(method => method.id === item.methodId)?.code,
+          methodName: item.allowedMethods?.find(method => method.id === item.methodId)?.name,
           standardValue: numberOrUndefined(item.standardValue), upperValue: numberOrUndefined(item.upperValue), fuseValue: numberOrUndefined(item.fuseValue),
           unit: item.unit, measuredValue: numberOrUndefined(item.measuredValue),
         })),
@@ -158,7 +225,7 @@ export default function CreateQualityInspectionPage() {
       <SectionTitle title="取样基本信息" />
       {!ticket && <div className="rounded-md border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">请先在上方磅单列表中选择一张磅单。</div>}
       <div className="grid gap-4 md:grid-cols-3">
-        <Field label="取样时间（到秒）*"><Input type="datetime-local" step="1" value={sampledAt} onChange={event => setSampledAt(event.target.value)} /></Field>
+        <Field label="取样时间 *"><Input type="datetime-local" step="1" value={sampledAt} onChange={event => setSampledAt(event.target.value)} /></Field>
         <Field label="取样人 *"><Input value={samplerName} onChange={event => setSamplerName(event.target.value)} /></Field>
         <Field label="取样方法"><Input value={samplingMethod} onChange={event => setSamplingMethod(event.target.value)} /></Field>
         <Field label="数据来源"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={dataSource} onChange={event => setDataSource(event.target.value)}><option value="MANUAL">人工录入</option><option value="DEVICE">设备采集</option><option value="OCR">附件识别</option></select></Field>
@@ -177,8 +244,8 @@ export default function CreateQualityInspectionPage() {
       <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">本记录对应一家检测机构和一份检测报告。其他机构报告请返回任务详情继续追加。</div>
     </Card>
 
-    <Card className="space-y-4 p-6"><div className="flex items-center justify-between"><SectionTitle title="检测指标" noMargin /><Button variant="outline" size="sm" onClick={addIndicator}><Plus className="mr-1 h-4 w-4" />增加指标</Button></div>
-      <div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="border-b bg-muted/40 text-left text-muted-foreground"><tr><th className="p-3">指标</th><th className="p-3">判定</th><th className="p-3">标准值</th><th className="p-3">上限值</th><th className="p-3">熔断线</th><th className="p-3">单位</th><th className="p-3">检测结果 *</th><th className="p-3"></th></tr></thead><tbody>{indicators.map(item => <tr key={item.key} className="border-b"><td className="p-2"><Input value={item.name} onChange={event => updateIndicator(item.key, 'name', event.target.value)} /></td><td className="p-2"><select className="h-10 rounded-md border bg-background px-2" value={item.operator} onChange={event => updateIndicator(item.key, 'operator', event.target.value)}><option value="GTE">≥</option><option value="LTE">≤</option><option value="EQ">=</option><option value="RANGE">范围</option></select></td>{(['standardValue', 'upperValue', 'fuseValue', 'unit', 'measuredValue'] as Array<keyof Indicator>).map(field => <td key={field} className="p-2"><Input className="min-w-24" type={field === 'unit' ? 'text' : 'number'} step="0.0001" value={item[field]} onChange={event => updateIndicator(item.key, field, event.target.value)} /></td>)}<td className="p-2"><Button variant="ghost" size="icon" disabled={indicators.length === 1} onClick={() => setIndicators(current => current.filter(value => value.key !== item.key))}><Trash2 className="h-4 w-4 text-destructive" /></Button></td></tr>)}</tbody></table></div>
+    <Card className="space-y-4 p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><SectionTitle title="检测指标" noMargin />{resolvedTemplate && <p className="mt-1 text-xs text-muted-foreground">已应用：{resolvedTemplate.code} · {resolvedTemplate.name}（v{resolvedTemplate.version}）</p>}</div><Button variant="outline" size="sm" onClick={addIndicator}><Plus className="mr-1 h-4 w-4" />增加指标</Button></div>
+      <div className="overflow-x-auto"><table className="min-w-[1080px] w-full text-sm"><thead className="border-b bg-muted/40 text-left text-muted-foreground"><tr><th className="p-3">指标</th><th className="p-3">检测方法</th><th className="p-3">判定</th><th className="p-3">标准值</th><th className="p-3">上限值</th><th className="p-3">熔断线</th><th className="p-3">单位</th><th className="p-3">检测结果 *</th><th className="p-3"></th></tr></thead><tbody>{indicators.map(item => <tr key={item.key} className="border-b"><td className="space-y-2 p-2">{indicatorDefinitions.length && <select className="h-10 min-w-40 rounded-md border bg-background px-2" value={item.indicatorDefinitionId || ''} onChange={event => event.target.value ? selectIndicator(item.key, event.target.value) : updateIndicator(item.key, 'indicatorDefinitionId', '')}><option value="">自定义指标</option>{indicatorDefinitions.map(definition => <option key={definition.id} value={definition.id}>{definition.name}{definition.symbol ? `（${definition.symbol}）` : ''}</option>)}</select>}{!item.indicatorDefinitionId && <Input value={item.name} onChange={event => updateIndicator(item.key, 'name', event.target.value)} placeholder="填写自定义指标" />}</td><td className="p-2"><select className="h-10 min-w-40 rounded-md border bg-background px-2" value={item.methodId || ''} onChange={event => updateIndicator(item.key, 'methodId', event.target.value)} disabled={!item.allowedMethods?.length}><option value="">{item.allowedMethods?.length ? '请选择检测方法' : '未配置检测方法'}</option>{(item.allowedMethods || []).map(method => <option key={method.id} value={method.id}>{method.name}</option>)}</select></td><td className="p-2"><select className="h-10 rounded-md border bg-background px-2" value={item.operator} onChange={event => updateIndicator(item.key, 'operator', event.target.value)}><option value="GTE">≥</option><option value="LTE">≤</option><option value="EQ">=</option><option value="RANGE">范围</option></select></td>{(['standardValue', 'upperValue', 'fuseValue', 'unit', 'measuredValue'] as Array<keyof Indicator>).map(field => <td key={field} className="p-2"><Input className="min-w-24" type={field === 'unit' ? 'text' : 'number'} step="0.0001" value={String(item[field] || '')} onChange={event => updateIndicator(item.key, field, event.target.value)} /></td>)}<td className="p-2"><Button variant="ghost" size="icon" disabled={indicators.length === 1} onClick={() => setIndicators(current => current.filter(value => value.key !== item.key))}><Trash2 className="h-4 w-4 text-destructive" /></Button></td></tr>)}</tbody></table></div>
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"><div><div className="text-xs text-muted-foreground">系统预判结论</div><Conclusion value={conclusion} /></div><div className="grid grid-cols-4 gap-6 text-right"><Info label="扣水" value={`${deductions.moistureWeight} 吨`} /><Info label="扣杂" value={`${deductions.impurityWeight} 吨`} /><Info label="结算重量" value={`${deductions.settlementWeight} 吨`} /><Info label="预计扣款" value={`¥${deductions.amount.toLocaleString()}`} /></div></div>
     </Card>
 

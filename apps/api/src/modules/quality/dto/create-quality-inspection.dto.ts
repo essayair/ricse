@@ -7,6 +7,10 @@ import {
 export class QualityIndicatorDto {
   @IsString() @MaxLength(50) code: string;
   @IsString() @MaxLength(100) name: string;
+  @IsOptional() @IsString() indicatorDefinitionId?: string;
+  @IsOptional() @IsString() methodId?: string;
+  @IsOptional() @IsString() @MaxLength(50) methodCode?: string;
+  @IsOptional() @IsString() @MaxLength(100) methodName?: string;
   @IsIn(['GTE', 'LTE', 'EQ', 'RANGE']) operator: string;
   @IsOptional() @IsNumber() standardValue?: number;
   @IsOptional() @IsNumber() upperValue?: number;

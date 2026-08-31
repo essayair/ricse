@@ -280,7 +280,7 @@ describe('WeighTicketService', () => {
     expect(result.total).toBe(1);
     expect(prisma.waybill.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        weighTickets: { some: { deletedAt: null } },
+        weighTask: { is: { deletedAt: null } },
       }),
     }));
   });

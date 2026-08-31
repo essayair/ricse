@@ -55,6 +55,11 @@ export class QualityInspectionService {
     creator: { select: { id: true, name: true } },
     handler: { select: { id: true, name: true } },
     decider: { select: { id: true, name: true } },
+    qualityTemplate: { select: { id: true, code: true, name: true, version: true } },
+    attachments: {
+      include: { uploader: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'desc' as const },
+    },
     basisInspection: {
       select: {
         id: true, inspectionNo: true, institutionName: true, reportNo: true,
@@ -135,18 +140,55 @@ export class QualityInspectionService {
   async ensureTaskForWaybill(waybillId: string, userId: string) {
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        dispatchNotice: { select: { type: true } },
+        lineItems: { select: { materialId: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+      },
     });
     if (!waybill || !['ARRIVED', 'SIGNED'].includes(waybill.status)) return null;
     const existing = await this.prisma.qualityTask.findUnique({
       where: { waybillId }, include: this.taskInclude,
     });
     if (existing && !existing.deletedAt) return existing;
+    const materialId = waybill.lineItems?.[0]?.materialId;
+    const material = materialId ? await this.prisma.material.findFirst({
+      where: { id: materialId, deletedAt: null },
+      include: {
+        qualityTemplate: {
+          include: {
+            items: {
+              include: { indicator: true, defaultMethod: true },
+              orderBy: { sort: 'asc' },
+            },
+          },
+        },
+      },
+    }) : null;
+    const template = material?.qualityTemplate?.status === 'ACTIVE'
+      ? material.qualityTemplate
+      : material ? await this.prisma.qualityTemplate.findFirst({
+        where: {
+          status: 'ACTIVE',
+          materialCategoryId: material.categoryId,
+          businessScene: { in: [waybill.dispatchNotice.type, 'GENERAL'] },
+        },
+        include: {
+          items: {
+            include: { indicator: true, defaultMethod: true },
+            orderBy: { sort: 'asc' },
+          },
+        },
+        orderBy: [{ businessScene: 'desc' }, { updatedAt: 'desc' }],
+      }) : null;
     try {
       return await this.prisma.qualityTask.create({
         data: {
           taskNo: await this.generateTaskNo(), waybillId,
-          status: 'PENDING_SAMPLING', plannedReportCount: 3, createdBy: userId,
+          status: 'PENDING_SAMPLING', plannedReportCount: 1, createdBy: userId,
+          qualityTemplateId: template?.id || null,
+          templateSnapshot: template ? qualityTemplateSnapshot(template) : undefined,
         },
         include: this.taskInclude,
       });
@@ -229,6 +271,30 @@ export class QualityInspectionService {
       await this.inventoryService.createPendingReceiptForConfirmedQuality(basis.id, userId);
     }
     return this.findTask(id, userId, 'quality.manage');
+  }
+
+  async updateTaskSampling(
+    id: string,
+    data: { sampledAt: string; samplerName: string; samplingMethod?: string; plannedReportCount?: number },
+    userId: string,
+  ) {
+    const task = await this.findTask(id, userId, 'quality.manage');
+    if (['COMPLETED', 'VOIDED'].includes(task.status)) {
+      throw new BadRequestException('已完成或已作废质检任务不能修改取样信息');
+    }
+    return this.prisma.qualityTask.update({
+      where: { id },
+      data: {
+        sampledAt: new Date(data.sampledAt),
+        samplerName: data.samplerName.trim(),
+        samplingMethod: clean(data.samplingMethod),
+        plannedReportCount: data.plannedReportCount ?? task.plannedReportCount,
+        status: task.reports.length ? 'INSPECTING' : 'PENDING_SENDING',
+        handlerId: task.handlerId || userId,
+        handledAt: task.handledAt || new Date(),
+      },
+      include: this.taskInclude,
+    });
   }
 
   async eligibleWeighTickets(userId: string) {
@@ -332,7 +398,40 @@ export class QualityInspectionService {
       throw new BadRequestException('提交质检结论前请填写全部检测指标');
     }
 
-    const evaluated = dto.indicators.map((item, index) => ({ ...item, sort: index, result: evaluateIndicator(item) }));
+    const definitionIds = [...new Set(dto.indicators.map(item => item.indicatorDefinitionId).filter(Boolean) as string[])];
+    const methodIds = [...new Set(dto.indicators.map(item => item.methodId).filter(Boolean) as string[])];
+    const [definitions, methods, allowedLinks] = await Promise.all([
+      this.prisma.qualityIndicatorDefinition.findMany({ where: { id: { in: definitionIds }, status: 'ACTIVE' } }),
+      this.prisma.qualityMethod.findMany({ where: { id: { in: methodIds }, status: 'ACTIVE' } }),
+      this.prisma.qualityIndicatorMethod.findMany({
+        where: { indicatorId: { in: definitionIds }, methodId: { in: methodIds }, status: 'ACTIVE' },
+      }),
+    ]);
+    if (definitions.length !== definitionIds.length) throw new BadRequestException('检测指标不存在或已停用');
+    if (methods.length !== methodIds.length) throw new BadRequestException('检测方法不存在或已停用');
+    const definitionMap = new Map(definitions.map(item => [item.id, item]));
+    const methodMap = new Map(methods.map(item => [item.id, item]));
+    const allowed = new Set(allowedLinks.map(item => `${item.indicatorId}:${item.methodId}`));
+    for (const item of dto.indicators) {
+      if (item.methodId && !item.indicatorDefinitionId) throw new BadRequestException('选择检测方法时必须选择检测指标');
+      if (item.indicatorDefinitionId && item.methodId && !allowed.has(`${item.indicatorDefinitionId}:${item.methodId}`)) {
+        throw new BadRequestException(`检测方法未关联到指标“${item.name}”`);
+      }
+    }
+
+    const evaluated = dto.indicators.map((item, index) => {
+      const definition = item.indicatorDefinitionId ? definitionMap.get(item.indicatorDefinitionId) : null;
+      const method = item.methodId ? methodMap.get(item.methodId) : null;
+      return {
+        ...item,
+        code: definition?.code || item.code,
+        name: definition?.name || item.name,
+        methodCode: method?.code || item.methodCode,
+        methodName: method?.name || item.methodName,
+        sort: index,
+        result: evaluateIndicator(item),
+      };
+    });
     const conclusion = dto.submit ? evaluateConclusion(evaluated) : 'PENDING';
     const baseWeight = Number(ticket.settlementWeight || ticket.netWeight || 0);
     const deductions = calculateDeductions(baseWeight, evaluated);
@@ -376,6 +475,10 @@ export class QualityInspectionService {
         indicators: {
           create: evaluated.map(item => ({
             code: item.code.trim(), name: item.name.trim(), operator: item.operator,
+            indicatorDefinitionId: item.indicatorDefinitionId || null,
+            methodId: item.methodId || null,
+            methodCode: clean(item.methodCode),
+            methodName: clean(item.methodName),
             standardValue: item.standardValue, upperValue: item.upperValue, fuseValue: item.fuseValue,
             unit: item.unit || '%', measuredValue: item.measuredValue,
             result: item.result, sort: item.sort,
@@ -395,6 +498,23 @@ export class QualityInspectionService {
         handledAt: task.handledAt || new Date(),
       },
     });
+    const materialId = ticket.waybill.lineItems[0]?.materialId;
+    if (materialId) {
+      for (const item of evaluated) {
+        if (!item.indicatorDefinitionId || !item.methodId) continue;
+        await this.prisma.qualityMethodPreference.upsert({
+          where: {
+            userId_materialId_indicatorId: {
+              userId,
+              materialId,
+              indicatorId: item.indicatorDefinitionId,
+            },
+          },
+          create: { userId, materialId, indicatorId: item.indicatorDefinitionId, methodId: item.methodId },
+          update: { methodId: item.methodId },
+        });
+      }
+    }
     return inspection;
   }
 
@@ -524,6 +644,45 @@ export class QualityInspectionService {
     }
     return this.prisma.attachment.delete({ where: { id } });
   }
+
+  async createTaskAttachment(data: {
+    qualityTaskId: string;
+    fileName: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    category: string;
+    sourceType: string;
+    evidenceNode?: string;
+    capturedAt?: string;
+    fileHash: string;
+    watermarkText?: string;
+  }, userId: string) {
+    const task = await this.findTask(data.qualityTaskId, userId, 'quality.manage');
+    if (['COMPLETED', 'VOIDED'].includes(task.status)) {
+      throw new BadRequestException('已完成或已作废质检任务不能追加现场影像');
+    }
+    return this.prisma.attachment.create({
+      data: {
+        ...data,
+        capturedAt: data.capturedAt ? new Date(data.capturedAt) : null,
+        uploadedBy: userId,
+      },
+      include: { uploader: { select: { id: true, name: true } } },
+    });
+  }
+
+  async findTaskAttachmentById(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getQualityTaskScope(userId);
+    return this.prisma.attachment.findFirst({
+      where: {
+        id,
+        qualityTaskId: { not: null },
+        qualityTask: { deletedAt: null, AND: [scope] },
+      },
+    });
+  }
 }
 
 function clean(value?: string) {
@@ -570,4 +729,32 @@ function calculateDeductions(baseWeight: number, items: Array<QualityIndicatorDt
 function round(value: number, digits: number) {
   const factor = 10 ** digits;
   return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
+function qualityTemplateSnapshot(template: any) {
+  return {
+    id: template.id,
+    code: template.code,
+    name: template.name,
+    version: template.version,
+    businessScene: template.businessScene,
+    items: template.items.map((item: any) => ({
+      indicatorId: item.indicatorId,
+      code: item.indicator.code,
+      name: item.indicator.name,
+      symbol: item.indicator.symbol,
+      methodId: item.defaultMethodId,
+      methodCode: item.defaultMethod?.code || null,
+      methodName: item.defaultMethod?.name || null,
+      operator: item.operator,
+      standardValue: item.standardValue === null ? null : Number(item.standardValue),
+      upperValue: item.upperValue === null ? null : Number(item.upperValue),
+      fuseValue: item.fuseValue === null ? null : Number(item.fuseValue),
+      unit: item.unit,
+      required: item.required,
+      core: item.core,
+      participates: item.participates,
+      sort: item.sort,
+    })),
+  };
 }

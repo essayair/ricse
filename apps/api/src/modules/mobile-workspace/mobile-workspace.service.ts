@@ -49,8 +49,8 @@ export class MobileWorkspaceService {
       { key: 'orders', name: '执行批次', description: '合同拆分后的具体执行批次' },
       { key: 'dispatch-notices', name: '执行通知', description: '采购发货指令和销售发货通知' },
       { key: 'waybills', name: '物流运单', description: '车辆、司机、线路和运输进度' },
-      { key: 'weigh-tickets', name: '磅单信息', description: '运单关联的发货及收货称重' },
-      { key: 'quality-tasks', name: '质检管理', description: '质检任务、检测报告和最终结论' },
+      { key: 'weigh-tickets', name: '过磅任务', description: '现场证据、发货/收货称重及执行口径' },
+      { key: 'quality-tasks', name: '质检任务', description: '取样证据、多机构检测报告和最终结论' },
       { key: 'inventory', name: '库存查询', description: '库存主体、仓库及可用库存' },
     ];
     return definitions.map((item) => ({

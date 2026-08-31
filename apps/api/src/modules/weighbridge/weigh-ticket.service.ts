@@ -61,6 +61,15 @@ export class WeighTicketService {
   };
 
   private readonly managementInclude = {
+    weighTask: {
+      include: {
+        creator: { select: { id: true, name: true } },
+        attachments: {
+          include: { uploader: { select: { id: true, name: true } } },
+          orderBy: { createdAt: 'desc' as const },
+        },
+      },
+    },
     lineItems: { orderBy: { createdAt: 'asc' as const } },
     dispatchNotice: {
       include: {
@@ -113,6 +122,83 @@ export class WeighTicketService {
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const count = await this.prisma.weighTicket.count({ where: { createdAt: { gte: start, lt: end } } });
     return `PD-${date}-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  private async generateTaskNo() {
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const count = await this.prisma.weighTask.count({ where: { createdAt: { gte: start, lt: end } } });
+    return `WT-${date}-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  async ensureTaskForWaybill(waybillId: string, userId: string) {
+    const waybill = await this.prisma.waybill.findFirst({
+      where: { id: waybillId, deletedAt: null },
+      select: { id: true, status: true, vehicleId: true, plateNo: true, totalQuantity: true },
+    });
+    if (!waybill || (!waybill.vehicleId && !waybill.plateNo)) return null;
+    const existing = await this.prisma.weighTask.findUnique({ where: { waybillId } });
+    if (existing) {
+      if (existing.deletedAt || existing.plannedQuantity.toString() !== waybill.totalQuantity.toString()) {
+        return this.prisma.weighTask.update({
+          where: { id: existing.id },
+          data: {
+            deletedAt: null,
+            plannedQuantity: waybill.totalQuantity,
+            status: waybill.status === 'CANCELLED' ? 'VOIDED' : existing.status === 'VOIDED' ? 'PENDING_WEIGHING' : existing.status,
+          },
+        });
+      }
+      return existing;
+    }
+    try {
+      return await this.prisma.weighTask.create({
+        data: {
+          taskNo: await this.generateTaskNo(),
+          waybillId,
+          plannedQuantity: waybill.totalQuantity,
+          status: waybill.status === 'CANCELLED' ? 'VOIDED' : 'PENDING_WEIGHING',
+          createdBy: userId,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return this.prisma.weighTask.findUnique({ where: { waybillId } });
+      }
+      throw error;
+    }
+  }
+
+  async syncTaskForWaybill(waybillId: string, userId: string) {
+    const task = await this.ensureTaskForWaybill(waybillId, userId);
+    if (!task) return null;
+    const waybill = await this.prisma.waybill.findUnique({
+      where: { id: waybillId },
+      select: {
+        status: true,
+        weighTickets: {
+          where: { deletedAt: null, status: { not: 'VOIDED' } },
+          select: { status: true, abnormal: true },
+        },
+        weightSelections: { where: { isCurrent: true }, select: { id: true } },
+      },
+    });
+    if (!waybill) return null;
+    let status = 'PENDING_WEIGHING';
+    if (waybill.status === 'CANCELLED') status = 'VOIDED';
+    else if (waybill.weighTickets.some(item => item.status === 'REVIEWED' && item.abnormal)) status = 'EXCEPTION';
+    else if (waybill.weightSelections.length || waybill.weighTickets.some(item => item.status === 'REVIEWED')) status = 'COMPLETED';
+    else if (waybill.weighTickets.some(item => item.status === 'COMPLETED')) status = 'PENDING_CONFIRMATION';
+    else if (waybill.weighTickets.length) status = 'IN_PROGRESS';
+    return this.prisma.weighTask.update({ where: { id: task.id }, data: { status } });
+  }
+
+  async voidTaskForWaybill(waybillId: string, userId: string) {
+    const task = await this.ensureTaskForWaybill(waybillId, userId);
+    if (!task) return null;
+    return this.prisma.weighTask.update({ where: { id: task.id }, data: { status: 'VOIDED' } });
   }
 
   async eligibleWaybills(userId: string) {
@@ -209,7 +295,7 @@ export class WeighTicketService {
     const defaultReceiver = isPurchase
       ? contract.signingPartner?.name
       : (contract.type === 'BILATERAL' ? contract.buyer?.name : contract.seller?.name);
-    return this.prisma.weighTicket.create({
+    const created = await this.prisma.weighTicket.create({
       data: {
         ticketNo: await this.generateNo(),
         waybillId: waybill.id,
@@ -241,6 +327,8 @@ export class WeighTicketService {
       },
       include: this.include,
     });
+    await this.syncTaskForWaybill(waybill.id, userId);
+    return created;
   }
 
   async updateWaybill(id: string, waybillId: string, userId: string, additionReason?: string) {
@@ -318,7 +406,8 @@ export class WeighTicketService {
     const where: Prisma.WaybillWhereInput = {
       deletedAt: null,
       AND: [scope],
-      weighTickets: { some: ticketFilter },
+      weighTask: { is: { deletedAt: null } },
+      ...((params.status || params.abnormal === 'true') ? { weighTickets: { some: ticketFilter } } : {}),
     };
     if (params.search) {
       where.OR = [
@@ -351,7 +440,7 @@ export class WeighTicketService {
         id: waybillId,
         deletedAt: null,
         AND: [scope],
-        weighTickets: { some: { deletedAt: null } },
+        weighTask: { is: { deletedAt: null } },
       },
       include: this.managementInclude,
     });
@@ -381,7 +470,7 @@ export class WeighTicketService {
     if (!records.length || records.length > 20) {
       throw new BadRequestException('每次需要提交 1 至 20 条称重记录');
     }
-    return this.prisma.$transaction(async tx => {
+    const updated = await this.prisma.$transaction(async tx => {
       const max = await tx.weighRecord.aggregate({
         where: { weighTicketId: id }, _max: { sequence: true },
       });
@@ -414,6 +503,8 @@ export class WeighTicketService {
       await this.recalculate(tx, id);
       return tx.weighTicket.findUniqueOrThrow({ where: { id }, include: this.include });
     });
+    await this.syncTaskForWaybill(ticket.waybillId, userId);
+    return updated;
   }
 
   async selectEffectiveRecords(id: string, data: { grossRecordId: string; tareRecordId: string }, userId: string) {
@@ -472,7 +563,9 @@ export class WeighTicketService {
       }
       if (!ticket.settlementWeight) throw new BadRequestException('当前结算口径缺少对应重量');
       if (!(ticket.attachments || []).length) throw new BadRequestException('完成称重前必须上传至少一份磅单附件');
-      return this.prisma.weighTicket.update({ where: { id }, data: { status }, include: this.include });
+      const updated = await this.prisma.weighTicket.update({ where: { id }, data: { status }, include: this.include });
+      await this.syncTaskForWaybill(ticket.waybillId, userId);
+      return updated;
     }
     if (status === 'REVIEWED') {
       if (ticket.status !== 'COMPLETED') throw new BadRequestException('仅已完成磅单可以复核');
@@ -483,6 +576,7 @@ export class WeighTicketService {
         include: this.include,
       });
       await this.applyDefaultSelections(reviewed.id, userId);
+      await this.syncTaskForWaybill(ticket.waybillId, userId);
       return this.findOne(id, userId);
     }
     if (status === 'VOIDED') {
@@ -493,7 +587,9 @@ export class WeighTicketService {
       if (selected) {
         throw new BadRequestException(`该磅单已被选为${selected.purpose === 'INVENTORY' ? '入出库' : '结算'}依据，不能作废`);
       }
-      return this.prisma.weighTicket.update({ where: { id }, data: { status }, include: this.include });
+      const updated = await this.prisma.weighTicket.update({ where: { id }, data: { status }, include: this.include });
+      await this.syncTaskForWaybill(ticket.waybillId, userId);
+      return updated;
     }
     throw new BadRequestException('磅单状态无效');
   }
@@ -569,6 +665,69 @@ export class WeighTicketService {
     return this.prisma.attachment.delete({ where: { id } });
   }
 
+  async createTaskAttachment(data: {
+    weighTaskId: string;
+    fileName: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    category: string;
+    sourceType: string;
+    evidenceNode?: string;
+    capturedAt?: string;
+    fileHash: string;
+    watermarkText?: string;
+  }, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
+    const task = await this.prisma.weighTask.findFirst({
+      where: { id: data.weighTaskId, deletedAt: null },
+      include: { waybill: true },
+    });
+    if (!task) throw new NotFoundException('过磅任务不存在');
+    const scope = await this.accessControl.getWaybillScope(userId);
+    const permitted = await this.prisma.waybill.findFirst({ where: { id: task.waybillId, AND: [scope] }, select: { id: true } });
+    if (!permitted) throw new NotFoundException('过磅任务不存在');
+    if (['COMPLETED', 'VOIDED'].includes(task.status)) throw new BadRequestException('已完成或已作废过磅任务不能追加现场影像');
+    return this.prisma.attachment.create({
+      data: {
+        ...data,
+        capturedAt: data.capturedAt ? new Date(data.capturedAt) : null,
+        uploadedBy: userId,
+      },
+      include: { uploader: { select: { id: true, name: true } } },
+    });
+  }
+
+  async findTaskForEvidence(id: string, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
+    const scope = await this.accessControl.getWaybillScope(userId);
+    const task = await this.prisma.weighTask.findFirst({
+      where: { id, deletedAt: null, waybill: { deletedAt: null, AND: [scope] } },
+      include: {
+        waybill: {
+          include: {
+            lineItems: { orderBy: { createdAt: 'asc' } },
+            dispatchNotice: { include: { order: true } },
+          },
+        },
+      },
+    });
+    if (!task) throw new NotFoundException('过磅任务不存在');
+    return task;
+  }
+
+  async findTaskAttachmentById(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getWaybillScope(userId);
+    return this.prisma.attachment.findFirst({
+      where: {
+        id,
+        weighTaskId: { not: null },
+        weighTask: { deletedAt: null, waybill: { deletedAt: null, AND: [scope] } },
+      },
+    });
+  }
+
   private validateBasisWeight(basis: string, data: any) {
     const field: Record<string, string> = {
       SHIPPING: 'shippingWeight', CUSTOMER: 'customerWeight',
@@ -610,7 +769,9 @@ export class WeighTicketService {
     if (!ticket) throw new BadRequestException('只能选用该运单下已复核的有效磅单');
     const quantity = Number(ticket.netWeight || 0);
     if (quantity <= 0) throw new BadRequestException('所选磅单缺少有效净重');
-    return this.setEffectiveSelection(waybillId, ticket.id, quantity, reason, userId, true);
+    const selections = await this.setEffectiveSelection(waybillId, ticket.id, quantity, reason, userId, true);
+    await this.syncTaskForWaybill(waybillId, userId);
+    return selections;
   }
 
   private async setEffectiveSelection(

@@ -24,8 +24,8 @@ interface QualityTask {
 }
 
 const STATUS: Record<string, string> = {
-  PENDING_SAMPLING: '待取样', INSPECTING: '检测中', PENDING_DECISION: '待综合判定',
-  COMPLETED: '已完成', RECHECK_REQUIRED: '待复判', VOIDED: '已作废',
+  PENDING_SAMPLING: '待取样', PENDING_SENDING: '待送检', INSPECTING: '检测中', PENDING_DECISION: '待综合判定',
+  COMPLETED: '已完成', RECHECK_REQUIRED: '待复判', EXCEPTION: '异常处理中', VOIDED: '已作废',
 };
 const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '熔断' };
 
@@ -49,7 +49,7 @@ export default function QualityPage() {
     if (dateFrom) params.set('dateFrom', dateFrom);
     if (dateTo) params.set('dateTo', dateTo);
     try { setData(await api.get(`/quality-tasks?${params}`)); }
-    catch (error: any) { alert(error.message || '到货质检任务加载失败'); }
+    catch (error: any) { alert(error.message || '质检任务加载失败'); }
     finally { setLoading(false); }
   }, [conclusion, dateFrom, dateTo, search, status]);
 
@@ -58,14 +58,14 @@ export default function QualityPage() {
 
   return <div className="space-y-6">
     <div>
-      <h1 className="text-2xl font-bold">到货质检任务</h1>
-      <p className="mt-1 text-sm text-muted-foreground">物流确认到达后自动生成；每条任务归集同一到货车辆的全部机构检测报告</p>
+      <h1 className="text-2xl font-bold">质检管理</h1>
+      <p className="mt-1 text-sm text-muted-foreground">统一管理质检任务、取样记录、机构检测报告、质检单和最终质量结论</p>
     </div>
 
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <Summary label="全部任务" value={data?.pagination.total || 0} />
       <Summary label="待取样" value={items.filter(item => item.status === 'PENDING_SAMPLING').length} />
-      <Summary label="检测处理中" value={items.filter(item => ['INSPECTING', 'PENDING_DECISION', 'RECHECK_REQUIRED'].includes(item.status)).length} />
+      <Summary label="检测处理中" value={items.filter(item => ['PENDING_SENDING', 'INSPECTING', 'PENDING_DECISION', 'RECHECK_REQUIRED', 'EXCEPTION'].includes(item.status)).length} />
       <Summary label="已完成" value={items.filter(item => item.status === 'COMPLETED').length} success />
       <Summary label="异常结论" value={items.filter(item => ['DEDUCTION', 'FUSE'].includes(item.finalConclusion)).length} danger />
     </div>
@@ -81,7 +81,7 @@ export default function QualityPage() {
     </Card>
 
     <Card className="overflow-hidden">
-      {loading ? <div className="p-12 text-center text-muted-foreground">加载中...</div> : !items.length ? <div className="p-12 text-center text-muted-foreground"><FlaskConical className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无到货质检任务<br /><span className="text-xs">物流运单确认到达后，系统会自动生成任务。</span></div> : <div className="overflow-x-auto"><table className="min-w-[1350px] w-full text-sm">
+      {loading ? <div className="p-12 text-center text-muted-foreground">加载中...</div> : !items.length ? <div className="p-12 text-center text-muted-foreground"><FlaskConical className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无质检任务<br /><span className="text-xs">物流运单确认到达后，系统会自动生成任务。</span></div> : <div className="overflow-x-auto"><table className="min-w-[1350px] w-full text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="px-4 py-3">任务编号 / 到货</th><th className="px-4 py-3">报告进度</th><th className="px-4 py-3">物料</th><th className="px-4 py-3">业务单位 / 车辆</th><th className="px-4 py-3">执行批次 / 运单</th><th className="px-4 py-3">磅单进度</th><th className="px-4 py-3">处理人</th><th className="px-4 py-3">最终结论 / 状态</th></tr></thead>
         <tbody>{items.map(item => {
           const confirmed = item.reports.filter(report => report.status === 'CONFIRMED').length;

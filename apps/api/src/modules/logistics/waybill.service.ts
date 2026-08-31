@@ -5,6 +5,7 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { OutboundService } from '../inventory/outbound.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
+import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { CreateWaybillDto } from './dto/create-waybill.dto';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class WaybillService {
     private readonly inventoryService: InventoryService,
     private readonly outboundService: OutboundService,
     private readonly qualityService: QualityInspectionService,
+    private readonly weighService: WeighTicketService,
   ) {}
 
   private readonly include = {
@@ -58,6 +60,11 @@ export class WaybillService {
         id: true, taskNo: true, status: true, finalConclusion: true,
         plannedReportCount: true, finalizedReportCount: true,
         _count: { select: { reports: true } },
+      },
+    },
+    weighTask: {
+      include: {
+        attachments: { orderBy: { createdAt: 'desc' as const } },
       },
     },
     outboundReceipts: {
@@ -231,6 +238,9 @@ export class WaybillService {
       },
       include: this.include,
     });
+    if (created.vehicleId || created.plateNo) {
+      await this.weighService.ensureTaskForWaybill(created.id, userId);
+    }
     if (notice.type === 'SALES' && notice.mode === 'STANDARD') {
       await this.outboundService.ensureReceiptForWaybill(created.id, userId);
       return this.findOne(created.id, userId, 'logistics.manage');
@@ -302,7 +312,7 @@ export class WaybillService {
       driver = await this.findAvailableDriver(driverId);
       this.validateDriverAssignment(driver, freightMode, carrier);
     }
-    return this.prisma.waybill.update({
+    const updated = await this.prisma.waybill.update({
       where: { id },
       data: {
         freightMode,
@@ -318,6 +328,10 @@ export class WaybillService {
       },
       include: this.include,
     });
+    if (updated.vehicleId || updated.plateNo) {
+      await this.weighService.ensureTaskForWaybill(updated.id, userId);
+    }
+    return this.findOne(updated.id, userId, 'logistics.manage');
   }
 
   async updateStatus(id: string, status: string, userId: string) {
@@ -384,6 +398,8 @@ export class WaybillService {
     if (['ARRIVED', 'SIGNED'].includes(status)) {
       await this.qualityService.ensureTaskForWaybill(id, userId);
     }
+    if (status === 'CANCELLED') await this.weighService.voidTaskForWaybill(id, userId);
+    else await this.weighService.syncTaskForWaybill(id, userId);
     return updated;
   }
 

@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -51,6 +52,68 @@ export class WeighTicketController {
     const attachment = await this.service.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Get('task-attachments/:id/view-url')
+  async getTaskAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findTaskAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('现场影像不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Post('tasks/:taskId/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async uploadTaskAttachment(
+    @Param('taskId') weighTaskId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+    @Body('category') category = 'SCALE_DISPLAY',
+    @Body('sourceType') sourceType = 'WEB_UPLOAD',
+    @Body('evidenceNode') evidenceNode?: string,
+    @Body('capturedAt') capturedAt?: string,
+  ) {
+    if (!file) throw new BadRequestException('请选择文件');
+    if (!['VEHICLE_PLATE', 'CARGO_STATE', 'ON_SCALE', 'SCALE_DISPLAY', 'EMPTY_CARRIAGE', 'OTHER'].includes(category)) {
+      throw new BadRequestException('现场影像分类无效');
+    }
+    if (!['MINI_PROGRAM_CAPTURE', 'RICSE_IMPORT', 'THIRD_PARTY_WATERMARK', 'WEB_UPLOAD', 'EXTERNAL'].includes(sourceType)) {
+      throw new BadRequestException('影像来源无效');
+    }
+    const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
+    const mimeType = attachmentMimeType(originalName, file.mimetype);
+    if (!mimeType || mimeType === 'application/pdf') throw new BadRequestException('现场影像仅支持 JPG/PNG/WEBP 格式');
+    const task = await this.service.findTaskForEvidence(weighTaskId, userId);
+    const result = await this.fileService.upload(file.buffer, originalName, mimeType);
+    const material = task.waybill.lineItems.map((item: any) => item.materialName).filter(Boolean).join('、') || '-';
+    const watermarkText = [
+      '和光云链 RICSE',
+      `过磅任务：${task.taskNo}`,
+      `运单编号：${task.waybill.waybillNo}`,
+      `车辆：${task.waybill.plateNo || '-'}`,
+      `物料：${material}`,
+      `本车计划：${Number(task.plannedQuantity).toFixed(3)} 吨`,
+      `拍摄节点：${evidenceNode || category}`,
+      `拍摄时间：${capturedAt || new Date().toISOString()}`,
+    ].join('\n');
+    try {
+      return await this.service.createTaskAttachment({
+        weighTaskId,
+        fileName: result.fileName,
+        originalName,
+        mimeType,
+        size: result.size,
+        category,
+        sourceType,
+        evidenceNode,
+        capturedAt,
+        fileHash: createHash('sha256').update(file.buffer).digest('hex'),
+        watermarkText,
+      }, userId);
+    } catch (error) {
+      try { await this.fileService.delete(result.fileName); } catch {}
+      throw error;
+    }
   }
 
   @Patch('waybills/:waybillId/selections/:purpose')

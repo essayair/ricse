@@ -60,7 +60,7 @@ export class MasterDataController {
     coreSpecValue?: string; coreSpecUnit?: string; referenceType?: string; grade?: string;
     unit?: string; spec?: string; sourceRegion?: string; packageType?: string;
     isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
-    internalCode?: string; qcTemplate?: string; status?: string; remark?: string;
+    internalCode?: string; qcTemplate?: string; qualityTemplateId?: string; status?: string; remark?: string;
   }) {
     return this.masterDataService.createMaterial(dto);
   }
@@ -91,7 +91,7 @@ export class MasterDataController {
   @ApiOperation({ summary: '更新物料' })
   updateMaterial(@Param('id') id: string, @Body() dto: {
     isVirtual?: boolean; specs?: object; hsCode?: string | null; taxCode?: string | null;
-    internalCode?: string | null; qcTemplate?: string | null; status?: string; remark?: string | null;
+    internalCode?: string | null; qcTemplate?: string | null; qualityTemplateId?: string | null; status?: string; remark?: string | null;
   }) {
     return this.masterDataService.updateMaterial(id, dto);
   }

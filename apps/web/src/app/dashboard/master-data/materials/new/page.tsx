@@ -23,6 +23,8 @@ interface SpecRow {
   unit: string;
 }
 
+interface QualityTemplateOption { id: string; code: string; name: string; businessScene: string; version: number }
+
 const REFERENCE_TYPES = [
   ['TRADING_GOODS', '贸易商品（TRD）'], ['RAW_MATERIAL', '原材料（RAW）'],
   ['SEMI_FINISHED', '半成品（SFG）'], ['FINISHED_GOODS', '产成品（FGD）'],
@@ -32,12 +34,6 @@ const REFERENCE_TYPES = [
 const UNITS = ['吨', '千克', '立方米', '件', '袋'];
 const PACKAGE_TYPES = ['散装', '吨袋', '500kg吨袋', '1吨吨袋', '1.2吨吨袋', '编织袋', '桶装', '罐装', '托盘', '其他'];
 const OPERATORS = ['≥', '≤', '='];
-const QC_TEMPLATES = [
-  ['QC-v3.1', 'QC-v3.1 · 萤石粉标准模板'],
-  ['QC-v2.0', 'QC-v2.0 · 萤石块模板'],
-  ['QC-v3.2', 'QC-v3.2 · 精制萤石粉模板'],
-] as const;
-
 let rowSequence = 10;
 
 export default function MaterialNewPage() {
@@ -55,7 +51,8 @@ export default function MaterialNewPage() {
   const [unit, setUnit] = useState('吨');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [specs, setSpecs] = useState<SpecRow[]>([]);
-  const [qcTemplate, setQcTemplate] = useState('');
+  const [qualityTemplates, setQualityTemplates] = useState<QualityTemplateOption[]>([]);
+  const [qualityTemplateId, setQualityTemplateId] = useState('');
   const [internalCode, setInternalCode] = useState('');
   const [hsCode, setHsCode] = useState('');
   const [taxCode, setTaxCode] = useState('');
@@ -66,6 +63,7 @@ export default function MaterialNewPage() {
 
   useEffect(() => {
     api.get<Category[]>('/master-data/material-categories').then(setCategories).catch(() => setError('物料分类加载失败'));
+    api.get<QualityTemplateOption[]>('/quality-standards/templates?status=ACTIVE').then(setQualityTemplates).catch(() => setError('质检模板加载失败'));
     const params = new URLSearchParams(window.location.search);
     const fromId = params.get('from');
     const requestedType = params.get('referenceType');
@@ -81,7 +79,7 @@ export default function MaterialNewPage() {
       setCoreSpecUnit(standard?.coreSpecUnit || '%');
       setPackageType(standard?.packageType || material.packageType || '散装');
       setUnit(unitLabel(standard?.unit || material.unit || '吨'));
-      setQcTemplate(material.qcTemplate || '');
+      setQualityTemplateId(material.qualityTemplateId || '');
       setHsCode(material.hsCode || '');
       setTaxCode(material.taxCode || '');
       setRemark(material.remark || '');
@@ -134,7 +132,7 @@ export default function MaterialNewPage() {
           { name: coreSpecName.trim(), operator: coreSpecOperator, value: coreSpecValue.trim(), unit: coreSpecUnit.trim() },
           ...specs.map(({ id: _id, ...row }) => row),
         ],
-        qcTemplate: qcTemplate || undefined, internalCode: internalCode.trim() || undefined,
+        qualityTemplateId: qualityTemplateId || undefined, internalCode: internalCode.trim() || undefined,
         hsCode: hsCode.trim() || undefined, taxCode: taxCode.trim() || undefined,
         isVirtual, remark: remark.trim() || undefined, status: 'ACTIVE',
       });
@@ -204,7 +202,7 @@ export default function MaterialNewPage() {
         </button>
         {advancedOpen && <div className="mt-5 space-y-5 border-t pt-5">
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="质检模板"><Select value={qcTemplate} onChange={setQcTemplate} options={QC_TEMPLATES.map(([value, label]) => ({ value, label }))} placeholder="暂不关联" /></Field>
+            <Field label="质检模板"><Select value={qualityTemplateId} onChange={setQualityTemplateId} options={qualityTemplates.map(item => ({ value: item.id, label: `${item.code} · ${item.name}（v${item.version}）` }))} placeholder="暂不关联" /></Field>
             <Field label="内部编码"><Input value={internalCode} onChange={event => setInternalCode(event.target.value)} /></Field>
             <Field label="HS编码"><Input value={hsCode} onChange={event => setHsCode(event.target.value)} /></Field>
             <Field label="税务商品编码"><Input value={taxCode} onChange={event => setTaxCode(event.target.value)} /></Field>

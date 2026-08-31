@@ -103,7 +103,7 @@ describe('QualityInspectionService', () => {
 
     expect(task?.taskNo).toBe('QT-20260805-0001');
     expect(prisma.qualityTask.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ waybillId: 'waybill-1', status: 'PENDING_SAMPLING', plannedReportCount: 3 }),
+      data: expect.objectContaining({ waybillId: 'waybill-1', status: 'PENDING_SAMPLING', plannedReportCount: 1 }),
     }));
   });
 

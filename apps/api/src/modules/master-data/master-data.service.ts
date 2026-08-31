@@ -173,6 +173,7 @@ export class MasterDataService {
     taxCode?: string;
     internalCode?: string;
     qcTemplate?: string;
+    qualityTemplateId?: string;
     status?: string;
     remark?: string;
   }) {
@@ -187,6 +188,13 @@ export class MasterDataService {
       select: { id: true, name: true },
     });
     if (!category) throw new BadRequestException('所选物料大类不存在或已被删除，请刷新后重新选择');
+    if (data.qualityTemplateId) {
+      const template = await this.prisma.qualityTemplate.findFirst({
+        where: { id: data.qualityTemplateId, status: 'ACTIVE' },
+        select: { id: true },
+      });
+      if (!template) throw new BadRequestException('所选质检模板不存在或已停用');
+    }
     // 新版结构化建档的基础名称以所选分类名称为准，避免重复录入“分类/品名”。
     const baseName = data.baseName ? category.name?.trim() || requestedBaseName : requestedBaseName;
 
@@ -232,9 +240,10 @@ export class MasterDataService {
             specs: data.specs as Prisma.InputJsonValue | undefined,
             hsCode: clean(data.hsCode), taxCode: clean(data.taxCode),
             internalCode: clean(data.internalCode), qcTemplate: clean(data.qcTemplate),
+            qualityTemplateId: data.qualityTemplateId || null,
             status: data.status || 'ACTIVE', remark: clean(data.remark),
           },
-          include: { category: true, standardCommodity: true },
+          include: { category: true, standardCommodity: true, qualityTemplate: true },
         });
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -278,7 +287,7 @@ export class MasterDataService {
     const [items, total] = await Promise.all([
       this.prisma.material.findMany({
         where,
-        include: { category: true, standardCommodity: true },
+        include: { category: true, standardCommodity: true, qualityTemplate: true },
         skip,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
@@ -295,7 +304,7 @@ export class MasterDataService {
   async findMaterialById(id: string) {
     const m = await this.prisma.material.findUnique({
       where: { id },
-      include: { category: true, standardCommodity: true },
+      include: { category: true, standardCommodity: true, qualityTemplate: true },
     });
     if (!m || m.deletedAt) throw new NotFoundException('物料不存在');
     return m;
@@ -303,9 +312,16 @@ export class MasterDataService {
 
   async updateMaterial(id: string, data: {
     isVirtual?: boolean; specs?: object; hsCode?: string | null; taxCode?: string | null;
-    internalCode?: string | null; qcTemplate?: string | null; status?: string; remark?: string | null;
+    internalCode?: string | null; qcTemplate?: string | null; qualityTemplateId?: string | null; status?: string; remark?: string | null;
   }) {
     await this.findMaterialById(id);
+    if (data.qualityTemplateId) {
+      const template = await this.prisma.qualityTemplate.findFirst({
+        where: { id: data.qualityTemplateId, status: 'ACTIVE' },
+        select: { id: true },
+      });
+      if (!template) throw new BadRequestException('所选质检模板不存在或已停用');
+    }
     try {
       return await this.prisma.material.update({
         where: { id },
@@ -316,10 +332,11 @@ export class MasterDataService {
           taxCode: cleanForUpdate(data.taxCode),
           internalCode: cleanForUpdate(data.internalCode),
           qcTemplate: cleanForUpdate(data.qcTemplate),
+          qualityTemplateId: data.qualityTemplateId === undefined ? undefined : data.qualityTemplateId || null,
           status: data.status,
           remark: cleanForUpdate(data.remark),
         },
-        include: { category: true, standardCommodity: true },
+        include: { category: true, standardCommodity: true, qualityTemplate: true },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {

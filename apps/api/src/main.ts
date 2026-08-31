@@ -9,8 +9,14 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
 
+  const configuredOrigins = (process.env.CORS_ORIGIN
+    || 'http://localhost:3001,http://127.0.0.1:3001,http://[::1]:3001')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+    origin: configuredOrigins,
     credentials: true,
   });
 

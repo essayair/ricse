@@ -25,7 +25,7 @@ interface MaterialDetail {
   grade: string | null; unit: string; packageType: string | null; status: string;
   specs: SpecItem[] | null; spec: string | null; sourceRegion: string | null;
   hsCode: string | null; taxCode: string | null; internalCode: string | null;
-  qcTemplate: string | null; isVirtual: boolean; remark: string | null;
+  qcTemplate: string | null; qualityTemplateId: string | null; qualityTemplate?: { id: string; code: string; name: string; version: number } | null; isVirtual: boolean; remark: string | null;
   createdAt: string; updatedAt: string;
   category: { id: string; name: string };
   standardCommodity: null | {
@@ -102,7 +102,7 @@ export default function MaterialDetailPage() {
 
       <div className="space-y-4">
         <Card className="space-y-4 p-6"><h2 className="font-semibold">管理属性</h2>
-          <Info label="质检模板" value={material.qcTemplate} />
+          <Info label="质检模板" value={material.qualityTemplate ? `${material.qualityTemplate.code} · ${material.qualityTemplate.name}（v${material.qualityTemplate.version}）` : material.qcTemplate} />
           <Info label="是否参与实物库存" value={material.isVirtual ? '否' : '是'} />
           <Info label="内部编码" value={material.internalCode} mono />
           <Info label="HS 编码" value={material.hsCode} mono />

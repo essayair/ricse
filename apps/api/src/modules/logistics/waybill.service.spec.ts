@@ -7,6 +7,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { OutboundService } from '../inventory/outbound.service';
 import { WaybillService } from './waybill.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
+import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 
 describe('WaybillService', () => {
   const prisma = mockDeep<PrismaService>();
@@ -23,6 +24,11 @@ describe('WaybillService', () => {
   };
   const qualityService = {
     ensureTaskForWaybill: jest.fn().mockResolvedValue({ id: 'quality-task-1' }),
+  };
+  const weighTicketService = {
+    ensureTaskForWaybill: jest.fn().mockResolvedValue({ id: 'weigh-task-1' }),
+    syncTaskForWaybill: jest.fn().mockResolvedValue({ id: 'weigh-task-1' }),
+    voidTaskForWaybill: jest.fn().mockResolvedValue({ id: 'weigh-task-1' }),
   };
   let service: WaybillService;
   const notice = {
@@ -42,6 +48,7 @@ describe('WaybillService', () => {
         { provide: InventoryService, useValue: inventoryService },
         { provide: OutboundService, useValue: outboundService },
         { provide: QualityInspectionService, useValue: qualityService },
+        { provide: WeighTicketService, useValue: weighTicketService },
       ],
     }).compile();
     service = module.get(WaybillService);

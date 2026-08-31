@@ -100,6 +100,7 @@ const BASE_ITEMS: NavGroup[] = [
       { href: '/dashboard/master-data?tab=warehouses', label: '仓库库位' },
       { href: '/dashboard/master-data?tab=vehicles', label: '车辆管理' },
       { href: '/dashboard/master-data?tab=price', label: '价格基准' },
+      { href: '/dashboard/master-data/quality-standards', label: '质检标准' },
     ],
   },
   {

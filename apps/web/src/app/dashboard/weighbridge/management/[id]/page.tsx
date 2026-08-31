@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, ChevronRight, FileText, Plus, Scale, Truck } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronRight, Eye, FileText, Plus, Scale, Truck, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openStoredAttachment } from '@/lib/attachment-preview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -30,14 +31,22 @@ interface ManagementFile {
   dispatchNotice: { id: string; noticeNo: string; type: string; order: { id: string; orderNo: string; name: string; contract: { id: string; contractNo: string; title: string } } };
   lineItems: Array<{ id: string; materialName: string | null; materialId: string; quantity: string; unit: string }>;
   weighTickets: Ticket[]; weightSelections: Selection[];
+  weighTask: { id: string; taskNo: string; status: string; plannedQuantity: string; completedAt: string | null; attachments: EvidenceAttachment[] };
 }
+interface EvidenceAttachment { id: string; originalName: string; category: string; sourceType: string | null; evidenceNode: string | null; capturedAt: string | null; createdAt: string; uploader: { name: string } | null }
 
 const STATUS: Record<string, string> = { PENDING: '待称重', WEIGHING: '称重中', COMPLETED: '待复核', REVIEWED: '已复核', VOIDED: '已作废' };
+const TASK_STATUS: Record<string, string> = { PENDING_WEIGHING: '待过磅', IN_PROGRESS: '过磅中', PENDING_CONFIRMATION: '待确认', COMPLETED: '已完成', EXCEPTION: '异常处理中', VOIDED: '已作废' };
+const EVIDENCE_CATEGORY: Record<string, string> = { VEHICLE_PLATE: '车牌与车头', CARGO_STATE: '货物与车厢', ON_SCALE: '车辆上磅', SCALE_DISPLAY: '地磅显示屏', EMPTY_CARRIAGE: '空车状态', OTHER: '其他影像' };
+const EVIDENCE_SOURCE: Record<string, string> = { WEB_UPLOAD: '电脑上传', RICSE_IMPORT: '系统导入', THIRD_PARTY_WATERMARK: '第三方水印相机', EXTERNAL: '外部影像', MINI_PROGRAM_CAPTURE: '小程序现场拍摄' };
 
 export default function WeighbridgeManagementDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [item, setItem] = useState<ManagementFile | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [evidenceCategory, setEvidenceCategory] = useState('VEHICLE_PLATE');
+  const [evidenceSource, setEvidenceSource] = useState('WEB_UPLOAD');
   const load = useCallback(async () => {
     try { setItem(await api.get<ManagementFile>(`/weigh-tickets/management-files/${id}`)); }
     catch (error: any) { alert(error.message); router.push('/dashboard/weighbridge'); }
@@ -58,6 +67,27 @@ export default function WeighbridgeManagementDetailPage() {
     } catch (error: any) { alert(error.message); }
   };
 
+  const uploadEvidence = async (files: FileList | null) => {
+    if (!files?.length || !item) return;
+    setSaving(true);
+    try {
+      for (const file of Array.from(files)) {
+        const body = new FormData();
+        body.append('file', file); body.append('category', evidenceCategory); body.append('sourceType', evidenceSource);
+        body.append('evidenceNode', EVIDENCE_CATEGORY[evidenceCategory] || evidenceCategory);
+        body.append('capturedAt', new Date().toISOString());
+        await api.upload(`/weigh-tickets/tasks/${item.weighTask.id}/attachments`, body);
+      }
+      await load();
+    } catch (error: any) { alert(error.message || '现场影像上传失败'); }
+    finally { setSaving(false); }
+  };
+
+  const viewEvidence = async (attachmentId: string) => {
+    try { await openStoredAttachment(`/weigh-tickets/task-attachments/${attachmentId}/view-url`); }
+    catch (error: any) { alert(error.message || '现场影像打开失败'); }
+  };
+
   if (!item) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
   const current = currentSelection(item);
   const shipping = activeTickets(item, 'SHIPPING');
@@ -68,9 +98,11 @@ export default function WeighbridgeManagementDetailPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/weighbridge')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">磅单信息</h1><Badge variant="outline">{item.dispatchNotice.type === 'PURCHASE' ? '采购' : '销售'}</Badge></div><p className="mt-1 font-mono text-sm text-primary">{item.waybillNo}</p></div></div>
+      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/weighbridge')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{item.weighTask.taskNo}</h1><Badge variant="outline">{item.dispatchNotice.type === 'PURCHASE' ? '采购' : '销售'}</Badge><Badge variant="secondary">{TASK_STATUS[item.weighTask.status] || item.weighTask.status}</Badge></div><p className="mt-1 font-mono text-sm text-primary">物流运单 {item.waybillNo}</p></div></div>
       <div className="flex gap-2"><Button variant="outline" onClick={() => router.push(`/dashboard/waybills/${item.id}`)}><Truck className="mr-1 h-4 w-4" />查看物流运单</Button><Button onClick={() => router.push(`/dashboard/weighbridge/create?waybillId=${item.id}`)}><Plus className="mr-1 h-4 w-4" />新增称重磅单</Button></div>
     </div>
+
+    <Card className="space-y-4 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">过磅现场证据</h2><p className="mt-1 text-xs text-muted-foreground">订单计划重量仅写入影像元数据；实际重量以地磅显示屏照片和称重记录为准。</p></div>{!['COMPLETED', 'VOIDED'].includes(item.weighTask.status) && <div className="flex flex-wrap gap-2"><select className="h-9 rounded-md border bg-background px-2 text-sm" value={evidenceCategory} onChange={event => setEvidenceCategory(event.target.value)}>{Object.entries(EVIDENCE_CATEGORY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select className="h-9 rounded-md border bg-background px-2 text-sm" value={evidenceSource} onChange={event => setEvidenceSource(event.target.value)}>{Object.entries(EVIDENCE_SOURCE).filter(([value]) => value !== 'MINI_PROGRAM_CAPTURE').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp" disabled={saving} onChange={event => { void uploadEvidence(event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-4 w-4" />上传影像</label></div>}</div>{item.weighTask.attachments.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{item.weighTask.attachments.map(attachment => <button key={attachment.id} className="rounded-md border p-3 text-left hover:bg-muted" onClick={() => void viewEvidence(attachment.id)}><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm font-medium">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></div><div className="mt-2 text-xs text-muted-foreground">{EVIDENCE_CATEGORY[attachment.category] || attachment.category} · {EVIDENCE_SOURCE[attachment.sourceType || ''] || attachment.sourceType || '未知来源'}</div><div className="mt-1 text-xs text-muted-foreground">{attachment.uploader?.name || '-'} · {formatDateTimeToSecond(attachment.capturedAt || attachment.createdAt)}</div></button>)}</div> : <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">暂无过磅现场影像</div>}</Card>
 
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="space-y-4 p-5 lg:col-span-2"><h2 className="font-semibold">磅单基本信息</h2><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Field label="物流运单" value={item.waybillNo} /><Field label="车牌号" value={item.plateNo || '-'} /><Field label="司机" value={item.driverName || '-'} /><Field label="计划数量" value={`${number(item.totalQuantity)} 吨`} /><Field label="起运地" value={item.originLocation || '-'} /><Field label="目的地" value={item.destinationLocation || '-'} /><Field label="货物" value={materialNames(item)} /><Field label="发/收磅单" value={`${shipping.length} / ${receiving.length} 张`} /></div></Card>

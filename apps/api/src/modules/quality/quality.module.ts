@@ -5,11 +5,13 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { QualityInspectionController } from './quality-inspection.controller';
 import { QualityInspectionService } from './quality-inspection.service';
 import { QualityTaskController } from './quality-task.controller';
+import { QualityStandardController } from './quality-standard.controller';
+import { QualityStandardService } from './quality-standard.service';
 
 @Module({
   imports: [CommonModule, AccessControlModule, InventoryModule],
-  controllers: [QualityInspectionController, QualityTaskController],
-  providers: [QualityInspectionService],
-  exports: [QualityInspectionService],
+  controllers: [QualityInspectionController, QualityTaskController, QualityStandardController],
+  providers: [QualityInspectionService, QualityStandardService],
+  exports: [QualityInspectionService, QualityStandardService],
 })
 export class QualityModule {}
