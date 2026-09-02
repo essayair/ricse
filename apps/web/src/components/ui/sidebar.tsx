@@ -309,9 +309,10 @@ export function SidebarGroupItem({
   const hasActiveChild = items.some((item) => isActive(item.href));
   const [expanded, setExpanded] = React.useState(defaultOpen || hasActiveChild);
 
-  // 路由切换时只保留当前模块自动展开，避免生产管理、执行通知等旧模块继续占据展开状态。
+  // 路由切换时自动展开当前模块，但保留用户已经手动展开的其他模块。
+  // 菜单是否收起只由用户点击决定，避免点击子菜单后其他菜单被意外关闭。
   React.useEffect(() => {
-    setExpanded(defaultOpen || hasActiveChild);
+    if (defaultOpen || hasActiveChild) setExpanded(true);
   }, [defaultOpen, hasActiveChild]);
 
   const handleToggle = () => setExpanded((v) => !v);
