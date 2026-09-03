@@ -12,7 +12,7 @@ export class ContentQueueService implements OnModuleDestroy {
   private readonly connection: IORedis;
   private readonly queue: Queue;
 
-  constructor(config: ConfigService, private readonly prisma: PrismaService) {
+  constructor(private readonly config: ConfigService, private readonly prisma: PrismaService) {
     const redisUrl = config.get<string>('REDIS_URL') || 'redis://localhost:6379';
     this.connection = new IORedis(redisUrl, { maxRetriesPerRequest: null, enableReadyCheck: false });
     this.queue = new Queue(CONTENT_QUEUE, { connection: this.connection });
@@ -33,18 +33,10 @@ export class ContentQueueService implements OnModuleDestroy {
 
   async registerSchedules() {
     await this.registerNewsSchedules();
-    await this.queue.upsertJobScheduler(
-      'schedule-market-sync',
-      { pattern: process.env.MARKET_SYNC_CRON || '0 6 * * *' },
-      {
-        name: 'MARKET_SYNC',
-        data: { type: 'MARKET_SYNC', scheduled: true },
-        opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
-      },
-    );
+    await this.registerBaiinfoSchedule();
     await this.queue.upsertJobScheduler(
       'schedule-hf-market-sync',
-      { pattern: process.env.HF_MARKET_SYNC_CRON || '15 6 * * *' },
+      { pattern: process.env.HF_MARKET_SYNC_CRON || '15 6 * * *', tz: process.env.CONTENT_TIMEZONE || 'Asia/Shanghai' },
       {
         name: 'HF_MARKET_SYNC',
         data: { type: 'HF_MARKET_SYNC', scheduled: true },
@@ -53,7 +45,7 @@ export class ContentQueueService implements OnModuleDestroy {
     );
     await this.queue.upsertJobScheduler(
       'schedule-fluorspar-trend-sync',
-      { pattern: process.env.FLUORSPAR_TREND_SYNC_CRON || '5 6 * * *' },
+      { pattern: process.env.FLUORSPAR_TREND_SYNC_CRON || '5 6 * * *', tz: process.env.CONTENT_TIMEZONE || 'Asia/Shanghai' },
       {
         name: 'FLUORSPAR_TREND_SYNC',
         data: { type: 'FLUORSPAR_TREND_SYNC', scheduled: true },
@@ -98,12 +90,16 @@ export class ContentQueueService implements OnModuleDestroy {
     } else {
       this.logger.warn('未发现已启用且已配置的产业资讯源，跳过启动自动采集');
     }
-    await this.queue.add('MARKET_SYNC', {
-      type: 'MARKET_SYNC', startup: true,
-    }, {
-      attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
-      removeOnComplete: 20, removeOnFail: 50,
-    });
+    if (await this.baiinfoReady()) {
+      await this.queue.add('MARKET_SYNC', {
+        type: 'MARKET_SYNC', startup: true,
+      }, {
+        attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
+        removeOnComplete: 20, removeOnFail: 50,
+      });
+    } else {
+      this.logger.warn('百川行情凭据未配置或数据源未启用，跳过启动自动采集');
+    }
     await this.queue.add('HF_MARKET_SYNC', {
       type: 'HF_MARKET_SYNC', startup: true,
     }, {
@@ -120,6 +116,44 @@ export class ContentQueueService implements OnModuleDestroy {
   }
 
   connectionOptions() { return this.connection; }
+
+  private async registerBaiinfoSchedule() {
+    await this.queue.removeJobScheduler('schedule-market-sync');
+    if (!await this.baiinfoReady()) {
+      this.logger.warn('百川行情凭据未配置或数据源未启用，自动调度已暂停');
+      return;
+    }
+    await this.queue.upsertJobScheduler(
+      'schedule-market-sync',
+      { pattern: this.config.get<string>('MARKET_SYNC_CRON') || '0 6 * * *', tz: this.config.get<string>('CONTENT_TIMEZONE') || 'Asia/Shanghai' },
+      {
+        name: 'MARKET_SYNC',
+        data: { type: 'MARKET_SYNC', scheduled: true },
+        opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
+      },
+    );
+  }
+
+  private async baiinfoReady() {
+    const source = await this.prisma.contentDataSource.findUnique({
+      where: { code: 'BAIINFO_FLUORITE' },
+      select: { id: true, status: true },
+    });
+    const configured = Boolean(
+      (this.config.get<string>('BAIINFO_AUTH') && this.config.get<string>('BAIINFO_COOKIE'))
+      || (this.config.get<string>('BAIINFO_USERNAME') && this.config.get<string>('BAIINFO_PASSWORD')),
+    );
+    if (source?.status === 'ACTIVE' && !configured) {
+      await this.prisma.contentDataSource.update({
+        where: { id: source.id },
+        data: {
+          lastErrorAt: new Date(),
+          lastError: '百川行情直连凭据未配置，自动采集已暂停；配置凭据并重启内容 Worker 后自动恢复',
+        },
+      });
+    }
+    return source?.status === 'ACTIVE' && configured;
+  }
 
   async onModuleDestroy() {
     await this.queue.close();

@@ -11,7 +11,7 @@ describe('质检指标判定', () => {
     expect(evaluateIndicator({ code: 'moisture', name: '水分', operator: 'LTE', standardValue: 0.5, measuredValue: 0.8 })).toBe('FAIL');
   });
 
-  it('达到拒收红线时判定熔断', () => {
+  it('达到拒收红线时判定为拒收', () => {
     expect(evaluateIndicator({ code: 'moisture', name: '水分', operator: 'LTE', standardValue: 0.5, fuseValue: 1.5, measuredValue: 1.8 })).toBe('FUSE');
     expect(evaluateIndicator({ code: 'grade', name: '品位', operator: 'GTE', standardValue: 97, fuseValue: 95, measuredValue: 94.8 })).toBe('FUSE');
   });

@@ -439,7 +439,7 @@ export class QualityInspectionService {
     const isPurchase = ticket.waybill.dispatchNotice.type === 'PURCHASE';
     const supplierName = isPurchase ? contract.seller?.name : contract.signingPartner?.name;
     const fuseReason = conclusion === 'FUSE'
-      ? evaluated.filter(item => item.result === 'FUSE').map(item => `${item.name}达到熔断线`).join('；')
+      ? evaluated.filter(item => item.result === 'FUSE').map(item => `${item.name}达到拒收线`).join('；')
       : null;
 
     const inspection = await this.prisma.qualityInspection.create({
@@ -582,7 +582,7 @@ export class QualityInspectionService {
       throw new BadRequestException('全部检测指标填写完整后才能出具报告');
     }
     if (status === 'CONFIRMED' && item.conclusion === 'FUSE' && !resolution?.trim()) {
-      throw new BadRequestException('熔断质检单确认时必须填写处理方案');
+      throw new BadRequestException('拒收质检单确认时必须填写处理方案');
     }
     if (
       status === 'CONFIRMED'

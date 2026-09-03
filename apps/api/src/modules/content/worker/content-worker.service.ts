@@ -52,6 +52,18 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
         return { skipped: 'source inactive' };
       }
     }
+    if (type === 'MARKET_SYNC' && !this.baiinfo.isConfigured()) {
+      const message = '百川行情直连凭据未配置，任务已取消；配置凭据并重启内容 Worker 后自动恢复';
+      await this.prisma.contentJob.update({
+        where: { id: record.id },
+        data: { status: 'CANCELLED', finishedAt: new Date(), nextRetryAt: null, errorMessage: message, result: { skipped: 'credential not configured' } },
+      });
+      if (record.sourceId) await this.prisma.contentDataSource.update({
+        where: { id: record.sourceId }, data: { lastErrorAt: new Date(), lastError: message },
+      });
+      this.logger.warn(message);
+      return { skipped: 'credential not configured' };
+    }
     await this.prisma.contentJob.update({
       where: { id: record.id },
       data: { status: 'RUNNING', startedAt: new Date(), attempts: { increment: 1 }, errorMessage: null },

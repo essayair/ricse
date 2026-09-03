@@ -134,7 +134,7 @@ export class InventoryService {
       stage = 'WAITING_ACCEPTANCE_SELECTION'; stageLabel = '待确认验收依据'; blocker = '已有合格质检单，请指定最终验收质检单'; tone = 'warning';
     } else if (confirmedException) {
       stage = 'QUALITY_EXCEPTION'; stageLabel = '质检异常';
-      blocker = confirmedException.conclusion === 'FUSE' ? '质检结果触发熔断，禁止入库' : '质检结果为超标扣款，当前规则禁止入库';
+      blocker = confirmedException.conclusion === 'FUSE' ? '质检结果为不合格（拒收），禁止入库' : '质检结果为超标扣款，当前规则禁止入库';
       tone = 'danger';
     } else {
       stage = 'WAITING_QUALITY'; stageLabel = '等待质检结论'; blocker = '尚无已确认的最终质检结果'; tone = 'warning';
@@ -147,7 +147,7 @@ export class InventoryService {
         ? `${reviewedTickets.length} 张已复核`
         : activeTickets.some((ticket: any) => ticket.status === 'COMPLETED') ? '待复核' : '称重中';
     const qualityLabel = qualityTask?.status === 'COMPLETED'
-      ? `最终${qualityTask.finalConclusion === 'PASS' ? '合格' : qualityTask.finalConclusion === 'DEDUCTION' ? '超标扣款' : qualityTask.finalConclusion === 'FUSE' ? '熔断' : '待判定'}`
+      ? `最终${qualityTask.finalConclusion === 'PASS' ? '合格' : qualityTask.finalConclusion === 'DEDUCTION' ? '超标扣款' : qualityTask.finalConclusion === 'FUSE' ? '不合格（拒收）' : '待判定'}`
       : qualityTask
         ? `${qualityTask.taskNo} · ${inspections.length} 份报告`
         : '未生成质检任务';
@@ -295,7 +295,7 @@ export class InventoryService {
     });
     if (!quality || quality.status !== 'CONFIRMED') throw new BadRequestException('请选择该运单下已确认的质检单');
     if (quality.conclusion !== 'PASS') {
-      throw new BadRequestException('只有质检结论为“合格”的货物才能入库；超标扣款、熔断或待判定货物不能入库');
+      throw new BadRequestException('只有质检结论为“合格”的货物才能入库；超标扣款、不合格（拒收）或待判定货物不能入库');
     }
     const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, status: 'ACTIVE', deletedAt: null } });
     if (!warehouse) throw new BadRequestException('入库仓库不存在或已停用');

@@ -27,7 +27,7 @@ const STATUS: Record<string, string> = {
   PENDING_SAMPLING: '待取样', PENDING_SENDING: '待送检', INSPECTING: '检测中', PENDING_DECISION: '待综合判定',
   COMPLETED: '已完成', RECHECK_REQUIRED: '待复判', EXCEPTION: '异常处理中', VOIDED: '已作废',
 };
-const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '熔断' };
+const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '不合格（拒收）' };
 
 export default function QualityPage() {
   const router = useRouter();

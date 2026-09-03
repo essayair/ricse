@@ -22,32 +22,28 @@ export class BaiinfoCollectorService {
   constructor(private readonly config: ConfigService, private readonly prisma: PrismaService) {}
 
   async sync() {
-    if (!this.hasDirectCredential()) {
+    if (!this.isConfigured()) {
       throw new ServiceUnavailableException('百川行情直连凭据尚未配置，旧行情后端已停止使用');
     }
     const credential = await this.ensureCredential();
     const end = this.formatDate(new Date());
     const start = this.formatDate(new Date(Date.now() - 180 * 86400000));
     let response = await this.fetchExport(start, end, credential);
-    if ([401, 403].includes(response.status) && this.config.get<string>('BAIINFO_USERNAME')) {
+    let buffer = await this.readExport(response);
+    if (!buffer && this.config.get<string>('BAIINFO_USERNAME')) {
       this.runtimeCredential = await this.login();
       response = await this.fetchExport(start, end, this.runtimeCredential);
+      buffer = await this.readExport(response);
     }
-    if (!response.ok) throw new ServiceUnavailableException(`百川行情 HTTP ${response.status}`);
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('excel') && !contentType.includes('octet')) {
-      const text = await response.text();
-      throw new ServiceUnavailableException(`百川未返回 Excel：${text.slice(0, 100)}`);
-    }
-    const rows = this.parse(Buffer.from(await response.arrayBuffer()));
+    if (!buffer) throw new ServiceUnavailableException('百川登录凭据已失效，且未配置可自动续期的账号密码');
+    const rows = this.parse(buffer);
     const product = await this.prisma.contentProductType.upsert({
       where: { code: 'FLUORITE_97' },
       update: { name: '萤石粉', spec: 'CaF₂≥97%', unit: '元/吨', status: 'ACTIVE' },
       create: { code: 'FLUORITE_97', name: '萤石粉', spec: 'CaF₂≥97%', unit: '元/吨' },
     });
-    let saved = 0;
-    for (const row of rows) {
-      await this.prisma.contentProductPrice.upsert({
+    for (let offset = 0; offset < rows.length; offset += 50) {
+      await Promise.all(rows.slice(offset, offset + 50).map((row) => this.prisma.contentProductPrice.upsert({
         where: { productTypeId_businessDate_region_source_marketName: {
           productTypeId: product.id,
           businessDate: new Date(`${row.date}T00:00:00.000Z`),
@@ -68,14 +64,15 @@ export class BaiinfoCollectorService {
           source: 'BAIINFO',
           rawData: row as any,
         },
-      });
-      saved++;
+      })));
     }
-    this.logger.log(`百川行情同步完成 saved=${saved}`);
-    return { saved, businessDate: rows[0]?.date || null };
+    const businessDate = rows.reduce<string | null>((latest, row) => !latest || row.date > latest ? row.date : latest, null);
+    const markets = new Set(rows.map((row) => row.marketName)).size;
+    this.logger.log(`百川行情同步完成 saved=${rows.length} markets=${markets} businessDate=${businessDate || '-'}`);
+    return { saved: rows.length, markets, businessDate };
   }
 
-  private hasDirectCredential() {
+  isConfigured() {
     return Boolean(
       (this.config.get<string>('BAIINFO_AUTH') && this.config.get<string>('BAIINFO_COOKIE'))
       || (this.config.get<string>('BAIINFO_USERNAME') && this.config.get<string>('BAIINFO_PASSWORD')),
@@ -100,6 +97,28 @@ export class BaiinfoCollectorService {
       body: JSON.stringify({ channelId: '335', pricesGroupId: 2268, startDate: start, endDate: end, targetIds: TARGET_IDS }),
       signal: AbortSignal.timeout(60_000),
     });
+  }
+
+  /**
+   * 百川在登录失效时既可能返回 HTTP 401/403，也可能返回 HTTP 200 的 JSON
+   * 业务错误。统一把这两种情况视为“凭据失效”，交由调用方续期并重试。
+   */
+  private async readExport(response: Response): Promise<Buffer | null> {
+    if ([401, 403].includes(response.status)) return null;
+    if (!response.ok) throw new ServiceUnavailableException(`百川行情 HTTP ${response.status}`);
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const isExcelFile = contentType.includes('excel')
+      || contentType.includes('spreadsheet')
+      || contentType.includes('octet-stream')
+      || buffer.subarray(0, 2).toString('ascii') === 'PK'
+      || buffer.subarray(0, 4).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0]));
+    if (isExcelFile) return buffer;
+    const text = buffer.toString('utf8');
+    if (/无效的?token|token.{0,20}(?:失效|过期)|(?:未登录|请登录|登录失效)|\"?code\"?\s*:\s*(?:401|403)/i.test(text)) {
+      return null;
+    }
+    throw new ServiceUnavailableException(`百川未返回 Excel：${text.slice(0, 100)}`);
   }
 
   private async ensureCredential() {
@@ -172,13 +191,17 @@ export class BaiinfoCollectorService {
     for (let column = 1; column < headers.length; column++) {
       const marketName = String(headers[column] || '').trim();
       if (!marketName) continue;
-      const values = dateRows.map((item) => ({ date: item.date!, value: Number(item.row[column]) })).filter((item) => Number.isFinite(item.value) && item.value > 0);
+      const values = dateRows
+        .map((item) => ({ date: item.date!, value: Number(item.row[column]) }))
+        .filter((item) => Number.isFinite(item.value) && item.value > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
       if (!values.length) continue;
-      const latest = values[values.length - 1];
-      const previous = values.length > 1 ? values[values.length - 2] : latest;
-      output.push({
-        region: this.region(marketName), marketName, date: latest.date,
-        price: latest.value, change: Number((latest.value - previous.value).toFixed(4)),
+      values.forEach((current, index) => {
+        const previous = index > 0 ? values[index - 1] : current;
+        output.push({
+          region: this.region(marketName), marketName, date: current.date,
+          price: current.value, change: Number((current.value - previous.value).toFixed(4)),
+        });
       });
     }
     return output;

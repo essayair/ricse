@@ -65,7 +65,7 @@ export default function DashboardPage() {
     { label: '本月采购入库量', value: metric(data.permissions.inventory, m.monthlyPurchaseQuantity, 3), unit: '吨', note: '本月已过账采购入库', icon: Package, color: 'blue' as const },
     { label: '当前在途车辆', value: metric(data.permissions.logistics, m.inTransitVehicles), unit: '辆', note: '状态为运输中的运单', icon: Truck, color: 'amber' as const },
     { label: '当前账面库存', value: metric(data.permissions.inventory, m.inventoryPhysicalQuantity, 3), unit: '吨', note: `${metric(data.permissions.inventory, m.inventoryLotCount)} 个有效库存批次`, icon: Box, color: 'green' as const },
-    { label: '待处理异常', value: number(m.alertCount), unit: '条', note: `磅差 ${number(m.abnormalWeighTickets)} · 质检熔断 ${number(m.fuseQualityInspections)} · 运单超时 ${number(m.overdueWaybills)}`, icon: AlertTriangle, color: 'red' as const },
+    { label: '待处理异常', value: number(m.alertCount), unit: '条', note: `磅差 ${number(m.abnormalWeighTickets)} · 质检拒收 ${number(m.fuseQualityInspections)} · 运单超时 ${number(m.overdueWaybills)}`, icon: AlertTriangle, color: 'red' as const },
   ];
   const flowSteps = [
     { label: '执行批次', value: m.activeOrders, suffix: '个执行中', href: '/dashboard/orders', permission: data.permissions.execution, icon: ClipboardList, color: 'blue' as const },
@@ -79,7 +79,7 @@ export default function DashboardPage() {
     { name: '采销管理', desc: '合同 / 执行批次 / 执行通知', href: '/dashboard/contracts', icon: FileText, color: 'blue' as const, permission: data.permissions.contracts, stats: [['执行中合同', m.activeContracts], ['待审批合同', m.pendingApprovalContracts]] },
     { name: '物流管理', desc: '通知 / 调度 / 运单', href: '/dashboard/waybills', icon: Truck, color: 'amber' as const, permission: data.permissions.logistics, stats: [['当前在途', m.inTransitVehicles], ['超时运单', m.overdueWaybills]] },
     { name: '库存管理', desc: '库存主体 / 仓库 / 批次', href: '/dashboard/inventory', icon: Box, color: 'green' as const, permission: data.permissions.inventory, stats: [['账面库存(吨)', decimal(m.inventoryPhysicalQuantity)], ['有效批次', m.inventoryLotCount]] },
-    { name: '到货质检', desc: '任务 / 多机构报告 / 最终判定', href: '/dashboard/quality', icon: FlaskConical, color: 'purple' as const, permission: data.permissions.quality, stats: [['待处理', m.pendingQualityInspections], ['熔断任务', m.fuseQualityInspections]] },
+    { name: '到货质检', desc: '任务 / 多机构报告 / 最终判定', href: '/dashboard/quality', icon: FlaskConical, color: 'purple' as const, permission: data.permissions.quality, stats: [['待处理', m.pendingQualityInspections], ['拒收任务', m.fuseQualityInspections]] },
     { name: '地磅管理', desc: '称重 / 复磅 / 偏差复核', href: '/dashboard/weighbridge', icon: Scale, color: 'blue' as const, permission: data.permissions.quality, stats: [['今日磅单', m.todayWeighTickets], ['偏差异常', m.abnormalWeighTickets]] },
     { name: '出入库作业', desc: '到货入库 / 销售出库', href: '/dashboard/inbound', icon: Warehouse, color: 'green' as const, permission: data.permissions.inventory, stats: [['待入库', m.pendingInboundReceipts], ['待出库', m.pendingOutboundOrders]] },
   ];
@@ -102,7 +102,7 @@ export default function DashboardPage() {
         <div className="mb-3 flex items-center gap-2 font-medium text-destructive"><AlertTriangle className="h-5 w-5" />待处理异常 {data.metrics.alertCount} 条</div>
         <div className="grid gap-2 md:grid-cols-2">{data.alerts.slice(0, 4).map(item => <Link key={item.id} href={item.href} className="rounded-md border border-destructive-border bg-background/70 p-3 text-sm hover:bg-background"><div className="font-medium">{item.title}</div><div className="mt-1 text-xs text-muted-foreground">{item.subtitle}</div></Link>)}</div>
       </CardContent>
-    </Card> : <div className="rounded-lg border border-success/20 bg-success-bg p-4 text-sm text-success">当前数据范围内没有磅差异常、质检熔断或运单超时。</div>)}
+    </Card> : <div className="rounded-lg border border-success/20 bg-success-bg p-4 text-sm text-success">当前数据范围内没有磅差异常、质检拒收或运单超时。</div>)}
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{stats.map(stat => {
       const colors = COLOR[stat.color];

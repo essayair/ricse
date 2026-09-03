@@ -188,7 +188,7 @@ export class DashboardService {
       alerts.push(...fuseItems.map((item): Activity => ({
         id: `quality-fuse:${item.id}`,
         occurredAt: item.updatedAt,
-        title: `质检任务 ${item.taskNo} 触发熔断`,
+        title: `质检任务 ${item.taskNo} 判定为不合格（拒收）`,
         subtitle: item.decisionReason || item.waybill.lineItems[0]?.materialName || '到货质检异常',
         href: `/dashboard/quality/${item.id}`,
         type: 'error',
@@ -257,6 +257,6 @@ export class DashboardService {
   }
 
   private qualityConclusion(conclusion: string) {
-    return ({ PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '熔断' } as Record<string, string>)[conclusion] || conclusion;
+    return ({ PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '不合格（拒收）' } as Record<string, string>)[conclusion] || conclusion;
   }
 }

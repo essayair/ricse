@@ -419,7 +419,7 @@ function qualityStatus(inspection: any) {
   }
   return inspection.conclusion === 'PASS' ? '已确认·合格'
     : inspection.conclusion === 'DEDUCTION' ? '已确认·超标扣款'
-      : inspection.conclusion === 'FUSE' ? '已确认·熔断' : '已确认·待判定';
+      : inspection.conclusion === 'FUSE' ? '已确认·不合格（拒收）' : '已确认·待判定';
 }
 
 function weight(value: any) {

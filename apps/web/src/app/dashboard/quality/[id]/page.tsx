@@ -41,7 +41,7 @@ interface Task {
 
 const TASK_STATUS: Record<string, string> = { PENDING_SAMPLING: '待取样', PENDING_SENDING: '待送检', INSPECTING: '检测中', PENDING_DECISION: '待综合判定', COMPLETED: '已完成', RECHECK_REQUIRED: '待复判', EXCEPTION: '异常处理中', VOIDED: '已作废' };
 const REPORT_STATUS: Record<string, string> = { DRAFT: '草稿', TESTING: '化验中', REPORTED: '已出报告', CONFIRMED: '已确认', VOIDED: '已作废' };
-const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '熔断' };
+const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '不合格（拒收）' };
 const INSTITUTION: Record<string, string> = { OUR: '我方', PARTNER: '合作方', THIRD_PARTY: '第三方', OTHER: '其他' };
 const OPERATOR: Record<string, string> = { GTE: '≥', LTE: '≤', EQ: '=', RANGE: '范围' };
 const EVIDENCE_CATEGORY: Record<string, string> = { SAMPLING_PHOTO: '取样照片', MIXING_PHOTO: '混样照片', SPLITTING_PHOTO: '分样照片', SEALING_PHOTO: '封样照片', OTHER: '其他影像' };
@@ -81,7 +81,7 @@ export default function QualityTaskDetailPage() {
   const confirmReport = async (report: Report) => {
     let resolution: string | undefined;
     if (report.conclusion === 'FUSE') {
-      resolution = prompt('该报告触发熔断，请填写处理方案')?.trim();
+      resolution = prompt('该报告判定为不合格（拒收），请填写处理方案')?.trim();
       if (!resolution) return;
     }
     if (!confirm(`确认检测机构【${report.institutionName}】的报告 ${report.reportNo} 有效？`)) return;
@@ -97,7 +97,7 @@ export default function QualityTaskDetailPage() {
     if (partial && !reason.trim()) return alert('有效报告少于计划数量，请填写提前判定原因');
     let message = `本次将依据 ${confirmed.length} 份有效检测报告形成最终结论“${CONCLUSION[selectedBasis.conclusion]}”，并以【${selectedBasis.institutionName} / ${selectedBasis.reportNo}】作为入库和结算执行口径。确认后将影响后续业务，是否继续？`;
     if (confirmed.length === 1) message = `当前仅有 1 份有效检测报告。确认后，该报告将单独作为本到货批次最终质检依据并影响入库及结算。请确认已核实合同约定、报告真实性和业务风险。是否继续？`;
-    if (selectedBasis.conclusion === 'FUSE') message = `本次最终判定为“熔断”。确认后将阻止货物入库并触发异常处置，请再次核对检测报告。是否继续？`;
+    if (selectedBasis.conclusion === 'FUSE') message = `本次最终判定为“不合格（拒收）”。确认后将禁止货物入库并进入异常处理，请再次核对检测报告。是否继续？`;
     if (!confirm(message)) return;
     setSaving(true);
     try {
@@ -190,7 +190,7 @@ export default function QualityTaskDetailPage() {
         return <Card key={report.id} className={`overflow-hidden ${report.id === basisInspectionId ? 'ring-2 ring-primary/30' : ''}`}>
           <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/30 p-4"><div className="flex items-start gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{index + 1}</div><div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{report.institutionName}</span><Badge variant="outline">{INSTITUTION[report.institutionType] || report.institutionType}</Badge><Badge variant={report.conclusion === 'FUSE' ? 'destructive' : report.conclusion === 'PASS' ? 'default' : 'secondary'}>{CONCLUSION[report.conclusion]}</Badge></div><div className="mt-1 font-mono text-xs text-muted-foreground">{report.inspectionNo} · 报告 {report.reportNo} · 样品 {report.sampleNo || '-'}</div></div></div><div className="flex items-center gap-2"><Badge variant="secondary">{REPORT_STATUS[report.status]}</Badge>{report.status === 'REPORTED' && <Button size="sm" disabled={saving} onClick={() => void confirmReport(report)}>确认报告有效</Button>}</div></div>
           <div className="grid gap-5 p-4 lg:grid-cols-[1.5fr_1fr]">
-            <div><div className="grid gap-3 sm:grid-cols-4"><Info label="检测时间" value={formatDateTimeToSecond(report.testedAt)} /><Info label="取样人" value={report.samplerName} /><Info label="关联磅单" value={report.weighTicket.ticketNo} /><Info label="录入人" value={report.creator.name} /></div><div className="mt-4 overflow-x-auto"><table className="min-w-[640px] w-full text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-3 py-2">指标</th><th className="px-3 py-2">标准</th><th className="px-3 py-2">检测值</th><th className="px-3 py-2">判定</th></tr></thead><tbody>{report.indicators.map(indicator => <tr key={indicator.id} className="border-b"><td className="px-3 py-2 font-medium">{indicator.name}</td><td className="px-3 py-2">{qualityStandard(indicator)}</td><td className="px-3 py-2 text-primary">{measure(indicator.measuredValue, indicator.unit)}</td><td className="px-3 py-2">{indicator.result === 'PASS' ? '合格' : indicator.result === 'FAIL' ? '超标' : indicator.result === 'FUSE' ? '熔断' : '待判定'}</td></tr>)}</tbody></table></div></div>
+            <div><div className="grid gap-3 sm:grid-cols-4"><Info label="检测时间" value={formatDateTimeToSecond(report.testedAt)} /><Info label="取样人" value={report.samplerName} /><Info label="关联磅单" value={report.weighTicket.ticketNo} /><Info label="录入人" value={report.creator.name} /></div><div className="mt-4 overflow-x-auto"><table className="min-w-[640px] w-full text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-3 py-2">指标</th><th className="px-3 py-2">标准</th><th className="px-3 py-2">检测值</th><th className="px-3 py-2">判定</th></tr></thead><tbody>{report.indicators.map(indicator => <tr key={indicator.id} className="border-b"><td className="px-3 py-2 font-medium">{indicator.name}</td><td className="px-3 py-2">{qualityStandard(indicator)}</td><td className="px-3 py-2 text-primary">{measure(indicator.measuredValue, indicator.unit)}</td><td className="px-3 py-2">{indicator.result === 'PASS' ? '合格' : indicator.result === 'FAIL' ? '超标' : indicator.result === 'FUSE' ? '拒收' : '待判定'}</td></tr>)}</tbody></table></div></div>
             <div className="space-y-3"><div className="flex items-center justify-between"><span className="text-sm font-medium">检测报告附件</span>{editable && <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-2 text-xs text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={saving} onChange={event => { void uploadReportAttachment(report.id, event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-3.5 w-3.5" />上传</label>}</div>{report.attachments.length ? report.attachments.map(attachment => <button key={attachment.id} className="flex w-full items-center gap-2 rounded-md border p-2 text-left hover:bg-muted" onClick={() => void viewAttachment(attachment.id)}><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></button>) : <div className="rounded-md border border-dashed p-5 text-center text-xs text-muted-foreground">暂无检测报告附件</div>}<div className="rounded-md bg-muted/40 p-3 text-xs"><div className="flex justify-between"><span>基准重量</span><b>{weight(report.baseWeight)}</b></div><div className="mt-2 flex justify-between"><span>质检后重量</span><b>{weight(report.settlementWeight)}</b></div><div className="mt-2 flex justify-between"><span>预计扣款</span><b>¥{Number(report.deductionAmount).toLocaleString()}</b></div></div></div>
           </div>
         </Card>;
