@@ -11,7 +11,7 @@ import { unitLabel } from '@/lib/unit';
 interface ContractSummary { id: string; contractNo: string; title: string; type: string; status: string }
 interface ContractDetail extends ContractSummary {
   deliveryLocation: string | null;
-  lineItems: Array<{ id: string; materialId: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; availableQuantity?: number }>;
+  lineItems: Array<{ id: string; materialId: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; salesUnitPrice?: string | null; availableQuantity?: number }>;
 }
 
 export default function CreateOrderPage() {
@@ -86,10 +86,14 @@ export default function CreateOrderPage() {
     }
   };
 
+  const unitPriceFor = useCallback((item: ContractDetail['lineItems'][number]) => (
+    contract?.type === 'BILATERAL' && type === 'SALES' ? Number(item.salesUnitPrice || 0) : Number(item.unitPrice)
+  ), [contract?.type, type]);
+
   const total = useMemo(() => contract?.lineItems.reduce(
-    (sum, item) => sum + (quantities[item.id] || 0) * Number(item.unitPrice),
+    (sum, item) => sum + (quantities[item.id] || 0) * unitPriceFor(item),
     0,
-  ) || 0, [contract, quantities]);
+  ) || 0, [contract, quantities, unitPriceFor]);
 
   const submit = async () => {
     if (!contract) return alert('请选择关联合同');
@@ -165,7 +169,7 @@ export default function CreateOrderPage() {
               <div className="overflow-hidden rounded-lg border">
                 <table className="w-full text-sm">
                   <thead className="border-b bg-muted/50 text-muted-foreground">
-                    <tr><th className="px-4 py-3 text-left">物料</th><th className="px-4 py-3 text-right">合同数量</th><th className="px-4 py-3 text-right">剩余可执行</th><th className="px-4 py-3 text-right">本批次数量</th><th className="px-4 py-3 text-right">单价</th><th className="px-4 py-3 text-right">金额</th></tr>
+                    <tr><th className="px-4 py-3 text-left">物料</th><th className="px-4 py-3 text-right">合同数量</th><th className="px-4 py-3 text-right">剩余可执行</th><th className="px-4 py-3 text-right">本批次数量</th><th className="px-4 py-3 text-right">{type === 'PURCHASE' ? '采购单价' : '销售单价'}</th><th className="px-4 py-3 text-right">金额</th></tr>
                   </thead>
                   <tbody>
                     {contract.lineItems.map(item => (
@@ -174,8 +178,8 @@ export default function CreateOrderPage() {
                         <td className="px-4 py-3 text-right">{Number(item.quantity).toLocaleString()} {unitLabel(item.unit)}</td>
                         <td className="px-4 py-3 text-right font-medium">{Number(item.availableQuantity || 0).toLocaleString()} {unitLabel(item.unit)}</td>
                         <td className="px-4 py-3"><Input className="ml-auto w-36 text-right" type="number" min="0" max={item.availableQuantity || 0} step="0.001" value={quantities[item.id] ?? 0} onChange={event => setQuantities(current => ({ ...current, [item.id]: Number(event.target.value) }))} /></td>
-                        <td className="px-4 py-3 text-right">¥{Number(item.unitPrice).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-medium">¥{((quantities[item.id] || 0) * Number(item.unitPrice)).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right">¥{unitPriceFor(item).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-medium">¥{((quantities[item.id] || 0) * unitPriceFor(item)).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>

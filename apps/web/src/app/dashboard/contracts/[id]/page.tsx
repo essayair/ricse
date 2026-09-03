@@ -63,7 +63,7 @@ interface ContractDetail {
   seller: { id: string; code: string; name: string; roles: string[] } | null;
   buyer: { id: string; code: string; name: string; roles: string[] } | null;
   attachments?: Array<{ id: string; originalName: string; mimeType: string; size: number; category: string }>;
-  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; deliveryDate: string | null; remarks?: string | null }>;
+  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; salesUnitPrice?: string | null; salesTotalPrice?: string | null; deliveryDate: string | null; remarks?: string | null }>;
   approvals: Approval[];
   fulfillment: { directions: FulfillmentDirection[] };
   orders: Array<{
@@ -573,6 +573,10 @@ export default function ContractDetailPage() {
   if (!contract) return <div className="p-12 text-center text-destructive">合同不存在</div>;
 
   const c = contract;
+  const bilateralSalesAmount = c.type === 'BILATERAL'
+    ? c.lineItems.reduce((sum, item) => sum + Number(item.salesTotalPrice || 0), 0)
+    : 0;
+  const bilateralProfit = bilateralSalesAmount - Number(c.totalAmount || 0);
   const cfg = STATUS_MAP[c.status] || { label: c.status, variant: 'secondary' as const };
   const userRole = currentUser?.role || 'USER';
   const roleActions = ROLE_ACTIONS[c.status]?.[userRole] || ROLE_ACTIONS[c.status]?.['USER'] || [];
@@ -653,7 +657,9 @@ export default function ContractDetailPage() {
             <Field label={c.type === 'PURCHASE' ? '对手方（供应商）' : c.type === 'SALES' ? '对手方（客户）' : '上游对手方（供应商）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
             {c.type === 'BILATERAL' && <Field label="下游对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />}
             <Field label="我方签约主体（内部）" value={c.signingPartner ? `${c.signingPartner.code} ${c.signingPartner.name}` : c.company ? `${c.company.code} ${c.company.name}（旧数据）` : '—'} />
-            <Field label="总金额" value={<span className="text-lg font-bold text-primary">¥{Number(c.totalAmount).toLocaleString()}</span>} />
+            <Field label={c.type === 'BILATERAL' ? '采购金额（审批口径）' : '总金额'} value={<span className="text-lg font-bold text-primary">¥{Number(c.totalAmount).toLocaleString()}</span>} />
+            {c.type === 'BILATERAL' && <Field label="销售金额" value={<span className="font-mono">¥{bilateralSalesAmount.toLocaleString()}</span>} />}
+            {c.type === 'BILATERAL' && <Field label="预计毛利" value={<span className={`font-bold ${bilateralProfit >= 0 ? 'text-success' : 'text-destructive'}`}>¥{bilateralProfit.toLocaleString()}</span>} />}
             <Field label="外部合同号" value={c.externalNo || '—'} />
             <Field label="联系人" value={`${c.contactPerson || '—'}${c.contactPhone ? ` ${c.contactPhone}` : ''}`} />
             <Field label="定价类型" value={c.pricingType === 'FIXED' ? '一口价' : c.pricingType === 'BASIS' ? '基差定价' : c.pricingType === 'FLOATING' ? '不定价' : '—'} />
@@ -735,10 +741,12 @@ export default function ContractDetailPage() {
                   <th className="pb-2">物料</th>
                   <th className="pb-2">数量</th>
                   <th className="pb-2">单位</th>
-                  <th className="pb-2">单价</th>
+                  <th className="pb-2">{c.type === 'BILATERAL' ? '采购单价' : c.type === 'PURCHASE' ? '采购单价' : '销售单价'}</th>
+                  {c.type === 'BILATERAL' && <th className="pb-2">销售单价</th>}
                   <th className="pb-2">交货日期</th>
                   <th className="pb-2">行项备注</th>
-                  <th className="pb-2 text-right">小计</th>
+                  <th className="pb-2 text-right">{c.type === 'BILATERAL' ? '采购小计' : '小计'}</th>
+                  {c.type === 'BILATERAL' && <th className="pb-2 text-right">销售小计</th>}
                 </tr>
               </thead>
               <tbody>
@@ -748,9 +756,11 @@ export default function ContractDetailPage() {
                     <td className="py-3">{Number(item.quantity).toLocaleString()}</td>
                     <td className="py-3">{unitLabel(item.unit)}</td>
                     <td className="py-3 font-mono">¥{Number(item.unitPrice).toLocaleString()}</td>
+                    {c.type === 'BILATERAL' && <td className="py-3 font-mono">{item.salesUnitPrice == null ? '—' : `¥${Number(item.salesUnitPrice).toLocaleString()}`}</td>}
                     <td className="py-3">{item.deliveryDate ? new Date(item.deliveryDate).toLocaleDateString('zh-CN') : '—'}</td>
                     <td className="py-3">{item.remarks || '—'}</td>
                     <td className="py-3 text-right font-mono">¥{Number(item.totalPrice).toLocaleString()}</td>
+                    {c.type === 'BILATERAL' && <td className="py-3 text-right font-mono">{item.salesTotalPrice == null ? '—' : `¥${Number(item.salesTotalPrice).toLocaleString()}`}</td>}
                   </tr>
                 ))}
               </tbody>

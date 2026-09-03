@@ -109,7 +109,8 @@ export default function ContractCreatePage() {
   const saleUnitPrice = Number(form.saleUnitPrice || 0);
   const purchaseAmount = qty * purchaseUnitPrice;
   const saleAmount = qty * saleUnitPrice;
-  const totalAmount = form.type === 'BILATERAL' ? purchaseAmount : purchaseAmount;
+  // 双边合同以采购金额作为合同审批金额；销售金额和毛利单独展示。
+  const totalAmount = purchaseAmount;
   const profit = saleAmount - purchaseAmount;
 
 
@@ -147,11 +148,8 @@ export default function ContractCreatePage() {
       materialId: form.materialId, materialName: form.materialName,
       quantity: Number(form.quantity), unit: form.unit,
       unitPrice: Number(form.unitPrice),
+      ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(form.saleUnitPrice) } : {}),
     }] : [],
-    // bilateral extra: sale price stored in totalAmount as purchase total (sale info in remarks for now)
-    ...(form.type === 'BILATERAL' && form.saleUnitPrice ? {
-      remarks: [form.remarks, `销售单价:${form.saleUnitPrice}元/吨 销售金额:${saleAmount} 毛利:${profit}`].filter(Boolean).join(' | ')
-    } : {}),
   });
 
   const uploadAttachments = async (contractId: string) => {
@@ -207,6 +205,7 @@ export default function ContractCreatePage() {
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     if (!form.materialId || !form.quantity || !form.unitPrice) { alert('请完整填写货物信息（物料/数量/单价）'); return; }
     if (form.type === 'BILATERAL' && !form.buyerId) { alert('双边合同请选择销售对手方'); return; }
+    if (form.type === 'BILATERAL' && !form.saleUnitPrice) { alert('双边合同必须填写销售单价'); return; }
     setSubmitting(true);
     let contractId = draftId;
     try {
@@ -350,14 +349,16 @@ export default function ContractCreatePage() {
                 <option value="FIXED">一口价</option><option value="BASIS">基差定价</option><option value="FLOATING">不定价</option>
               </select>
             </FormField>
-            <FormField label="单价（元/吨）"><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
+            {form.type !== 'BILATERAL' && (
+              <FormField label={`${form.type === 'PURCHASE' ? '采购' : '销售'}单价（元/吨）`} required><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
+            )}
             <FormField label="溢装比例(%)"><Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} /></FormField>
             <FormField label="短装比例(%)"><Input type="number" min="0" max="100" step="0.01" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} /></FormField>
           </div>
           {form.type === 'BILATERAL' && (
             <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
-              <FormField label="采购单价（元/吨）"><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
-              <FormField label="销售单价（元/吨）"><Input type="number" value={form.saleUnitPrice} onChange={e => set('saleUnitPrice', e.target.value)} step="0.01" /></FormField>
+              <FormField label="采购单价（元/吨）" required><Input type="number" min="0" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
+              <FormField label="销售单价（元/吨）" required><Input type="number" min="0" value={form.saleUnitPrice} onChange={e => set('saleUnitPrice', e.target.value)} step="0.01" /></FormField>
             </div>
           )}
           {(totalAmount > 0 || profit !== 0) && (

@@ -175,7 +175,7 @@ export class ContractController {
       lineItems?: Array<{
         materialId: string; materialName?: string;
         quantity: number; unit?: string;
-        unitPrice: number; deliveryDate?: string; remarks?: string;
+        unitPrice: number; salesUnitPrice?: number; deliveryDate?: string; remarks?: string;
       }>;
     },
     @CurrentUser('id') userId?: string,

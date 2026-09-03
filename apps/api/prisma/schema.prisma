@@ -26,7 +26,7 @@ model User {
   updatedAt       DateTime @updatedAt
 
   company                      Company?                  @relation(fields: [companyId], references: [id])
-  employee                     Employee?                 @relation(fields: [employeeId], references: [id])
+  employee                     Employee?                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   roleAssignments              UserRoleAssignment[]
   wechatIdentity               WechatIdentity?           @relation("WechatLinkedUser")
   wechatBindingTargets         WechatAccountBinding[]    @relation("WechatBindingTarget")
@@ -809,18 +809,20 @@ model Contract {
 }
 
 model ContractLineItem {
-  id           String    @id @default(cuid())
-  contractId   String
-  materialId   String
-  materialName String?
-  quantity     Decimal   @db.Decimal(15, 3)
-  unit         String    @default("TON")
-  unitPrice    Decimal   @db.Decimal(15, 4)
-  totalPrice   Decimal   @db.Decimal(15, 2)
-  deliveryDate DateTime?
-  remarks      String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  contractId      String
+  materialId      String
+  materialName    String?
+  quantity        Decimal   @db.Decimal(15, 3)
+  unit            String    @default("TON")
+  unitPrice       Decimal   @db.Decimal(15, 4) // 普通合同单价；双边合同采购单价
+  totalPrice      Decimal   @db.Decimal(15, 2) // 普通合同金额；双边合同采购金额
+  salesUnitPrice  Decimal?  @db.Decimal(15, 4) // 双边合同销售单价
+  salesTotalPrice Decimal?  @db.Decimal(15, 2) // 双边合同销售金额
+  deliveryDate    DateTime?
+  remarks         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   contract Contract @relation(fields: [contractId], references: [id])
 

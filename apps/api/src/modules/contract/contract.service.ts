@@ -114,7 +114,12 @@ export class ContractService {
   private withFulfillment<T extends {
     type: string;
     totalAmount: unknown;
-    lineItems?: Array<{ quantity: unknown; unit: string }>;
+    lineItems?: Array<{
+      quantity: unknown;
+      unit: string;
+      totalPrice?: unknown;
+      salesTotalPrice?: unknown;
+    }>;
     orders?: Array<{
       type: string;
       status: string;
@@ -124,12 +129,17 @@ export class ContractService {
   }>(contract: T) {
     const directions = contract.type === 'BILATERAL' ? ['PURCHASE', 'SALES'] : [contract.type];
     const totalQuantity = sumQuantities(contract.lineItems || []);
-    const contractAmount = Number(contract.totalAmount || 0);
 
     return {
       ...contract,
       fulfillment: {
         directions: directions.map((type) => {
+          const contractAmount = contract.type === 'BILATERAL'
+            ? (contract.lineItems || []).reduce(
+              (sum, item) => sum + Number(type === 'SALES' ? item.salesTotalPrice || 0 : item.totalPrice || 0),
+              0,
+            )
+            : Number(contract.totalAmount || 0);
           const orders = (contract.orders || []).filter((order) => order.type === type && order.status !== 'CANCELLED');
           const executingOrders = orders.filter((order) => order.status === 'DISPATCHED');
           const executedOrders = orders.filter((order) => order.status === 'COMPLETED');
@@ -226,6 +236,9 @@ export class ContractService {
 
     await this.validateSigningPartner(dto.signingPartnerId, dto.type);
     this.validateContractParties(dto.signingPartnerId, dto.sellerId, dto.buyerId);
+    if (dto.type === 'BILATERAL' && (dto.lineItems || []).some((item) => item.salesUnitPrice === undefined)) {
+      throw new BadRequestException('双边合同必须填写采购单价和销售单价');
+    }
     const departmentId = dto.departmentId || access.user?.employee?.departmentId || null;
     let companyId = access.user?.company?.id || null;
     if (departmentId) {
@@ -279,6 +292,10 @@ export class ContractService {
               unit: item.unit || 'TON',
               unitPrice: item.unitPrice,
               totalPrice: Number(item.unitPrice) * Number(item.quantity),
+              salesUnitPrice: dto.type === 'BILATERAL' ? item.salesUnitPrice : null,
+              salesTotalPrice: dto.type === 'BILATERAL'
+                ? Number(item.salesUnitPrice) * Number(item.quantity)
+                : null,
               deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
               remarks: item.remarks,
             })),
@@ -850,7 +867,7 @@ export class ContractService {
       lineItems?: Array<{
         materialId: string; materialName?: string;
         quantity: number; unit?: string;
-        unitPrice: number; deliveryDate?: string; remarks?: string;
+        unitPrice: number; salesUnitPrice?: number; deliveryDate?: string; remarks?: string;
       }>;
     },
     userId?: string,
@@ -870,6 +887,10 @@ export class ContractService {
     );
 
     const { lineItems, signedAt, effectiveAt, expireAt, ...rest } = dto;
+    const resolvedType = dto.type ?? contract.type;
+    if (resolvedType === 'BILATERAL' && lineItems?.some((item) => item.salesUnitPrice === undefined)) {
+      throw new BadRequestException('双边合同必须填写采购单价和销售单价');
+    }
     let resolvedCompanyId = rest.companyId;
     if (dto.departmentId) {
       const department = await this.prisma.department.findUnique({
@@ -894,6 +915,10 @@ export class ContractService {
               unit: item.unit || 'TON',
               unitPrice: item.unitPrice,
               totalPrice: Number(item.unitPrice) * Number(item.quantity),
+              salesUnitPrice: resolvedType === 'BILATERAL' ? item.salesUnitPrice : null,
+              salesTotalPrice: resolvedType === 'BILATERAL'
+                ? Number(item.salesUnitPrice) * Number(item.quantity)
+                : null,
               deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
               remarks: item.remarks,
             })),

@@ -103,8 +103,8 @@ export class OrgController {
   createEmployee(@Body() dto: {
     name: string; departmentId: string; companyId: string; phone: string;
     position?: string; email?: string; status?: string;
-  }) {
-    return this.orgService.createEmployee(dto);
+  }, @CurrentUser('id') operatedBy: string) {
+    return this.orgService.createEmployee(dto, operatedBy);
   }
 
   @Get('employees')
@@ -121,6 +121,13 @@ export class OrgController {
     return this.orgService.findEmployeeById(id);
   }
 
+  @Get('employees/:id/operation-logs')
+  @RequirePermission('organization.view')
+  @ApiOperation({ summary: '员工档案操作记录' })
+  findEmployeeOperationLogs(@Param('id') id: string) {
+    return this.orgService.findEmployeeOperationLogs(id);
+  }
+
   @Patch('employees/:id')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '更新员工信息' })
@@ -130,16 +137,17 @@ export class OrgController {
       name?: string; departmentId?: string; companyId?: string;
       phone?: string; position?: string; email?: string; status?: string;
     },
+    @CurrentUser('id') operatedBy: string,
   ) {
-    return this.orgService.updateEmployee(id, dto);
+    return this.orgService.updateEmployee(id, dto, operatedBy);
   }
 
   @Delete('employees/:id')
   @RequirePermission('organization.manage')
   @HttpCode(204)
   @ApiOperation({ summary: '删除员工' })
-  deleteEmployee(@Param('id') id: string) {
-    return this.orgService.deleteEmployee(id);
+  deleteEmployee(@Param('id') id: string, @CurrentUser('id') operatedBy: string) {
+    return this.orgService.deleteEmployee(id, operatedBy);
   }
 
   // ========== 业务组 ==========

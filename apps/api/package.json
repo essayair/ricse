@@ -22,6 +22,7 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:seed:blank": "tsx prisma/seed-blank.ts",
+    "prisma:repair-user-access": "tsx prisma/repair-user-access.ts",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },

@@ -105,6 +105,49 @@ describe('ContractService', () => {
       );
     });
 
+    it('双边合同分别结构化保存采购和销售价格', async () => {
+      prisma.partner.findFirst.mockResolvedValue({ roles: ['SUPPLIER', 'CUSTOMER'] } as any);
+      prisma.contract.count.mockResolvedValue(0);
+      prisma.contract.create.mockResolvedValue({ ...mockContract, type: 'BILATERAL' } as any);
+
+      await service.create({
+        title: '双边合同',
+        type: 'BILATERAL',
+        signingPartnerId: 'internal-1',
+        sellerId: 'supplier-1',
+        buyerId: 'customer-1',
+        totalAmount: 50000,
+        lineItems: [{
+          materialId: 'material-1', quantity: 100, unitPrice: 500, salesUnitPrice: 650,
+        }],
+      }, 'user-1');
+
+      expect(prisma.contract.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          lineItems: {
+            create: [expect.objectContaining({
+              unitPrice: 500,
+              totalPrice: 50000,
+              salesUnitPrice: 650,
+              salesTotalPrice: 65000,
+            })],
+          },
+        }),
+      }));
+    });
+
+    it('双边合同缺少销售单价时拒绝创建', async () => {
+      prisma.partner.findFirst.mockResolvedValue({ roles: ['SUPPLIER', 'CUSTOMER'] } as any);
+
+      await expect(service.create({
+        title: '双边合同', type: 'BILATERAL', signingPartnerId: 'internal-1',
+        sellerId: 'supplier-1', buyerId: 'customer-1', totalAmount: 50000,
+        lineItems: [{ materialId: 'material-1', quantity: 100, unitPrice: 500 }],
+      }, 'user-1')).rejects.toThrow('必须填写采购单价和销售单价');
+
+      expect(prisma.contract.create).not.toHaveBeenCalled();
+    });
+
     it('相同客户端请求标识重复提交时返回原草稿', async () => {
       prisma.contract.findFirst.mockResolvedValue(mockContract as any);
 

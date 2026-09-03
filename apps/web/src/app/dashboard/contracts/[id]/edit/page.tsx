@@ -32,6 +32,7 @@ interface LineItem {
   quantity: string;
   unit: string;
   unitPrice: string;
+  salesUnitPrice: string;
   deliveryDate: string;
   remarks: string;
 }
@@ -79,7 +80,7 @@ export default function ContractEditPage() {
 
   const [lineItems, setLineItems] = useState<LineItem[]>([{
     materialId: '', materialName: '', quantity: '', unit: 'TON',
-    unitPrice: '', deliveryDate: '', remarks: '',
+    unitPrice: '', salesUnitPrice: '', deliveryDate: '', remarks: '',
   }]);
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -143,6 +144,7 @@ export default function ContractEditPage() {
           quantity: String(item.quantity || ''),
           unit: item.unit || 'TON',
           unitPrice: String(item.unitPrice || ''),
+          salesUnitPrice: String(item.salesUnitPrice || ''),
           deliveryDate: item.deliveryDate ? item.deliveryDate.split('T')[0] : '',
           remarks: item.remarks || '',
         })));
@@ -167,7 +169,7 @@ export default function ContractEditPage() {
 
   const addLineItem = () => setLineItems(prev => [
     ...prev,
-    { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', deliveryDate: '', remarks: '' },
+    { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', salesUnitPrice: '', deliveryDate: '', remarks: '' },
   ]);
 
   const removeLineItem = (idx: number) => {
@@ -178,6 +180,9 @@ export default function ContractEditPage() {
   const totalAmount = lineItems.reduce((sum, item) => {
     return sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
   }, 0);
+  const salesTotalAmount = lineItems.reduce((sum, item) => {
+    return sum + (Number(item.quantity) || 0) * (Number(item.salesUnitPrice) || 0);
+  }, 0);
 
   const handleSave = async () => {
     if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
@@ -185,6 +190,10 @@ export default function ContractEditPage() {
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     const validItems = lineItems.filter(i => i.materialId && i.quantity && i.unitPrice);
     if (validItems.length === 0) { alert('请至少填写一条货物信息（物料/数量/单价）'); return; }
+    if (form.type === 'BILATERAL' && validItems.some(item => !item.salesUnitPrice)) {
+      alert('双边合同每个货物行项都必须填写销售单价');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -207,6 +216,7 @@ export default function ContractEditPage() {
           quantity: Number(item.quantity),
           unit: item.unit,
           unitPrice: Number(item.unitPrice),
+          ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(item.salesUnitPrice) } : {}),
           deliveryDate: item.deliveryDate || undefined,
           remarks: item.remarks || undefined,
         })),
@@ -385,7 +395,7 @@ export default function ContractEditPage() {
           <div className="space-y-3">
             {lineItems.map((item, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-lg bg-muted/20">
-                <div className="col-span-3">
+                <div className={form.type === 'BILATERAL' ? 'col-span-2' : 'col-span-3'}>
                   <label className="text-xs text-muted-foreground">物料{idx === 0 && <span className="text-destructive">*</span>}</label>
                   <select value={item.materialId} onChange={e => updateLineItem(idx, 'materialId', e.target.value)} className={SELECT_CLS + ' mt-1'}>
                     <option value="">请选择</option>
@@ -401,20 +411,26 @@ export default function ContractEditPage() {
                   <Input className="mt-1" value={unitLabel(item.unit)} onChange={e => updateLineItem(idx, 'unit', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground">单价(元/吨){idx === 0 && <span className="text-destructive">*</span>}</label>
+                  <label className="text-xs text-muted-foreground">{form.type === 'BILATERAL' ? '采购单价' : form.type === 'PURCHASE' ? '采购单价' : '销售单价'}(元/吨){idx === 0 && <span className="text-destructive">*</span>}</label>
                   <Input className="mt-1" type="number" step="0.01" value={item.unitPrice} onChange={e => updateLineItem(idx, 'unitPrice', e.target.value)} />
                 </div>
+                {form.type === 'BILATERAL' && (
+                  <div className="col-span-2">
+                    <label className="text-xs text-muted-foreground">销售单价(元/吨){idx === 0 && <span className="text-destructive">*</span>}</label>
+                    <Input className="mt-1" type="number" min="0" step="0.01" value={item.salesUnitPrice} onChange={e => updateLineItem(idx, 'salesUnitPrice', e.target.value)} />
+                  </div>
+                )}
                 <div className="col-span-2">
                   <label className="text-xs text-muted-foreground">交货日期</label>
                   <Input className="mt-1" type="date" value={item.deliveryDate} onChange={e => updateLineItem(idx, 'deliveryDate', e.target.value)} />
                 </div>
-                <div className="col-span-1 flex items-end justify-center">
+                {form.type !== 'BILATERAL' && <div className="col-span-1 flex items-end justify-center">
                   {(Number(item.quantity) * Number(item.unitPrice)) > 0 && (
                     <div className="text-xs text-center text-primary font-mono">
                       ¥{(Number(item.quantity) * Number(item.unitPrice)).toLocaleString()}
                     </div>
                   )}
-                </div>
+                </div>}
                 <div className="col-span-1 flex items-end justify-center">
                   <Button type="button" variant="ghost" size="sm" onClick={() => removeLineItem(idx)} disabled={lineItems.length === 1}>
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
@@ -424,6 +440,13 @@ export default function ContractEditPage() {
                   <label className="text-xs text-muted-foreground">行项备注</label>
                   <Input className="mt-1" value={item.remarks} onChange={e => updateLineItem(idx, 'remarks', e.target.value)} placeholder="该行物料的交付、质量或价格备注" />
                 </div>
+                {form.type === 'BILATERAL' && (Number(item.quantity) > 0) && (
+                  <div className="col-span-12 flex flex-wrap gap-x-6 gap-y-1 rounded bg-background/70 px-3 py-2 text-xs">
+                    <span>采购金额：¥{(Number(item.quantity) * Number(item.unitPrice)).toLocaleString()}</span>
+                    <span>销售金额：¥{(Number(item.quantity) * Number(item.salesUnitPrice)).toLocaleString()}</span>
+                    <span className={(Number(item.salesUnitPrice) - Number(item.unitPrice)) >= 0 ? 'text-success' : 'text-destructive'}>预计毛利：¥{(Number(item.quantity) * (Number(item.salesUnitPrice) - Number(item.unitPrice))).toLocaleString()}</span>
+                  </div>
+                )}
               </div>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
@@ -449,9 +472,12 @@ export default function ContractEditPage() {
           </div>
 
           {totalAmount > 0 && (
-            <div className="mt-4 p-3 bg-muted/30 rounded-lg text-sm">
-              <span className="text-muted-foreground">合同总金额：</span>
-              <span className="text-lg font-bold text-primary ml-2">¥{totalAmount.toLocaleString()}</span>
+            <div className="mt-4 space-y-1 rounded-lg bg-muted/30 p-3 text-sm">
+              <div><span className="text-muted-foreground">{form.type === 'BILATERAL' ? '采购金额：' : '合同总金额：'}</span><span className="ml-2 text-lg font-bold text-primary">¥{totalAmount.toLocaleString()}</span></div>
+              {form.type === 'BILATERAL' && <>
+                <div><span className="text-muted-foreground">销售金额：</span><span className="ml-2 font-mono">¥{salesTotalAmount.toLocaleString()}</span></div>
+                <div><span className="text-muted-foreground">预计毛利：</span><span className={`ml-2 font-bold ${salesTotalAmount - totalAmount >= 0 ? 'text-success' : 'text-destructive'}`}>¥{(salesTotalAmount - totalAmount).toLocaleString()}</span></div>
+              </>}
             </div>
           )}
         </Card>

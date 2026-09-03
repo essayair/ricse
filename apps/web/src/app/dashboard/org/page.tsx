@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
+const EMPLOYEE_STATUS_LABEL: Record<string, string> = { ACTIVE: '在职', DISABLED: '停用', RESIGNED: '离职' };
 
 type TabKey = 'company' | 'dept' | 'employee' | 'business-group' | 'users';
 
@@ -19,6 +20,7 @@ interface CompanyItem { id: string; code: string; name: string; shortName?: stri
 interface DeptItem { id: string; name: string; companyId: string; sort: number; company?: { code: string; name: string }; parentId?: string }
 interface EmployeeItem { id: string; name: string; departmentId: string; companyId: string; position?: string; phone?: string; email?: string; status: string; department?: { name: string }; company?: { code: string; name: string }; user?: { id: string; username: string; status: string } | null }
 interface BusinessGroupItem { id: string; name: string; description?: string; companies?: { company: { id: string; code: string; name: string } }[] }
+interface RoleOption { id: string; code: string; name: string; status: string }
 interface UserItem {
   id: string; username: string; name: string; role: string; status: string;
   employeeId?: string; companyId?: string; businessGroupId?: string;
@@ -63,6 +65,7 @@ function OrgPageInner() {
   const [employees, setEmployees] = useState<EmployeeItem[]>([]);
   const [bgroups, setBgroups] = useState<BusinessGroupItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
 
   // Company create
   const [showCreateCompany, setShowCreateCompany] = useState(false);
@@ -98,6 +101,7 @@ function OrgPageInner() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newBgroupId, setNewBgroupId] = useState('');
+  const [newRole, setNewRole] = useState('USER');
   const [partnerLoading, setPartnerLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
@@ -156,6 +160,12 @@ function OrgPageInner() {
         setBgroups(Array.isArray(bgs) ? bgs : []);
         const es = await api.get<EmployeeItem[]>('/org/employees');
         setEmployees(Array.isArray(es) ? es : []);
+        try {
+          const roleList = await api.get<RoleOption[]>('/access-control/roles');
+          setRoles(Array.isArray(roleList) ? roleList.filter((role) => role.status === 'ACTIVE') : []);
+        } catch {
+          setRoles([]);
+        }
         // Build user-company map
         const uMap: Record<string, UserItem[]> = {};
         for (const u of userList) {
@@ -324,13 +334,13 @@ function OrgPageInner() {
         await api.post('/users', {
           username: newUsername.trim(), password: newPassword,
           name: newName || emp?.name || newUsername,
-          role: 'USER',
+          role: newRole,
           employeeId: newParent,
           companyId: newCompanyId,
           businessGroupId: newBgroupId || undefined,
         });
       }
-      setShowCreate(false); setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewCode(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); await fetchAll();
+      setShowCreate(false); setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewCode(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); setNewRole('USER'); await fetchAll();
     } catch (e: any) {
       alert(e.message || '创建失败');
     } finally {
@@ -338,8 +348,27 @@ function OrgPageInner() {
     }
   };
 
+  const changeEmployeeStatus = async (employee: EmployeeItem, status: 'ACTIVE' | 'DISABLED' | 'RESIGNED') => {
+    const message = status === 'RESIGNED'
+      ? `确定为员工 ${employee.name} 办理离职？${employee.user ? '\n关联账号将同步禁用并立即退出登录，历史记录仍会保留。' : '\n员工档案和历史记录仍会保留。'}`
+      : status === 'DISABLED'
+        ? `确定临时停用员工 ${employee.name}？${employee.user ? '\n关联账号将同步禁用并立即退出登录。' : ''}`
+        : employee.status === 'RESIGNED'
+          ? `确定将员工 ${employee.name} 设置为重新入职？${employee.user ? '\n原账号仍保持禁用，需要确认后单独启用。' : ''}`
+          : `确定恢复员工 ${employee.name}？${employee.user ? '\n员工恢复后，账号仍需单独启用。' : ''}`;
+    if (!confirm(message)) return;
+    try {
+      await api.patch(`/org/employees/${employee.id}`, { status });
+      await fetchAll();
+    } catch (err: any) {
+      alert(err.message || '操作失败');
+    }
+  };
+
   // User row renderer (used in company-grouped view)
-  const renderUserRow = (u: UserItem) => (
+  const renderUserRow = (u: UserItem) => {
+    const orphanAccount = Boolean(u.companyId && !u.employeeId);
+    return (
     <tr key={u.id} className="border-b hover:bg-muted/50 transition-colors">
       <td className="px-4 py-2.5 font-mono text-sm">{u.username}</td>
       <td className="px-4 py-2.5 font-medium">
@@ -355,11 +384,17 @@ function OrgPageInner() {
         )}
       </td>
       <td className="px-4 py-2.5 text-muted-foreground text-xs">
-        {u.employee ? <Link href={`/dashboard/org/employees/${u.employeeId}`} className="hover:text-primary hover:underline">{u.employee.name}</Link> : '—'}
+        {u.employee ? (
+          <Link href={`/dashboard/org/employees/${u.employeeId}`} className="hover:text-primary hover:underline">{u.employee.name}</Link>
+        ) : orphanAccount ? (
+          <Badge variant="destructive" className="font-normal">员工档案已删除</Badge>
+        ) : '—'}
       </td>
       <td className="px-4 py-2.5 text-xs text-muted-foreground">{u.employee?.department?.name || '—'}</td>
       <td className="px-4 py-2.5">
-        <Badge variant="secondary" className={u.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>{u.status === 'ACTIVE' ? '正常' : '禁用'}</Badge>
+        <Badge variant="secondary" className={!orphanAccount && u.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>
+          {orphanAccount ? '异常待处理' : u.status === 'ACTIVE' ? '正常' : '禁用'}
+        </Badge>
       </td>
       <td className="px-4 py-2.5 text-xs">
         {u.wechatIdentity ? (
@@ -372,15 +407,19 @@ function OrgPageInner() {
       </td>
       <td className="px-4 py-2.5">
         <button onClick={async () => {
-          const newStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+          const newStatus = u.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+          if (!confirm(newStatus === 'DISABLED'
+            ? `确定禁用账号 ${u.username}？\n该账号现有登录将立即失效。`
+            : `确定启用账号 ${u.username}？`)) return;
           try { await api.patch(`/users/${u.id}`, { status: newStatus }); fetchAll(); }
           catch (err: any) { alert(err.message || '操作失败'); }
-        }} className="text-xs text-primary hover:underline whitespace-nowrap">
-          {u.status === 'ACTIVE' ? '禁用' : '启用'}
+        }} disabled={orphanAccount && u.status !== 'ACTIVE'} className="text-xs text-primary hover:underline whitespace-nowrap disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline">
+          {orphanAccount ? (u.status === 'ACTIVE' ? '立即禁用' : '需恢复员工关联') : u.status === 'ACTIVE' ? '禁用' : '启用'}
         </button>
       </td>
     </tr>
-  );
+    );
+  };
 
   const renderUserCompany = (company: CompanyItem) => {
     const isExpanded = expandedUserCompanies.has(company.id);
@@ -530,7 +569,7 @@ function OrgPageInner() {
               <select value={newCompanyId} onChange={(e) => { setNewCompanyId(e.target.value); setNewName(''); }}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">1. 选择所属企业</option>
-                {companies.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+                {companies.filter((c) => c.status === 'ACTIVE').map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
               </select>
               {newCompanyId && (
                 <Input placeholder="2. 输入部门名称" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
@@ -546,7 +585,7 @@ function OrgPageInner() {
                 <select value={newCompanyId} onChange={(e) => { setNewCompanyId(e.target.value); setNewParent(''); }}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">选择所属企业</option>
-                  {companies.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+                  {companies.filter((c) => c.status === 'ACTIVE').map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
                 </select>
               </div>
               <div>
@@ -606,13 +645,14 @@ function OrgPageInner() {
               <select value={newCompanyId} onChange={(e) => {
                 setNewCompanyId(e.target.value);
                 setNewParent('');
+                setNewRole('USER');
                 setNewUsername('');
                 setNewPassword('');
                 setConfirmPassword('');
               }}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">1. 选择所属企业</option>
-                {companies.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+                {companies.filter((c) => c.status === 'ACTIVE').map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
               </select>
               {newCompanyId && (
                 <select value={newParent} onChange={(e) => {
@@ -626,7 +666,7 @@ function OrgPageInner() {
                 }}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">2. 选择关联员工（必选）</option>
-                  {employees.filter((e) => e.companyId === newCompanyId && !users.some((u) => u.employeeId === e.id)).map((e) => (
+                  {employees.filter((e) => e.companyId === newCompanyId && e.status === 'ACTIVE' && !users.some((u) => u.employeeId === e.id)).map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.name} {e.phone ? `· ${e.phone}` : ''} {e.department?.name ? `· ${e.department.name}` : ''}
                     </option>
@@ -669,7 +709,21 @@ function OrgPageInner() {
                   {confirmPassword && newPassword !== confirmPassword && (
                     <div className="text-xs text-destructive">两次输入的密码不一致</div>
                   )}
-                  <Input placeholder="6. 显示名称（可选，默认取员工姓名）" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                  <div className="rounded-md border border-input bg-muted/20 px-3 py-2 text-sm">
+                    账号姓名：{employees.find((employee) => employee.id === newParent)?.name || '—'}
+                    <p className="mt-1 text-xs text-muted-foreground">姓名和联系方式以员工档案为准，后续修改会同步到账号。</p>
+                  </div>
+                  {roles.length > 0 && (
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">初始角色</label>
+                      <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                        {roles
+                          .filter((role) => role.code !== 'ADMIN' || companies.find((company) => company.id === newCompanyId)?.type !== 'EXTERNAL')
+                          .map((role) => <option key={role.id} value={role.code}>{role.name} · {role.code}</option>)}
+                      </select>
+                      <p className="mt-1 text-xs text-muted-foreground">默认数据范围为所属企业，后续可在“角色权限”中调整。</p>
+                    </div>
+                  )}
                   <select value={newBgroupId} onChange={(e) => setNewBgroupId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                     <option value="">选择业务组（可选）</option>
                     {bgroups.map((bg) => <option key={bg.id} value={bg.id}>{bg.name}</option>)}
@@ -697,6 +751,7 @@ function OrgPageInner() {
               setNewPassword('');
               setConfirmPassword('');
               setShowNewPassword(false);
+              setNewRole('USER');
             }}>取消</Button>
             <Button
               onClick={handleCreate}
@@ -765,7 +820,10 @@ function OrgPageInner() {
                 <div key="sz" className="text-xs"><div>{c._count?.departments ?? c.departments?.length ?? 0} 个部门 · {c._count?.employees ?? 0} 名员工</div><div className="mt-1 text-muted-foreground">{c._count?.users ?? 0} 个账号</div></div>,
                 <Badge key="st" variant="secondary" className={c.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>{c.status === 'ACTIVE' ? '启用' : '停用'}</Badge>,
                 <button key="op" onClick={async () => {
-                  const newStatus = c.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+                  const newStatus = c.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+                  if (!confirm(newStatus === 'DISABLED'
+                    ? `确定停用企业 ${c.name}？\n该企业下的后台账号将无法继续登录。`
+                    : `确定启用企业 ${c.name}？`)) return;
                   try {
                     await api.patch(`/org/companies/${c.id}`, { status: newStatus });
                     fetchAll();
@@ -940,18 +998,24 @@ function OrgPageInner() {
                                       <td className="px-4 py-2 text-muted-foreground text-xs">{e.department?.name || '—'}</td>
                                       <td className="px-4 py-2">{e.position || '—'}</td>
                                       <td className="px-4 py-2 text-muted-foreground text-xs"><div>{e.phone || '—'}</div><div className="mt-1">{e.email || '无邮箱'}</div></td>
-                                      <td className="px-4 py-2 text-xs"><div>{e.user?.username || '未开通'}</div><div className="mt-1 text-muted-foreground">{e.status === 'ACTIVE' ? '在职' : '停用'}{e.user ? ` · ${e.user.status === 'ACTIVE' ? '账号正常' : '账号禁用'}` : ''}</div></td>
+                                      <td className="px-4 py-2 text-xs"><div>{e.user?.username || '未开通'}</div><div className="mt-1 text-muted-foreground">{EMPLOYEE_STATUS_LABEL[e.status] || e.status}{e.user ? ` · ${e.user.status === 'ACTIVE' ? '账号正常' : '账号禁用'}` : ''}</div></td>
                                       <td className="px-4 py-2">
                                         <div className="flex items-center gap-2">
                                           <Link href={`/dashboard/org/employees/${e.id}`} className="text-xs text-primary hover:underline">详情</Link>
+                                          {e.status === 'ACTIVE' && <button onClick={() => void changeEmployeeStatus(e, 'DISABLED')} className="text-xs text-muted-foreground hover:text-primary hover:underline">停用</button>}
+                                          {e.status === 'DISABLED' && <button onClick={() => void changeEmployeeStatus(e, 'ACTIVE')} className="text-xs text-primary hover:underline">恢复</button>}
+                                          {e.status !== 'RESIGNED' && <button onClick={() => void changeEmployeeStatus(e, 'RESIGNED')} className="text-xs text-destructive hover:underline">办理离职</button>}
+                                          {e.status === 'RESIGNED' && <button onClick={() => void changeEmployeeStatus(e, 'ACTIVE')} className="text-xs text-primary hover:underline">重新入职</button>}
+                                          {!e.user && (
                                           <button
                                             onClick={async () => {
-                                              if (!confirm(`确定删除员工 ${e.name}？`)) return;
+                                              if (!confirm(`仅建档错误且尚未开通账号时才可删除。\n确定删除员工 ${e.name}？`)) return;
                                               try { await api.delete(`/org/employees/${e.id}`); fetchAll(); }
                                               catch (err: any) { alert(err.message || '删除失败'); }
                                             }}
                                             className="text-xs text-destructive hover:underline"
-                                          >删除</button>
+                                          >删除误建档案</button>
+                                          )}
                                         </div>
                                       </td>
                                     </tr>

@@ -29,7 +29,7 @@ describe('UsersController', () => {
     expect(usersService.create).toHaveBeenCalledWith(expect.objectContaining({
       username: 'emp_test-01',
       password: 'secret123',
-    }));
+    }), { operatedBy: undefined });
   });
 
   it('用户名不能以点、下划线或短横线开头', () => {

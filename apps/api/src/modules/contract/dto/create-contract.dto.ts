@@ -37,6 +37,12 @@ class CreateContractLineItemDto {
   @Min(0)
   unitPrice: number;
 
+  @ApiPropertyOptional({ description: '双边合同销售单价' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  salesUnitPrice?: number;
+
   @ApiPropertyOptional({ description: '交货日期' })
   @IsOptional()
   @IsDateString()

@@ -65,6 +65,30 @@ describe('OrderService', () => {
     });
   });
 
+  it('双边合同销售执行批次使用销售单价', async () => {
+    prisma.contract.findFirst.mockResolvedValue({
+      ...contract,
+      type: 'BILATERAL',
+      lineItems: [{ ...contract.lineItems[0], salesUnitPrice: 650 }],
+    } as any);
+    prisma.order.create.mockResolvedValue({ id: 'order-sales', status: 'DRAFT' } as any);
+
+    await service.create({
+      name: '7月第一批销售',
+      contractId: contract.id,
+      type: 'SALES',
+      lineItems: [{ contractLineItemId: 'line-1', quantity: 20 }],
+    }, 'user-1');
+
+    expect(prisma.order.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        type: 'SALES',
+        totalAmount: 13000,
+        lineItems: { create: [expect.objectContaining({ unitPrice: 650, totalPrice: 13000 })] },
+      }),
+    }));
+  });
+
   it('拒绝从未审批合同创建执行批次', async () => {
     prisma.contract.findFirst.mockResolvedValue({ ...contract, status: 'DRAFT' } as any);
 

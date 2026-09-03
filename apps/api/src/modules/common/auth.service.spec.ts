@@ -38,6 +38,7 @@ describe('AuthService', () => {
       setRefreshToken: jest.fn(),
       clearRefreshToken: jest.fn(),
       getActiveAccess: jest.fn().mockResolvedValue({ roles: ['USER'], permissions: [] }),
+      assertActiveForAuthentication: jest.fn().mockResolvedValue({}),
     };
 
     const mockJwtService = {
@@ -111,6 +112,14 @@ describe('AuthService', () => {
       expect(usersService.findByLoginIdentifier).toHaveBeenCalledWith('13800138000');
       expect(result.username).toBe('testuser');
     });
+
+    it('账号、员工或企业停用时不签发令牌', async () => {
+      usersService.findByLoginIdentifier.mockResolvedValue(mockUser as any);
+      usersService.assertActiveForAuthentication.mockRejectedValue(new UnauthorizedException('员工已停用'));
+
+      await expect(service.login('testuser', 'correct-password')).rejects.toThrow('员工已停用');
+      expect(jwtService.sign).not.toHaveBeenCalled();
+    });
   });
 
   describe('register', () => {
@@ -136,7 +145,7 @@ describe('AuthService', () => {
         username: 'newuser',
         password: 'password123',
         name: '新用户',
-      });
+      }, { allowUnbound: true });
     });
 
     it('线上默认禁止公开注册', async () => {
@@ -178,7 +187,7 @@ describe('AuthService', () => {
         username: 'newuser',
         password: 'password123',
         name: '新用户',
-      });
+      }, { allowUnbound: true });
     });
   });
 

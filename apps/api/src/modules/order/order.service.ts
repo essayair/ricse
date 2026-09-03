@@ -100,14 +100,20 @@ export class OrderService {
       if (Number(item.quantity) > remaining) {
         throw new BadRequestException(`物料 ${source.materialName || source.materialId} 的本批次数量超过合同剩余可执行数量 ${remaining}`);
       }
+      const unitPrice = contract.type === 'BILATERAL' && dto.type === 'SALES'
+        ? source.salesUnitPrice
+        : source.unitPrice;
+      if (unitPrice === null || unitPrice === undefined) {
+        throw new BadRequestException(`物料 ${source.materialName || source.materialId} 缺少${dto.type === 'SALES' ? '销售' : '采购'}单价`);
+      }
       return {
         contractLineItemId: source.id,
         materialId: source.materialId,
         materialName: source.materialName,
         quantity: item.quantity,
         unit: source.unit,
-        unitPrice: source.unitPrice,
-        totalPrice: Number(item.quantity) * Number(source.unitPrice),
+        unitPrice,
+        totalPrice: Number(item.quantity) * Number(unitPrice),
       };
     });
     const orderNo = await this.generateOrderNo(dto.type);
@@ -269,14 +275,20 @@ export class OrderService {
         if (!source || item.quantity <= 0 || item.quantity > remaining) {
           throw new BadRequestException('批次明细数量无效或超过合同剩余可执行数量');
         }
+        const unitPrice = contract?.type === 'BILATERAL' && order.type === 'SALES'
+          ? source.salesUnitPrice
+          : source.unitPrice;
+        if (unitPrice === null || unitPrice === undefined) {
+          throw new BadRequestException(`物料 ${source.materialName || source.materialId} 缺少${order.type === 'SALES' ? '销售' : '采购'}单价`);
+        }
         return {
           contractLineItemId: source.id,
           materialId: source.materialId,
           materialName: source.materialName,
           quantity: item.quantity,
           unit: source.unit,
-          unitPrice: source.unitPrice,
-          totalPrice: Number(item.quantity) * Number(source.unitPrice),
+          unitPrice,
+          totalPrice: Number(item.quantity) * Number(unitPrice),
         };
       });
       return this.prisma.$transaction(async (tx) => {
