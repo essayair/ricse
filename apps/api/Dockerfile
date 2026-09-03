@@ -2,6 +2,8 @@ FROM node:22-bookworm-slim AS build
 
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG PNPM_VERSION=10.33.4
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -13,7 +15,7 @@ RUN sed -i \
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/* \
-  && corepack enable
+  && npm install --global "pnpm@${PNPM_VERSION}" --registry="${NPM_REGISTRY}"
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -21,7 +23,8 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 
-RUN pnpm install --frozen-lockfile --filter @ricse/api...
+RUN pnpm config set registry "${NPM_REGISTRY}" \
+  && pnpm install --frozen-lockfile --filter @ricse/api...
 
 COPY apps/api apps/api
 COPY packages/shared-types packages/shared-types
