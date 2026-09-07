@@ -64,6 +64,28 @@ describe('BusinessOperationInterceptor', () => {
     expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
   });
 
+  it('质检可选磅单列表不会被误判为机构报告详情', async () => {
+    const response = [{ id: 'ticket-1', ticketNo: 'PD-001' }];
+    const result = await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'GET', path: '/api/v1/quality-inspections/eligible-weigh-tickets?qualityTaskId=task-1',
+      user: { id: 'user-1' },
+    }), handler(response)));
+
+    expect(result).toEqual(response);
+    expect(Array.isArray(result)).toBe(true);
+    expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
+  });
+
+  it('批量建单接口不会生成业务 ID 为 batch 的错误操作记录', async () => {
+    const response = { batchRequestId: 'request-1', createdCount: 2, items: [] };
+    const result = await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'POST', path: '/api/v1/waybills/batch', body: {}, user: { id: 'user-1' },
+    }), handler(response)));
+
+    expect(result).toEqual(response);
+    expect(prisma.businessOperationLog.create).not.toHaveBeenCalled();
+  });
+
   it('生产任务关键动作记录在对应生产任务下', async () => {
     prisma.businessOperationLog.create.mockResolvedValue({} as any);
 

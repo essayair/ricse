@@ -752,10 +752,11 @@ model Contract {
   id               String    @id @default(cuid())
   contractNo       String    @unique
   clientRequestId  String? // 新建页面请求标识，用于防止网络重试产生重复草稿
+  draftData        Json? // 未完成表单的原始草稿数据，仅草稿编辑阶段使用
   title            String
   type             String // PURCHASE | SALES | BILATERAL
   status           String    @default("DRAFT") // DRAFT|PENDING_APPROVAL|APPROVED|REJECTED|EXECUTING|COMPLETED|CLOSED|VOIDED
-  sellerId         String // 卖方（必填）
+  sellerId         String? // 卖方；草稿可暂不填写，提交审批前必填
   buyerId          String?
   // 我方信息
   signingPartnerId String? // 我方签约主体（内部合作伙伴）
@@ -794,7 +795,7 @@ model Contract {
   approvals      Approval[]
   attachments    Attachment[]
   creator        User               @relation("ContractCreator", fields: [createdBy], references: [id])
-  seller         Partner            @relation("ContractSeller", fields: [sellerId], references: [id])
+  seller         Partner?           @relation("ContractSeller", fields: [sellerId], references: [id])
   buyer          Partner?           @relation("ContractBuyer", fields: [buyerId], references: [id])
   signingPartner Partner?           @relation("ContractSigningPartner", fields: [signingPartnerId], references: [id])
   company        Company?           @relation(fields: [companyId], references: [id])
@@ -961,6 +962,8 @@ model Waybill {
   arrivedAt           DateTime?
   signedAt            DateTime?
   remarks             String?
+  creationBatchId     String?
+  creationRowId       String?
   createdBy           String
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -986,6 +989,8 @@ model Waybill {
   @@index([vehicleId])
   @@index([driverId])
   @@index([carrierPartnerId])
+  @@index([creationBatchId])
+  @@unique([creationBatchId, creationRowId])
   @@map("waybills")
 }
 

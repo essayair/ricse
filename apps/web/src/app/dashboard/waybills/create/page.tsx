@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { WandSparkles } from 'lucide-react';
+import { ListPlus, WandSparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -175,7 +175,7 @@ export default function CreateWaybillPage() {
       router.push(`/dashboard/waybills/${waybill.id}`);
     } catch (error: any) { alert(error.message); }
   };
-  return <div className="mx-auto max-w-5xl space-y-6"><div><h1 className="text-2xl font-bold">新建物流运单</h1><p className="mt-1 text-sm text-muted-foreground">从已下达执行通知拆分车次，可先建单后调度车辆</p></div>
+  return <div className="mx-auto max-w-5xl space-y-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">新建物流运单</h1><p className="mt-1 text-sm text-muted-foreground">从已下达执行通知拆分车次，可先建单后调度车辆</p></div><Button variant="outline" onClick={() => router.push(`/dashboard/waybills/batch-create${data ? `?dispatchNoticeId=${data.notice.id}` : ''}`)}><ListPlus className="mr-1 h-4 w-4" />切换为批量派车</Button></div>
     <Card className="space-y-4 p-6"><div className="flex items-center gap-2"><WandSparkles className="h-5 w-5 text-primary" /><div><h2 className="font-semibold">文字信息自动识别</h2><p className="text-xs text-muted-foreground">粘贴微信、短信或调度信息，系统识别后回填下方表单，请核对后再创建</p></div></div><textarea className="min-h-32 w-full rounded-md border bg-background p-3 text-sm" value={recognitionText} onChange={event => setRecognitionText(event.target.value)} placeholder={'示例：\\n执行通知：PI-20260720-0001\\n车牌：甘A12345，司机：张师傅，电话：13800138000\\n承运单位：某某物流，运输数量：32.5吨\\n起运地：兰州，目的地：衢州\\n计划发运时间：2026-07-21 08:30，预计到达时间：2026-07-22 16:00'} /><div className="flex items-center justify-between gap-3"><div className="text-xs text-muted-foreground">{recognitionResult || '支持通知号、批次号、合同号、车牌、司机、电话、地点、数量和时间。'}</div><Button type="button" variant="outline" onClick={() => void recognizeText()}><WandSparkles className="mr-2 h-4 w-4" />识别并填入</Button></div></Card>
     <Card className="space-y-5 p-6">
     <div><label className="mb-1 block text-sm font-medium">执行通知 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={data?.notice.id || ''} onChange={e => void selectNotice(e.target.value)}><option value="">请选择</option>{notices.map(item => <option key={item.id} value={item.id}>{item.order.name} · {item.noticeNo} · {item.order.orderNo} · {item.order.contract.contractNo}</option>)}</select><p className="mt-1 text-xs text-muted-foreground">优先显示执行批次名称，同时保留通知号、批次编号和合同号便于核对。</p></div>

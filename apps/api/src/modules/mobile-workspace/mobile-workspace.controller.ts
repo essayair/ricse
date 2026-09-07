@@ -1,10 +1,11 @@
 import { createHash } from 'crypto';
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
+import { WaybillReceiptAttachmentCategory, WaybillService } from '../logistics/waybill.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
@@ -22,6 +23,7 @@ export class MobileWorkspaceController {
     private readonly fileService: FileService,
     private readonly qualityService: QualityInspectionService,
     private readonly weighService: WeighTicketService,
+    private readonly waybillService: WaybillService,
   ) {}
 
   @Get('workspace')
@@ -114,6 +116,56 @@ export class MobileWorkspaceController {
         ]),
       }, userId);
     });
+  }
+
+  @Post('waybills/:id/receipt-attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async uploadWaybillReceiptAttachment(
+    @Param('id') waybillId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+    @Body('category') category: WaybillReceiptAttachmentCategory = 'RECEIPT_OTHER',
+  ) {
+    if (!file) throw new BadRequestException('请选择文件');
+    const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
+    const mimeType = attachmentMimeType(originalName, file.mimetype);
+    if (!mimeType) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    const result = await this.fileService.upload(file.buffer, originalName, mimeType);
+    try {
+      return await this.waybillService.createAttachment({
+        waybillId, fileName: result.fileName, originalName, mimeType, size: result.size, category,
+      }, userId);
+    } catch (error) {
+      try { await this.fileService.delete(result.fileName); } catch {}
+      throw error;
+    }
+  }
+
+  @Get('waybill-receipt-attachments/:id/view-url')
+  async getWaybillReceiptAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.waybillService.findAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('waybill-receipt-attachments/:id')
+  async deleteWaybillReceiptAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.waybillService.findAttachmentById(id, userId, 'logistics.manage');
+    if (!attachment) return { deleted: false };
+    await this.waybillService.deleteAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
+  }
+
+  @Patch('waybills/:id/status')
+  async confirmWaybillReceipt(
+    @Param('id') id: string,
+    @Body('status') status: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    if (status !== 'SIGNED') throw new BadRequestException('小程序当前仅支持确认物流签收');
+    return this.waybillService.updateStatus(id, status, userId);
   }
 
   @Get('approvals')

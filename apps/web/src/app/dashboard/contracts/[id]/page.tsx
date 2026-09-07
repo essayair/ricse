@@ -536,7 +536,8 @@ export default function ContractDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`确定删除已作废合同“${contract?.contractNo || ''}”吗？删除后将不再出现在合同列表中。`)) return;
+    const statusLabel = contract?.status === 'DRAFT' ? '草稿' : '已作废合同';
+    if (!window.confirm(`确定删除${statusLabel}“${contract?.contractNo || ''}”吗？删除后将不再出现在合同列表中。`)) return;
     try {
       await api.delete(`/contracts/${params.id}`);
       router.push('/dashboard/contracts');
@@ -596,6 +597,9 @@ export default function ContractDetailPage() {
     );
   }
   const canEdit = ['DRAFT', 'REJECTED'].includes(c.status) && ['SALESPERSON', 'MANAGER', 'ADMIN', 'USER'].includes(userRole);
+  const canDelete = (
+    c.status === 'DRAFT' && (userRole === 'ADMIN' || c.creator.id === currentUser?.id)
+  ) || (c.status === 'VOIDED' && userRole === 'ADMIN');
   const directActions = actions.filter((action) => !PROTECTED_STATUS_ACTIONS.has(action.next));
   const protectedActions = actions.filter((action) => PROTECTED_STATUS_ACTIONS.has(action.next));
 
@@ -633,9 +637,9 @@ export default function ContractDetailPage() {
               <Button variant="outline" size="sm"><Edit3 className="h-4 w-4 mr-1" />编辑</Button>
             </Link>
           )}
-          {userRole === 'ADMIN' && c.status === 'VOIDED' && (
+          {canDelete && (
             <Button variant="destructive" size="sm" onClick={() => void handleDelete()}>
-              <Trash2 className="h-4 w-4 mr-1" />删除合同
+              <Trash2 className="h-4 w-4 mr-1" />{c.status === 'DRAFT' ? '删除草稿' : '删除合同'}
             </Button>
           )}
         </div>

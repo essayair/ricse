@@ -186,9 +186,13 @@ export class ContractService {
     };
   }
 
-  private async validateSigningPartner(signingPartnerId: string | undefined, type: string) {
+  private async validateSigningPartner(
+    signingPartnerId: string | undefined,
+    type: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
     if (!signingPartnerId) throw new BadRequestException('请选择我方签约主体');
-    const partner = await this.prisma.partner.findFirst({
+    const partner = await client.partner.findFirst({
       where: { id: signingPartnerId, isInternal: true, status: 'ACTIVE', deletedAt: null },
       select: { roles: true },
     });
@@ -212,12 +216,51 @@ export class ContractService {
     }
   }
 
+  private async validateContractForSubmission(
+    client: Prisma.TransactionClient | PrismaService,
+    contract: {
+      type: string;
+      signingPartnerId: string | null;
+      sellerId: string | null;
+      buyerId: string | null;
+      lineItems: Array<{
+        materialId: string;
+        quantity: unknown;
+        unitPrice: unknown;
+        salesUnitPrice: unknown;
+      }>;
+    },
+  ) {
+    await this.validateSigningPartner(contract.signingPartnerId || undefined, contract.type, client);
+    if (!contract.sellerId) throw new BadRequestException('请选择交易对手方');
+    if (contract.type === 'BILATERAL' && !contract.buyerId) {
+      throw new BadRequestException('双边合同请选择销售对手方');
+    }
+    this.validateContractParties(
+      contract.signingPartnerId || undefined,
+      contract.sellerId || undefined,
+      contract.buyerId || undefined,
+    );
+    if (contract.lineItems.length === 0) {
+      throw new BadRequestException('请至少填写一项合同货物');
+    }
+    const invalidLine = contract.lineItems.find((item) => (
+      !item.materialId
+      || Number(item.quantity) <= 0
+      || Number(item.unitPrice) < 0
+      || (contract.type === 'BILATERAL' && item.salesUnitPrice == null)
+    ));
+    if (invalidLine) throw new BadRequestException('请完整填写货物、数量和单价');
+  }
+
   async create(dto: CreateContractDto, userId: string) {
     const access = await this.accessControl.assertPermission(userId, 'contract.create');
+    const selectedParties = [dto.sellerId, dto.buyerId, dto.signingPartnerId].filter(Boolean);
     if (
       access.isExternal
       && access.externalPartnerId
-      && ![dto.sellerId, dto.buyerId, dto.signingPartnerId].includes(access.externalPartnerId)
+      && selectedParties.length > 0
+      && !selectedParties.includes(access.externalPartnerId)
     ) {
       throw new ForbiddenException('外部企业只能创建本企业作为交易参与方的合同');
     }
@@ -234,7 +277,10 @@ export class ContractService {
       if (existing) return this.withFulfillment(existing);
     }
 
-    await this.validateSigningPartner(dto.signingPartnerId, dto.type);
+    // 新建接口先产生草稿。主体、对手方及货物可以稍后补齐，提交审批时再统一校验。
+    if (dto.signingPartnerId) {
+      await this.validateSigningPartner(dto.signingPartnerId, dto.type);
+    }
     this.validateContractParties(dto.signingPartnerId, dto.sellerId, dto.buyerId);
     if (dto.type === 'BILATERAL' && (dto.lineItems || []).some((item) => item.salesUnitPrice === undefined)) {
       throw new BadRequestException('双边合同必须填写采购单价和销售单价');
@@ -256,9 +302,10 @@ export class ContractService {
         data: {
           contractNo,
           clientRequestId: dto.clientRequestId,
+          draftData: dto.draftData as Prisma.InputJsonValue | undefined,
           title: dto.title,
           type: dto.type,
-          sellerId: dto.sellerId,
+          sellerId: dto.sellerId || null,
           buyerId: dto.buyerId,
           signingPartnerId: dto.signingPartnerId,
           companyId,
@@ -432,9 +479,20 @@ export class ContractService {
           status: true,
           type: true,
           totalAmount: true,
+          signingPartnerId: true,
+          sellerId: true,
+          buyerId: true,
           companyId: true,
           departmentId: true,
           createdBy: true,
+          lineItems: {
+            select: {
+              materialId: true,
+              quantity: true,
+              unitPrice: true,
+              salesUnitPrice: true,
+            },
+          },
         },
       });
       if (!contract) throw new NotFoundException('合同不存在');
@@ -551,6 +609,14 @@ export class ContractService {
 
       let approvalScope: { companyId: string | null; departmentId: string | null } | null = null;
       if (status === 'PENDING_APPROVAL') {
+        await this.validateContractForSubmission(tx, contract);
+        if (
+          access.isExternal
+          && access.externalPartnerId
+          && ![contract.signingPartnerId, contract.sellerId, contract.buyerId].includes(access.externalPartnerId)
+        ) {
+          throw new ForbiddenException('外部企业只能提交本企业作为交易参与方的合同');
+        }
         const plan = await this.resolveApprovalPlan(tx, contract);
         approvalScope = { companyId: plan.companyId, departmentId: plan.departmentId };
         await this.assignApprovals(tx, id, plan.nodes);
@@ -564,6 +630,7 @@ export class ContractService {
       }
 
       const updateData: Prisma.ContractUncheckedUpdateManyInput = { status };
+      if (status === 'PENDING_APPROVAL') updateData.draftData = Prisma.JsonNull;
       if (status === 'APPROVED') updateData.effectiveAt = new Date();
       if (approvalScope) {
         updateData.companyId = approvalScope.companyId;
@@ -593,9 +660,20 @@ export class ContractService {
         type: true,
         totalAmount: true,
         status: true,
+        signingPartnerId: true,
+        sellerId: true,
+        buyerId: true,
         companyId: true,
         departmentId: true,
         createdBy: true,
+        lineItems: {
+          select: {
+            materialId: true,
+            quantity: true,
+            unitPrice: true,
+            salesUnitPrice: true,
+          },
+        },
       },
     });
     if (!contract) throw new NotFoundException('合同不存在');
@@ -603,6 +681,7 @@ export class ContractService {
       throw new BadRequestException('只有草稿或已驳回合同可以检查审批流程');
     }
 
+    await this.validateContractForSubmission(this.prisma, contract);
     const plan = await this.resolveApprovalPlan(this.prisma, contract);
     return {
       ready: true,
@@ -855,8 +934,8 @@ export class ContractService {
   async update(
     id: string,
     dto: {
-      title?: string; type?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
-      signingPartnerId?: string; companyId?: string; departmentId?: string; externalNo?: string;
+      title?: string; type?: string; totalAmount?: number; sellerId?: string | null; buyerId?: string | null;
+      signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; externalNo?: string;
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;
@@ -864,6 +943,7 @@ export class ContractService {
       settlementMethod?: string; settlementBasis?: string;
       prepayPct?: number; paymentDays?: number; paymentMethod?: string;
       moistureRule?: string; impurityRule?: string; remarks?: string;
+      draftData?: Record<string, unknown>;
       lineItems?: Array<{
         materialId: string; materialName?: string;
         quantity: number; unit?: string;
@@ -877,16 +957,19 @@ export class ContractService {
       throw new BadRequestException('仅草稿或已驳回状态的合同可以编辑');
     }
 
-    if (dto.signingPartnerId !== undefined || dto.type !== undefined) {
-      await this.validateSigningPartner(dto.signingPartnerId ?? contract.signingPartnerId ?? undefined, dto.type ?? contract.type);
+    const resolvedSigningPartnerId = dto.signingPartnerId !== undefined
+      ? dto.signingPartnerId || undefined
+      : contract.signingPartnerId || undefined;
+    if (resolvedSigningPartnerId && (dto.signingPartnerId !== undefined || dto.type !== undefined)) {
+      await this.validateSigningPartner(resolvedSigningPartnerId, dto.type ?? contract.type);
     }
     this.validateContractParties(
-      dto.signingPartnerId ?? contract.signingPartnerId ?? undefined,
-      dto.sellerId ?? contract.sellerId,
-      dto.buyerId ?? contract.buyerId ?? undefined,
+      resolvedSigningPartnerId,
+      dto.sellerId !== undefined ? dto.sellerId || undefined : contract.sellerId || undefined,
+      dto.buyerId !== undefined ? dto.buyerId || undefined : contract.buyerId || undefined,
     );
 
-    const { lineItems, signedAt, effectiveAt, expireAt, ...rest } = dto;
+    const { lineItems, signedAt, effectiveAt, expireAt, draftData, ...rest } = dto;
     const resolvedType = dto.type ?? contract.type;
     if (resolvedType === 'BILATERAL' && lineItems?.some((item) => item.salesUnitPrice === undefined)) {
       throw new BadRequestException('双边合同必须填写采购单价和销售单价');
@@ -930,6 +1013,7 @@ export class ContractService {
         where: { id },
         data: {
           ...rest,
+          draftData: draftData as Prisma.InputJsonValue | undefined,
           companyId: resolvedCompanyId,
           signedAt: signedAt ? new Date(signedAt) : undefined,
           effectiveAt: effectiveAt ? new Date(effectiveAt) : undefined,
@@ -941,14 +1025,22 @@ export class ContractService {
   }
 
   async remove(id: string, user: { id: string; role: string }) {
-    const access = await this.accessControl.assertPermission(user.id, 'contract.delete');
-    if (!access.isAdmin) {
-      throw new ForbiddenException('仅系统管理员可以删除合同');
+    const contract = await this.findOne(id, user.id, 'contract.view');
+
+    if (contract.status === 'DRAFT') {
+      const editAccess = await this.accessControl.assertPermission(user.id, 'contract.edit');
+      if (!editAccess.isAdmin && contract.createdBy !== user.id) {
+        throw new ForbiddenException('仅合同创建人或系统管理员可以删除草稿');
+      }
+    } else if (contract.status === 'VOIDED') {
+      const deleteAccess = await this.accessControl.assertPermission(user.id, 'contract.delete');
+      if (!deleteAccess.isAdmin) {
+        throw new ForbiddenException('仅系统管理员可以删除已作废合同');
+      }
+    } else {
+      throw new BadRequestException('仅草稿可以直接删除；其他合同必须先作废，再由系统管理员删除');
     }
-    const contract = await this.findOne(id, user.id, 'contract.delete');
-    if (contract.status !== 'VOIDED') {
-      throw new BadRequestException('合同必须先作废，才能删除');
-    }
+
     return this.prisma.contract.update({
       where: { id },
       data: { deletedAt: new Date() },

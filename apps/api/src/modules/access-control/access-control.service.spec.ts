@@ -22,7 +22,7 @@ describe('AccessControlService', () => {
     service = module.get(AccessControlService);
   });
 
-  it('外部企业账号可查看本企业作为任一交易方的全部合同', async () => {
+  it('外部企业账号可查看本企业作为任一交易方的全部合同及本企业未选主体草稿', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'external-user',
       username: 'external',
@@ -55,6 +55,7 @@ describe('AccessControlService', () => {
         { sellerId: 'partner-1' },
         { buyerId: 'partner-1' },
         { signingPartnerId: 'partner-1' },
+        { status: 'DRAFT', creator: { companyId: 'external-company' } },
       ],
     });
   });
@@ -93,6 +94,7 @@ describe('AccessControlService', () => {
                   { sellerId: 'partner-1' },
                   { buyerId: 'partner-1' },
                   { signingPartnerId: 'partner-1' },
+                  { status: 'DRAFT', creator: { companyId: 'external-company' } },
                 ],
               },
             },

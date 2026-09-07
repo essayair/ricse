@@ -67,6 +67,44 @@ describe('QualityInspectionService', () => {
     expect(where).not.toHaveProperty('qualityInspections');
   });
 
+  it('从质检任务追加报告时只查询该任务物流运单的磅单', async () => {
+    jest.spyOn(service, 'findTask').mockResolvedValue({
+      id: 'task-1', waybillId: 'waybill-1',
+      waybill: { weightSelections: [] },
+    } as any);
+    prisma.weighTicket.findMany.mockResolvedValue([]);
+    prisma.material.findMany.mockResolvedValue([]);
+
+    await service.eligibleWeighTickets('user-1', 'task-1');
+
+    expect(prisma.weighTicket.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ waybillId: 'waybill-1' }),
+    }));
+    expect(prisma.weighTicket.findMany.mock.calls[0][0]).not.toHaveProperty('take');
+  });
+
+  it('任务当前执行磅单优先于其他已复核磅单', async () => {
+    jest.spyOn(service, 'findTask').mockResolvedValue({
+      id: 'task-1', waybillId: 'waybill-1',
+      waybill: { weightSelections: [{ purpose: 'INVENTORY', weighTicketId: 'shipping-1' }] },
+    } as any);
+    const base = {
+      status: 'REVIEWED', updatedAt: new Date(),
+      waybill: { lineItems: [], dispatchNotice: { order: { contract: {} } } },
+    };
+    prisma.weighTicket.findMany.mockResolvedValue([
+      { ...base, id: 'receiving-1', ticketNo: 'PD-2', weighingStage: 'RECEIVING' },
+      { ...base, id: 'shipping-1', ticketNo: 'PD-1', weighingStage: 'SHIPPING' },
+    ] as any);
+    prisma.material.findMany.mockResolvedValue([]);
+
+    const result = await service.eligibleWeighTickets('user-1', 'task-1');
+
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'shipping-1', recommended: true, recommendationReason: '当前执行磅单',
+    }));
+  });
+
   it('采购质检确认合格后补齐入库作业单验收依据', async () => {
     const item = {
       id: 'quality-1',

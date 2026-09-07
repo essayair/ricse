@@ -5,8 +5,8 @@ import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
-import { CreateWaybillDto } from './dto/create-waybill.dto';
-import { WaybillService } from './waybill.service';
+import { BatchCreateWaybillDto, CreateWaybillDto } from './dto/create-waybill.dto';
+import { WaybillReceiptAttachmentCategory, WaybillService } from './waybill.service';
 
 @ApiTags('物流运单与调度')
 @ApiBearerAuth()
@@ -18,6 +18,11 @@ export class WaybillController {
   @Post()
   create(@Body() dto: CreateWaybillDto, @CurrentUser('id') userId: string) {
     return this.service.create(dto, userId);
+  }
+
+  @Post('batch')
+  createBatch(@Body() dto: BatchCreateWaybillDto, @CurrentUser('id') userId: string) {
+    return this.service.createBatch(dto, userId);
   }
 
   @Get()
@@ -53,6 +58,7 @@ export class WaybillController {
     @Param('id') waybillId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser('id') userId: string,
+    @Body('category') category: WaybillReceiptAttachmentCategory = 'RECEIPT_OTHER',
   ) {
     if (!file) throw new BadRequestException('请选择文件');
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -62,7 +68,7 @@ export class WaybillController {
     try {
       return await this.service.createAttachment({
         waybillId, fileName: result.fileName, originalName,
-        mimeType: file.mimetype, size: result.size,
+        mimeType: file.mimetype, size: result.size, category,
       }, userId);
     } catch (error) {
       try { await this.fileService.delete(result.fileName); } catch {}

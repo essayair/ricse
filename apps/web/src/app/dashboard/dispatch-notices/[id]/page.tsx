@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, Truck } from 'lucide-react';
+import { ArrowLeft, FileText, ListPlus, Truck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,8 +38,8 @@ export default function DispatchNoticeDetailPage() {
       <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/dispatch-notices')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{notice.noticeNo}</h1><Badge>{STATUS[notice.status]}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{notice.type === 'PURCHASE' ? '供应商发货指令' : '销售发货通知单'} · {notice.mode === 'DIRECT' ? '直拨' : '常规'}</p></div></div>
       <div className="flex gap-2">
         {notice.status === 'DRAFT' && <><Button onClick={() => void transition('ISSUED', '下达通知')}>下达通知</Button><Button variant="destructive" onClick={() => void transition('CANCELLED', '取消通知')}>取消</Button></>}
-        {notice.status === 'ISSUED' && <><Button onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.id}`)}>新建物流运单</Button><Button variant="outline" onClick={() => void transition('CANCELLED', '取消通知')}>取消</Button></>}
-        {notice.status === 'IN_PROGRESS' && <><Button onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.id}`)}>新增物流运单</Button><Button variant="outline" onClick={() => void transition('COMPLETED', '完成通知')}>完成通知</Button></>}
+        {notice.status === 'ISSUED' && <><Button onClick={() => router.push(`/dashboard/waybills/batch-create?dispatchNoticeId=${notice.id}`)}><ListPlus className="mr-1 h-4 w-4" />批量派车</Button><Button variant="outline" onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.id}`)}>单车建单</Button><Button variant="outline" onClick={() => void transition('CANCELLED', '取消通知')}>取消</Button></>}
+        {notice.status === 'IN_PROGRESS' && <><Button onClick={() => router.push(`/dashboard/waybills/batch-create?dispatchNoticeId=${notice.id}`)}><ListPlus className="mr-1 h-4 w-4" />批量派车</Button><Button variant="outline" onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.id}`)}>新增单车运单</Button><Button variant="outline" onClick={() => void transition('COMPLETED', '完成通知')}>完成通知</Button></>}
         {notice.status === 'ISSUED' && notice.waybills.length > 0 && <Button variant="outline" onClick={() => void transition('COMPLETED', '完成通知')}>完成通知</Button>}
       </div>
     </div>

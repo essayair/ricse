@@ -76,7 +76,17 @@ export default function QualityTaskDetailPage() {
 
   const confirmed = useMemo(() => item?.reports.filter(report => report.status === 'CONFIRMED') || [], [item]);
   const selectedBasis = confirmed.find(report => report.id === basisInspectionId);
-  const eligibleTicket = item?.waybill.weighTickets.find(ticket => ['COMPLETED', 'REVIEWED'].includes(ticket.status));
+  const eligibleTicket = useMemo(() => {
+    if (!item) return undefined;
+    const tickets = item.waybill.weighTickets.filter(ticket => ['COMPLETED', 'REVIEWED'].includes(ticket.status));
+    const currentTicketId = item.waybill.weightSelections.find(selection => selection.purpose === 'INVENTORY')?.weighTicketId
+      || item.waybill.weightSelections.find(selection => selection.purpose === 'SETTLEMENT')?.weighTicketId;
+    return tickets.find(ticket => ticket.id === currentTicketId)
+      || tickets.find(ticket => ticket.status === 'REVIEWED' && ticket.weighingStage === 'SHIPPING')
+      || tickets.find(ticket => ticket.status === 'REVIEWED')
+      || tickets.find(ticket => ticket.weighingStage === 'SHIPPING')
+      || tickets[0];
+  }, [item]);
 
   const confirmReport = async (report: Report) => {
     let resolution: string | undefined;

@@ -163,8 +163,8 @@ export class ContractController {
   update(
     @Param('id') id: string,
     @Body() dto: {
-      title?: string; type?: string; totalAmount?: number; sellerId?: string; buyerId?: string;
-      signingPartnerId?: string; companyId?: string; departmentId?: string; externalNo?: string;
+      title?: string; type?: string; totalAmount?: number; sellerId?: string | null; buyerId?: string | null;
+      signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; externalNo?: string;
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;
@@ -172,6 +172,7 @@ export class ContractController {
       settlementMethod?: string; settlementBasis?: string;
       prepayPct?: number; paymentDays?: number; paymentMethod?: string;
       moistureRule?: string; impurityRule?: string; remarks?: string;
+      draftData?: Record<string, unknown>;
       lineItems?: Array<{
         materialId: string; materialName?: string;
         quantity: number; unit?: string;
@@ -184,7 +185,7 @@ export class ContractController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: '删除合同（仅系统管理员可删除已作废合同）' })
+  @ApiOperation({ summary: '删除合同（创建人可删除草稿；系统管理员可删除草稿或已作废合同）' })
   remove(
     @Param('id') id: string,
     @CurrentUser() user: { id: string; role: string },

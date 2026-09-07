@@ -22,6 +22,8 @@ export function AttachmentPanel({
   attachments,
   uploadPath,
   attachmentPath,
+  uploadCategory,
+  uploadLabel = '上传附件',
   canUpload = true,
   canDelete = true,
   onChanged,
@@ -31,6 +33,8 @@ export function AttachmentPanel({
   attachments: BusinessAttachment[];
   uploadPath: string;
   attachmentPath: string;
+  uploadCategory?: string;
+  uploadLabel?: string;
   canUpload?: boolean;
   canDelete?: boolean;
   onChanged: () => Promise<void> | void;
@@ -53,6 +57,7 @@ export function AttachmentPanel({
       for (const file of selected) {
         const body = new FormData();
         body.append('file', file);
+        if (uploadCategory) body.append('category', uploadCategory);
         await api.upload(uploadPath, body);
       }
       await onChanged();
@@ -84,7 +89,7 @@ export function AttachmentPanel({
   return <Card className="space-y-4 p-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><div className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-primary" /><h2 className="font-semibold">{title}</h2></div><p className="mt-1 text-xs text-muted-foreground">{description}</p></div>
-      {canUpload && <label><input className="hidden" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={uploading} onChange={event => { void upload(event.currentTarget.files); event.currentTarget.value = ''; }} /><span className="inline-flex h-9 cursor-pointer items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"><Upload className="mr-2 h-4 w-4" />{uploading ? '上传中...' : '上传附件'}</span></label>}
+      {canUpload && <label><input className="hidden" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={uploading} onChange={event => { void upload(event.currentTarget.files); event.currentTarget.value = ''; }} /><span className="inline-flex h-9 cursor-pointer items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"><Upload className="mr-2 h-4 w-4" />{uploading ? '上传中...' : uploadLabel}</span></label>}
     </div>
     {attachments.length ? <div className="space-y-2">{attachments.map(item => <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><div className="truncate text-sm font-medium">{item.originalName}</div><div className="mt-1 text-xs text-muted-foreground">{formatSize(item.size)} · {new Date(item.createdAt).toLocaleString('zh-CN')}</div></div><div className="flex shrink-0 gap-1"><Button variant="ghost" size="sm" onClick={() => void view(item.id)}><Eye className="mr-1 h-4 w-4" />查看</Button>{canDelete && <Button variant="ghost" size="sm" className="text-destructive" onClick={() => void remove(item.id)}><Trash2 className="mr-1 h-4 w-4" />删除</Button>}</div></div>)}</div> : <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无附件</div>}
   </Card>;

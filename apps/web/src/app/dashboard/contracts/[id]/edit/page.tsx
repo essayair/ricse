@@ -10,6 +10,7 @@ import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
 import { SETTLEMENT_METHOD_SUGGESTIONS, settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
+import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -65,6 +66,7 @@ export default function ContractEditPage() {
   const [attachments, setAttachments] = useState<any[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ file: File; name: string }>>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
   const [form, setForm] = useState({
     type: 'PURCHASE', title: '',
@@ -83,7 +85,10 @@ export default function ContractEditPage() {
     unitPrice: '', salesUnitPrice: '', deliveryDate: '', remarks: '',
   }]);
 
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: string, v: string) => {
+    setIsDirty(true);
+    setForm(f => ({ ...f, [k]: v }));
+  };
 
   useEffect(() => {
     Promise.all([
@@ -109,7 +114,7 @@ export default function ContractEditPage() {
         : departmentItems);
       setAttachments(contract.attachments || []);
 
-      setForm({
+      const persistedForm = {
         type: contract.type || 'PURCHASE',
         title: contract.title || '',
         signingPartnerId: contract.signingPartnerId || '',
@@ -135,10 +140,18 @@ export default function ContractEditPage() {
         moistureRule: contract.moistureRule || '',
         impurityRule: contract.impurityRule || '',
         remarks: contract.remarks || '',
-      });
+      };
+      const rawDraftForm = contract.draftData?.form;
+      setForm(rawDraftForm && typeof rawDraftForm === 'object'
+        ? { ...persistedForm, ...rawDraftForm }
+        : persistedForm);
 
-      if (contract.lineItems?.length > 0) {
-        setLineItems(contract.lineItems.map((item: any) => ({
+      const rawDraftLines = Array.isArray(contract.draftData?.lineItems)
+        ? contract.draftData.lineItems
+        : null;
+      const restoredLines = rawDraftLines || contract.lineItems;
+      if (restoredLines?.length > 0) {
+        setLineItems(restoredLines.map((item: any) => ({
           materialId: item.materialId || '',
           materialName: item.materialName || '',
           quantity: String(item.quantity || ''),
@@ -156,6 +169,7 @@ export default function ContractEditPage() {
   }, [contractId, router]);
 
   const updateLineItem = (idx: number, key: keyof LineItem, value: string) => {
+    setIsDirty(true);
     setLineItems(prev => {
       const next = [...prev];
       next[idx] = { ...next[idx], [key]: value };
@@ -167,13 +181,17 @@ export default function ContractEditPage() {
     });
   };
 
-  const addLineItem = () => setLineItems(prev => [
-    ...prev,
-    { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', salesUnitPrice: '', deliveryDate: '', remarks: '' },
-  ]);
+  const addLineItem = () => {
+    setIsDirty(true);
+    setLineItems(prev => [
+      ...prev,
+      { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', salesUnitPrice: '', deliveryDate: '', remarks: '' },
+    ]);
+  };
 
   const removeLineItem = (idx: number) => {
     if (lineItems.length === 1) return;
+    setIsDirty(true);
     setLineItems(prev => prev.filter((_, i) => i !== idx));
   };
 
@@ -184,21 +202,19 @@ export default function ContractEditPage() {
     return sum + (Number(item.quantity) || 0) * (Number(item.salesUnitPrice) || 0);
   }, 0);
 
-  const handleSave = async () => {
-    if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
-    if (!form.departmentId) { alert('请选择业务部门，审批流程将据此匹配业务主管'); return; }
-    if (!form.sellerId) { alert('请选择交易对手方'); return; }
-    const validItems = lineItems.filter(i => i.materialId && i.quantity && i.unitPrice);
-    if (validItems.length === 0) { alert('请至少填写一条货物信息（物料/数量/单价）'); return; }
-    if (form.type === 'BILATERAL' && validItems.some(item => !item.salesUnitPrice)) {
-      alert('双边合同每个货物行项都必须填写销售单价');
-      return;
-    }
-
+  const persistDraft = async () => {
+    const validItems = lineItems.filter(i => (
+      i.materialId
+      && i.quantity
+      && i.unitPrice !== ''
+      && (form.type !== 'BILATERAL' || i.salesUnitPrice !== '')
+    ));
     setSubmitting(true);
     try {
       await api.patch(`/contracts/${contractId}`, {
         ...form,
+        title: form.title || `${form.type === 'PURCHASE' ? '采购' : form.type === 'SALES' ? '销售' : '双边'}合同`,
+        sellerId: form.sellerId || null,
         settlementMethod: form.settlementMethod.trim() || '按交货结算',
         totalAmount,
         overfillPct: form.overfillPct === '' ? undefined : Number(form.overfillPct),
@@ -208,8 +224,10 @@ export default function ContractEditPage() {
         signedAt: form.signedAt || undefined,
         effectiveAt: form.effectiveAt || undefined,
         expireAt: form.expireAt || undefined,
-        buyerId: form.buyerId || undefined,
-        signingPartnerId: form.signingPartnerId || undefined,
+        buyerId: form.buyerId || null,
+        signingPartnerId: form.signingPartnerId || null,
+        departmentId: form.departmentId || null,
+        draftData: { form, lineItems },
         lineItems: validItems.map(item => ({
           materialId: item.materialId,
           materialName: item.materialName,
@@ -221,10 +239,26 @@ export default function ContractEditPage() {
           remarks: item.remarks || undefined,
         })),
       });
-      router.push(`/dashboard/contracts/${contractId}`);
+      if (pendingAttachments.length > 0) await uploadAttachments();
+      setIsDirty(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const { requestLeave, leaveNow, dialog: leaveDialog } = useDraftLeaveGuard({
+    dirty: isDirty,
+    saving: submitting || uploadingAttachments,
+    onSaveDraft: persistDraft,
+    itemName: '合同',
+  });
+
+  const handleSave = async () => {
+    try {
+      await persistDraft();
+      leaveNow(`/dashboard/contracts/${contractId}`);
     } catch (e: any) {
       alert(e.message || '保存失败');
-      setSubmitting(false);
     }
   };
 
@@ -245,10 +279,8 @@ export default function ContractEditPage() {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.message || `附件 ${item.name} 上传失败`);
         setAttachments(current => [result, ...current]);
+        setPendingAttachments(current => current.filter(entry => entry !== item));
       }
-      setPendingAttachments([]);
-    } catch (e: any) {
-      alert(e.message || '上传附件失败');
     } finally {
       setUploadingAttachments(false);
     }
@@ -295,9 +327,10 @@ export default function ContractEditPage() {
 
   return (
     <div className="space-y-6">
+      {leaveDialog}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => router.push(`/dashboard/contracts/${contractId}`)}>
+          <Button variant="ghost" size="sm" onClick={() => requestLeave(`/dashboard/contracts/${contractId}`)}>
             <ArrowLeft className="h-4 w-4 mr-1" />返回
           </Button>
           <div>
@@ -306,7 +339,7 @@ export default function ContractEditPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push(`/dashboard/contracts/${contractId}`)}>取消</Button>
+          <Button variant="outline" onClick={() => requestLeave(`/dashboard/contracts/${contractId}`)}>取消</Button>
           <Button onClick={handleSave} disabled={submitting}>
             <Save className="h-4 w-4 mr-1" />{submitting ? '保存中...' : '保存'}
           </Button>
@@ -573,10 +606,16 @@ export default function ContractEditPage() {
             {pendingAttachments.map((item, index) => (
               <div key={`${item.file.name}-${index}`} className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm">
                 <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <Input value={item.name} onChange={e => setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, name: e.target.value } : entry))} placeholder="附件名称" />
+                <Input value={item.name} onChange={e => {
+                  setIsDirty(true);
+                  setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, name: e.target.value } : entry));
+                }} placeholder="附件名称" />
                 <span className="shrink-0 text-xs text-muted-foreground">{(item.file.size / 1024).toFixed(0)} KB</span>
                 <Button type="button" variant="outline" size="sm" onClick={() => viewPendingAttachment(item.file)}>预览</Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setPendingAttachments(current => current.filter((_, i) => i !== index))} aria-label={`移除 ${item.name}`}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => {
+                  setIsDirty(true);
+                  setPendingAttachments(current => current.filter((_, i) => i !== index));
+                }} aria-label={`移除 ${item.name}`}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -584,13 +623,14 @@ export default function ContractEditPage() {
             <label className={`inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-muted ${uploadingAttachments ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
               <Paperclip className="mr-2 h-4 w-4" />选择附件
               <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" className="hidden" onChange={e => {
-                const selectedFiles = Array.from(e.currentTarget.files || []);
-                setPendingAttachments(current => [...current, ...selectedFiles.map(file => ({ file, name: file.name }))]);
+              const selectedFiles = Array.from(e.currentTarget.files || []);
+              if (selectedFiles.length > 0) setIsDirty(true);
+              setPendingAttachments(current => [...current, ...selectedFiles.map(file => ({ file, name: file.name }))]);
                 e.target.value = '';
               }} disabled={uploadingAttachments} />
             </label>
             {pendingAttachments.length > 0 && (
-              <Button type="button" onClick={() => void uploadAttachments()} disabled={uploadingAttachments}>
+              <Button type="button" onClick={() => void uploadAttachments().catch((e: any) => alert(e.message || '上传附件失败'))} disabled={uploadingAttachments}>
                 {uploadingAttachments ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Paperclip className="mr-2 h-4 w-4" />}
                 {uploadingAttachments ? '上传中...' : '上传附件'}
               </Button>
@@ -599,7 +639,7 @@ export default function ContractEditPage() {
         </Card>
 
         <div className="flex justify-between pb-8 border-t pt-6">
-          <Button variant="outline" onClick={() => router.push(`/dashboard/contracts/${contractId}`)}>取消</Button>
+          <Button variant="outline" onClick={() => requestLeave(`/dashboard/contracts/${contractId}`)}>取消</Button>
           <Button onClick={handleSave} disabled={submitting} size="lg">
             <Save className="h-4 w-4 mr-1" />{submitting ? '保存中...' : '保存修改'}
           </Button>

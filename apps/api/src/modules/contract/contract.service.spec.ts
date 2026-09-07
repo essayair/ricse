@@ -16,8 +16,18 @@ describe('ContractService', () => {
     title: '测试合同',
     type: 'PURCHASE',
     status: 'DRAFT',
-    supplierId: 'sup-1',
+    sellerId: 'sup-1',
+    buyerId: null,
+    signingPartnerId: 'internal-1',
+    companyId: 'company-1',
+    departmentId: null,
     totalAmount: '100000',
+    lineItems: [{
+      materialId: 'material-1',
+      quantity: '100',
+      unitPrice: '1000',
+      salesUnitPrice: null,
+    }],
     createdBy: 'user-1',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -43,6 +53,7 @@ describe('ContractService', () => {
       user: {},
     } as any));
     accessControl.getContractScope.mockResolvedValue({});
+    prisma.partner.findFirst.mockResolvedValue({ roles: ['SUPPLIER', 'CUSTOMER'] } as any);
     (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: PrismaService) => unknown) => callback(prisma));
 
     const module: TestingModule = await Test.createTestingModule({
@@ -82,6 +93,32 @@ describe('ContractService', () => {
   });
 
   describe('create', () => {
+    it('允许将尚未选择主体和货物的表单保存为草稿', async () => {
+      prisma.contract.count.mockResolvedValue(0);
+      prisma.contract.create.mockResolvedValue({
+        ...mockContract,
+        sellerId: null,
+        signingPartnerId: null,
+        lineItems: [],
+      } as any);
+
+      await expect(service.create({
+        title: '采购合同',
+        type: 'PURCHASE',
+        totalAmount: 0,
+        lineItems: [],
+        draftData: { form: { title: '', materialId: 'material-1', quantity: '' } },
+      }, 'user-1')).resolves.toBeDefined();
+
+      expect(prisma.contract.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          sellerId: null,
+          signingPartnerId: undefined,
+          draftData: expect.objectContaining({ form: expect.any(Object) }),
+        }),
+      }));
+    });
+
     it('应该创建合同并生成编号', async () => {
       prisma.partner.findFirst.mockResolvedValue({ roles: ['CUSTOMER'] } as any);
       prisma.contract.count.mockResolvedValue(0);
@@ -274,6 +311,19 @@ describe('ContractService', () => {
   });
 
   describe('getApprovalReadiness', () => {
+    it('不完整草稿可以保存，但不能提交审批', async () => {
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        signingPartnerId: null,
+        sellerId: null,
+        lineItems: [],
+      } as any);
+
+      await expect(service.getApprovalReadiness('test-id'))
+        .rejects.toThrow('请选择我方签约主体');
+      expect(prisma.approvalFlow.findUnique).not.toHaveBeenCalled();
+    });
+
     it('审批流程和审批人有效时返回可提交', async () => {
       prisma.contract.findFirst.mockResolvedValue({
         ...mockContract,
@@ -878,19 +928,32 @@ describe('ContractService', () => {
   });
 
   describe('remove', () => {
-    it('仅管理员可以删除合同', async () => {
+    it('合同创建人可以直接删除自己的草稿', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, createdBy: 'user-2', status: 'DRAFT' } as any);
+      prisma.contract.update.mockResolvedValue({ ...mockContract, createdBy: 'user-2', deletedAt: new Date() } as any);
+
+      await expect(service.remove(
+        'test-id',
+        { id: 'user-2', role: 'SALESPERSON' },
+      )).resolves.toBeDefined();
+      expect(accessControl.assertPermission).toHaveBeenCalledWith('user-2', 'contract.edit');
+    });
+
+    it('普通用户不能删除他人草稿', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, createdBy: 'user-3', status: 'DRAFT' } as any);
+
       await expect(service.remove(
         'test-id',
         { id: 'user-2', role: 'SALESPERSON' },
       )).rejects.toThrow(ForbiddenException);
-      expect(prisma.contract.findUnique).not.toHaveBeenCalled();
+      expect(prisma.contract.update).not.toHaveBeenCalled();
     });
 
-    it('管理员不能直接删除未作废合同', async () => {
-      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'DRAFT' } as any);
+    it('未作废的非草稿合同不能删除', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'PENDING_APPROVAL' } as any);
 
       await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' }))
-        .rejects.toThrow('合同必须先作废，才能删除');
+        .rejects.toThrow('仅草稿可以直接删除；其他合同必须先作废');
       expect(prisma.contract.update).not.toHaveBeenCalled();
     });
 

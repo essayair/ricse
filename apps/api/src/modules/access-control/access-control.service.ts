@@ -286,6 +286,10 @@ export class AccessControlService {
           { sellerId: context.externalPartnerId },
           { buyerId: context.externalPartnerId },
           { signingPartnerId: context.externalPartnerId },
+          {
+            status: 'DRAFT',
+            creator: { companyId: context.user.company!.id },
+          },
         ],
       };
     }

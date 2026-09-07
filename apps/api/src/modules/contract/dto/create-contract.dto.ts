@@ -8,6 +8,7 @@ import {
   IsDateString,
   Min,
   MaxLength,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -61,6 +62,11 @@ export class CreateContractDto {
   @MaxLength(64)
   clientRequestId?: string;
 
+  @ApiPropertyOptional({ description: '尚未填写完整的原始表单数据，用于恢复草稿' })
+  @IsOptional()
+  @IsObject()
+  draftData?: Record<string, unknown>;
+
   @ApiProperty({ description: '合同标题' })
   @IsString()
   title: string;
@@ -69,9 +75,10 @@ export class CreateContractDto {
   @IsString()
   type: string;
 
-  @ApiProperty({ description: '卖方（Partner ID）' })
+  @ApiPropertyOptional({ description: '卖方（Partner ID）；草稿可暂不填写' })
+  @IsOptional()
   @IsString()
-  sellerId: string;
+  sellerId?: string;
 
   @ApiProperty({ description: '总金额' })
   @IsNumber()

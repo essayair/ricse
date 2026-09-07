@@ -6,7 +6,24 @@ import { InventoryService } from '../inventory/inventory.service';
 import { OutboundService } from '../inventory/outbound.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
-import { CreateWaybillDto } from './dto/create-waybill.dto';
+import { BatchCreateWaybillDto, BatchWaybillItemDto, CreateWaybillDto } from './dto/create-waybill.dto';
+
+export const WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES = [
+  'RECEIPT_DOCUMENT',
+  'RECEIPT_PHOTO',
+  'RECEIPT_OTHER',
+] as const;
+
+export const WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES_WITH_LEGACY = [
+  'RECEIPT',
+  ...WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES,
+] as const;
+
+export type WaybillReceiptAttachmentCategory = typeof WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES[number];
+
+export function isWaybillReceiptAttachment(category: string) {
+  return (WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES_WITH_LEGACY as readonly string[]).includes(category);
+}
 
 @Injectable()
 export class WaybillService {
@@ -74,13 +91,14 @@ export class WaybillService {
     },
   };
 
-  private async generateNo() {
+  private async reserveWaybillNumbers(tx: Prisma.TransactionClient, amount: number) {
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const count = await this.prisma.waybill.count({ where: { createdAt: { gte: start, lt: end } } });
-    return `WB-${date}-${String(count + 1).padStart(4, '0')}`;
+    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`RICSE_WAYBILL_${date}`}))`);
+    const count = await tx.waybill.count({ where: { createdAt: { gte: start, lt: end } } });
+    return Array.from({ length: amount }, (_, index) => `WB-${date}-${String(count + index + 1).padStart(4, '0')}`);
   }
 
   private async resolveCarrier(freightMode?: string, carrierPartnerId?: string) {
@@ -138,6 +156,85 @@ export class WaybillService {
     });
     if (!driver) throw new BadRequestException('所选司机不存在或不可用');
     return driver;
+  }
+
+  private async prepareBatchItem(
+    item: BatchWaybillItemDto,
+    rowNumber: number,
+    availability: Awaited<ReturnType<WaybillService['getNoticeAvailability']>>,
+  ) {
+    const freightMode = item.freightMode || 'SELF';
+    const carrier = await this.resolveCarrier(freightMode, item.carrierPartnerId);
+    if (!item.lineItems.length) throw new BadRequestException(`第 ${rowNumber} 行请至少填写一种物料数量`);
+    if (item.plannedDepartureAt && item.plannedArrivalAt
+      && new Date(item.plannedArrivalAt) <= new Date(item.plannedDepartureAt)) {
+      throw new BadRequestException(`第 ${rowNumber} 行预计到达时间必须晚于计划发运时间`);
+    }
+
+    let vehicle: any = null;
+    if (item.vehicleId) {
+      vehicle = await this.prisma.vehicle.findFirst({
+        where: { id: item.vehicleId, status: 'ACTIVE', deletedAt: null },
+      });
+      if (!vehicle) throw new BadRequestException(`第 ${rowNumber} 行所选车辆不存在或不可用`);
+      this.validateVehicleAssignment(vehicle, freightMode, carrier);
+    }
+    let driver: any = null;
+    if (item.driverId) {
+      driver = await this.findAvailableDriver(item.driverId);
+      this.validateDriverAssignment(driver, freightMode, carrier);
+    }
+
+    const plateNo = (item.plateNo || vehicle?.plateNo || '').trim().toUpperCase();
+    const driverName = (item.driverName || driver?.name || vehicle?.driverName || '').trim();
+    const driverPhone = (item.driverPhone || driver?.phone || vehicle?.driverPhone || '').trim();
+    if (!plateNo) throw new BadRequestException(`第 ${rowNumber} 行请选择车辆或填写临时车牌号`);
+    if (!driverName) throw new BadRequestException(`第 ${rowNumber} 行请选择司机或填写临时司机姓名`);
+    if (!driverPhone) throw new BadRequestException(`第 ${rowNumber} 行请填写司机联系电话`);
+
+    const sources = new Map(availability.lineItems.map(source => [source.dispatchNoticeLineItemId, source]));
+    const seen = new Set<string>();
+    const lineItems = item.lineItems.map(line => {
+      const source = sources.get(line.dispatchNoticeLineItemId);
+      if (!source || seen.has(line.dispatchNoticeLineItemId)) {
+        throw new BadRequestException(`第 ${rowNumber} 行运单明细无效或重复`);
+      }
+      seen.add(line.dispatchNoticeLineItemId);
+      if (line.quantity <= 0) throw new BadRequestException(`第 ${rowNumber} 行物料数量必须大于 0`);
+      return {
+        dispatchNoticeLineItemId: line.dispatchNoticeLineItemId,
+        materialId: source.materialId,
+        materialName: source.materialName,
+        quantity: line.quantity,
+        unit: source.unit,
+      };
+    });
+    return {
+      clientRowId: item.clientRowId,
+      freightMode,
+      carrier,
+      vehicle,
+      driver,
+      plateNo,
+      driverName,
+      driverPhone,
+      lineItems,
+      totalQuantity: lineItems.reduce((sum, line) => sum + Number(line.quantity), 0),
+      plannedDepartureAt: item.plannedDepartureAt ? new Date(item.plannedDepartureAt) : null,
+      plannedArrivalAt: item.plannedArrivalAt ? new Date(item.plannedArrivalAt) : null,
+      originLocation: item.originLocation || availability.notice.originLocation || availability.notice.warehouse?.address,
+      destinationLocation: item.destinationLocation || availability.notice.destinationLocation,
+      remarks: item.remarks?.trim() || null,
+    };
+  }
+
+  private async syncCreatedWaybill(waybill: any, userId: string) {
+    if (waybill.vehicleId || waybill.plateNo) {
+      await this.weighService.ensureTaskForWaybill(waybill.id, userId);
+    }
+    if (waybill.dispatchNotice?.type === 'SALES' && waybill.dispatchNotice?.mode === 'STANDARD') {
+      await this.outboundService.ensureReceiptForWaybill(waybill.id, userId);
+    }
   }
 
   async getNoticeAvailability(dispatchNoticeId: string, userId: string, permission = 'logistics.view') {
@@ -215,37 +312,147 @@ export class WaybillService {
       };
     });
     const notice = availability.notice;
-    const created = await this.prisma.waybill.create({
-      data: {
-        waybillNo: await this.generateNo(),
-        dispatchNoticeId: notice.id,
-        freightMode,
-        vehicleId: dto.vehicleId || null,
-        driverId: dto.driverId || null,
-        carrierPartnerId: carrier?.id || null,
-        carrierName: carrier?.name || null,
-        plateNo: dto.plateNo || vehicle?.plateNo,
-        driverName: dto.driverName || driver?.name || vehicle?.driverName,
-        driverPhone: dto.driverPhone || driver?.phone || vehicle?.driverPhone,
-        originLocation: dto.originLocation || notice.originLocation || notice.warehouse?.address,
-        destinationLocation: dto.destinationLocation || notice.destinationLocation,
-        totalQuantity: lines.reduce((sum, item) => sum + Number(item.quantity), 0),
-        plannedDepartureAt: dto.plannedDepartureAt ? new Date(dto.plannedDepartureAt) : null,
-        plannedArrivalAt: dto.plannedArrivalAt ? new Date(dto.plannedArrivalAt) : null,
-        remarks: dto.remarks,
-        createdBy: userId,
-        lineItems: { create: lines },
-      },
-      include: this.include,
+    const created = await this.prisma.$transaction(async tx => {
+      const [waybillNo] = await this.reserveWaybillNumbers(tx, 1);
+      return tx.waybill.create({
+        data: {
+          waybillNo,
+          dispatchNoticeId: notice.id,
+          freightMode,
+          vehicleId: dto.vehicleId || null,
+          driverId: dto.driverId || null,
+          carrierPartnerId: carrier?.id || null,
+          carrierName: carrier?.name || null,
+          plateNo: dto.plateNo || vehicle?.plateNo,
+          driverName: dto.driverName || driver?.name || vehicle?.driverName,
+          driverPhone: dto.driverPhone || driver?.phone || vehicle?.driverPhone,
+          originLocation: dto.originLocation || notice.originLocation || notice.warehouse?.address,
+          destinationLocation: dto.destinationLocation || notice.destinationLocation,
+          totalQuantity: lines.reduce((sum, item) => sum + Number(item.quantity), 0),
+          plannedDepartureAt: dto.plannedDepartureAt ? new Date(dto.plannedDepartureAt) : null,
+          plannedArrivalAt: dto.plannedArrivalAt ? new Date(dto.plannedArrivalAt) : null,
+          remarks: dto.remarks,
+          createdBy: userId,
+          lineItems: { create: lines },
+        },
+        include: this.include,
+      });
     });
-    if (created.vehicleId || created.plateNo) {
-      await this.weighService.ensureTaskForWaybill(created.id, userId);
-    }
+    await this.syncCreatedWaybill(created, userId);
     if (notice.type === 'SALES' && notice.mode === 'STANDARD') {
-      await this.outboundService.ensureReceiptForWaybill(created.id, userId);
       return this.findOne(created.id, userId, 'logistics.manage');
     }
     return created;
+  }
+
+  async createBatch(dto: BatchCreateWaybillDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'logistics.manage');
+    const existing = await this.prisma.waybill.findMany({
+      where: { creationBatchId: dto.batchRequestId },
+      include: this.include,
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing.length) {
+      if (existing.some(item => item.createdBy !== userId || item.dispatchNoticeId !== dto.dispatchNoticeId)
+        || existing.length !== dto.items.length) {
+        throw new BadRequestException('批量建单请求标识已被使用，请刷新页面后重试');
+      }
+      for (const waybill of existing) await this.syncCreatedWaybill(waybill, userId);
+      return { batchRequestId: dto.batchRequestId, createdCount: existing.length, warnings: [], items: existing };
+    }
+
+    const rowIds = new Set(dto.items.map(item => item.clientRowId));
+    if (rowIds.size !== dto.items.length) throw new BadRequestException('批量建单行标识不能重复');
+    const availability = await this.getNoticeAvailability(dto.dispatchNoticeId, userId, 'logistics.manage');
+    const prepared = await Promise.all(dto.items.map((item, index) => this.prepareBatchItem(item, index + 1, availability)));
+
+    const sourceMap = new Map(availability.lineItems.map(item => [item.dispatchNoticeLineItemId, item]));
+    const totals = new Map<string, number>();
+    for (const item of prepared) {
+      for (const line of item.lineItems) {
+        totals.set(line.dispatchNoticeLineItemId, (totals.get(line.dispatchNoticeLineItemId) || 0) + Number(line.quantity));
+      }
+    }
+    for (const [lineId, quantity] of totals) {
+      const source = sourceMap.get(lineId)!;
+      if (quantity > source.availableQuantity) {
+        throw new BadRequestException(`物料 ${source.materialName || source.materialId} 本次分配 ${quantity}，超过剩余可运输数量 ${source.availableQuantity}`);
+      }
+    }
+
+    const warnings: string[] = [];
+    prepared.forEach((item, index) => {
+      if (item.vehicle?.loadCapacity && item.totalQuantity > Number(item.vehicle.loadCapacity)) {
+        warnings.push(`第 ${index + 1} 行计划数量 ${item.totalQuantity} 吨超过车辆登记载重 ${Number(item.vehicle.loadCapacity)} 吨`);
+      }
+      const duplicateIndex = prepared.findIndex((candidate, candidateIndex) => candidateIndex < index
+        && candidate.plateNo === item.plateNo
+        && (!candidate.plannedDepartureAt || !item.plannedDepartureAt
+          || candidate.plannedDepartureAt.getTime() === item.plannedDepartureAt.getTime()));
+      if (duplicateIndex >= 0) warnings.push(`第 ${duplicateIndex + 1}、${index + 1} 行使用同一车辆 ${item.plateNo}，请核对是否为不同运输趟次`);
+    });
+
+    const created = await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "dispatch_notices" WHERE id = ${dto.dispatchNoticeId} FOR UPDATE`);
+      const notice = await tx.dispatchNotice.findFirst({
+        where: { id: dto.dispatchNoticeId, deletedAt: null, status: { in: ['ISSUED', 'IN_PROGRESS'] } },
+      });
+      if (!notice) throw new BadRequestException('执行通知状态已变化，请刷新后重试');
+      const used = await tx.waybillLineItem.groupBy({
+        by: ['dispatchNoticeLineItemId'],
+        where: { waybill: { dispatchNoticeId: dto.dispatchNoticeId, deletedAt: null, status: { not: 'CANCELLED' } } },
+        _sum: { quantity: true },
+      });
+      const usedMap = new Map(used.map(item => [item.dispatchNoticeLineItemId, Number(item._sum.quantity || 0)]));
+      for (const [lineId, quantity] of totals) {
+        const source = sourceMap.get(lineId)!;
+        const remaining = Math.max(0, source.noticeQuantity - (usedMap.get(lineId) || 0));
+        if (quantity > remaining) {
+          throw new BadRequestException(`物料 ${source.materialName || source.materialId} 剩余可运输数量已变为 ${remaining}，请刷新后重新分配`);
+        }
+      }
+      const waybillNumbers = await this.reserveWaybillNumbers(tx, prepared.length);
+      const items: any[] = [];
+      for (const [index, item] of prepared.entries()) {
+        const waybill = await tx.waybill.create({
+          data: {
+            waybillNo: waybillNumbers[index],
+            dispatchNoticeId: dto.dispatchNoticeId,
+            freightMode: item.freightMode,
+            vehicleId: item.vehicle?.id || null,
+            driverId: item.driver?.id || null,
+            carrierPartnerId: item.carrier?.id || null,
+            carrierName: item.carrier?.name || null,
+            plateNo: item.plateNo,
+            driverName: item.driverName,
+            driverPhone: item.driverPhone,
+            originLocation: item.originLocation,
+            destinationLocation: item.destinationLocation,
+            totalQuantity: item.totalQuantity,
+            plannedDepartureAt: item.plannedDepartureAt,
+            plannedArrivalAt: item.plannedArrivalAt,
+            remarks: item.remarks,
+            creationBatchId: dto.batchRequestId,
+            creationRowId: item.clientRowId,
+            createdBy: userId,
+            lineItems: { create: item.lineItems },
+          },
+          include: this.include,
+        });
+        await tx.businessOperationLog.create({
+          data: {
+            businessType: 'WAYBILL', businessId: waybill.id,
+            action: 'CREATE', actionLabel: '批量创建物流运单', operatorId: userId,
+            details: { batchRequestId: dto.batchRequestId, rowNumber: index + 1 },
+          },
+        });
+        items.push(waybill);
+      }
+      return items;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 30000 });
+
+    for (const waybill of created) await this.syncCreatedWaybill(waybill, userId);
+    return { batchRequestId: dto.batchRequestId, createdCount: created.length, warnings, items: created };
   }
 
   async findAll(params: { status?: string; search?: string }, userId: string) {
@@ -361,7 +568,7 @@ export class WaybillService {
     ) {
       throw new BadRequestException('销售常规出库必须先完成物流出库和库存扣减');
     }
-    if (status === 'SIGNED' && !(waybill.attachments || []).some(item => item.category === 'RECEIPT')) {
+    if (status === 'SIGNED' && !(waybill.attachments || []).some(item => isWaybillReceiptAttachment(item.category))) {
       throw new BadRequestException('确认签收前必须上传至少一份物流收货附件');
     }
     const updated = await this.prisma.$transaction(async tx => {
@@ -413,13 +620,16 @@ export class WaybillService {
 
   async createAttachment(data: {
     waybillId: string; fileName: string; originalName: string;
-    mimeType: string; size: number;
+    mimeType: string; size: number; category: WaybillReceiptAttachmentCategory;
   }, userId: string) {
+    if (!(WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES as readonly string[]).includes(data.category)) {
+      throw new BadRequestException('物流收货附件分类无效');
+    }
     const waybill = await this.findOne(data.waybillId, userId, 'logistics.manage');
     if (!['ARRIVED', 'SIGNED'].includes(waybill.status)) {
       throw new BadRequestException('物流收货附件只能在运单到达后上传');
     }
-    return this.prisma.attachment.create({ data: { ...data, category: 'RECEIPT' } });
+    return this.prisma.attachment.create({ data });
   }
 
   async findAttachmentById(id: string, userId: string, permission = 'logistics.view') {
@@ -429,7 +639,7 @@ export class WaybillService {
       where: {
         id,
         waybillId: { not: null },
-        category: 'RECEIPT',
+        category: { in: [...WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES_WITH_LEGACY] },
         waybill: { deletedAt: null, AND: [scope] },
       },
       include: { waybill: { select: { status: true } } },

@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 interface MaterialSpec { id?: number; name: string; operator: string; value: string | number; unit: string }
 interface EligibleTicket {
   id: string; ticketNo: string; status: string; plateNo: string | null; materialName: string | null; materialSpec: string | null;
+  weighingStage: string; recommended?: boolean; recommendationReason?: string | null;
   ticketDate: string; settlementWeight: string | null; netWeight: string | null; shipperName: string | null; receiverName: string | null;
   waybill: { waybillNo: string; plateNo: string | null; lineItems: Array<{ materialId: string; materialName: string | null }>; dispatchNotice: { type: string; order: { name: string; orderNo: string; contract: { contractNo: string } } } };
   materials: Array<{ materialId: string; materialName: string | null; name?: string; spec?: string | null; grade?: string | null; specs?: MaterialSpec[] | null; qcTemplate?: string | null; qualityTemplateId?: string | null }>;
@@ -81,14 +82,13 @@ export default function CreateQualityInspectionPage() {
     if (!taskId) { alert('请从到货质检任务详情追加检测报告'); router.push('/dashboard/quality'); return; }
     Promise.all([
       api.get<QualityTaskBrief>(`/quality-tasks/${taskId}`),
-      api.get<EligibleTicket[]>('/quality-inspections/eligible-weigh-tickets'),
+      api.get<EligibleTicket[]>(`/quality-inspections/eligible-weigh-tickets?qualityTaskId=${encodeURIComponent(taskId)}`),
     ]).then(([qualityTask, items]) => {
       setTask(qualityTask);
-      const available = items.filter(item => item.waybill.waybillNo === qualityTask.waybill.waybillNo);
-      setTickets(available);
+      setTickets(items);
       const requested = searchParams.get('weighTicketId');
-      if (requested && available.some(item => item.id === requested)) setWeighTicketId(requested);
-      else if (available[0]) setWeighTicketId(available[0].id);
+      if (requested && items.some(item => item.id === requested)) setWeighTicketId(requested);
+      else if (items[0]) setWeighTicketId(items[0].id);
       setSampleNo(`${qualityTask.taskNo}-S${String(qualityTask.reports.length + 1).padStart(2, '0')}`);
     }).catch(error => alert(error.message || '到货质检任务或可用磅单加载失败'));
     api.get<{ items: InstitutionProfile[] }>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE&pageSize=200')
@@ -204,13 +204,13 @@ export default function CreateQualityInspectionPage() {
     <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">追加检测报告</h1><p className="mt-1 text-sm text-muted-foreground">{task ? `${task.taskNo} · ${task.waybill.waybillNo}` : '在同一到货质检任务内录入一家检测机构的一份独立报告'}</p></div></div>
 
     <Card className="overflow-hidden">
-      <div className="border-b p-6 pb-4"><SectionTitle title="选择关联磅单" noMargin /><p className="mt-2 text-sm text-muted-foreground">仅显示本到货任务下已完成称重或已复核的磅单。点击整行即可选中。</p></div>
+      <div className="border-b p-6 pb-4"><SectionTitle title="选择关联磅单" noMargin /><p className="mt-2 text-sm text-muted-foreground">仅显示本质检任务对应物流运单下已完成或已复核的磅单。系统优先选择当前执行磅单；尚未确定执行口径时，按现行业务规则优先选择已复核的发货磅单。多份检测报告可以关联同一张磅单。</p></div>
       {!tickets.length ? <div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" /><div>暂无可质检的磅单</div><div className="mt-1 text-xs">请先完成磅单称重或复核，再创建质检单。</div></div> : <div className="overflow-x-auto"><table className="min-w-[1350px] w-full text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="w-14 px-4 py-3">选择</th><th className="px-4 py-3">磅单日期</th><th className="px-4 py-3">磅单编号 / 状态</th><th className="px-4 py-3">物流运单</th><th className="px-4 py-3">物料 / 规格</th><th className="px-4 py-3">发货 / 收货单位</th><th className="px-4 py-3">车牌号</th><th className="px-4 py-3 text-right">净重 / 结算重量</th><th className="px-4 py-3">操作</th></tr></thead>
         <tbody>{tickets.map(item => { const selected = item.id === weighTicketId; return <tr key={item.id} className={`cursor-pointer border-b transition-colors ${selected ? 'bg-primary/10 ring-1 ring-inset ring-primary/30' : 'hover:bg-muted/50'}`} onClick={() => setWeighTicketId(item.id)}>
           <td className="px-4 py-3"><input type="radio" aria-label={`选择磅单 ${item.ticketNo}`} checked={selected} onChange={() => setWeighTicketId(item.id)} /></td>
           <td className="whitespace-nowrap px-4 py-3">{formatDateTimeToSecond(item.ticketDate)}</td>
-          <td className="px-4 py-3"><div className="font-mono font-medium text-primary">{item.ticketNo}</div><Badge className="mt-1" variant="secondary">{item.status === 'REVIEWED' ? '已复核' : '已完成'}</Badge></td>
+          <td className="px-4 py-3"><div className="font-mono font-medium text-primary">{item.ticketNo}</div><div className="mt-1 flex flex-wrap gap-1"><Badge variant="secondary">{item.status === 'REVIEWED' ? '已复核' : '已完成'}</Badge><Badge variant="outline">{item.weighingStage === 'RECEIVING' ? '收货称重' : item.weighingStage === 'SHIPPING' ? '发货称重' : '其他称重'}</Badge>{item.recommended && <Badge>{item.recommendationReason || '系统建议'}</Badge>}</div></td>
           <td className="px-4 py-3"><div className="font-mono text-xs">{item.waybill.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.dispatchNotice.order.name}</div></td>
           <td className="max-w-56 px-4 py-3"><div className="truncate font-medium" title={item.materialName || ''}>{item.materialName || '-'}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={item.materialSpec || ''}>{item.materialSpec || '-'}</div></td>
           <td className="max-w-64 px-4 py-3"><div className="truncate" title={item.shipperName || ''}>{item.shipperName || '-'}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={item.receiverName || ''}>{item.receiverName || '-'}</div></td>

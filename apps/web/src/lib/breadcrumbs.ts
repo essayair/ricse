@@ -68,6 +68,9 @@ function resolveResource(pathname: string, route: ResourceRoute): BreadcrumbItem
   if (pathname === `${route.base}/create` && route.createLabel) {
     return withHome([{ label: route.section }, list, { label: route.createLabel }]);
   }
+  if (route.base === '/dashboard/waybills' && pathname === `${route.base}/batch-create`) {
+    return withHome([{ label: route.section }, list, { label: '批量派车' }]);
+  }
 
   const suffix = pathname.slice(route.base.length + 1).split('/').filter(Boolean);
   if (suffix.length === 1 && pathname.startsWith(`${route.base}/`)) {

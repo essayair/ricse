@@ -1,5 +1,8 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsIn, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsIn, IsNumber, IsOptional,
+  IsString, IsUUID, Min, ValidateNested,
+} from 'class-validator';
 
 export class CreateWaybillLineDto {
   @IsString()
@@ -10,10 +13,7 @@ export class CreateWaybillLineDto {
   quantity: number;
 }
 
-export class CreateWaybillDto {
-  @IsString()
-  dispatchNoticeId: string;
-
+export class WaybillCreateFieldsDto {
   @IsOptional()
   @IsIn(['SELF', 'THIRD_PARTY'])
   freightMode?: string;
@@ -35,4 +35,29 @@ export class CreateWaybillDto {
   @ValidateNested({ each: true })
   @Type(() => CreateWaybillLineDto)
   lineItems: CreateWaybillLineDto[];
+}
+
+export class CreateWaybillDto extends WaybillCreateFieldsDto {
+  @IsString()
+  dispatchNoticeId: string;
+}
+
+export class BatchWaybillItemDto extends WaybillCreateFieldsDto {
+  @IsUUID()
+  clientRowId: string;
+}
+
+export class BatchCreateWaybillDto {
+  @IsString()
+  dispatchNoticeId: string;
+
+  @IsUUID()
+  batchRequestId: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => BatchWaybillItemDto)
+  items: BatchWaybillItemDto[];
 }

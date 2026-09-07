@@ -297,11 +297,15 @@ export class QualityInspectionService {
     });
   }
 
-  async eligibleWeighTickets(userId: string) {
-    await this.accessControl.assertPermission(userId, 'quality.view');
+  async eligibleWeighTickets(userId: string, qualityTaskId?: string) {
+    const task = qualityTaskId
+      ? await this.findTask(qualityTaskId, userId, 'quality.view')
+      : null;
+    if (!task) await this.accessControl.assertPermission(userId, 'quality.view');
     const scope = await this.accessControl.getWeighTicketScope(userId);
     const tickets = await this.prisma.weighTicket.findMany({
       where: {
+        ...(task ? { waybillId: task.waybillId } : {}),
         deletedAt: null,
         status: { in: ['COMPLETED', 'REVIEWED'] },
         AND: [scope],
@@ -330,7 +334,7 @@ export class QualityInspectionService {
         },
       },
       orderBy: { updatedAt: 'desc' },
-      take: 100,
+      ...(task ? {} : { take: 100 }),
     });
     const materialIds = [...new Set(tickets.flatMap(ticket => ticket.waybill.lineItems.map(line => line.materialId)))];
     const materials = await this.prisma.material.findMany({
@@ -338,8 +342,30 @@ export class QualityInspectionService {
       select: { id: true, name: true, spec: true, grade: true, specs: true, qcTemplate: true },
     });
     const materialMap = new Map(materials.map(material => [material.id, material]));
-    return tickets.map(ticket => ({
+    const currentInventoryTicketId = task?.waybill.weightSelections
+      .find(selection => selection.purpose === 'INVENTORY')?.weighTicketId;
+    const currentSettlementTicketId = task?.waybill.weightSelections
+      .find(selection => selection.purpose === 'SETTLEMENT')?.weighTicketId;
+    const currentTicketId = currentInventoryTicketId || currentSettlementTicketId;
+    const priority = (ticket: typeof tickets[number]) => {
+      if (ticket.id === currentTicketId) return 0;
+      if (ticket.status === 'REVIEWED' && ticket.weighingStage === 'SHIPPING') return 1;
+      if (ticket.status === 'REVIEWED') return 2;
+      if (ticket.weighingStage === 'SHIPPING') return 3;
+      return 4;
+    };
+    const sortedTickets = [...tickets].sort((left, right) => priority(left) - priority(right));
+    const recommendedTicketId = task ? sortedTickets[0]?.id : undefined;
+    return sortedTickets.map(ticket => ({
       ...ticket,
+      recommended: ticket.id === recommendedTicketId,
+      recommendationReason: ticket.id !== recommendedTicketId
+        ? null
+        : ticket.id === currentTicketId
+          ? '当前执行磅单'
+          : ticket.status === 'REVIEWED' && ticket.weighingStage === 'SHIPPING'
+            ? '默认发货磅单'
+            : '系统建议',
       materials: ticket.waybill.lineItems.map(line => ({
         materialId: line.materialId,
         materialName: line.materialName,

@@ -42,8 +42,11 @@ export class QualityInspectionController {
   }
 
   @Get('eligible-weigh-tickets')
-  eligibleWeighTickets(@CurrentUser('id') userId: string) {
-    return this.service.eligibleWeighTickets(userId);
+  eligibleWeighTickets(
+    @CurrentUser('id') userId: string,
+    @Query('qualityTaskId') qualityTaskId?: string,
+  ) {
+    return this.service.eligibleWeighTickets(userId, qualityTaskId);
   }
 
   @Get('attachments/:id/view-url')

@@ -23,7 +23,7 @@ interface Contract {
   effectiveAt: string | null;
   expireAt: string | null;
   deliveryLocation: string | null;
-  creator: { name: string };
+  creator: { id: string; name: string };
   signingPartner: { name: string } | null;
   seller: { name: string } | null;
   buyer: { name: string } | null;
@@ -73,6 +73,7 @@ export default function ContractsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [userRole, setUserRole] = useState('');
+  const [currentUserId, setCurrentUserId] = useState('');
 
   const fetchContracts = useCallback(async () => {
     setLoading(true);
@@ -92,11 +93,12 @@ export default function ContractsPage() {
   }, [searchTerm, statusFilter, typeFilter]);
 
   const handleDelete = async (contract: Contract) => {
-    if (contract.status !== 'VOIDED') {
-      alert('合同必须先作废，才能删除');
+    if (!['DRAFT', 'VOIDED'].includes(contract.status)) {
+      alert('仅草稿可以直接删除；其他合同必须先作废');
       return;
     }
-    if (!confirm(`确定删除已作废合同“${contract.contractNo}”吗？删除后将不再出现在合同列表中。`)) return;
+    const statusLabel = contract.status === 'DRAFT' ? '草稿' : '已作废合同';
+    if (!confirm(`确定删除${statusLabel}“${contract.contractNo}”吗？删除后将不再出现在合同列表中。`)) return;
     try {
       await api.delete(`/contracts/${contract.id}`);
       fetchContracts();
@@ -106,7 +108,11 @@ export default function ContractsPage() {
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (!stored) return;
-    try { setUserRole(JSON.parse(stored).role || ''); } catch {}
+    try {
+      const user = JSON.parse(stored);
+      setUserRole(user.role || '');
+      setCurrentUserId(user.id || '');
+    } catch {}
   }, []);
 
   useEffect(() => { void fetchContracts(); }, [fetchContracts]);
@@ -266,10 +272,13 @@ export default function ContractsPage() {
                       >
                         <Package className="mr-1 h-3.5 w-3.5" />新建执行批次
                       </Button>
-                    ) : userRole === 'ADMIN' && c.status === 'VOIDED' ? (
+                    ) : (
+                      (c.status === 'DRAFT' && (userRole === 'ADMIN' || c.creator?.id === currentUserId))
+                      || (c.status === 'VOIDED' && userRole === 'ADMIN')
+                    ) ? (
                       <button onClick={(e) => { e.stopPropagation(); void handleDelete(c); }}
                         className="text-destructive hover:bg-destructive/10 rounded p-1"
-                        title="删除已作废合同">
+                        title={c.status === 'DRAFT' ? '删除草稿' : '删除已作废合同'}>
                         <Trash2 className="h-4 w-4" />
                       </button>
                     ) : <span className="text-muted-foreground">—</span>}
