@@ -25,3 +25,7 @@ Thumbs.db
 
 # Redis
 dump.rdb
+
+# 文档导出产物（由 docs/生成word.sh 现场生成，不纳入版本管理）
+docs/**/*.docx
+docs/**/*.pdf
