@@ -79,7 +79,7 @@ export default function CreateQualityInspectionPage() {
     const stored = localStorage.getItem('user');
     if (stored) { try { setSamplerName(JSON.parse(stored).name || ''); } catch {} }
     const taskId = searchParams.get('taskId');
-    if (!taskId) { alert('请从到货质检任务详情追加检测报告'); router.push('/dashboard/quality'); return; }
+    if (!taskId) { alert('请从到货质检任务详情添加检测报告'); router.push('/dashboard/quality'); return; }
     Promise.all([
       api.get<QualityTaskBrief>(`/quality-tasks/${taskId}`),
       api.get<EligibleTicket[]>(`/quality-inspections/eligible-weigh-tickets?qualityTaskId=${encodeURIComponent(taskId)}`),
@@ -201,7 +201,7 @@ export default function CreateQualityInspectionPage() {
   };
 
   return <div className="mx-auto max-w-6xl space-y-6">
-    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">追加检测报告</h1><p className="mt-1 text-sm text-muted-foreground">{task ? `${task.taskNo} · ${task.waybill.waybillNo}` : '在同一到货质检任务内录入一家检测机构的一份独立报告'}</p></div></div>
+    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">添加检测报告</h1><p className="mt-1 text-sm text-muted-foreground">{task ? `${task.taskNo} · ${task.waybill.waybillNo}` : '在同一到货质检任务内录入一家检测机构的一份独立报告'}</p></div></div>
 
     <Card className="overflow-hidden">
       <div className="border-b p-6 pb-4"><SectionTitle title="选择关联磅单" noMargin /><p className="mt-2 text-sm text-muted-foreground">仅显示本质检任务对应物流运单下已完成或已复核的磅单。系统优先选择当前执行磅单；尚未确定执行口径时，按现行业务规则优先选择已复核的发货磅单。多份检测报告可以关联同一张磅单。</p></div>
@@ -241,7 +241,7 @@ export default function CreateQualityInspectionPage() {
         <Field label="报告编号 *"><Input value={reportNo} onChange={event => setReportNo(event.target.value)} /></Field>
         <Field label="检测时间 *"><Input type="datetime-local" step="1" value={testedAt} onChange={event => setTestedAt(event.target.value)} /></Field>
       </div>
-      <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">本记录对应一家检测机构和一份检测报告。其他机构报告请返回任务详情继续追加。</div>
+      <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">本记录对应一家检测机构和一份检测报告。其他机构报告请返回任务详情继续添加。</div>
     </Card>
 
     <Card className="space-y-4 p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><SectionTitle title="检测指标" noMargin />{resolvedTemplate && <p className="mt-1 text-xs text-muted-foreground">已应用：{resolvedTemplate.code} · {resolvedTemplate.name}（v{resolvedTemplate.version}）</p>}</div><Button variant="outline" size="sm" onClick={addIndicator}><Plus className="mr-1 h-4 w-4" />增加指标</Button></div>

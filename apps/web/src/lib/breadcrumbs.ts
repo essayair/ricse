@@ -54,7 +54,7 @@ const RESOURCE_ROUTES: ResourceRoute[] = [
   { base: '/dashboard/inbound', section: '库存管理', listLabel: '入库单管理', detailLabel: '入库单详情', createLabel: '入库单生成说明' },
   { base: '/dashboard/outbound', section: '库存管理', listLabel: '出库单管理', detailLabel: '出库单详情', createLabel: '完善出库作业' },
   { base: '/dashboard/inventory-reversals', section: '库存管理', listLabel: '库存冲销', detailLabel: '库存冲销单详情', createLabel: '新建库存冲销单' },
-  { base: '/dashboard/quality', section: '质检影像', listLabel: '质检管理', detailLabel: '质检任务详情', createLabel: '追加检测报告' },
+  { base: '/dashboard/quality', section: '质检影像', listLabel: '质检管理', detailLabel: '质检任务详情', createLabel: '添加检测报告' },
 ];
 
 function withHome(items: BreadcrumbItem[]): BreadcrumbItem[] {

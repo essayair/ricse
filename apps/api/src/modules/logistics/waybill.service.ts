@@ -96,7 +96,10 @@ export class WaybillService {
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`RICSE_WAYBILL_${date}`}))`);
+    // Advisory lock returns PostgreSQL `void`; execute it without asking Prisma
+    // to deserialize a result set. This keeps concurrent batch numbering safe
+    // without triggering "Failed to deserialize column of type 'void'".
+    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`RICSE_WAYBILL_${date}`}))`);
     const count = await tx.waybill.count({ where: { createdAt: { gte: start, lt: end } } });
     return Array.from({ length: amount }, (_, index) => `WB-${date}-${String(count + index + 1).padStart(4, '0')}`);
   }

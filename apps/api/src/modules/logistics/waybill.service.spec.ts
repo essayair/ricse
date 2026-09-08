@@ -104,6 +104,7 @@ describe('WaybillService', () => {
     }, 'user-1');
 
     expect(result.createdCount).toBe(2);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
     expect(prisma.waybill.create).toHaveBeenCalledTimes(2);
     expect(prisma.waybill.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
       data: expect.objectContaining({
