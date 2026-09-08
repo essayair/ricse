@@ -5,6 +5,7 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { ContractService } from '../contract/contract.service';
 import { DispatchNoticeService } from '../dispatch-notice/dispatch-notice.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { OutboundService } from '../inventory/outbound.service';
 import { WaybillService } from '../logistics/waybill.service';
 import { OrderService } from '../order/order.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
@@ -21,6 +22,7 @@ describe('MobileWorkspaceService', () => {
   const weighTickets = mockDeep<WeighTicketService>();
   const quality = mockDeep<QualityInspectionService>();
   const inventory = mockDeep<InventoryService>();
+  const outbound = mockDeep<OutboundService>();
   let service: MobileWorkspaceService;
 
   beforeEach(async () => {
@@ -37,6 +39,7 @@ describe('MobileWorkspaceService', () => {
         { provide: WeighTicketService, useValue: weighTickets },
         { provide: QualityInspectionService, useValue: quality },
         { provide: InventoryService, useValue: inventory },
+        { provide: OutboundService, useValue: outbound },
       ],
     }).compile();
     service = module.get(MobileWorkspaceService);
@@ -49,16 +52,28 @@ describe('MobileWorkspaceService', () => {
       roleCodes: ['ADMIN'], roleNames: ['系统管理员'], permissions: [],
     } as any);
     access.getContractScope.mockResolvedValue({});
+    access.getWaybillScope.mockResolvedValue({});
+    access.getQualityTaskScope.mockResolvedValue({});
+    access.getInboundReceiptScope.mockResolvedValue({});
+    access.getOutboundReceiptScope.mockResolvedValue({});
     prisma.approval.findMany.mockResolvedValue([
       { contractId: 'contract-1', round: 1, step: 1 },
       { contractId: 'contract-1', round: 1, step: 1 },
       { contractId: 'contract-2', round: 1, step: 2 },
     ] as any);
     prisma.contract.count.mockResolvedValueOnce(9).mockResolvedValueOnce(3);
+    prisma.weighTask.count.mockResolvedValue(4);
+    prisma.qualityTask.count.mockResolvedValue(5);
+    prisma.waybill.count.mockResolvedValue(6);
+    prisma.inboundReceipt.count.mockResolvedValue(7);
+    prisma.outboundReceipt.count.mockResolvedValue(8);
 
     const result = await service.overview('admin');
 
-    expect(result.summary).toEqual({ pendingApprovals: 2, contracts: 9, executingContracts: 3 });
+    expect(result.summary).toEqual({
+      pendingApprovals: 2, contracts: 9, executingContracts: 3,
+      pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
+    });
     expect(result.account.roleNames).toEqual(['系统管理员']);
     expect(prisma.approval.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.not.objectContaining({ assigneeId: expect.anything() }),
@@ -87,6 +102,7 @@ describe('MobileWorkspaceService', () => {
 
     expect(result.find((item) => item.key === 'contracts')?.enabled).toBe(true);
     expect(result.find((item) => item.key === 'waybills')?.enabled).toBe(true);
+    expect(result.find((item) => item.key === 'waybills')?.canManage).toBe(false);
     expect(result.find((item) => item.key === 'inventory')?.enabled).toBe(false);
   });
 

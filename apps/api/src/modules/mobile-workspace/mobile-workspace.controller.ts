@@ -6,7 +6,15 @@ import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { WaybillReceiptAttachmentCategory, WaybillService } from '../logistics/waybill.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { OutboundService } from '../inventory/outbound.service';
+import { UpdatePendingInboundReceiptDto } from '../inventory/dto/update-pending-inbound-receipt.dto';
+import { CreateQualityInspectionDto } from '../quality/dto/create-quality-inspection.dto';
+import { FinalizeQualityTaskDto } from '../quality/dto/finalize-quality-task.dto';
+import { UpdateQualityTaskSamplingDto } from '../quality/dto/update-quality-task-sampling.dto';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
+import { CreateWeighRecordDto } from '../weighbridge/dto/create-weigh-record.dto';
+import { CreateWeighTicketDto } from '../weighbridge/dto/create-weigh-ticket.dto';
 import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { MobileApprovalDecisionDto } from './dto/mobile-approval.dto';
@@ -24,6 +32,8 @@ export class MobileWorkspaceController {
     private readonly qualityService: QualityInspectionService,
     private readonly weighService: WeighTicketService,
     private readonly waybillService: WaybillService,
+    private readonly inventoryService: InventoryService,
+    private readonly outboundService: OutboundService,
   ) {}
 
   @Get('workspace')
@@ -168,6 +178,156 @@ export class MobileWorkspaceController {
     return this.waybillService.updateStatus(id, status, userId);
   }
 
+  @Post('weigh-tickets/:id/records')
+  addWeighRecord(@Param('id') id: string, @Body() dto: CreateWeighRecordDto, @CurrentUser('id') userId: string) {
+    return this.weighService.addRecord(id, dto, userId);
+  }
+
+  @Post('weigh-tickets')
+  createWeighTicket(@Body() dto: CreateWeighTicketDto, @CurrentUser('id') userId: string) {
+    return this.weighService.create(dto, userId);
+  }
+
+  @Patch('weigh-tickets/:id/effective-records')
+  selectEffectiveWeighRecords(
+    @Param('id') id: string,
+    @Body() data: { grossRecordId: string; tareRecordId: string },
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!data.grossRecordId || !data.tareRecordId) throw new BadRequestException('请选择有效毛重和皮重记录');
+    return this.weighService.selectEffectiveRecords(id, data, userId);
+  }
+
+  @Patch('weigh-tickets/:id/status')
+  updateWeighStatus(
+    @Param('id') id: string,
+    @Body() data: { status: string; reviewRemark?: string },
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!['COMPLETED', 'REVIEWED'].includes(data.status)) throw new BadRequestException('小程序仅支持完成称重和复核');
+    return this.weighService.updateStatus(id, data.status, userId, data.reviewRemark);
+  }
+
+  @Patch('weigh-files/:waybillId/effective-ticket')
+  selectEffectiveWeighTicket(
+    @Param('waybillId') waybillId: string,
+    @Body() data: { weighTicketId: string; reason?: string },
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!data.weighTicketId) throw new BadRequestException('请选择执行磅单');
+    return this.weighService.selectEffectiveTicket(waybillId, data.weighTicketId, data.reason, userId);
+  }
+
+  @Post('weigh-tickets/:id/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async uploadWeighTicketAttachment(
+    @Param('id') weighTicketId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.saveBusinessAttachment(file, async (stored) => this.weighService.createAttachment({
+      weighTicketId, ...stored,
+    }, userId));
+  }
+
+  @Get('weigh-ticket-attachments/:id/view-url')
+  async getWeighTicketAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.weighService.findAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Patch('quality-tasks/:id/sampling')
+  updateQualitySampling(
+    @Param('id') id: string,
+    @Body() dto: UpdateQualityTaskSamplingDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.qualityService.updateTaskSampling(id, dto, userId);
+  }
+
+  @Post('quality-inspections')
+  createQualityInspection(@Body() dto: CreateQualityInspectionDto, @CurrentUser('id') userId: string) {
+    return this.qualityService.create(dto, userId);
+  }
+
+  @Patch('quality-inspections/:id/status')
+  confirmQualityInspection(
+    @Param('id') id: string,
+    @Body() data: { status: string; resolution?: string },
+    @CurrentUser('id') userId: string,
+  ) {
+    if (data.status !== 'CONFIRMED') throw new BadRequestException('小程序当前仅支持确认检测报告');
+    return this.qualityService.updateStatus(id, data.status, userId, data.resolution);
+  }
+
+  @Post('quality-inspections/:id/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async uploadQualityReportAttachment(
+    @Param('id') qualityInspectionId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.saveBusinessAttachment(file, async (stored) => this.qualityService.createAttachment({
+      qualityInspectionId, ...stored, category: 'REPORT',
+    }, userId));
+  }
+
+  @Get('quality-inspection-attachments/:id/view-url')
+  async getQualityInspectionAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.qualityService.findAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Patch('quality-tasks/:id/finalize')
+  finalizeQualityTask(
+    @Param('id') id: string,
+    @Body() dto: FinalizeQualityTaskDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.qualityService.finalizeTask(id, dto, userId);
+  }
+
+  @Get('warehouses')
+  activeWarehouses(@CurrentUser('id') userId: string) { return this.service.activeWarehouses(userId); }
+
+  @Get('quality-institutions')
+  activeQualityInstitutions(@CurrentUser('id') userId: string) {
+    return this.service.activeQualityInstitutions(userId);
+  }
+
+  @Patch('inbound-receipts/:id')
+  updateInboundReceipt(
+    @Param('id') id: string,
+    @Body() dto: UpdatePendingInboundReceiptDto,
+    @CurrentUser('id') userId: string,
+  ) { return this.inventoryService.updatePendingReceipt(id, dto, userId); }
+
+  @Patch('inbound-receipts/:id/confirm')
+  confirmInboundReceipt(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.inventoryService.confirmReceipt(id, userId);
+  }
+
+  @Post('inbound-receipts/:id/post')
+  postInboundReceipt(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.inventoryService.postInventory(id, userId);
+  }
+
+  @Patch('outbound-receipts/:id/variance')
+  resolveOutboundVariance(
+    @Param('id') id: string,
+    @Body() data: { decision: string; reason: string },
+    @CurrentUser('id') userId: string,
+  ) { return this.outboundService.resolveVariance(id, data, userId); }
+
+  @Post('outbound-receipts/:id/post')
+  postOutboundReceipt(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.outboundService.post(id, userId);
+  }
+
   @Get('approvals')
   @ApiOperation({ summary: '我的待办或已办审批' })
   approvals(@CurrentUser('id') userId: string, @Query('status') status?: string) {
@@ -213,6 +373,23 @@ export class MobileWorkspaceController {
         fileName: result.fileName, originalName, mimeType, size: result.size,
         fileHash: createHash('sha256').update(file.buffer).digest('hex'),
       });
+    } catch (error) {
+      try { await this.fileService.delete(result.fileName); } catch {}
+      throw error;
+    }
+  }
+
+  private async saveBusinessAttachment<T>(
+    file: Express.Multer.File,
+    save: (stored: { fileName: string; originalName: string; mimeType: string; size: number }) => Promise<T>,
+  ) {
+    if (!file) throw new BadRequestException('请选择文件');
+    const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
+    const mimeType = attachmentMimeType(originalName, file.mimetype);
+    if (!mimeType) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    const result = await this.fileService.upload(file.buffer, originalName, mimeType);
+    try {
+      return await save({ fileName: result.fileName, originalName, mimeType, size: result.size });
     } catch (error) {
       try { await this.fileService.delete(result.fileName); } catch {}
       throw error;
