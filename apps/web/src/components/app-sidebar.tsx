@@ -158,6 +158,16 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
   const { open } = useSidebar();
   const canViewContent = ['ADMIN', 'CONTENT_OPERATOR'].includes(userRole)
     || permissions.some((code) => code.startsWith('content.'));
+  const canViewMonitor = userRole === 'ADMIN' || permissions.some((code) => code.startsWith('monitor.'));
+
+  // 监控录像依赖 monitor.* 权限，无权账号不展示该二级入口，其余分组保持不变。
+  const navItems = canViewMonitor
+    ? NAV_ITEMS
+    : NAV_ITEMS.map((group) => (
+      group.children.some((child) => child.href === '/dashboard/monitor')
+        ? { ...group, children: group.children.filter((child) => child.href !== '/dashboard/monitor') }
+        : group
+    ));
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
@@ -213,7 +223,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
         />
 
         {/* 业务模块 — accordion */}
-        {NAV_ITEMS.map((group) => (
+        {navItems.map((group) => (
           <SidebarGroupItem
             key={group.label}
             icon={group.icon}

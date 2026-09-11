@@ -127,7 +127,7 @@ export class MobileWorkspaceService {
     const canViewQuality = context.isAdmin || context.permissions.includes('quality.view');
     const canViewInventory = context.isAdmin || context.permissions.includes('inventory.view');
     const canViewLogistics = context.isAdmin || context.permissions.includes('logistics.view');
-    const [pendingRows, contractCount, executingCount, pendingWeighing, pendingQuality, pendingReceipt, pendingInbound, pendingOutbound] = await Promise.all([
+    const [pendingRows, contractCount, executingCount, pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound] = await Promise.all([
       canApprove ? this.prisma.approval.findMany({
         where: { status: 'PENDING', ...pendingWhere, contract: { deletedAt: null, status: 'PENDING_APPROVAL' } },
         select: { contractId: true, round: true, step: true },
@@ -135,14 +135,20 @@ export class MobileWorkspaceService {
       }) : Promise.resolve([]),
       contractScope ? this.prisma.contract.count({ where: { deletedAt: null, AND: [contractScope] } }) : Promise.resolve(0),
       contractScope ? this.prisma.contract.count({ where: { deletedAt: null, status: 'EXECUTING', AND: [contractScope] } }) : Promise.resolve(0),
+      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
+        where: { deletedAt: null, status: 'PENDING', AND: [scope] },
+      })) : Promise.resolve(0),
+      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
+        where: { deletedAt: null, status: 'IN_TRANSIT', AND: [scope] },
+      })) : Promise.resolve(0),
+      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
+        where: { deletedAt: null, status: 'ARRIVED', AND: [scope] },
+      })) : Promise.resolve(0),
       canViewQuality ? this.access.getWaybillScope(userId).then(scope => this.prisma.weighTask.count({
         where: { deletedAt: null, status: { in: ['PENDING_WEIGHING', 'IN_PROGRESS', 'PENDING_CONFIRMATION', 'EXCEPTION'] }, waybill: { deletedAt: null, AND: [scope] } },
       })) : Promise.resolve(0),
       canViewQuality ? this.access.getQualityTaskScope(userId).then(scope => this.prisma.qualityTask.count({
         where: { deletedAt: null, status: { in: ['PENDING_SAMPLING', 'PENDING_SENDING', 'INSPECTING', 'PENDING_DECISION', 'EXCEPTION'] }, AND: [scope] },
-      })) : Promise.resolve(0),
-      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
-        where: { deletedAt: null, status: 'ARRIVED', AND: [scope] },
       })) : Promise.resolve(0),
       canViewInventory ? this.access.getInboundReceiptScope(userId).then(scope => this.prisma.inboundReceipt.count({
         where: { deletedAt: null, status: { in: ['PENDING', 'RECEIVED'] }, AND: [scope] },
@@ -165,7 +171,7 @@ export class MobileWorkspaceService {
       },
       summary: {
         pendingApprovals: pendingCount, contracts: contractCount, executingContracts: executingCount,
-        pendingWeighing, pendingQuality, pendingReceipt, pendingInbound, pendingOutbound,
+        pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound,
       },
     };
   }
@@ -177,6 +183,98 @@ export class MobileWorkspaceService {
       select: { id: true, code: true, name: true, address: true },
       orderBy: [{ name: 'asc' }, { code: 'asc' }],
     });
+  }
+
+  async logisticsOptions(userId: string, search?: string) {
+    await this.access.assertPermission(userId, 'logistics.manage');
+    const keyword = search?.trim();
+    const [vehicles, drivers, carriers] = await Promise.all([
+      this.prisma.vehicle.findMany({
+        where: {
+          deletedAt: null,
+          status: 'ACTIVE',
+          ...(keyword ? {
+            OR: [
+              { plateNo: { contains: keyword, mode: 'insensitive' as const } },
+              { brand: { contains: keyword, mode: 'insensitive' as const } },
+              { ownerName: { contains: keyword, mode: 'insensitive' as const } },
+              { driverName: { contains: keyword, mode: 'insensitive' as const } },
+            ],
+          } : {}),
+        },
+        select: {
+          id: true, plateNo: true, vehicleType: true, ownerType: true, ownerId: true,
+          ownerName: true, driverName: true, driverPhone: true,
+          waybills: {
+            where: { deletedAt: null, status: 'IN_TRANSIT' },
+            select: { id: true, waybillNo: true },
+            take: 1,
+          },
+        },
+        orderBy: [{ plateNo: 'asc' }],
+        take: 200,
+      }),
+      this.prisma.driver.findMany({
+        where: {
+          deletedAt: null,
+          status: 'ACTIVE',
+          ...(keyword ? {
+            OR: [
+              { name: { contains: keyword, mode: 'insensitive' as const } },
+              { phone: { contains: keyword, mode: 'insensitive' as const } },
+              { serviceOrganization: { partner: { name: { contains: keyword, mode: 'insensitive' as const } } } },
+            ],
+          } : {}),
+        },
+        select: {
+          id: true, name: true, phone: true, serviceOrganizationId: true,
+          serviceOrganization: { select: { partnerId: true, partner: { select: { id: true, name: true } } } },
+          waybills: {
+            where: { deletedAt: null, status: 'IN_TRANSIT' },
+            select: { id: true, waybillNo: true },
+            take: 1,
+          },
+        },
+        orderBy: [{ name: 'asc' }],
+        take: 200,
+      }),
+      this.prisma.serviceOrganization.findMany({
+        where: {
+          deletedAt: null,
+          status: 'ACTIVE',
+          organizationType: 'LOGISTICS_CARRIER',
+          partner: {
+            deletedAt: null,
+            status: 'ACTIVE',
+            roles: { has: 'SUPPLIER' },
+          },
+        },
+        select: { id: true, partnerId: true, partner: { select: { id: true, code: true, name: true, isInternal: true } } },
+        orderBy: { partner: { name: 'asc' } },
+        take: 200,
+      }),
+    ]);
+    return {
+      vehicles: vehicles.map(item => ({
+        ...item,
+        available: item.waybills.length === 0,
+        activeWaybill: item.waybills[0] || null,
+      })),
+      drivers: drivers.map(item => ({
+        ...item,
+        carrierPartnerId: item.serviceOrganization.partnerId,
+        carrierName: item.serviceOrganization.partner.name,
+        available: item.waybills.length === 0,
+        activeWaybill: item.waybills[0] || null,
+      })),
+      carriers: carriers.map(item => ({
+        id: item.partner.id,
+        serviceOrganizationId: item.id,
+        code: item.partner.code,
+        name: item.partner.name,
+        isInternal: item.partner.isInternal,
+      })),
+    };
   }
 
   async activeQualityInstitutions(userId: string) {

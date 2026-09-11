@@ -707,7 +707,17 @@ export class QualityInspectionService {
         qualityTaskId: { not: null },
         qualityTask: { deletedAt: null, AND: [scope] },
       },
+      include: { qualityTask: { select: { status: true } } },
     });
+  }
+
+  async deleteTaskAttachment(id: string, userId: string) {
+    const attachment = await this.findTaskAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return null;
+    if (['COMPLETED', 'VOIDED'].includes(attachment.qualityTask?.status || '')) {
+      throw new BadRequestException('已完成或已作废质检任务的现场影像不能删除');
+    }
+    return this.prisma.attachment.delete({ where: { id } });
   }
 }
 

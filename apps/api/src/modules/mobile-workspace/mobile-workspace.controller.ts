@@ -44,6 +44,12 @@ export class MobileWorkspaceController {
   @ApiOperation({ summary: '查询当前用户可使用的移动业务模块' })
   businessModules(@CurrentUser('id') userId: string) { return this.service.businessModules(userId); }
 
+  @Get('logistics/options')
+  @ApiOperation({ summary: '移动物流调度可选车辆、司机和承运商' })
+  logisticsOptions(@CurrentUser('id') userId: string, @Query('search') search?: string) {
+    return this.service.logisticsOptions(userId, search);
+  }
+
   @Get('business/:module')
   @ApiOperation({ summary: '移动业务只读列表' })
   businessList(
@@ -100,6 +106,22 @@ export class MobileWorkspaceController {
     });
   }
 
+  @Get('quality-task-attachments/:id/view-url')
+  async getQualityTaskAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.qualityService.findTaskAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('现场影像不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('quality-task-attachments/:id')
+  async deleteQualityTaskAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.qualityService.findTaskAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.qualityService.deleteTaskAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
+  }
+
   @Post('weigh-tasks/:id/attachments')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
@@ -126,6 +148,22 @@ export class MobileWorkspaceController {
         ]),
       }, userId);
     });
+  }
+
+  @Get('weigh-task-attachments/:id/view-url')
+  async getWeighTaskAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.weighService.findTaskAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('现场影像不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('weigh-task-attachments/:id')
+  async deleteWeighTaskAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.weighService.findTaskAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.weighService.deleteTaskAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
   }
 
   @Post('waybills/:id/receipt-attachments')
@@ -169,13 +207,29 @@ export class MobileWorkspaceController {
   }
 
   @Patch('waybills/:id/status')
-  async confirmWaybillReceipt(
+  async updateWaybillStatus(
     @Param('id') id: string,
     @Body('status') status: string,
     @CurrentUser('id') userId: string,
   ) {
-    if (status !== 'SIGNED') throw new BadRequestException('小程序当前仅支持确认物流签收');
+    if (!['IN_TRANSIT', 'ARRIVED', 'SIGNED', 'CANCELLED'].includes(status)) {
+      throw new BadRequestException('小程序不支持该物流状态操作');
+    }
     return this.waybillService.updateStatus(id, status, userId);
+  }
+
+  @Patch('waybills/:id/assignment')
+  assignWaybill(
+    @Param('id') id: string,
+    @Body() data: {
+      freightMode?: string; vehicleId?: string | null; driverId?: string | null;
+      carrierPartnerId?: string | null; plateNo?: string | null;
+      driverName?: string | null; driverPhone?: string | null;
+      plannedDepartureAt?: string; plannedArrivalAt?: string;
+    },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.waybillService.assign(id, data, userId);
   }
 
   @Post('weigh-tickets/:id/records')
@@ -204,7 +258,7 @@ export class MobileWorkspaceController {
     @Body() data: { status: string; reviewRemark?: string },
     @CurrentUser('id') userId: string,
   ) {
-    if (!['COMPLETED', 'REVIEWED'].includes(data.status)) throw new BadRequestException('小程序仅支持完成称重和复核');
+    if (!['COMPLETED', 'REVIEWED', 'VOIDED'].includes(data.status)) throw new BadRequestException('小程序不支持该磅单状态操作');
     return this.weighService.updateStatus(id, data.status, userId, data.reviewRemark);
   }
 
@@ -238,6 +292,15 @@ export class MobileWorkspaceController {
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
+  @Delete('weigh-ticket-attachments/:id')
+  async deleteWeighTicketAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.weighService.findAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.weighService.deleteAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
+  }
+
   @Patch('quality-tasks/:id/sampling')
   updateQualitySampling(
     @Param('id') id: string,
@@ -258,7 +321,7 @@ export class MobileWorkspaceController {
     @Body() data: { status: string; resolution?: string },
     @CurrentUser('id') userId: string,
   ) {
-    if (data.status !== 'CONFIRMED') throw new BadRequestException('小程序当前仅支持确认检测报告');
+    if (!['CONFIRMED', 'VOIDED'].includes(data.status)) throw new BadRequestException('小程序不支持该检测报告状态操作');
     return this.qualityService.updateStatus(id, data.status, userId, data.resolution);
   }
 
@@ -280,6 +343,15 @@ export class MobileWorkspaceController {
     const attachment = await this.qualityService.findAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('附件不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('quality-inspection-attachments/:id')
+  async deleteQualityInspectionAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.qualityService.findAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.qualityService.deleteAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
   }
 
   @Patch('quality-tasks/:id/finalize')
@@ -316,6 +388,35 @@ export class MobileWorkspaceController {
     return this.inventoryService.postInventory(id, userId);
   }
 
+  @Post('inbound-receipts/:id/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  uploadInboundAttachment(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.saveBusinessAttachment(file, stored => this.inventoryService.createAttachment({
+      inboundReceiptId: id, ...stored, category: 'RECEIPT_EVIDENCE',
+    }, userId));
+  }
+
+  @Get('inbound-receipt-attachments/:id/view-url')
+  async inboundAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.inventoryService.findAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('inbound-receipt-attachments/:id')
+  async deleteInboundAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.inventoryService.findAttachmentById(id, userId, 'inventory.manage');
+    if (!attachment) return { deleted: false };
+    await this.inventoryService.deleteAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
+  }
+
   @Patch('outbound-receipts/:id/variance')
   resolveOutboundVariance(
     @Param('id') id: string,
@@ -326,6 +427,35 @@ export class MobileWorkspaceController {
   @Post('outbound-receipts/:id/post')
   postOutboundReceipt(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.outboundService.post(id, userId);
+  }
+
+  @Post('outbound-receipts/:id/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  uploadOutboundAttachment(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.saveBusinessAttachment(file, stored => this.outboundService.createAttachment({
+      outboundReceiptId: id, ...stored, category: 'OUTBOUND_EVIDENCE',
+    }, userId));
+  }
+
+  @Get('outbound-receipt-attachments/:id/view-url')
+  async outboundAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.outboundService.findAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('附件不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('outbound-receipt-attachments/:id')
+  async deleteOutboundAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.outboundService.findAttachmentById(id, userId, 'inventory.manage');
+    if (!attachment) return { deleted: false };
+    await this.outboundService.deleteAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
   }
 
   @Get('approvals')

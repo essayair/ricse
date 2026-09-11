@@ -741,6 +741,7 @@ model Warehouse {
   inventoryLedgers      InventoryLedger[]
   productionSourceTasks ProductionTask[]  @relation("ProductionTaskSourceWarehouse")
   productionTargetTasks ProductionTask[]  @relation("ProductionTaskTargetWarehouse")
+  monitorSites          MonitorSite[]
 
   @@index([partnerId])
   @@map("warehouses")
@@ -2242,4 +2243,76 @@ model WechatAccountBinding {
   @@index([wechatIdentityId, createdAt])
   @@index([userId, createdAt])
   @@map("wechat_account_bindings")
+}
+
+// ========== 监控录像 ==========
+
+model MonitorPlatform {
+  id        String    @id @default(cuid())
+  code      String    @unique // EZVIZ 等平台标识
+  name      String
+  appKey    String
+  appSecret String // 仅服务端读取，接口一律返回掩码
+  baseUrl   String    @default("https://open.ys7.com")
+  status    String    @default("ACTIVE") // ACTIVE | INACTIVE
+  remark    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  sites MonitorSite[]
+
+  @@index([status])
+  @@map("monitor_platforms")
+}
+
+model MonitorSite {
+  id          String    @id @default(cuid())
+  platformId  String
+  warehouseId String? // 化验室等非仓库点位可空
+  code        String // 分组标识，如 panorama / interior
+  name        String
+  sortOrder   Int       @default(0)
+  status      String    @default("ACTIVE") // ACTIVE | INACTIVE
+  remark      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  platform  MonitorPlatform @relation(fields: [platformId], references: [id])
+  warehouse Warehouse?      @relation(fields: [warehouseId], references: [id])
+  cameras   MonitorCamera[]
+
+  @@unique([platformId, code])
+  @@index([platformId, status])
+  @@index([warehouseId])
+  @@map("monitor_sites")
+}
+
+model MonitorCamera {
+  id            String    @id @default(cuid())
+  siteId        String
+  code          String // 点位标识，如 gk-3
+  name          String
+  deviceSerial  String // 设备序列号，如 GK9665972
+  channelNo     Int       @default(1)
+  verifyCode    String? // ezopen 验证码，服务端拼流地址时使用
+  streamQuality String    @default("hd") // hd | sd
+  ptzSupport    Boolean   @default(false)
+  purpose       String? // WEIGHBRIDGE | UNLOADING | WAREHOUSE | LAB | OTHER
+  online        Boolean   @default(false)
+  statusSyncAt  DateTime? // 最近一次在线状态同步时间
+  sortOrder     Int       @default(0)
+  status        String    @default("ACTIVE") // ACTIVE | INACTIVE
+  remark        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  site MonitorSite @relation(fields: [siteId], references: [id])
+
+  @@unique([siteId, code])
+  @@index([siteId, status])
+  @@index([deviceSerial])
+  @@map("monitor_cameras")
 }

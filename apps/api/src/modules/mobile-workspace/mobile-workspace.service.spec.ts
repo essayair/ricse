@@ -72,6 +72,7 @@ describe('MobileWorkspaceService', () => {
 
     expect(result.summary).toEqual({
       pendingApprovals: 2, contracts: 9, executingContracts: 3,
+      pendingDispatch: 6, inTransit: 6,
       pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
     });
     expect(result.account.roleNames).toEqual(['系统管理员']);

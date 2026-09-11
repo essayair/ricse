@@ -61,6 +61,15 @@ export class WeighTicketController {
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
+  @Delete('task-attachments/:id')
+  async deleteTaskAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findTaskAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.service.deleteTaskAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
+  }
+
   @Post('tasks/:taskId/attachments')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))

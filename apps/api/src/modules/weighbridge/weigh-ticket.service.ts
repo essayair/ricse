@@ -725,7 +725,17 @@ export class WeighTicketService {
         weighTaskId: { not: null },
         weighTask: { deletedAt: null, waybill: { deletedAt: null, AND: [scope] } },
       },
+      include: { weighTask: { select: { status: true } } },
     });
+  }
+
+  async deleteTaskAttachment(id: string, userId: string) {
+    const attachment = await this.findTaskAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return null;
+    if (['COMPLETED', 'VOIDED'].includes(attachment.weighTask?.status || '')) {
+      throw new BadRequestException('已完成或已作废过磅任务的现场影像不能删除');
+    }
+    return this.prisma.attachment.delete({ where: { id } });
   }
 
   private validateBasisWeight(basis: string, data: any) {

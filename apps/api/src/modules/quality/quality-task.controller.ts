@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -69,6 +70,15 @@ export class QualityTaskController {
     const attachment = await this.service.findTaskAttachmentById(id, userId);
     if (!attachment) throw new BadRequestException('现场影像不存在');
     return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('attachments/:id')
+  async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findTaskAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.service.deleteTaskAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true };
   }
 
   @Post(':id/attachments')
