@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { unitLabel } from '@/lib/unit';
+import { BusinessDirectionBadge, businessDirectionStyle, waybillTransitionLabel } from '@/components/business-direction';
 
 interface Waybill {
   id: string;
@@ -44,8 +45,8 @@ const COLUMNS: Array<{ key: BoardKey; label: string; description: string }> = [
   { key: 'UNASSIGNED', label: '待调度', description: '缺少车辆或司机' },
   { key: 'READY', label: '待发运', description: '调度完成，等待发车' },
   { key: 'IN_TRANSIT', label: '在途', description: '运输执行中' },
-  { key: 'ARRIVED', label: '已到达', description: '等待签收确认' },
-  { key: 'SIGNED', label: '已签收', description: '运输已完成' },
+  { key: 'ARRIVED', label: '已到目的地', description: '等待交接确认' },
+  { key: 'SIGNED', label: '已完成交接', description: '运输已完成' },
 ];
 
 export default function DispatchPage() {
@@ -107,7 +108,7 @@ export default function DispatchPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">物流调度工作台</h1>
-          <p className="mt-1 text-sm text-muted-foreground">完成车辆调度、发运、在途跟踪、到达和签收闭环</p>
+          <p className="mt-1 text-sm text-muted-foreground">完成车辆调度、发运、在途跟踪、目的地到达和交接闭环</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => router.push('/dashboard/waybills')}>
@@ -123,7 +124,7 @@ export default function DispatchPage() {
         <Summary icon={Truck} label="有效运单" value={activeItems.length} note="不含已取消" />
         <Summary icon={CircleDot} label="待调度" value={activeItems.filter(item => boardKey(item) === 'UNASSIGNED').length} note="需补车辆司机" />
         <Summary icon={Clock3} label="在途车辆" value={activeItems.filter(item => item.status === 'IN_TRANSIT').length} note={`${inTransitQuantity.toLocaleString()} 吨在途`} />
-        <Summary icon={CheckCircle2} label="已签收" value={activeItems.filter(item => item.status === 'SIGNED').length} note="运输闭环" />
+        <Summary icon={CheckCircle2} label="已完成交接" value={activeItems.filter(item => item.status === 'SIGNED').length} note="运输闭环" />
         <Summary icon={AlertTriangle} label="调度异常" value={exceptions} note="超时或资料缺失" danger={exceptions > 0} />
       </div>
 
@@ -191,12 +192,10 @@ function WaybillCard({ item, updating, onOpen, onTransition }: {
   const exception = exceptionText(item);
   const key = boardKey(item);
   return (
-    <Card className={`cursor-pointer p-4 transition-colors hover:border-primary ${exception ? 'border-warning/60' : ''}`} onClick={onOpen}>
+    <Card className={`cursor-pointer p-4 transition-colors hover:border-primary ${businessDirectionStyle(item.dispatchNotice.type).hover} ${exception ? 'border-warning/60' : ''}`} onClick={onOpen}>
       <div className="flex items-start justify-between gap-2">
         <div className="font-mono text-xs font-medium text-primary">{item.waybillNo}</div>
-        <Badge variant="outline" className="shrink-0 text-[10px]">
-          {item.dispatchNotice.type === 'PURCHASE' ? '采购' : '销售'}
-        </Badge>
+        <BusinessDirectionBadge type={item.dispatchNotice.type} suffix="运输" />
       </div>
       <div className="mt-2 font-medium">{item.plateNo || '待分配车辆'}</div>
       <div className="mt-0.5 text-xs text-muted-foreground">
@@ -221,8 +220,8 @@ function WaybillCard({ item, updating, onOpen, onTransition }: {
       <div className="mt-3 flex justify-end">
         {key === 'UNASSIGNED' && <Button size="sm" variant="outline" disabled={updating} onClick={event => { event.stopPropagation(); onOpen(); }}>去调度<ArrowRight className="ml-1 h-3 w-3" /></Button>}
         {key === 'READY' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'IN_TRANSIT', '确认发运')}>确认发运</Button>}
-        {key === 'IN_TRANSIT' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'ARRIVED', '确认到达')}>确认到达</Button>}
-        {key === 'ARRIVED' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'SIGNED', '确认签收')}>确认签收</Button>}
+        {key === 'IN_TRANSIT' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'ARRIVED', waybillTransitionLabel('ARRIVED', item.dispatchNotice.type))}>{waybillTransitionLabel('ARRIVED', item.dispatchNotice.type)}</Button>}
+        {key === 'ARRIVED' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'SIGNED', waybillTransitionLabel('SIGNED', item.dispatchNotice.type))}>{waybillTransitionLabel('SIGNED', item.dispatchNotice.type)}</Button>}
         {key === 'SIGNED' && <span className="text-xs text-success">已完成运输</span>}
       </div>
     </Card>
@@ -252,14 +251,17 @@ function boardKey(item: Waybill): BoardKey {
 function exceptionText(item: Waybill) {
   const now = Date.now();
   if (item.status === 'PENDING' && item.plannedDepartureAt && new Date(item.plannedDepartureAt).getTime() < now) return '已超过计划发运时间';
-  if (item.status === 'IN_TRANSIT' && item.plannedArrivalAt && new Date(item.plannedArrivalAt).getTime() < now) return '已超过预计到达时间';
+  if (item.status === 'IN_TRANSIT' && item.plannedArrivalAt && new Date(item.plannedArrivalAt).getTime() < now) {
+    return `已超过预计${item.dispatchNotice.type === 'SALES' ? '送达' : '到达'}时间`;
+  }
   if (item.status === 'PENDING' && (!item.plateNo || !item.driverName)) return '车辆或司机信息未完成';
   return '';
 }
 
 function scheduleText(item: Waybill) {
-  if (item.status === 'IN_TRANSIT') return `预计到达 ${formatTime(item.plannedArrivalAt)}`;
-  if (item.status === 'ARRIVED' || item.status === 'SIGNED') return `到达 ${formatTime(item.arrivedAt)}`;
+  const arrival = item.dispatchNotice.type === 'SALES' ? '送达' : '到达';
+  if (item.status === 'IN_TRANSIT') return `预计${arrival} ${formatTime(item.plannedArrivalAt)}`;
+  if (item.status === 'ARRIVED' || item.status === 'SIGNED') return `${arrival} ${formatTime(item.arrivedAt)}`;
   return `计划发运 ${formatTime(item.plannedDepartureAt)}`;
 }
 

@@ -140,7 +140,7 @@ export class InventoryService {
       stage = 'WAITING_QUALITY'; stageLabel = '等待质检结论'; blocker = '尚无已确认的最终质检结果'; tone = 'warning';
     }
 
-    const transportLabel = waybill.status === 'SIGNED' ? '已签收' : waybill.status === 'ARRIVED' ? '已到达待签收' : waybill.status === 'IN_TRANSIT' ? '运输在途' : '待发运';
+    const transportLabel = waybill.status === 'SIGNED' ? '已收货' : waybill.status === 'ARRIVED' ? '已到达待收货' : waybill.status === 'IN_TRANSIT' ? '运输在途' : '待发运';
     const weighLabel = !activeTickets.length
       ? '未过磅'
       : reviewedTickets.length
@@ -156,7 +156,7 @@ export class InventoryService {
       stage, stageLabel, blocker, tone,
       milestones: {
         transport: { label: transportLabel, complete: ['ARRIVED', 'SIGNED'].includes(waybill.status) },
-        signed: { label: waybill.status === 'SIGNED' ? '已签收' : '待签收', complete: waybill.status === 'SIGNED' },
+        signed: { label: waybill.status === 'SIGNED' ? '已收货' : '待收货', complete: waybill.status === 'SIGNED' },
         weigh: { label: weighLabel, complete: reviewedTickets.length > 0 },
         quality: { label: qualityLabel, complete: Boolean(receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS') },
         inbound: { label: receipt.status === 'POSTED' ? '已入账' : receipt.status === 'RECEIVED' ? '已收货' : '待入库', complete: receipt.status === 'POSTED' },

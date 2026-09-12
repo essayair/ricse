@@ -24,7 +24,7 @@ import { FinalizeQualityTaskDto } from './dto/finalize-quality-task.dto';
 import { UpdateQualityTaskSamplingDto } from './dto/update-quality-task-sampling.dto';
 import { QualityInspectionService } from './quality-inspection.service';
 
-@ApiTags('到货质检任务')
+@ApiTags('质检任务')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
 @Controller('quality-tasks')
@@ -35,7 +35,7 @@ export class QualityTaskController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: '到货质检任务分页检索' })
+  @ApiOperation({ summary: '质检任务分页检索' })
   findAll(
     @CurrentUser('id') userId: string,
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
@@ -50,7 +50,7 @@ export class QualityTaskController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '到货质检任务详情及机构检测报告' })
+  @ApiOperation({ summary: '质检任务详情及机构检测报告' })
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.findTask(id, userId);
   }

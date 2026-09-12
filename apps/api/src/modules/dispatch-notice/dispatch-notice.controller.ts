@@ -3,7 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { DispatchNoticeService } from './dispatch-notice.service';
-import { CreateDispatchNoticeDto } from './dto/create-dispatch-notice.dto';
+import { CreateDispatchNoticeDto, DispatchLocationDto } from './dto/create-dispatch-notice.dto';
 
 @ApiTags('执行通知管理')
 @ApiBearerAuth()
@@ -41,6 +41,18 @@ export class DispatchNoticeController {
   @Patch(':id/status')
   updateStatus(@Param('id') id: string, @Body('status') status: string, @CurrentUser('id') userId: string) {
     return this.service.updateStatus(id, status, userId);
+  }
+
+  @Get(':id/location-options')
+  @ApiOperation({ summary: '获取执行通知可选仓库和合作伙伴收发货地址' })
+  locationOptions(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.getLocationOptions(id, userId);
+  }
+
+  @Patch(':id/locations')
+  @ApiOperation({ summary: '修改尚未派车的执行通知地址' })
+  updateLocations(@Param('id') id: string, @Body() dto: DispatchLocationDto, @CurrentUser('id') userId: string) {
+    return this.service.updateLocations(id, dto, userId);
   }
 
   @Delete(':id')

@@ -14,6 +14,7 @@ import { openStoredAttachment } from '@/lib/attachment-preview';
 import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
+import { StatusText } from '@/components/status-text';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,15 +97,15 @@ interface FulfillmentDirection {
   executedAmount: number;
 }
 
-const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'destructive' | 'outline' | 'secondary' }> = {
-  DRAFT:            { label: '草稿', variant: 'secondary' },
-  PENDING_APPROVAL: { label: '待审批', variant: 'outline' },
-  APPROVED:         { label: '已通过', variant: 'default' },
-  REJECTED:         { label: '已驳回', variant: 'destructive' },
-  EXECUTING:        { label: '执行中', variant: 'default' },
-  COMPLETED:        { label: '已完成', variant: 'default' },
-  CLOSED:           { label: '已关闭', variant: 'outline' },
-  VOIDED:           { label: '已作废', variant: 'outline' },
+const STATUS_MAP: Record<string, { label: string }> = {
+  DRAFT:            { label: '草稿' },
+  PENDING_APPROVAL: { label: '待审批' },
+  APPROVED:         { label: '已通过' },
+  REJECTED:         { label: '已驳回' },
+  EXECUTING:        { label: '执行中' },
+  COMPLETED:        { label: '已完成' },
+  CLOSED:           { label: '已关闭' },
+  VOIDED:           { label: '已作废' },
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -325,12 +326,9 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
                   <Badge variant="outline" className="text-xs">
                     {a.approvalMode === 'ANY' ? '或签' : '会签'}
                   </Badge>
-                  <Badge
-                    variant={['APPROVED', 'OTHERS_APPROVED'].includes(a.status) ? 'default' : ['REJECTED', 'OTHERS_REJECTED'].includes(a.status) ? 'destructive' : 'secondary'}
-                    className="text-xs"
-                  >
+                  <StatusText status={a.status}>
                     {statusLabel[a.status] || a.status}
-                  </Badge>
+                  </StatusText>
                   <span className="text-xs text-muted-foreground ml-auto">
                     {new Date(a.actedAt || a.createdAt).toLocaleString('zh-CN')}
                   </span>
@@ -433,9 +431,9 @@ function FulfillmentProgress({ contract }: { contract: ContractDetail }) {
                           {order.type === 'PURCHASE' ? '采购执行批次' : '销售执行批次'} · ¥{Number(order.totalAmount).toLocaleString()}
                         </div>
                       </div>
-                      <Badge variant={order.status === 'COMPLETED' ? 'default' : order.status === 'CANCELLED' ? 'destructive' : 'secondary'} className="shrink-0 text-[10px]">
+                      <StatusText status={order.status} className="shrink-0">
                         {ORDER_STATUS_LABEL[order.status] || order.status}
-                      </Badge>
+                      </StatusText>
                       <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
                     </Link>
                   ))}
@@ -578,7 +576,7 @@ export default function ContractDetailPage() {
     ? c.lineItems.reduce((sum, item) => sum + Number(item.salesTotalPrice || 0), 0)
     : 0;
   const bilateralProfit = bilateralSalesAmount - Number(c.totalAmount || 0);
-  const cfg = STATUS_MAP[c.status] || { label: c.status, variant: 'secondary' as const };
+  const cfg = STATUS_MAP[c.status] || { label: c.status };
   const userRole = currentUser?.role || 'USER';
   const roleActions = ROLE_ACTIONS[c.status]?.[userRole] || ROLE_ACTIONS[c.status]?.['USER'] || [];
   const hasCurrentApprovalTask = c.approvals?.some(
@@ -654,7 +652,7 @@ export default function ContractDetailPage() {
               {c.contractNo} · {TYPE_LABEL[c.type] || c.type} · 创建人: {c.creator?.name}
             </p>
           </div>
-          <Badge variant={cfg.variant} className="text-sm px-3 py-1">{cfg.label}</Badge>
+          <StatusText status={c.status}>{cfg.label}</StatusText>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-4 text-sm">

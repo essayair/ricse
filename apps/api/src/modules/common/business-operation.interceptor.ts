@@ -96,6 +96,11 @@ export class BusinessOperationInterceptor implements NestInterceptor {
       if (!businessId) return response;
 
       const action = this.resolveAction(method, request.path || request.url || '', request.body, business.isCreate);
+      if (business.businessType === 'WAYBILL' && action.code === 'STATUS_CHANGE') {
+        const type = (response as any)?.dispatchNotice?.type;
+        if (request.body?.status === 'ARRIVED') action.label = type === 'SALES' ? '确认送达' : '确认到达';
+        if (request.body?.status === 'SIGNED') action.label = type === 'SALES' ? '确认客户签收' : '确认收货';
+      }
       try {
         await this.prisma.businessOperationLog.create({
           data: {

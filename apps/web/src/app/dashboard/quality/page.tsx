@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import { CheckCircle2, Clock3, FlaskConical, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { StatusText } from '@/components/status-text';
 
 interface QualityTask {
   id: string; taskNo: string; status: string; finalConclusion: string; plannedReportCount: number;
@@ -81,20 +81,20 @@ export default function QualityPage() {
     </Card>
 
     <Card className="overflow-hidden">
-      {loading ? <div className="p-12 text-center text-muted-foreground">加载中...</div> : !items.length ? <div className="p-12 text-center text-muted-foreground"><FlaskConical className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无质检任务<br /><span className="text-xs">物流运单确认到达后，系统会自动生成任务。</span></div> : <div className="overflow-x-auto"><table className="min-w-[1350px] w-full text-sm">
-        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="px-4 py-3">任务编号 / 到货</th><th className="px-4 py-3">报告进度</th><th className="px-4 py-3">物料</th><th className="px-4 py-3">业务单位 / 车辆</th><th className="px-4 py-3">执行批次 / 运单</th><th className="px-4 py-3">磅单进度</th><th className="px-4 py-3">处理人</th><th className="px-4 py-3">最终结论 / 状态</th></tr></thead>
+      {loading ? <div className="p-12 text-center text-muted-foreground">加载中...</div> : !items.length ? <div className="p-12 text-center text-muted-foreground"><FlaskConical className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无质检任务<br /><span className="text-xs">执行通知已配置质检时，运单到达或送达后系统自动生成任务。</span></div> : <div className="overflow-x-auto"><table className="min-w-[1350px] w-full text-sm">
+        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="px-4 py-3">任务编号 / 交接时间</th><th className="px-4 py-3">报告进度</th><th className="px-4 py-3">物料</th><th className="px-4 py-3">业务单位 / 车辆</th><th className="px-4 py-3">执行批次 / 运单</th><th className="px-4 py-3">磅单进度</th><th className="px-4 py-3">处理人</th><th className="px-4 py-3">最终结论 / 状态</th></tr></thead>
         <tbody>{items.map(item => {
           const confirmed = item.reports.filter(report => report.status === 'CONFIRMED').length;
           const party = item.waybill.dispatchNotice.type === 'PURCHASE' ? item.waybill.dispatchNotice.order.contract.seller?.name : item.waybill.dispatchNotice.order.contract.buyer?.name;
           return <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/quality/${item.id}`)}>
             <td className="px-4 py-3"><div className="font-mono font-medium text-primary">{item.taskNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.arrivedAt ? formatDateTimeToSecond(item.waybill.arrivedAt) : formatDateTimeToSecond(item.createdAt)}</div></td>
             <td className="px-4 py-3"><div className="font-medium">{item.reports.length} 份报告</div><div className="mt-1 text-xs text-muted-foreground">已确认 {confirmed} / 计划 {item.plannedReportCount}</div></td>
-            <td className="max-w-56 px-4 py-3"><div className="truncate font-medium">{item.waybill.lineItems.map(line => line.materialName).filter(Boolean).join('、') || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.dispatchNotice.type === 'PURCHASE' ? '采购到货' : '销售到货'}</div></td>
+            <td className="max-w-56 px-4 py-3"><div className="truncate font-medium">{item.waybill.lineItems.map(line => line.materialName).filter(Boolean).join('、') || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.dispatchNotice.type === 'PURCHASE' ? '采购到货质检' : '销售交付质检'}</div></td>
             <td className="max-w-56 px-4 py-3"><div className="truncate">{party || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.plateNo || '无车牌'}</div></td>
             <td className="px-4 py-3"><div>{item.waybill.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.waybill.waybillNo}</div></td>
             <td className="px-4 py-3"><div>{item.waybill.weighTickets.length} 张磅单</div><div className="mt-1 text-xs text-muted-foreground">已复核 {item.waybill.weighTickets.filter(ticket => ticket.status === 'REVIEWED').length} 张</div></td>
             <td className="px-4 py-3"><div>{item.handler?.name || '待处理'}</div><div className="mt-1 text-xs text-muted-foreground">{item.samplerName ? `取样：${item.samplerName}` : '质检管理人员可处理'}</div></td>
-            <td className="px-4 py-3"><ConclusionBadge value={item.finalConclusion} /><div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />{STATUS[item.status] || item.status}</div></td>
+            <td className="px-4 py-3"><ConclusionBadge value={item.finalConclusion} /><div className="mt-1 flex items-center gap-1"><Clock3 className="h-3 w-3 text-muted-foreground" /><StatusText status={item.status}>{STATUS[item.status] || item.status}</StatusText></div></td>
           </tr>;
         })}</tbody>
       </table></div>}
@@ -103,7 +103,7 @@ export default function QualityPage() {
 }
 
 function ConclusionBadge({ value }: { value: string }) {
-  return <Badge variant={value === 'FUSE' ? 'destructive' : value === 'PASS' ? 'default' : 'secondary'}>{value === 'PASS' && <CheckCircle2 className="mr-1 h-3 w-3" />}{CONCLUSION[value] || value}</Badge>;
+  return <StatusText status={value}>{CONCLUSION[value] || value}</StatusText>;
 }
 function Summary({ label, value, success, danger }: { label: string; value: number; success?: boolean; danger?: boolean }) {
   return <Card className="p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 text-xl font-bold ${danger && value ? 'text-destructive' : success && value ? 'text-primary' : ''}`}>{value}</div></Card>;

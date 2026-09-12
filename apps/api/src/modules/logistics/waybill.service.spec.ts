@@ -275,10 +275,10 @@ describe('WaybillService', () => {
   it('确认签收前必须上传物流收货附件', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1', status: 'ARRIVED', attachments: [],
-      dispatchNotice: { id: notice.id, status: 'IN_PROGRESS' },
+      dispatchNotice: { id: notice.id, type: 'PURCHASE', status: 'IN_PROGRESS' },
     } as any);
     await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1'))
-      .rejects.toThrow('确认签收前必须上传至少一份物流收货附件');
+      .rejects.toThrow('确认收货前必须上传至少一份物流收货凭证');
   });
 
   it.each(['RECEIPT_DOCUMENT', 'RECEIPT_PHOTO', 'RECEIPT_OTHER', 'RECEIPT'])(

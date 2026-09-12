@@ -8,6 +8,7 @@ import { LogisticsModule } from '../logistics/logistics.module';
 import { OrderModule } from '../order/order.module';
 import { QualityModule } from '../quality/quality.module';
 import { WeighbridgeModule } from '../weighbridge/weighbridge.module';
+import { MasterDataModule } from '../master-data/master-data.module';
 import { MobileUserGuard } from './mobile-user.guard';
 import { MobileWorkspaceController } from './mobile-workspace.controller';
 import { MobileWorkspaceService } from './mobile-workspace.service';
@@ -23,6 +24,7 @@ import { MobileWorkspaceService } from './mobile-workspace.service';
     WeighbridgeModule,
     QualityModule,
     InventoryModule,
+    MasterDataModule,
   ],
   controllers: [MobileWorkspaceController],
   providers: [MobileUserGuard, MobileWorkspaceService],

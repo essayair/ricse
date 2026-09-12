@@ -39,6 +39,17 @@
     --primary-bg: 214 100% 97%;
     --destructive-bg: 0 93% 94%;
 
+    /* ── 采销业务方向色（跨合同、执行、物流统一） ── */
+    --business-purchase: 0 72% 51%;
+    --business-purchase-bg: 0 86% 97%;
+    --business-purchase-border: 0 93% 89%;
+    --business-sales: 221 83% 53%;
+    --business-sales-bg: 214 100% 97%;
+    --business-sales-border: 213 94% 87%;
+    --business-bilateral: 263 70% 50%;
+    --business-bilateral-bg: 250 100% 98%;
+    --business-bilateral-border: 252 95% 92%;
+
     /* ── 图表示例色 ── */
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;

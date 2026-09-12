@@ -803,7 +803,7 @@ export class WeighTicketService {
     const normalizedReason = reason?.trim();
     const isChangingTicket = currents.some(item => item.weighTicketId !== weighTicketId);
     if (isChangingTicket && requireSwitchReason && !normalizedReason) {
-      throw new BadRequestException('更换结算入库磅单必须填写变更原因');
+      throw new BadRequestException('更换库存与结算执行磅单必须填写变更原因');
     }
     if (isChangingTicket) {
       const [postedInbound, postedOutbound, preparedOutbound] = await Promise.all([
@@ -811,7 +811,7 @@ export class WeighTicketService {
         this.prisma.outboundReceipt.findFirst({ where: { waybillId, status: 'POSTED', deletedAt: null }, select: { receiptNo: true } }),
         this.prisma.outboundReceipt.findFirst({ where: { waybillId, status: { in: ['READY', 'VARIANCE_PENDING'] }, deletedAt: null }, select: { receiptNo: true } }),
       ]);
-      if (postedInbound || postedOutbound) throw new BadRequestException('该运单已经完成库存入账，不能更换结算入库磅单');
+      if (postedInbound || postedOutbound) throw new BadRequestException('该运单已经完成库存入账，不能更换库存与结算执行磅单');
       if (preparedOutbound) throw new BadRequestException(`出库作业 ${preparedOutbound.receiptNo} 已完成批次拣配，请先重新处理出库作业后再更换磅单`);
     }
     return this.prisma.$transaction(async tx => {

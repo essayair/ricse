@@ -7,6 +7,7 @@ import { ArrowLeft, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
 import { Badge } from '@/components/ui/badge';
+import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -77,7 +78,7 @@ export default function MaterialDetailPage() {
     <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
       <div className="space-y-4">
         <Card className="space-y-5 p-6">
-          <div className="flex items-center justify-between"><h2 className="font-semibold">商品基本信息</h2><Badge variant={material.status === 'ACTIVE' ? 'default' : 'secondary'}>{material.status === 'ACTIVE' ? '启用' : '停用'}</Badge></div>
+          <div className="flex items-center justify-between"><h2 className="font-semibold">商品基本信息</h2><StatusText status={material.status}>{material.status === 'ACTIVE' ? '启用' : '停用'}</StatusText></div>
           <div className="grid gap-4 md:grid-cols-3">
             <Info label="商品名称" value={material.name} className="md:col-span-2" />
             <Info label="商品分类" value={material.category?.name} />

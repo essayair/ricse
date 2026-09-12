@@ -2,6 +2,7 @@ import { Injectable, ConflictException, NotFoundException, BadRequestException }
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
+import { CreatePartnerAddressDto, UpdatePartnerAddressDto } from './dto/partner-address.dto';
 
 @Injectable()
 export class PartnerService {
@@ -178,6 +179,7 @@ export class PartnerService {
       where: { id },
       include: {
         bankAccounts: true,
+        businessAddresses: { orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] },
         vehicles: true,
         warehouses: true,
         serviceOrganizations: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' } },
@@ -257,6 +259,104 @@ export class PartnerService {
     return this.prisma.partner.update({
       where: { id },
       data: { deletedAt: new Date() },
+    });
+  }
+
+  // ========== 收发货地址 ==========
+
+  private cleanAddressPart(value: string, label: string) {
+    const result = value?.trim();
+    if (!result) throw new BadRequestException(`${label}不能为空`);
+    return result;
+  }
+
+  private fullAddress(data: { province: string; city: string; district: string; detailAddress: string }) {
+    return [data.province, data.city, data.district, data.detailAddress]
+      .map(item => item.trim())
+      .filter((item, index, values) => index === 0 || item !== values[index - 1])
+      .join('');
+  }
+
+  async findBusinessAddresses(partnerId: string, activeOnly = false) {
+    await this.findOne(partnerId);
+    return this.prisma.partnerAddress.findMany({
+      where: { partnerId, ...(activeOnly ? { status: 'ACTIVE' } : {}) },
+      orderBy: [{ isDefault: 'desc' }, { status: 'asc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async createBusinessAddress(partnerId: string, dto: CreatePartnerAddressDto) {
+    await this.findOne(partnerId);
+    const data = {
+      addressName: this.cleanAddressPart(dto.addressName, '地址简称'),
+      province: this.cleanAddressPart(dto.province, '省份'),
+      city: this.cleanAddressPart(dto.city, '城市'),
+      district: this.cleanAddressPart(dto.district, '区县'),
+      detailAddress: this.cleanAddressPart(dto.detailAddress, '详细地址'),
+      contactPerson: this.cleanAddressPart(dto.contactPerson, '联系人'),
+      contactPhone: this.cleanAddressPart(dto.contactPhone, '联系方式'),
+    };
+    const activeCount = await this.prisma.partnerAddress.count({ where: { partnerId, status: 'ACTIVE' } });
+    const isDefault = dto.isDefault || activeCount === 0;
+    const duplicate = await this.prisma.partnerAddress.findFirst({
+      where: { partnerId, fullAddress: this.fullAddress(data), status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (duplicate) throw new ConflictException('该合作伙伴已存在相同的启用地址');
+    return this.prisma.$transaction(async tx => {
+      if (isDefault) {
+        await tx.partnerAddress.updateMany({ where: { partnerId, isDefault: true }, data: { isDefault: false } });
+      }
+      return tx.partnerAddress.create({
+        data: { partnerId, ...data, fullAddress: this.fullAddress(data), isDefault, remark: dto.remark?.trim() || null },
+      });
+    });
+  }
+
+  async updateBusinessAddress(id: string, dto: UpdatePartnerAddressDto) {
+    const current = await this.prisma.partnerAddress.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('收发货地址不存在');
+    const merged = {
+      province: dto.province === undefined ? current.province : this.cleanAddressPart(dto.province, '省份'),
+      city: dto.city === undefined ? current.city : this.cleanAddressPart(dto.city, '城市'),
+      district: dto.district === undefined ? current.district : this.cleanAddressPart(dto.district, '区县'),
+      detailAddress: dto.detailAddress === undefined ? current.detailAddress : this.cleanAddressPart(dto.detailAddress, '详细地址'),
+    };
+    if (dto.status === 'INACTIVE' && current.isDefault) {
+      throw new BadRequestException('默认地址不能直接停用，请先将其他启用地址设为默认');
+    }
+    if (dto.isDefault === false && current.isDefault) {
+      throw new BadRequestException('默认地址不能直接取消，请将其他启用地址设为默认');
+    }
+    if (dto.isDefault && dto.status === 'INACTIVE') throw new BadRequestException('停用地址不能设为默认地址');
+    const nextStatus = dto.status || current.status;
+    if (dto.isDefault && nextStatus !== 'ACTIVE') throw new BadRequestException('只有启用地址可以设为默认地址');
+    const fullAddress = this.fullAddress(merged);
+    const duplicate = await this.prisma.partnerAddress.findFirst({
+      where: { partnerId: current.partnerId, fullAddress, status: 'ACTIVE', id: { not: id } },
+      select: { id: true },
+    });
+    if (duplicate && nextStatus === 'ACTIVE') throw new ConflictException('该合作伙伴已存在相同的启用地址');
+    return this.prisma.$transaction(async tx => {
+      if (dto.isDefault) {
+        await tx.partnerAddress.updateMany({
+          where: { partnerId: current.partnerId, isDefault: true, id: { not: id } },
+          data: { isDefault: false },
+        });
+      }
+      return tx.partnerAddress.update({
+        where: { id },
+        data: {
+          addressName: dto.addressName === undefined ? undefined : this.cleanAddressPart(dto.addressName, '地址简称'),
+          ...merged,
+          fullAddress,
+          contactPerson: dto.contactPerson === undefined ? undefined : this.cleanAddressPart(dto.contactPerson, '联系人'),
+          contactPhone: dto.contactPhone === undefined ? undefined : this.cleanAddressPart(dto.contactPhone, '联系方式'),
+          isDefault: dto.isDefault,
+          status: dto.status,
+          remark: dto.remark === undefined ? undefined : dto.remark.trim() || null,
+        },
+      });
     });
   }
 

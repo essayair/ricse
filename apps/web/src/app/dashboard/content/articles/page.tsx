@@ -5,6 +5,7 @@ import { Edit3, ExternalLink, ImageUp, Newspaper, Plus, Search, Send, Tags, Tras
 import { api } from '@/lib/api';
 import { ARTICLE_STATUS, ARTICLE_TYPE, contentDate } from '@/lib/content';
 import { Badge } from '@/components/ui/badge';
+import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -159,7 +160,7 @@ export default function ContentArticlesPage() {
           <td className="max-w-[420px] p-3"><div className="font-medium">{item.title}</div><div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.summary || '暂无摘要'}</div>{item.productName && <div className="mt-1 text-xs text-primary">{item.productName} · {item.spec || '未填写规格'} · {item.region || '未填写地区'}</div>}</td>
           <td className="p-3"><Badge variant="outline">{ARTICLE_TYPE[item.type] || item.type}</Badge></td><td className="p-3">{item.category?.name || '-'}</td>
           <td className="p-3"><div className="flex items-center gap-1">{item.source || '-'}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer" title="查看原文" className="text-primary"><ExternalLink className="h-3.5 w-3.5" /></a>}</div><Badge className="mt-1" variant="outline">{item.ingestionMode === 'AUTO' ? '自动采集' : item.ingestionMode === 'MIGRATION' ? '历史迁移' : '人工维护'}</Badge></td><td className="p-3 text-xs">{contentDate(item.sourcePublishedAt)}<div className="mt-1 text-muted-foreground">{contentDate(item.publishAt)}</div></td>
-          <td className="p-3"><Badge variant={item.status === 'PUBLISHED' ? 'default' : item.status === 'OFFLINE' ? 'destructive' : 'secondary'}>{ARTICLE_STATUS[item.status] || item.status}</Badge></td>
+          <td className="p-3"><StatusText status={item.status}>{ARTICLE_STATUS[item.status] || item.status}</StatusText></td>
           <td className="p-3 text-right">{item.viewCount} / {item.likeCount}</td><td className="p-3"><div className="flex gap-1"><Button size="sm" variant="ghost" title="编辑" onClick={() => beginEdit(item)}><Edit3 className="h-4 w-4" /></Button>{item.status !== 'PUBLISHED' && item.status !== 'OFFLINE' ? <Button size="sm" variant="ghost" onClick={() => changeStatus(item, 'PUBLISHED')}><Send className="mr-1 h-4 w-4" />{item.status === 'PENDING_REVIEW' ? '审核发布' : '发布'}</Button> : item.status === 'PUBLISHED' ? <Button size="sm" variant="ghost" onClick={() => changeStatus(item, 'OFFLINE')}>下线</Button> : <Button size="sm" variant="ghost" onClick={() => changeStatus(item, 'PUBLISHED')}>重新发布</Button>}{item.status === 'PENDING_REVIEW' && <Button size="sm" variant="ghost" title="驳回" onClick={() => changeStatus(item, 'REJECTED')}><X className="h-4 w-4 text-destructive" /></Button>}{['DRAFT', 'REJECTED'].includes(item.status) && <Button size="sm" variant="ghost" title="删除" onClick={() => remove(item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}</div></td>
         </tr>)}</tbody>
       </table></div>}

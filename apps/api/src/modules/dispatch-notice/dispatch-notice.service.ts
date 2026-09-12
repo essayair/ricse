@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { OutboundService } from '../inventory/outbound.service';
-import { CreateDispatchNoticeDto } from './dto/create-dispatch-notice.dto';
+import { CreateDispatchNoticeDto, DispatchLocationDto } from './dto/create-dispatch-notice.dto';
 
 @Injectable()
 export class DispatchNoticeService {
@@ -27,11 +27,15 @@ export class DispatchNoticeService {
       },
     },
     warehouse: { select: { id: true, code: true, name: true, address: true } },
+    originWarehouse: { select: { id: true, code: true, name: true, address: true } },
+    destinationWarehouse: { select: { id: true, code: true, name: true, address: true } },
+    originPartnerAddress: true,
+    destinationPartnerAddress: true,
     creator: { select: { id: true, name: true } },
     lineItems: { orderBy: { createdAt: 'asc' as const } },
     waybills: {
       where: { deletedAt: null },
-      select: { id: true, waybillNo: true, status: true, totalQuantity: true, plateNo: true },
+      select: { id: true, waybillNo: true, status: true, totalQuantity: true, plateNo: true, driverName: true },
       orderBy: { createdAt: 'desc' as const },
     },
   };
@@ -51,7 +55,16 @@ export class DispatchNoticeService {
     const scope = await this.accessControl.getOrderScope(userId);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, deletedAt: null, AND: [scope] },
-      include: { lineItems: { orderBy: { createdAt: 'asc' } }, contract: true },
+      include: {
+        lineItems: { orderBy: { createdAt: 'asc' } },
+        contract: {
+          include: {
+            seller: { include: { businessAddresses: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] } } },
+            buyer: { include: { businessAddresses: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] } } },
+            signingPartner: { include: { businessAddresses: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] } } },
+          },
+        },
+      },
     });
     if (!order) throw new NotFoundException('执行批次不存在');
     if (!['CONFIRMED', 'DISPATCHED'].includes(order.status)) {
@@ -63,8 +76,24 @@ export class DispatchNoticeService {
       _sum: { quantity: true },
     });
     const map = new Map(used.map(item => [item.orderLineItemId, Number(item._sum.quantity || 0)]));
+    const counterparty = order.type === 'PURCHASE'
+      ? order.contract.seller
+      : order.contract.type === 'BILATERAL' ? order.contract.buyer : order.contract.seller;
     return {
       order,
+      locationOptions: {
+        counterparty: counterparty ? {
+          id: counterparty.id,
+          name: counterparty.name,
+          role: order.type === 'PURCHASE' ? 'SUPPLIER' : 'CUSTOMER',
+          addresses: counterparty.businessAddresses,
+        } : null,
+        internalPartner: order.contract.signingPartner ? {
+          id: order.contract.signingPartner.id,
+          name: order.contract.signingPartner.name,
+          addresses: order.contract.signingPartner.businessAddresses,
+        } : null,
+      },
       lineItems: order.lineItems.map(item => ({
         orderLineItemId: item.id,
         materialId: item.materialId,
@@ -85,10 +114,32 @@ export class DispatchNoticeService {
     const destinationLocation = dto.destinationLocation?.trim();
     if (!originLocation) throw new BadRequestException('起运地点不能为空');
     if (!destinationLocation) throw new BadRequestException('目的地点不能为空');
-    if (order.type === 'SALES' && mode === 'STANDARD' && !dto.warehouseId) {
-      throw new BadRequestException('销售常规出库必须选择发货仓库');
+    const originSourceType = dto.originSourceType || (dto.originWarehouseId ? 'WAREHOUSE' : dto.originPartnerAddressId ? 'PARTNER_ADDRESS' : 'MANUAL');
+    const destinationSourceType = dto.destinationSourceType || (dto.destinationWarehouseId ? 'WAREHOUSE' : dto.destinationPartnerAddressId ? 'PARTNER_ADDRESS' : 'MANUAL');
+    const originWarehouseId = originSourceType === 'WAREHOUSE' ? dto.originWarehouseId : undefined;
+    const destinationWarehouseId = destinationSourceType === 'WAREHOUSE' ? dto.destinationWarehouseId : undefined;
+    const originPartnerAddressId = originSourceType === 'PARTNER_ADDRESS' ? dto.originPartnerAddressId : undefined;
+    const destinationPartnerAddressId = destinationSourceType === 'PARTNER_ADDRESS' ? dto.destinationPartnerAddressId : undefined;
+    if (originSourceType === 'WAREHOUSE' && !originWarehouseId) throw new BadRequestException('请选择有效的起运仓库');
+    if (destinationSourceType === 'WAREHOUSE' && !destinationWarehouseId) throw new BadRequestException('请选择有效的目的仓库');
+    if (originSourceType === 'PARTNER_ADDRESS' && !originPartnerAddressId) throw new BadRequestException('请选择有效的起运合作伙伴地址');
+    if (destinationSourceType === 'PARTNER_ADDRESS' && !destinationPartnerAddressId) throw new BadRequestException('请选择有效的目的合作伙伴地址');
+    const inventoryWarehouseId = order.type === 'PURCHASE' ? destinationWarehouseId : originWarehouseId;
+    if (dto.warehouseId && inventoryWarehouseId && dto.warehouseId !== inventoryWarehouseId) {
+      throw new BadRequestException('库存操作仓库与起运/目的仓库不一致');
     }
-    if (dto.warehouseId) {
+    const warehouseIds = [...new Set([originWarehouseId, destinationWarehouseId, inventoryWarehouseId].filter(Boolean))] as string[];
+    if (warehouseIds.length) {
+      const warehouseCount = await this.prisma.warehouse.count({ where: { id: { in: warehouseIds }, status: 'ACTIVE', deletedAt: null } });
+      if (warehouseCount !== warehouseIds.length) throw new BadRequestException('所选仓库不存在或已停用');
+    }
+    const addressIds = [...new Set([originPartnerAddressId, destinationPartnerAddressId].filter(Boolean))] as string[];
+    if (addressIds.length) {
+      const allowedPartnerIds = [availability.locationOptions.counterparty?.id, availability.locationOptions.internalPartner?.id].filter(Boolean) as string[];
+      const addressCount = await this.prisma.partnerAddress.count({ where: { id: { in: addressIds }, partnerId: { in: allowedPartnerIds }, status: 'ACTIVE' } });
+      if (addressCount !== addressIds.length) throw new BadRequestException('所选合作伙伴地址不存在或已停用');
+    }
+    if (dto.warehouseId && !inventoryWarehouseId) {
       const warehouse = await this.prisma.warehouse.findFirst({
         where: { id: dto.warehouseId, status: 'ACTIVE', deletedAt: null },
       });
@@ -119,14 +170,79 @@ export class DispatchNoticeService {
         orderId: order.id,
         type: order.type,
         mode,
-        warehouseId: dto.warehouseId || null,
+        qualityRequired: dto.qualityRequired ?? order.type === 'PURCHASE',
+        warehouseId: inventoryWarehouseId || dto.warehouseId || null,
         plannedDate: dto.plannedDate ? new Date(dto.plannedDate) : null,
         originLocation,
         destinationLocation,
+        originSourceType,
+        destinationSourceType,
+        originWarehouseId: originWarehouseId || null,
+        destinationWarehouseId: destinationWarehouseId || null,
+        originPartnerAddressId: originPartnerAddressId || null,
+        destinationPartnerAddressId: destinationPartnerAddressId || null,
+        originContactPerson: dto.originContactPerson?.trim() || null,
+        originContactPhone: dto.originContactPhone?.trim() || null,
+        destinationContactPerson: dto.destinationContactPerson?.trim() || null,
+        destinationContactPhone: dto.destinationContactPhone?.trim() || null,
         totalQuantity: lines.reduce((sum, item) => sum + Number(item.quantity), 0),
         remarks: dto.remarks,
         createdBy: userId,
         lineItems: { create: lines },
+      },
+      include: this.include,
+    });
+  }
+
+  async getLocationOptions(id: string, userId: string) {
+    const notice = await this.findOne(id, userId);
+    const availability = await this.getOrderAvailability(notice.orderId, userId);
+    const context = await this.accessControl.getContext(userId);
+    const warehouses = await this.prisma.warehouse.findMany({
+      where: { status: 'ACTIVE', deletedAt: null },
+      select: { id: true, code: true, name: true, address: true, manager: true, managerPhone: true },
+      orderBy: [{ code: 'asc' }, { name: 'asc' }],
+    });
+    return {
+      warehouses,
+      ...availability.locationOptions,
+      canSavePartnerAddress: context.isAdmin || context.permissions.includes('master_data.manage'),
+    };
+  }
+
+  async updateLocations(id: string, dto: DispatchLocationDto, userId: string) {
+    const notice = await this.findOne(id, userId, 'execution.manage');
+    if (!['DRAFT', 'ISSUED'].includes(notice.status)) throw new BadRequestException('执行中的通知不能修改地址');
+    if (notice.waybills.length) throw new BadRequestException('已创建物流运单，请在物流运单中维护实际运输地址');
+    const availability = await this.getOrderAvailability(notice.orderId, userId);
+    const originSourceType = dto.originSourceType || (dto.originWarehouseId ? 'WAREHOUSE' : dto.originPartnerAddressId ? 'PARTNER_ADDRESS' : 'MANUAL');
+    const destinationSourceType = dto.destinationSourceType || (dto.destinationWarehouseId ? 'WAREHOUSE' : dto.destinationPartnerAddressId ? 'PARTNER_ADDRESS' : 'MANUAL');
+    const originWarehouseId = originSourceType === 'WAREHOUSE' ? dto.originWarehouseId : undefined;
+    const destinationWarehouseId = destinationSourceType === 'WAREHOUSE' ? dto.destinationWarehouseId : undefined;
+    const originPartnerAddressId = originSourceType === 'PARTNER_ADDRESS' ? dto.originPartnerAddressId : undefined;
+    const destinationPartnerAddressId = destinationSourceType === 'PARTNER_ADDRESS' ? dto.destinationPartnerAddressId : undefined;
+    const inventoryWarehouseId = notice.type === 'PURCHASE' ? destinationWarehouseId : originWarehouseId;
+    const warehouseIds = [...new Set([originWarehouseId, destinationWarehouseId].filter(Boolean))] as string[];
+    if (warehouseIds.length) {
+      const count = await this.prisma.warehouse.count({ where: { id: { in: warehouseIds }, status: 'ACTIVE', deletedAt: null } });
+      if (count !== warehouseIds.length) throw new BadRequestException('所选仓库不存在或已停用');
+    }
+    const addressIds = [...new Set([originPartnerAddressId, destinationPartnerAddressId].filter(Boolean))] as string[];
+    if (addressIds.length) {
+      const allowedPartnerIds = [availability.locationOptions.counterparty?.id, availability.locationOptions.internalPartner?.id].filter(Boolean) as string[];
+      const count = await this.prisma.partnerAddress.count({ where: { id: { in: addressIds }, partnerId: { in: allowedPartnerIds }, status: 'ACTIVE' } });
+      if (count !== addressIds.length) throw new BadRequestException('所选合作伙伴地址不存在或已停用');
+    }
+    return this.prisma.dispatchNotice.update({
+      where: { id },
+      data: {
+        warehouseId: inventoryWarehouseId || null,
+        originLocation: dto.originLocation.trim(), destinationLocation: dto.destinationLocation.trim(),
+        originSourceType, destinationSourceType,
+        originWarehouseId: originWarehouseId || null, destinationWarehouseId: destinationWarehouseId || null,
+        originPartnerAddressId: originPartnerAddressId || null, destinationPartnerAddressId: destinationPartnerAddressId || null,
+        originContactPerson: dto.originContactPerson?.trim() || null, originContactPhone: dto.originContactPhone?.trim() || null,
+        destinationContactPerson: dto.destinationContactPerson?.trim() || null, destinationContactPhone: dto.destinationContactPhone?.trim() || null,
       },
       include: this.include,
     });
@@ -178,7 +294,9 @@ export class DispatchNoticeService {
     if (status === 'COMPLETED') {
       const active = notice.waybills.filter(item => item.status !== 'CANCELLED');
       if (!active.length || active.some(item => item.status !== 'SIGNED')) {
-        throw new BadRequestException('所有有效物流运单签收后才能完成执行通知');
+        throw new BadRequestException(notice.type === 'SALES'
+          ? '所有有效物流运单完成客户签收后才能完成执行通知'
+          : '所有有效物流运单完成收货后才能完成执行通知');
       }
       const transported = await this.prisma.waybillLineItem.groupBy({
         by: ['dispatchNoticeLineItemId'],

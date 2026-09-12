@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Building2, Users, Layers, Network, Plus, Loader2, ChevronDown, ChevronRight, Trash2, Check, X, Pencil, ArrowUp, ArrowDown, GripVertical, Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
+import { StatusText } from '@/components/status-text';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
@@ -392,9 +393,9 @@ function OrgPageInner() {
       </td>
       <td className="px-4 py-2.5 text-xs text-muted-foreground">{u.employee?.department?.name || '—'}</td>
       <td className="px-4 py-2.5">
-        <Badge variant="secondary" className={!orphanAccount && u.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>
+        <StatusText status={orphanAccount ? 'ABNORMAL' : u.status}>
           {orphanAccount ? '异常待处理' : u.status === 'ACTIVE' ? '正常' : '禁用'}
-        </Badge>
+        </StatusText>
       </td>
       <td className="px-4 py-2.5 text-xs">
         {u.wechatIdentity ? (
@@ -818,7 +819,7 @@ function OrgPageInner() {
                 <div key="nm"><div className="font-medium">{c.name}</div><div className="mt-1 text-xs text-muted-foreground">{c.shortName || c.partner?.name || '—'}</div></div>,
                 <Badge key="tp" variant={c.type === 'INTERNAL' ? 'default' : 'secondary'} className="text-xs">{typeLabel(c.type)}</Badge>,
                 <div key="sz" className="text-xs"><div>{c._count?.departments ?? c.departments?.length ?? 0} 个部门 · {c._count?.employees ?? 0} 名员工</div><div className="mt-1 text-muted-foreground">{c._count?.users ?? 0} 个账号</div></div>,
-                <Badge key="st" variant="secondary" className={c.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>{c.status === 'ACTIVE' ? '启用' : '停用'}</Badge>,
+                <StatusText key="st" status={c.status}>{c.status === 'ACTIVE' ? '启用' : '停用'}</StatusText>,
                 <button key="op" onClick={async () => {
                   const newStatus = c.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
                   if (!confirm(newStatus === 'DISABLED'

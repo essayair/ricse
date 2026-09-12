@@ -132,7 +132,7 @@ describe('QualityInspectionService', () => {
   });
 
   it('物流到达后幂等创建到货质检任务', async () => {
-    prisma.waybill.findFirst.mockResolvedValue({ id: 'waybill-1', status: 'ARRIVED' } as any);
+    prisma.waybill.findFirst.mockResolvedValue({ id: 'waybill-1', status: 'ARRIVED', dispatchNotice: { type: 'PURCHASE', qualityRequired: true }, lineItems: [] } as any);
     prisma.qualityTask.findUnique.mockResolvedValue(null);
     prisma.qualityTask.count.mockResolvedValue(0);
     prisma.qualityTask.create.mockResolvedValue({ id: 'task-1', taskNo: 'QT-20260805-0001' } as any);
@@ -143,6 +143,13 @@ describe('QualityInspectionService', () => {
     expect(prisma.qualityTask.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ waybillId: 'waybill-1', status: 'PENDING_SAMPLING', plannedReportCount: 1 }),
     }));
+  });
+
+  it('未配置交付质检的销售运单不自动生成质检任务', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: 'waybill-sales', status: 'ARRIVED', dispatchNotice: { type: 'SALES', qualityRequired: false }, lineItems: [] } as any);
+
+    await expect(service.ensureTaskForWaybill('waybill-sales', 'user-1')).resolves.toBeNull();
+    expect(prisma.qualityTask.create).not.toHaveBeenCalled();
   });
 
   it('只有一份有效报告时必须填写提前判定原因', async () => {

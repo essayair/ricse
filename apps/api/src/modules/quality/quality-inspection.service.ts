@@ -143,11 +143,12 @@ export class QualityInspectionService {
       select: {
         id: true,
         status: true,
-        dispatchNotice: { select: { type: true } },
+        dispatchNotice: { select: { type: true, qualityRequired: true } },
         lineItems: { select: { materialId: true }, orderBy: { createdAt: 'asc' }, take: 1 },
       },
     });
     if (!waybill || !['ARRIVED', 'SIGNED'].includes(waybill.status)) return null;
+    if (!waybill.dispatchNotice.qualityRequired) return null;
     const existing = await this.prisma.qualityTask.findUnique({
       where: { waybillId }, include: this.taskInclude,
     });
@@ -239,7 +240,7 @@ export class QualityInspectionService {
     const task = await this.prisma.qualityTask.findFirst({
       where: { id, deletedAt: null, AND: [scope] }, include: this.taskInclude,
     });
-    if (!task) throw new NotFoundException('到货质检任务不存在');
+    if (!task) throw new NotFoundException('质检任务不存在');
     return task;
   }
 

@@ -311,7 +311,7 @@ describe('WeighTicketService', () => {
     }));
   });
 
-  it('更换结算入库磅单必须填写原因', async () => {
+  it('更换库存与结算执行磅单必须填写原因', async () => {
     prisma.waybill.findFirst.mockResolvedValue({ id: waybill.id } as any);
     prisma.weighTicket.findFirst.mockResolvedValue({
       id: ticket.id, ticketNo: ticket.ticketNo, status: 'REVIEWED', netWeight: 100,
@@ -321,6 +321,6 @@ describe('WeighTicketService', () => {
     ] as any);
 
     await expect(service.selectEffectiveTicket(waybill.id, ticket.id, undefined, 'user-1'))
-      .rejects.toThrow('更换结算入库磅单必须填写变更原因');
+      .rejects.toThrow('更换库存与结算执行磅单必须填写变更原因');
   });
 });

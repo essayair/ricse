@@ -493,7 +493,7 @@ export class WaybillService {
     plannedDepartureAt?: string; plannedArrivalAt?: string;
   }, userId: string) {
     const waybill = await this.findOne(id, userId, 'logistics.manage');
-    if (waybill.status !== 'PENDING') throw new BadRequestException('仅待发运的物流运单可以调整车辆');
+    if (waybill.status !== 'PENDING') throw new BadRequestException('仅待调度或待发运的物流运单可以调整车辆');
     const departureAt = data.plannedDepartureAt ? new Date(data.plannedDepartureAt) : waybill.plannedDepartureAt;
     const arrivalAt = data.plannedArrivalAt ? new Date(data.plannedArrivalAt) : waybill.plannedArrivalAt;
     if (departureAt && arrivalAt && arrivalAt <= departureAt) {
@@ -572,7 +572,9 @@ export class WaybillService {
       throw new BadRequestException('销售常规出库必须先完成物流出库和库存扣减');
     }
     if (status === 'SIGNED' && !(waybill.attachments || []).some(item => isWaybillReceiptAttachment(item.category))) {
-      throw new BadRequestException('确认签收前必须上传至少一份物流收货附件');
+      throw new BadRequestException(waybill.dispatchNotice.type === 'SALES'
+        ? '确认客户签收前必须上传至少一份物流交付凭证'
+        : '确认收货前必须上传至少一份物流收货凭证');
     }
     const updated = await this.prisma.$transaction(async tx => {
       const updated = await tx.waybill.update({
@@ -630,7 +632,9 @@ export class WaybillService {
     }
     const waybill = await this.findOne(data.waybillId, userId, 'logistics.manage');
     if (!['ARRIVED', 'SIGNED'].includes(waybill.status)) {
-      throw new BadRequestException('物流收货附件只能在运单到达后上传');
+      throw new BadRequestException(waybill.dispatchNotice.type === 'SALES'
+        ? '物流交付凭证只能在运单送达后上传'
+        : '物流收货凭证只能在运单到达后上传');
     }
     return this.prisma.attachment.create({ data });
   }
@@ -645,7 +649,7 @@ export class WaybillService {
         category: { in: [...WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES_WITH_LEGACY] },
         waybill: { deletedAt: null, AND: [scope] },
       },
-      include: { waybill: { select: { status: true } } },
+      include: { waybill: { select: { status: true, dispatchNotice: { select: { type: true } } } } },
     });
   }
 
@@ -653,7 +657,9 @@ export class WaybillService {
     const attachment = await this.findAttachmentById(id, userId, 'logistics.manage');
     if (!attachment) return null;
     if (attachment.waybill?.status === 'SIGNED') {
-      throw new BadRequestException('已签收运单的收货附件不能删除');
+      throw new BadRequestException(attachment.waybill.dispatchNotice.type === 'SALES'
+        ? '客户已签收，物流交付凭证不能删除'
+        : '已确认收货，物流收货凭证不能删除');
     }
     return this.prisma.attachment.delete({ where: { id } });
   }

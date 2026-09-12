@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, ShieldCheck, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { StatusText } from '@/components/status-text';
 
 interface Permission {
   id: string;
@@ -194,9 +194,7 @@ export default function ApprovalFlowsPage() {
                           status: event.target.checked ? 'ACTIVE' : 'INACTIVE',
                         })}
                       />
-                      {flow.status === 'ACTIVE'
-                        ? <Badge>已启用</Badge>
-                        : <Badge variant="secondary">已停用</Badge>}
+                      <StatusText status={flow.status}>{flow.status === 'ACTIVE' ? '已启用' : '已停用'}</StatusText>
                     </label>
                   </td>
                   <td className="px-3 py-3">

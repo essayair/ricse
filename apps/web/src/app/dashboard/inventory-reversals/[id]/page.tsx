@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
+import { StatusText } from '@/components/status-text';
 
 const STATUS: Record<string, string> = {
   DRAFT: '草稿',
@@ -124,7 +125,7 @@ export default function InventoryReversalDetailPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{item.reversalNo}</h1>
               <Badge>{item.type === 'INBOUND' ? '入库冲销' : '出库冲销'}</Badge>
-              <Badge variant="secondary">{STATUS[item.status]}</Badge>
+              <StatusText status={item.status}>{STATUS[item.status]}</StatusText>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               原业务单：{item.type === 'INBOUND' ? source?.inboundNo : source?.outboundNo}

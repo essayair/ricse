@@ -5,17 +5,15 @@ import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, CheckCircle2, PackageMinus, RefreshCw, Scale, Truck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
+import { waybillStatusLabel } from '@/components/business-direction';
+import { StatusText } from '@/components/status-text';
 
 const STATUS: Record<string, string> = {
   PENDING: '待称重/拣配', READY: '待放行', VARIANCE_PENDING: '待差异处理', POSTED: '已出库', CANCELLED: '已取消',
-};
-const WAYBILL_STATUS: Record<string, string> = {
-  PENDING: '待发运', IN_TRANSIT: '运输中', ARRIVED: '已到达', SIGNED: '已签收', CANCELLED: '已取消',
 };
 
 export default function OutboundOrderDetailPage() {
@@ -62,7 +60,7 @@ export default function OutboundOrderDetailPage() {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/outbound')}><ArrowLeft className="h-4 w-4" /></Button>
-        <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{item.orderNo}</h1><Badge>{item.stageLabel}</Badge></div>
+        <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{item.orderNo}</h1><StatusText status={item.status}>{item.stageLabel}</StatusText></div>
           <p className="mt-1 text-sm text-muted-foreground">销售发货通知 {item.dispatchNotice.noticeNo} · {isDirect ? '直拨发运' : item.warehouse.name}</p></div>
       </div>
       {!isDirect && ['PENDING', 'PARTIAL'].includes(item.status) && <Button variant="outline" disabled={saving} onClick={() => void refreshReservation()}><RefreshCw className="mr-2 h-4 w-4" />刷新库存预留</Button>}
@@ -96,10 +94,10 @@ export default function OutboundOrderDetailPage() {
         const tickets = waybill.weighTickets || [];
         const qualities = tickets.flatMap((ticket: any) => ticket.qualityInspections || []);
         return <div key={waybill.id} className="rounded-lg border p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Truck className="h-4 w-4" /><span className="font-mono font-medium">{waybill.waybillNo}</span><Badge variant="outline">{WAYBILL_STATUS[waybill.status] || waybill.status}</Badge></div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Truck className="h-4 w-4" /><span className="font-mono font-medium">{waybill.waybillNo}</span><StatusText status={waybill.status}>{waybillStatusLabel(waybill.status, 'SALES', Boolean(waybill.plateNo && waybill.driverName))}</StatusText></div>
             <div className="mt-2 text-sm text-muted-foreground">{waybill.plateNo || '待派车'} · 计划 {weight(waybill.totalQuantity)}</div></div>
             <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/waybills/${waybill.id}`)}>查看运单</Button>{tickets[0] && <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/weighbridge/${tickets[0].id}`)}><Scale className="mr-1 h-4 w-4" />查看磅单</Button>}</div></div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Small label="物流状态" value={WAYBILL_STATUS[waybill.status] || waybill.status} /><Small label="磅单" value={tickets.map((ticket: any) => ticket.ticketNo).join('、') || '待创建'} /><Small label="质检单" value={qualities.map((quality: any) => quality.inspectionNo).join('、') || '非必填'} /><Small label="库存处理" value="不经过我方库存" /></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Small label="物流状态" value={waybillStatusLabel(waybill.status, 'SALES', Boolean(waybill.plateNo && waybill.driverName))} /><Small label="磅单" value={tickets.map((ticket: any) => ticket.ticketNo).join('、') || '待创建'} /><Small label="质检单" value={qualities.map((quality: any) => quality.inspectionNo).join('、') || '非必填'} /><Small label="库存处理" value="不经过我方库存" /></div>
         </div>;
       })}</div>) : (!item.receipts.length ? <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">尚未创建物流运单</div> : <div className="space-y-4">{item.receipts.map((receipt: any) => {
         const fullWaybill = item.dispatchNotice.waybills.find((value: any) => value.id === receipt.waybillId);
@@ -108,7 +106,7 @@ export default function OutboundOrderDetailPage() {
           || receipt.weighTicket;
         const form = variance[receipt.id] || { decision: '', reason: '' };
         return <div key={receipt.id} className={`rounded-lg border p-4 ${receipt.status === 'VARIANCE_PENDING' ? 'border-destructive/40 bg-destructive/5' : ''}`}>
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Truck className="h-4 w-4" /><span className="font-mono font-medium">{receipt.waybill.waybillNo}</span><Badge variant="outline">{STATUS[receipt.status] || receipt.status}</Badge></div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Truck className="h-4 w-4" /><span className="font-mono font-medium">{receipt.waybill.waybillNo}</span><StatusText status={receipt.status}>{STATUS[receipt.status] || receipt.status}</StatusText></div>
             <div className="mt-2 text-sm text-muted-foreground">{receipt.plateNo || receipt.waybill.plateNo || '待派车'} · 计划 {weight(receipt.plannedQuantity)} · 实际 {weight(receipt.outboundQuantity)}</div></div>
             <div className="flex flex-wrap gap-2">
               {ticket && <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/weighbridge/${ticket.id}`)}><Scale className="mr-1 h-4 w-4" />查看磅单</Button>}

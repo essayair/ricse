@@ -10,6 +10,9 @@ import { WaybillService } from '../logistics/waybill.service';
 import { OrderService } from '../order/order.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
+import { DispatchLocationDto } from '../dispatch-notice/dto/create-dispatch-notice.dto';
+import { CreatePartnerAddressDto } from '../master-data/dto/partner-address.dto';
+import { PartnerService } from '../master-data/partner.service';
 
 export const MOBILE_BUSINESS_MODULES = [
   'contracts', 'orders', 'dispatch-notices', 'waybills', 'weigh-tickets', 'quality-tasks',
@@ -30,6 +33,7 @@ export class MobileWorkspaceService {
     private readonly quality: QualityInspectionService,
     private readonly inventory: InventoryService,
     private readonly outbound: OutboundService,
+    private readonly partners: PartnerService,
   ) {}
 
   private modulePermission(module: MobileBusinessModule) {
@@ -118,6 +122,19 @@ export class MobileWorkspaceService {
     }
   }
 
+  async dispatchLocationOptions(id: string, userId: string) {
+    return this.dispatchNotices.getLocationOptions(id, userId);
+  }
+
+  async updateDispatchLocations(id: string, dto: DispatchLocationDto, userId: string) {
+    return this.dispatchNotices.updateLocations(id, dto, userId);
+  }
+
+  async createPartnerAddress(partnerId: string, dto: CreatePartnerAddressDto, userId: string) {
+    await this.access.assertPermission(userId, 'master_data.manage');
+    return this.partners.createBusinessAddress(partnerId, dto);
+  }
+
   async overview(userId: string) {
     const context = await this.access.getContext(userId);
     const canApprove = context.isAdmin || context.permissions.includes('contract.approve');
@@ -127,7 +144,7 @@ export class MobileWorkspaceService {
     const canViewQuality = context.isAdmin || context.permissions.includes('quality.view');
     const canViewInventory = context.isAdmin || context.permissions.includes('inventory.view');
     const canViewLogistics = context.isAdmin || context.permissions.includes('logistics.view');
-    const [pendingRows, contractCount, executingCount, pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound] = await Promise.all([
+    const [pendingRows, contractCount, executingCount, pendingDispatch, pendingAssignment, pendingDeparture, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound] = await Promise.all([
       canApprove ? this.prisma.approval.findMany({
         where: { status: 'PENDING', ...pendingWhere, contract: { deletedAt: null, status: 'PENDING_APPROVAL' } },
         select: { contractId: true, round: true, step: true },
@@ -137,6 +154,12 @@ export class MobileWorkspaceService {
       contractScope ? this.prisma.contract.count({ where: { deletedAt: null, status: 'EXECUTING', AND: [contractScope] } }) : Promise.resolve(0),
       canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
         where: { deletedAt: null, status: 'PENDING', AND: [scope] },
+      })) : Promise.resolve(0),
+      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
+        where: { deletedAt: null, status: 'PENDING', OR: [{ plateNo: null }, { driverName: null }], AND: [scope] },
+      })) : Promise.resolve(0),
+      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
+        where: { deletedAt: null, status: 'PENDING', plateNo: { not: null }, driverName: { not: null }, AND: [scope] },
       })) : Promise.resolve(0),
       canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
         where: { deletedAt: null, status: 'IN_TRANSIT', AND: [scope] },
@@ -171,7 +194,7 @@ export class MobileWorkspaceService {
       },
       summary: {
         pendingApprovals: pendingCount, contracts: contractCount, executingContracts: executingCount,
-        pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound,
+        pendingDispatch, pendingAssignment, pendingDeparture, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound,
       },
     };
   }

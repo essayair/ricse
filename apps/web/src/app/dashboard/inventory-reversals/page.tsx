@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Plus, RotateCcw, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { StatusText } from '@/components/status-text';
 
 const STATUS: Record<string, string> = {
   DRAFT: '草稿',
@@ -113,7 +113,7 @@ export default function InventoryReversalListPage() {
                       <td className="max-w-64 p-3"><div className="truncate">{item.reason}</div></td>
                       <td className="p-3">{item.creator.name}</td>
                       <td className="p-3">{item.approver?.name || '-'}</td>
-                      <td className="p-3"><Badge variant="secondary">{STATUS[item.status]}</Badge></td>
+                      <td className="p-3"><StatusText status={item.status}>{STATUS[item.status]}</StatusText></td>
                     </tr>
                   );
                 })}

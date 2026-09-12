@@ -150,9 +150,6 @@ export class OutboundService {
     if (!notice) throw new NotFoundException('销售发货通知不存在');
     if (notice.type !== 'SALES') return null;
     const isDirect = notice.mode === 'DIRECT';
-    if (!isDirect && !notice.warehouseId) {
-      throw new BadRequestException('销售发货通知缺少发货仓库，无法生成出库管理单');
-    }
     const ownerPartnerId = notice.order.contract.signingPartnerId;
     if (!ownerPartnerId) throw new BadRequestException('销售合同缺少我方签约主体，无法确认出库库存主体');
     if (notice.outboundOrder) return notice.outboundOrder;
@@ -160,7 +157,7 @@ export class OutboundService {
     const lines: Array<any> = [];
     for (const line of notice.lineItems) {
       let available = 0;
-      if (!isDirect) {
+      if (!isDirect && notice.warehouseId) {
         const physical = await db.inventoryLot.aggregate({
           where: {
             warehouseId: notice.warehouseId,
@@ -299,9 +296,9 @@ export class OutboundService {
       } else if (item.status === 'COMPLETED') {
         stage = 'COMPLETED'; stageLabel = '直拨已完成'; blocker = '直拨发运任务已完成';
       } else if (waybills.length && waybills.every((waybill: any) => waybill.status === 'SIGNED')) {
-        stage = 'DIRECT_WAITING_COMPLETE'; stageLabel = '直拨待完成'; blocker = '全部物流运单已签收，可完成销售发货通知';
+        stage = 'DIRECT_WAITING_COMPLETE'; stageLabel = '直拨待完成'; blocker = '全部物流运单已完成客户签收，可完成销售发货通知';
       } else if (waybills.some((waybill: any) => ['IN_TRANSIT', 'ARRIVED'].includes(waybill.status))) {
-        stage = 'DIRECT_IN_PROGRESS'; stageLabel = '直拨运输中'; blocker = '直拨物流正在执行，等待到达和签收';
+        stage = 'DIRECT_IN_PROGRESS'; stageLabel = '直拨运输中'; blocker = '直拨物流正在执行，等待送达和客户签收';
       } else if (waybills.length) {
         stage = 'DIRECT_WAITING_SHIPMENT'; stageLabel = '直拨待发运'; blocker = '物流运单已创建，等待发运';
       }
@@ -524,7 +521,7 @@ export class OutboundService {
       where: { waybillId: waybill.id, purpose: 'INVENTORY', isCurrent: true },
     });
     if (currentWeightSelection && currentWeightSelection.weighTicketId !== ticket.id) {
-      throw new BadRequestException('所选磅单不是当前结算入库磅单，请先在磅单信息详情中变更选用依据');
+      throw new BadRequestException('所选磅单不是当前结算出库磅单，请先在磅单信息详情中变更选用依据');
     }
     if (!dto.operatorName.trim()) throw new BadRequestException('请填写出库操作人');
 
@@ -760,7 +757,7 @@ export class OutboundService {
       where: { waybillId: receipt.waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (!currentWeight || currentWeight.weighTicketId !== receipt.weighTicketId) {
-      throw new BadRequestException('出库作业关联磅单与当前结算入库磅单不一致，不能扣减库存');
+      throw new BadRequestException('出库作业关联磅单与当前结算出库磅单不一致，不能扣减库存');
     }
     const allocated = receipt.allocations.reduce((sum, item) => sum + Number(item.quantity), 0);
     if (Math.abs(allocated - Number(receipt.outboundQuantity)) > 0.0005) {

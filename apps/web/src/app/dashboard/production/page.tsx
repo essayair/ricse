@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { StatusText } from '@/components/status-text';
 
 export default function ProductionPage() {
   const router = useRouter();
@@ -55,7 +56,7 @@ export default function ProductionPage() {
           <td className="p-3">{item.sourceWarehouse.name} → {item.targetWarehouse.name}</td><td className="p-3">{item.processorOrganization?.partner?.name || '-'}</td>
           <td className="p-3 text-right">{quantity(item.plannedOutputQuantity)}</td><td className="p-3 text-right font-medium text-primary">{quantity(item.qualifiedQuantity)}</td><td className="p-3 text-right">{percent(item.actualYieldRate)}</td>
           <td className="p-3"><div>{item.sourceType === 'SALES_ORDER' ? '销售需求' : '手工创建'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.sourceOrderNo || '-'}</div></td>
-          <td className="p-3"><Badge variant={item.status === 'CANCELLED' ? 'destructive' : item.status === 'CLOSED' ? 'secondary' : 'default'}>{PRODUCTION_STATUS[item.status] || item.status}</Badge></td>
+          <td className="p-3"><StatusText status={item.status}>{PRODUCTION_STATUS[item.status] || item.status}</StatusText></td>
           <td className="p-3 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</td>
         </tr>)}</tbody>
       </table></div>}

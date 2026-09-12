@@ -63,6 +63,23 @@ const config: Config = {
         },
         'primary-bg': 'hsl(var(--primary-bg))',
         'destructive-bg': 'hsl(var(--destructive-bg))',
+        business: {
+          purchase: {
+            DEFAULT: 'hsl(var(--business-purchase))',
+            bg: 'hsl(var(--business-purchase-bg))',
+            border: 'hsl(var(--business-purchase-border))',
+          },
+          sales: {
+            DEFAULT: 'hsl(var(--business-sales))',
+            bg: 'hsl(var(--business-sales-bg))',
+            border: 'hsl(var(--business-sales-border))',
+          },
+          bilateral: {
+            DEFAULT: 'hsl(var(--business-bilateral))',
+            bg: 'hsl(var(--business-bilateral-bg))',
+            border: 'hsl(var(--business-bilateral-border))',
+          },
+        },
         /* ── 侧边栏 ── */
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',

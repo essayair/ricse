@@ -8,6 +8,7 @@ import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { StatusText } from '@/components/status-text';
 
 const STATUS: Record<string, string> = {
   PENDING: '待出库', PARTIAL: '部分出库', COMPLETED: '已完成', CANCELLED: '已取消',
@@ -65,7 +66,7 @@ export default function OutboundPage() {
               <td className={`p-3 text-right ${Number(item.shortageQuantity) > 0 ? 'font-medium text-destructive' : ''}`}>{item.dispatchNotice.mode === 'DIRECT' ? '-' : weight(item.shortageQuantity)}</td>
               <td className="p-3 text-right font-medium">{weight(item.actualQuantity)}</td>
               <td className="p-3"><div>{waybills.length} 个车次</div><div className="mt-1 text-xs text-muted-foreground">{tickets.length} 张磅单</div></td>
-              <td className="p-3"><Badge variant={Number(item.shortageQuantity) > 0 ? 'destructive' : 'secondary'}>{STATUS[item.status] || item.status}</Badge></td>
+              <td className="p-3"><StatusText status={item.status} tone={Number(item.shortageQuantity) > 0 ? 'destructive' : undefined}>{STATUS[item.status] || item.status}</StatusText></td>
               <td className="p-3 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</td>
             </tr>;
           })}</tbody>

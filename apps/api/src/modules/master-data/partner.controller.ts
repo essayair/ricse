@@ -13,6 +13,7 @@ import { normalizeUploadFilename } from '../common/filename-encoding';
 import { PermissionGuard } from '../common/permission.guard';
 import { RequirePermission } from '../common/require-permission.decorator';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
+import { CreatePartnerAddressDto, UpdatePartnerAddressDto } from './dto/partner-address.dto';
 
 @ApiTags('合作伙伴')
 @ApiBearerAuth()
@@ -84,6 +85,29 @@ export class PartnerController {
       pageSize: pageSize ? Number(pageSize) : undefined,
       status, ownerId, ownerType, vehicleType, search,
     });
+  }
+
+  // ========== 收发货地址 ==========
+
+  @Get(':partnerId/addresses')
+  @RequirePermission('master_data.view')
+  @ApiOperation({ summary: '合作伙伴收发货地址列表' })
+  findBusinessAddresses(@Param('partnerId') partnerId: string, @Query('activeOnly') activeOnly?: string) {
+    return this.partnerService.findBusinessAddresses(partnerId, activeOnly === 'true');
+  }
+
+  @Post(':partnerId/addresses')
+  @RequirePermission('master_data.manage')
+  @ApiOperation({ summary: '新增合作伙伴收发货地址' })
+  createBusinessAddress(@Param('partnerId') partnerId: string, @Body() dto: CreatePartnerAddressDto) {
+    return this.partnerService.createBusinessAddress(partnerId, dto);
+  }
+
+  @Patch('addresses/:addressId')
+  @RequirePermission('master_data.manage')
+  @ApiOperation({ summary: '修改合作伙伴收发货地址、默认地址或状态' })
+  updateBusinessAddress(@Param('addressId') addressId: string, @Body() dto: UpdatePartnerAddressDto) {
+    return this.partnerService.updateBusinessAddress(addressId, dto);
   }
 
   @Get('vehicles/:vehicleId')

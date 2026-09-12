@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Search, FileText, Truck, Package, AlertTriangle, DollarSign, ChevronRight, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
+import { BusinessDirectionBadge, businessDirectionStyle } from '@/components/business-direction';
+import { StatusText } from '@/components/status-text';
 
 interface Contract {
   id: string;
@@ -42,27 +43,15 @@ interface FulfillmentDirection {
   executedAmount: number;
 }
 
-const STATUS_MAP: Record<string, { label: string; variant: string }> = {
-  DRAFT: { label: '草稿', variant: 'secondary' },
-  PENDING_APPROVAL: { label: '待审批', variant: 'outline' },
-  APPROVED: { label: '已通过', variant: 'default' },
-  REJECTED: { label: '已驳回', variant: 'destructive' },
-  EXECUTING: { label: '执行中', variant: 'default' },
-  COMPLETED: { label: '已完成', variant: 'default' },
-  CLOSED: { label: '已关闭', variant: 'outline' },
-  VOIDED: { label: '已作废', variant: 'outline' },
-};
-
-const TYPE_MAP: Record<string, string> = {
-  PURCHASE: '采购合同',
-  SALES: '销售合同',
-  BILATERAL: '双边合同',
-};
-
-const TYPE_TEXT_CLASS: Record<string, string> = {
-  PURCHASE: 'font-semibold text-amber-800',
-  SALES: 'font-semibold text-blue-800',
-  BILATERAL: 'font-semibold text-indigo-700',
+const STATUS_MAP: Record<string, { label: string }> = {
+  DRAFT: { label: '草稿' },
+  PENDING_APPROVAL: { label: '待审批' },
+  APPROVED: { label: '已通过' },
+  REJECTED: { label: '已驳回' },
+  EXECUTING: { label: '执行中' },
+  COMPLETED: { label: '已完成' },
+  CLOSED: { label: '已关闭' },
+  VOIDED: { label: '已作废' },
 };
 
 export default function ContractsPage() {
@@ -219,7 +208,7 @@ export default function ContractsPage() {
               {data.items.map((c) => (
                 <tr
                   key={c.id}
-                  className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
+                  className={`border-b cursor-pointer transition-colors ${businessDirectionStyle(c.type).hover}`}
                   onClick={() => router.push(`/dashboard/contracts/${c.id}`)}
                 >
                   <td className="px-4 py-3">
@@ -237,12 +226,10 @@ export default function ContractsPage() {
                     <div className="mt-1 truncate text-xs text-muted-foreground">对手方：{counterpartyName(c)}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className={`mb-1 text-xs ${TYPE_TEXT_CLASS[c.type] || 'font-medium text-muted-foreground'}`}>
-                      {TYPE_MAP[c.type] || c.type}
-                    </div>
-                    <Badge variant={(STATUS_MAP[c.status]?.variant as any) || 'secondary'}>
+                    <BusinessDirectionBadge type={c.type} suffix="合同" className="mb-1" />
+                    <StatusText status={c.status} className="block">
                       {STATUS_MAP[c.status]?.label || c.status}
-                    </Badge>
+                    </StatusText>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div>{quantitySummary(c.lineItems)}</div>
@@ -301,8 +288,7 @@ export default function ContractsPage() {
 }
 
 function counterpartyName(contract: Contract) {
-  if (contract.type === 'PURCHASE') return contract.seller?.name || '-';
-  if (contract.type === 'SALES') return contract.buyer?.name || '-';
+  if (contract.type !== 'BILATERAL') return contract.seller?.name || contract.buyer?.name || '-';
   return [contract.seller?.name, contract.buyer?.name].filter(Boolean).join(' / ') || '-';
 }
 

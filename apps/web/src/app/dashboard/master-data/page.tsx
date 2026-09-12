@@ -13,6 +13,7 @@ import {
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
+import { StatusText } from '@/components/status-text';
 
 /* ── Types ── */
 
@@ -107,15 +108,10 @@ const MOCK_PRICES: PriceItem[] = [
 /* ── Helpers ── */
 
 const StatusBadge = ({ status }: { status: string }) => {
-  const map: Record<string, { label: string; className: string }> = {
-    ACTIVE:    { label: '启用',  className: 'bg-success-bg text-success border-0' },
-    INACTIVE:  { label: '停用',  className: '' },
-    BLACKLIST: { label: '黑名单', className: 'bg-destructive-bg text-destructive border-0' },
-    MAINTENANCE: { label: '维修停用', className: 'bg-warning-bg text-warning border-0' },
-    RETIRED: { label: '已退役', className: '' },
+  const map: Record<string, string> = {
+    ACTIVE: '启用', INACTIVE: '停用', BLACKLIST: '黑名单', MAINTENANCE: '维修停用', RETIRED: '已退役',
   };
-  const cfg = map[status] || { label: status, className: '' };
-  return <Badge variant="secondary" className={cfg.className}>{cfg.label}</Badge>;
+  return <StatusText status={status}>{map[status] || status}</StatusText>;
 };
 
 const RoleBadges = ({ roles, isInternal }: { roles: string[]; isInternal: boolean }) => (
@@ -513,7 +509,7 @@ function MasterDataPageInner() {
                 {v.ownerName && <div className="mt-1 text-xs text-muted-foreground">车主：{v.ownerName}{v.ownerPhone ? ` · ${v.ownerPhone}` : ''}</div>}
               </div>,
               <div key="drv">{v.drivers.length ? v.drivers.map(link => <div key={link.id} className="whitespace-nowrap"><span>{link.driver.name}</span><span className="ml-1 text-xs text-muted-foreground">{link.role === 'PRIMARY' ? '主驾' : '副驾'} · {link.driver.phone}</span></div>) : <span className="text-muted-foreground">未关联</span>}</div>,
-              <div key="status"><Badge variant="outline" className={v.operationStatus === 'IN_TRANSIT' ? 'border-blue-200 bg-blue-50 text-blue-700' : ''}>{v.operationStatus === 'IN_TRANSIT' ? '在途' : '空闲'}</Badge><div className="mt-1"><StatusBadge status={v.status} /></div></div>,
+              <div key="status"><StatusText status={v.operationStatus}>{v.operationStatus === 'IN_TRANSIT' ? '在途' : '空闲'}</StatusText><div className="mt-1"><StatusBadge status={v.status} /></div></div>,
               <span key="refs" className="font-mono text-xs">{v._count?.waybills || 0}</span>,
               <div key="ops" className="flex gap-1.5">
                 <Link href={`/dashboard/master-data/vehicles/${v.id}`}><Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button></Link>

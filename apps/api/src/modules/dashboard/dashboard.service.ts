@@ -99,12 +99,12 @@ export class DashboardService {
         this.prisma.waybill.count({ where: { AND: [waybillScope, { deletedAt: null, status: 'IN_TRANSIT', plannedArrivalAt: { lt: now } }] } }),
         this.prisma.waybill.findMany({
           where: { AND: [waybillScope, { deletedAt: null }] },
-          select: { id: true, waybillNo: true, plateNo: true, status: true, updatedAt: true },
+          select: { id: true, waybillNo: true, plateNo: true, status: true, updatedAt: true, dispatchNotice: { select: { type: true } } },
           orderBy: { updatedAt: 'desc' }, take: 4,
         }),
         this.prisma.waybill.findMany({
           where: { AND: [waybillScope, { deletedAt: null, status: 'IN_TRANSIT', plannedArrivalAt: { lt: now } }] },
-          select: { id: true, waybillNo: true, plateNo: true, plannedArrivalAt: true, updatedAt: true },
+          select: { id: true, waybillNo: true, plateNo: true, plannedArrivalAt: true, updatedAt: true, dispatchNotice: { select: { type: true } } },
           orderBy: { plannedArrivalAt: 'asc' }, take: 8,
         }),
       ]);
@@ -113,7 +113,7 @@ export class DashboardService {
       activities.push(...recentWaybills.map((item): Activity => ({
         id: `waybill:${item.id}`,
         occurredAt: item.updatedAt,
-        title: `运单 ${item.waybillNo} ${this.waybillStatus(item.status)}`,
+        title: `运单 ${item.waybillNo} ${this.waybillStatus(item.status, item.dispatchNotice.type)}`,
         subtitle: item.plateNo || '未绑定车辆',
         href: `/dashboard/waybills/${item.id}`,
         type: ['ARRIVED', 'SIGNED'].includes(item.status) ? 'success' : 'info',
@@ -121,7 +121,7 @@ export class DashboardService {
       alerts.push(...overdueItems.map((item): Activity => ({
         id: `waybill-overdue:${item.id}`,
         occurredAt: item.updatedAt,
-        title: `运单 ${item.waybillNo} 超过计划到达时间`,
+        title: `运单 ${item.waybillNo} 超过${item.dispatchNotice.type === 'SALES' ? '预计送达' : '预计到达'}时间`,
         subtitle: item.plateNo || '未绑定车辆',
         href: `/dashboard/waybills/${item.id}`,
         type: 'warning',
@@ -248,8 +248,10 @@ export class DashboardService {
     return ({ DRAFT: '保存为草稿', PENDING_APPROVAL: '已提交审批', APPROVED: '已通过', REJECTED: '已驳回', EXECUTING: '执行中', COMPLETED: '已完成', CLOSED: '已关闭', VOIDED: '已作废' } as Record<string, string>)[status] || status;
   }
 
-  private waybillStatus(status: string) {
-    return ({ PENDING: '待发运', IN_TRANSIT: '运输中', ARRIVED: '已到达', SIGNED: '已签收', CANCELLED: '已作废' } as Record<string, string>)[status] || status;
+  private waybillStatus(status: string, type: string) {
+    if (status === 'ARRIVED') return type === 'SALES' ? '已送达待客户签收' : '已到达待收货';
+    if (status === 'SIGNED') return type === 'SALES' ? '客户已签收' : '已收货';
+    return ({ PENDING: '待调度/待发运', IN_TRANSIT: '在途', CANCELLED: '已取消' } as Record<string, string>)[status] || status;
   }
 
   private weighStatus(status: string) {

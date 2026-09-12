@@ -8,10 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   ArrowLeft, Building2, MapPin, Phone, CreditCard, Truck,
-  Landmark, Package, AlertTriangle, Loader2, ChevronDown, Eye,
+  Landmark, Package, AlertTriangle, Loader2, ChevronDown, Eye, Plus, Pencil, MapPinned,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
+import { PartnerAddressDialog, type PartnerAddress } from '@/components/partner-address-dialog';
+import { StatusText } from '@/components/status-text';
 
 /* ── Types ── */
 
@@ -40,6 +42,7 @@ interface PartnerDetail {
   bankAccounts: BankAccount[];
   vehicles: VehicleItem[];
   warehouses: WarehouseItem[];
+  businessAddresses: PartnerAddress[];
 }
 
 interface BankAccount {
@@ -130,6 +133,8 @@ export default function PartnerDetailPage() {
   const [updating, setUpdating] = useState(false);
   const [statusMenu, setStatusMenu] = useState(false);
   const [tab, setTab] = useState('basic');
+  const [addressDialog, setAddressDialog] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<PartnerAddress | null>(null);
 
   const fetchPartner = async () => {
     setLoading(true);
@@ -195,6 +200,7 @@ export default function PartnerDetailPage() {
   const tabs = [
     { key: 'basic', label: '基本信息' },
     { key: 'bank', label: `银行账户 (${p.bankAccounts?.length || 0})` },
+    { key: 'address', label: `收发货地址 (${p.businessAddresses?.length || 0})` },
     { key: 'vehicle', label: `车辆 (${p.vehicles?.length || 0})` },
     { key: 'warehouse', label: `仓库 (${p.warehouses?.length || 0})` },
     { key: 'attachments', label: `影像附件 (${p.attachments?.length || 0})` },
@@ -209,7 +215,7 @@ export default function PartnerDetailPage() {
             <Button variant="ghost" size="sm" onClick={() => router.back()}>
               <ArrowLeft className="h-4 w-4 mr-1" />返回
             </Button>
-            <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+            <StatusText status={p.status}>{statusCfg.label}</StatusText>
           </div>
           <h1 className="text-2xl font-bold">{p.name}</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -428,6 +434,21 @@ export default function PartnerDetailPage() {
       )}
 
       {/* Bank Accounts Tab */}
+      {tab === 'address' && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between border-b p-4">
+            <div><h2 className="font-semibold">收发货地址</h2><p className="mt-1 text-xs text-muted-foreground">不区分收货或发货用途，执行通知中按业务方向选择。</p></div>
+            <Button size="sm" onClick={() => { setEditingAddress(null); setAddressDialog(true); }}><Plus className="mr-1 h-4 w-4" />新增地址</Button>
+          </div>
+          {!p.businessAddresses?.length ? <div className="p-12 text-center text-sm text-muted-foreground"><MapPinned className="mx-auto mb-2 h-8 w-8 opacity-30" />暂无收发货地址</div> : <div className="overflow-x-auto"><table className="min-w-[1000px] w-full text-sm">
+            <thead className="border-b bg-muted/50"><tr><th className="px-4 py-3 text-left">地址简称</th><th className="px-4 py-3 text-left">完整地址</th><th className="px-4 py-3 text-left">联系人</th><th className="px-4 py-3 text-left">联系方式</th><th className="px-4 py-3 text-left">默认</th><th className="px-4 py-3 text-left">状态</th><th className="px-4 py-3 text-right">操作</th></tr></thead>
+            <tbody>{p.businessAddresses.map(address => <tr key={address.id} className="border-b"><td className="px-4 py-3 font-medium">{address.addressName}</td><td className="max-w-md px-4 py-3 text-muted-foreground">{address.fullAddress}</td><td className="px-4 py-3">{address.contactPerson}</td><td className="px-4 py-3">{address.contactPhone}</td><td className="px-4 py-3">{address.isDefault ? <Badge variant="secondary">默认</Badge> : '—'}</td><td className="px-4 py-3"><StatusText status={address.status}>{address.status === 'ACTIVE' ? '启用' : '停用'}</StatusText></td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => { setEditingAddress(address); setAddressDialog(true); }}><Pencil className="mr-1 h-3.5 w-3.5" />编辑</Button>{!address.isDefault && <Button size="sm" variant="outline" onClick={async () => { try { await api.patch(`/partners/addresses/${address.id}`, { status: address.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }); await fetchPartner(); } catch (error: any) { alert(error.message); } }}>{address.status === 'ACTIVE' ? '停用' : '启用'}</Button>}{address.status === 'ACTIVE' && !address.isDefault && <Button size="sm" variant="outline" onClick={async () => { try { await api.patch(`/partners/addresses/${address.id}`, { isDefault: true }); await fetchPartner(); } catch (error: any) { alert(error.message); } }}>设为默认</Button>}</div></td></tr>)}</tbody>
+          </table></div>}
+        </Card>
+      )}
+
+      <PartnerAddressDialog open={addressDialog} partnerId={p.id} initial={editingAddress} onOpenChange={setAddressDialog} onSaved={() => void fetchPartner()} />
+
       {tab === 'bank' && (
         <Card className="overflow-hidden">
           {!p.bankAccounts?.length ? (
@@ -495,9 +516,9 @@ export default function PartnerDetailPage() {
                     <td className="px-4 py-3">{v.driverName || '—'}</td>
                     <td className="px-4 py-3 text-muted-foreground">{v.driverPhone || '—'}</td>
                     <td className="px-4 py-3">
-                      <Badge variant={v.status === 'ACTIVE' ? 'default' : v.status === 'MAINTENANCE' ? 'secondary' : 'outline'}>
+                      <StatusText status={v.status}>
                         {v.status === 'ACTIVE' ? '运营中' : v.status === 'MAINTENANCE' ? '维修中' : '退役'}
-                      </Badge>
+                      </StatusText>
                     </td>
                   </tr>
                 ))}

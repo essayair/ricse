@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { api } from '@/lib/api';
 import { ArrowLeft, FileText, Send } from 'lucide-react';
 import { unitLabel } from '@/lib/unit';
+import { BusinessDirectionBadge } from '@/components/business-direction';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
+import { StatusText } from '@/components/status-text';
 
 interface OrderDetail {
   id: string;
@@ -80,8 +81,8 @@ export default function OrderDetailPage() {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/orders')}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
-            <div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{order.name}</h1><Badge>{STATUS[order.status] || order.status}</Badge></div>
-            <p className="mt-1 text-sm text-muted-foreground"><span className="font-mono">{order.orderNo}</span> · {order.type === 'PURCHASE' ? '采购执行批次' : '销售执行批次'} · 创建人 {order.creator.name}</p>
+            <div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{order.name}</h1><OrderTypeBadge type={order.type} /><StatusText status={order.status}>{STATUS[order.status] || order.status}</StatusText></div>
+            <p className="mt-1 text-sm text-muted-foreground"><span className="font-mono">{order.orderNo}</span> · 创建人 {order.creator.name}</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -101,8 +102,8 @@ export default function OrderDetailPage() {
             <Field label="执行批次编号" value={order.orderNo} />
             <Field label="执行批次类型" value={order.type === 'PURCHASE' ? '采购执行批次' : '销售执行批次'} />
             <Field label="执行批次金额" value={`¥${Number(order.totalAmount).toLocaleString()}`} />
-            <Field label="计划履约日期" value={order.plannedDate ? new Date(order.plannedDate).toLocaleDateString('zh-CN') : '-'} />
-            <Field label="交货地点" value={order.deliveryLocation || '-'} />
+            <Field label={order.type === 'PURCHASE' ? '计划到货日期' : '计划发货日期'} value={order.plannedDate ? new Date(order.plannedDate).toLocaleDateString('zh-CN') : '-'} />
+            <Field label={order.type === 'PURCHASE' ? '收货地点' : '交付地点'} value={order.deliveryLocation || '-'} />
             <Field label="开始执行时间" value={order.dispatchedAt ? new Date(order.dispatchedAt).toLocaleString('zh-CN') : '-'} />
             <Field label="完成时间" value={order.completedAt ? new Date(order.completedAt).toLocaleString('zh-CN') : '-'} />
           </div>
@@ -116,9 +117,8 @@ export default function OrderDetailPage() {
             <div className="mt-1 font-medium">{order.contract.title}</div>
           </button>
           <div className="mt-4 space-y-3">
-            <Field label="我方签约主体" value={order.contract.signingPartner?.name || '-'} />
-            <Field label="上游/交易对手" value={order.contract.seller.name} />
-            {order.contract.buyer && <Field label="下游对手方" value={order.contract.buyer.name} />}
+            <Field label={order.type === 'PURCHASE' ? '采购主体' : '销售主体'} value={order.contract.signingPartner?.name || '-'} />
+            <Field label={order.type === 'PURCHASE' ? '供应商' : '客户'} value={order.type === 'PURCHASE' ? order.contract.seller.name : order.contract.buyer?.name || order.contract.seller.name || '-'} />
           </div>
         </Card>
       </div>
@@ -136,7 +136,7 @@ export default function OrderDetailPage() {
       <Card className="overflow-hidden">
         <div className="flex items-center gap-2 border-b p-5"><Send className="h-4 w-4 text-primary" /><h2 className="font-semibold">下游执行通知</h2></div>
         {!order.dispatchNotices.length ? <div className="p-8 text-center text-muted-foreground">暂无执行通知；批次确认后可创建供应商发货指令或销售发货通知单</div> :
-          <div className="divide-y">{order.dispatchNotices.map(notice => <button key={notice.id} className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50" onClick={() => router.push(`/dashboard/dispatch-notices/${notice.id}`)}><div><div className="font-mono text-sm">{notice.noticeNo}</div><div className="text-xs text-muted-foreground">{notice.type === 'PURCHASE' ? '供应商发货指令' : '销售发货通知单'} · {Number(notice.totalQuantity).toLocaleString()} 吨 · {notice._count.waybills} 张物流运单</div></div><Badge variant="secondary">{{ DRAFT: '草稿', ISSUED: '已下达', IN_PROGRESS: '执行中', COMPLETED: '已完成', CANCELLED: '已取消' }[notice.status] || notice.status}</Badge></button>)}</div>}
+          <div className="divide-y">{order.dispatchNotices.map(notice => <button key={notice.id} className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50" onClick={() => router.push(`/dashboard/dispatch-notices/${notice.id}`)}><div><div className="font-mono text-sm">{notice.noticeNo}</div><div className="text-xs text-muted-foreground">{notice.type === 'PURCHASE' ? '供应商发货指令' : '销售发货通知单'} · {Number(notice.totalQuantity).toLocaleString()} 吨 · {notice._count.waybills} 张物流运单</div></div><StatusText status={notice.status}>{{ DRAFT: '草稿', ISSUED: '已下达', IN_PROGRESS: '执行中', COMPLETED: '已完成', CANCELLED: '已取消' }[notice.status] || notice.status}</StatusText></button>)}</div>}
       </Card>
       <BusinessOperationHistory logs={(order as any).operationLogs} />
     </div>
@@ -145,4 +145,8 @@ export default function OrderDetailPage() {
 
 function Field({ label, value }: { label: string; value: string }) {
   return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1">{value}</div></div>;
+}
+
+function OrderTypeBadge({ type }: { type: string }) {
+  return <BusinessDirectionBadge type={type} suffix="执行" className="px-2 text-xs" />;
 }

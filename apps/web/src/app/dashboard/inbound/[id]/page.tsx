@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
+import { StatusText } from '@/components/status-text';
 
 const STATUS: Record<string, string> = {
   PENDING: '作业中', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已作废',
@@ -161,7 +162,7 @@ export default function InboundDetail() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{item.receiptNo}</h1>
-              <Badge variant="outline" className={stageClass(workflow.tone)}>{workflow.stageLabel || STATUS[item.status]}</Badge>
+              <StatusText status={item.status} className={stageClass(workflow.tone)}>{workflow.stageLabel || STATUS[item.status]}</StatusText>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {item.materialName} · {item.plateNo || '-'} · {item.warehouse?.name || '待选择仓库'}
@@ -287,7 +288,7 @@ export default function InboundDetail() {
                         {inspection.inspectionNo}
                       </button>
                       {selected && <Badge className="bg-success text-success-foreground">执行口径报告</Badge>}
-                      <Badge variant="outline">{qualityStatus(inspection)}</Badge>
+                      <StatusText status={inspection.status}>{qualityStatus(inspection)}</StatusText>
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       {inspection.institutionName} · 磅单 {inspection.ticket.ticketNo}
@@ -403,10 +404,10 @@ function ProgressStep({ title, milestone }: { title: string; milestone?: { label
 }
 
 function stageClass(tone?: string) {
-  if (tone === 'success') return 'border-success/30 bg-success-bg text-success';
-  if (tone === 'danger') return 'border-destructive/30 bg-destructive/5 text-destructive';
-  if (tone === 'warning') return 'border-warning/30 bg-warning-bg text-warning';
-  if (tone === 'info') return 'border-info/30 bg-info-bg text-info';
+  if (tone === 'success') return 'text-success';
+  if (tone === 'danger') return 'text-destructive';
+  if (tone === 'warning') return 'text-warning';
+  if (tone === 'info') return 'text-primary';
   return 'text-muted-foreground';
 }
 

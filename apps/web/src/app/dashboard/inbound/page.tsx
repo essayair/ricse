@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Search, Warehouse } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
-import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { StatusText } from '@/components/status-text';
 
 const STATUS: Record<string, string> = {
   PENDING: '作业中', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已作废',
@@ -128,9 +128,9 @@ export default function InboundPage() {
                     >
                       <td className="p-3">
                         <div className="font-mono font-medium text-primary">{item.receiptNo}</div>
-                        <Badge variant="outline" className={`mt-2 ${stageClass(workflow.tone)}`}>
+                        <StatusText status={item.status} className={`mt-2 ${stageClass(workflow.tone)}`}>
                           {workflow.stageLabel || STATUS[item.status] || item.status}
-                        </Badge>
+                        </StatusText>
                       </td>
                       <td className="p-3">
                         <div className="font-mono text-xs">{item.waybill?.waybillNo || '-'}</div>
@@ -186,10 +186,10 @@ function MilestoneCell({ milestone, secondary }: { milestone?: { label: string; 
 }
 
 function stageClass(tone?: string) {
-  if (tone === 'success') return 'border-success/30 bg-success-bg text-success';
-  if (tone === 'danger') return 'border-destructive/30 bg-destructive/5 text-destructive';
-  if (tone === 'warning') return 'border-warning/30 bg-warning-bg text-warning';
-  if (tone === 'info') return 'border-info/30 bg-info-bg text-info';
+  if (tone === 'success') return 'text-success';
+  if (tone === 'danger') return 'text-destructive';
+  if (tone === 'warning') return 'text-warning';
+  if (tone === 'info') return 'text-primary';
   return 'text-muted-foreground';
 }
 

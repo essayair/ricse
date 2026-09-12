@@ -10,6 +10,7 @@ import { WaybillService } from '../logistics/waybill.service';
 import { OrderService } from '../order/order.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
+import { PartnerService } from '../master-data/partner.service';
 import { MobileWorkspaceService } from './mobile-workspace.service';
 
 describe('MobileWorkspaceService', () => {
@@ -23,6 +24,7 @@ describe('MobileWorkspaceService', () => {
   const quality = mockDeep<QualityInspectionService>();
   const inventory = mockDeep<InventoryService>();
   const outbound = mockDeep<OutboundService>();
+  const partners = mockDeep<PartnerService>();
   let service: MobileWorkspaceService;
 
   beforeEach(async () => {
@@ -40,6 +42,7 @@ describe('MobileWorkspaceService', () => {
         { provide: QualityInspectionService, useValue: quality },
         { provide: InventoryService, useValue: inventory },
         { provide: OutboundService, useValue: outbound },
+        { provide: PartnerService, useValue: partners },
       ],
     }).compile();
     service = module.get(MobileWorkspaceService);
@@ -72,7 +75,7 @@ describe('MobileWorkspaceService', () => {
 
     expect(result.summary).toEqual({
       pendingApprovals: 2, contracts: 9, executingContracts: 3,
-      pendingDispatch: 6, inTransit: 6,
+      pendingDispatch: 6, pendingAssignment: 6, pendingDeparture: 6, inTransit: 6,
       pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
     });
     expect(result.account.roleNames).toEqual(['系统管理员']);

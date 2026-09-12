@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { MonitorPreview } from './monitor-preview';
+import { StatusText } from '@/components/status-text';
 
 interface Platform {
   id: string; code: string; name: string; appKey: string; appSecret: string; baseUrl: string;
@@ -190,7 +191,7 @@ export default function MonitorPage() {
                     className={`rounded-md border px-3 py-1.5 text-sm ${siteFilter === site.id ? 'border-primary bg-primary/5 text-primary' : ''}`}
                   >
                     {site.name} ({site._count.cameras})
-                    {site.status !== 'ACTIVE' && <Badge variant="secondary" className="ml-2">已停用</Badge>}
+                    {site.status !== 'ACTIVE' && <StatusText status={site.status} className="ml-2">已停用</StatusText>}
                   </button>
                   <Button variant="ghost" size="sm" onClick={() => setSiteForm({
                     id: site.id, platformId: site.platformId, code: site.code, name: site.name,
@@ -254,9 +255,9 @@ export default function MonitorPage() {
                           : <span className="flex items-center gap-1 text-muted-foreground"><WifiOff className="h-3.5 w-3.5" />离线</span>}
                       </td>
                       <td className="p-3">
-                        <Badge variant={item.status === 'ACTIVE' ? 'default' : 'secondary'}>
+                        <StatusText status={item.status}>
                           {item.status === 'ACTIVE' ? '启用' : '停用'}
-                        </Badge>
+                        </StatusText>
                       </td>
                       <td className="p-3">
                         <div className="flex gap-1">
@@ -336,9 +337,9 @@ export default function MonitorPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{item.name}</span>
                       <Badge variant="outline" className="font-mono">{item.code}</Badge>
-                      <Badge variant={item.status === 'ACTIVE' ? 'default' : 'secondary'}>
+                      <StatusText status={item.status}>
                         {item.status === 'ACTIVE' ? '启用' : '停用'}
-                      </Badge>
+                      </StatusText>
                       {!item.appSecretConfigured && <Badge variant="destructive">凭据未配置</Badge>}
                       <span className="text-xs text-muted-foreground">{item._count.sites} 个分组</span>
                     </div>

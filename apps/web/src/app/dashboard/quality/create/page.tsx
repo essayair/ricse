@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, FileText, FlaskConical, Plus, Scale, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
+import { StatusText } from '@/components/status-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -79,7 +80,7 @@ export default function CreateQualityInspectionPage() {
     const stored = localStorage.getItem('user');
     if (stored) { try { setSamplerName(JSON.parse(stored).name || ''); } catch {} }
     const taskId = searchParams.get('taskId');
-    if (!taskId) { alert('请从到货质检任务详情添加检测报告'); router.push('/dashboard/quality'); return; }
+    if (!taskId) { alert('请从质检任务详情添加检测报告'); router.push('/dashboard/quality'); return; }
     Promise.all([
       api.get<QualityTaskBrief>(`/quality-tasks/${taskId}`),
       api.get<EligibleTicket[]>(`/quality-inspections/eligible-weigh-tickets?qualityTaskId=${encodeURIComponent(taskId)}`),
@@ -90,7 +91,7 @@ export default function CreateQualityInspectionPage() {
       if (requested && items.some(item => item.id === requested)) setWeighTicketId(requested);
       else if (items[0]) setWeighTicketId(items[0].id);
       setSampleNo(`${qualityTask.taskNo}-S${String(qualityTask.reports.length + 1).padStart(2, '0')}`);
-    }).catch(error => alert(error.message || '到货质检任务或可用磅单加载失败'));
+    }).catch(error => alert(error.message || '质检任务或可用磅单加载失败'));
     api.get<{ items: InstitutionProfile[] }>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE&pageSize=200')
       .then(result => setInstitutions(result.items || []))
       .catch(error => alert(error.message || '质检机构主数据加载失败'));
@@ -169,7 +170,7 @@ export default function CreateQualityInspectionPage() {
   };
 
   const submit = async () => {
-    if (!task) return alert('到货质检任务不存在');
+    if (!task) return alert('质检任务不存在');
     if (!ticket) return alert('请选择关联磅单');
     if (!sampledAt || !samplerName.trim()) return alert('请填写取样时间和取样人');
     if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) && !institutionPartnerId) return alert('请选择已维护的质检机构');
@@ -201,7 +202,7 @@ export default function CreateQualityInspectionPage() {
   };
 
   return <div className="mx-auto max-w-6xl space-y-6">
-    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">添加检测报告</h1><p className="mt-1 text-sm text-muted-foreground">{task ? `${task.taskNo} · ${task.waybill.waybillNo}` : '在同一到货质检任务内录入一家检测机构的一份独立报告'}</p></div></div>
+    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">添加检测报告</h1><p className="mt-1 text-sm text-muted-foreground">{task ? `${task.taskNo} · ${task.waybill.waybillNo}` : '在同一质检任务内录入一家检测机构的一份独立报告'}</p></div></div>
 
     <Card className="overflow-hidden">
       <div className="border-b p-6 pb-4"><SectionTitle title="选择关联磅单" noMargin /><p className="mt-2 text-sm text-muted-foreground">仅显示本质检任务对应物流运单下已完成或已复核的磅单。系统优先选择当前执行磅单；尚未确定执行口径时，按现行业务规则优先选择已复核的发货磅单。多份检测报告可以关联同一张磅单。</p></div>
@@ -210,7 +211,7 @@ export default function CreateQualityInspectionPage() {
         <tbody>{tickets.map(item => { const selected = item.id === weighTicketId; return <tr key={item.id} className={`cursor-pointer border-b transition-colors ${selected ? 'bg-primary/10 ring-1 ring-inset ring-primary/30' : 'hover:bg-muted/50'}`} onClick={() => setWeighTicketId(item.id)}>
           <td className="px-4 py-3"><input type="radio" aria-label={`选择磅单 ${item.ticketNo}`} checked={selected} onChange={() => setWeighTicketId(item.id)} /></td>
           <td className="whitespace-nowrap px-4 py-3">{formatDateTimeToSecond(item.ticketDate)}</td>
-          <td className="px-4 py-3"><div className="font-mono font-medium text-primary">{item.ticketNo}</div><div className="mt-1 flex flex-wrap gap-1"><Badge variant="secondary">{item.status === 'REVIEWED' ? '已复核' : '已完成'}</Badge><Badge variant="outline">{item.weighingStage === 'RECEIVING' ? '收货称重' : item.weighingStage === 'SHIPPING' ? '发货称重' : '其他称重'}</Badge>{item.recommended && <Badge>{item.recommendationReason || '系统建议'}</Badge>}</div></td>
+          <td className="px-4 py-3"><div className="font-mono font-medium text-primary">{item.ticketNo}</div><div className="mt-1 flex flex-wrap items-center gap-2"><StatusText status={item.status}>{item.status === 'REVIEWED' ? '已复核' : '已完成'}</StatusText><Badge variant="outline">{item.weighingStage === 'RECEIVING' ? '收货称重' : item.weighingStage === 'SHIPPING' ? '发货称重' : '其他称重'}</Badge>{item.recommended && <Badge>{item.recommendationReason || '系统建议'}</Badge>}</div></td>
           <td className="px-4 py-3"><div className="font-mono text-xs">{item.waybill.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.dispatchNotice.order.name}</div></td>
           <td className="max-w-56 px-4 py-3"><div className="truncate font-medium" title={item.materialName || ''}>{item.materialName || '-'}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={item.materialSpec || ''}>{item.materialSpec || '-'}</div></td>
           <td className="max-w-64 px-4 py-3"><div className="truncate" title={item.shipperName || ''}>{item.shipperName || '-'}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={item.receiverName || ''}>{item.receiverName || '-'}</div></td>

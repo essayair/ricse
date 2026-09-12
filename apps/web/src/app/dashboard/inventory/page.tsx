@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
+import { StatusText } from '@/components/status-text';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -126,9 +127,9 @@ export default function InventoryPage() {
                   <td className="p-3 text-right font-medium text-primary">{weight(lot.availableToPromiseQuantity)}</td>
                   <td className="p-3">{lot.qualityConclusion === 'PASS' ? '合格' : '扣款入库'}</td>
                   <td className="p-3">
-                    <Badge variant="secondary">
+                    <StatusText status={lot.status}>
                       {lot.status === 'AVAILABLE' ? '可用' : lot.status === 'DEPLETED' ? '已耗尽' : lot.status}
-                    </Badge>
+                    </StatusText>
                   </td>
                 </tr>
               ))}

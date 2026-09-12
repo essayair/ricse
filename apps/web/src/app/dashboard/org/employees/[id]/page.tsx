@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, User, Building2, Layers, Phone, Mail, Briefcase, Key, Eye, EyeOff, Save, Check, X, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
+import { StatusText } from '@/components/status-text';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
@@ -318,7 +318,7 @@ export default function EmployeeDetailPage() {
               )}
             </div>
             <InfoRow icon={Mail} label="邮箱" value={emp.email || '—'} />
-            <div><span className="text-xs text-muted-foreground uppercase tracking-wider">员工状态</span><div className="mt-1"><Badge variant="secondary" className={emp.status === 'ACTIVE' ? 'border-0 bg-success-bg text-success' : emp.status === 'RESIGNED' ? 'border-0 bg-muted text-muted-foreground' : ''}>{EMPLOYEE_STATUS_LABEL[emp.status] || emp.status}</Badge></div></div>
+            <div><span className="text-xs text-muted-foreground uppercase tracking-wider">员工状态</span><div className="mt-1"><StatusText status={emp.status}>{EMPLOYEE_STATUS_LABEL[emp.status] || emp.status}</StatusText></div></div>
             {profileMsg && <p className="text-xs text-green-600">{profileMsg}</p>}
           </div>}
         </Card>
@@ -368,9 +368,9 @@ export default function EmployeeDetailPage() {
               <div>
                 <span className="text-xs text-muted-foreground uppercase tracking-wider">账号状态</span>
                 <div className="mt-1">
-                  <Badge variant="secondary" className={emp.user.status === 'ACTIVE' ? 'bg-success-bg text-success border-0' : ''}>
+                  <StatusText status={emp.user.status}>
                     {emp.user.status === 'ACTIVE' ? '正常' : '禁用'}
-                  </Badge>
+                  </StatusText>
                   <Button className="ml-3" variant="outline" size="sm" onClick={handleAccountStatus} disabled={emp.user.status !== 'ACTIVE' && emp.status !== 'ACTIVE'}>{emp.user.status === 'ACTIVE' ? '禁用账号' : emp.status === 'ACTIVE' ? '启用账号' : '员工非在职，不能启用'}</Button>
                 </div>
               </div>

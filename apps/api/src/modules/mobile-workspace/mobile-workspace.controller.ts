@@ -20,6 +20,8 @@ import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { MobileApprovalDecisionDto } from './dto/mobile-approval.dto';
 import { MobileUserGuard } from './mobile-user.guard';
 import { MOBILE_BUSINESS_MODULES, MobileBusinessModule, MobileWorkspaceService } from './mobile-workspace.service';
+import { DispatchLocationDto } from '../dispatch-notice/dto/create-dispatch-notice.dto';
+import { CreatePartnerAddressDto } from '../master-data/dto/partner-address.dto';
 
 @ApiTags('小程序企业工作台')
 @ApiBearerAuth()
@@ -76,6 +78,24 @@ export class MobileWorkspaceController {
     @Param('id') id: string,
   ) {
     return this.service.businessDetail(userId, this.parseBusinessModule(rawModule), id);
+  }
+
+  @Get('dispatch-notices/:id/location-options')
+  @ApiOperation({ summary: '移动端执行通知地址可选项' })
+  dispatchLocationOptions(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.dispatchLocationOptions(id, userId);
+  }
+
+  @Patch('dispatch-notices/:id/locations')
+  @ApiOperation({ summary: '移动端修改尚未派车的执行地址' })
+  updateDispatchLocations(@Param('id') id: string, @Body() dto: DispatchLocationDto, @CurrentUser('id') userId: string) {
+    return this.service.updateDispatchLocations(id, dto, userId);
+  }
+
+  @Post('partners/:partnerId/addresses')
+  @ApiOperation({ summary: '移动端保存合作伙伴收发货地址' })
+  createPartnerAddress(@Param('partnerId') partnerId: string, @Body() dto: CreatePartnerAddressDto, @CurrentUser('id') userId: string) {
+    return this.service.createPartnerAddress(partnerId, dto, userId);
   }
 
   @Post('quality-tasks/:id/attachments')

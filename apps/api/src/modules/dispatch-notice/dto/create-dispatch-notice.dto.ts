@@ -1,5 +1,21 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+
+export class DispatchLocationDto {
+  @IsString() @IsNotEmpty() @MaxLength(200) originLocation: string;
+  @IsString() @IsNotEmpty() @MaxLength(200) destinationLocation: string;
+
+  @IsOptional() @IsIn(['MANUAL', 'WAREHOUSE', 'PARTNER_ADDRESS']) originSourceType?: string;
+  @IsOptional() @IsIn(['MANUAL', 'WAREHOUSE', 'PARTNER_ADDRESS']) destinationSourceType?: string;
+  @IsOptional() @IsString() originWarehouseId?: string;
+  @IsOptional() @IsString() destinationWarehouseId?: string;
+  @IsOptional() @IsString() originPartnerAddressId?: string;
+  @IsOptional() @IsString() destinationPartnerAddressId?: string;
+  @IsOptional() @IsString() @MaxLength(50) originContactPerson?: string;
+  @IsOptional() @IsString() @MaxLength(30) originContactPhone?: string;
+  @IsOptional() @IsString() @MaxLength(50) destinationContactPerson?: string;
+  @IsOptional() @IsString() @MaxLength(30) destinationContactPhone?: string;
+}
 
 export class CreateDispatchNoticeLineDto {
   @IsString()
@@ -10,7 +26,7 @@ export class CreateDispatchNoticeLineDto {
   quantity: number;
 }
 
-export class CreateDispatchNoticeDto {
+export class CreateDispatchNoticeDto extends DispatchLocationDto {
   @IsString()
   orderId: string;
 
@@ -26,15 +42,9 @@ export class CreateDispatchNoticeDto {
   @IsDateString()
   plannedDate?: string;
 
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  originLocation: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  destinationLocation: string;
+  @IsOptional()
+  @IsBoolean()
+  qualityRequired?: boolean;
 
   @IsOptional()
   @IsString()

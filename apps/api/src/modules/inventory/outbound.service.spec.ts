@@ -107,6 +107,32 @@ describe('OutboundService', () => {
     }));
   });
 
+  it('销售常规通知未选择仓库时仍生成待分配仓库的出库管理单', async () => {
+    prisma.dispatchNotice.findUnique.mockResolvedValue({
+      id: 'notice-manual', type: 'SALES', mode: 'STANDARD', warehouseId: null,
+      outboundOrder: null,
+      order: { contract: { signingPartnerId: 'owner-1' } },
+      lineItems: [{
+        id: 'notice-line-manual', materialId: 'material-1', materialName: '测试物料',
+        unit: 'TON', quantity: 100,
+      }],
+    } as any);
+    prisma.outboundOrder.count.mockResolvedValue(0);
+    prisma.outboundOrder.create.mockResolvedValue({ id: 'manual-order-1' } as any);
+
+    await service.ensureOrderForNotice('notice-manual', 'user-1');
+
+    expect(prisma.inventoryLot.aggregate).not.toHaveBeenCalled();
+    expect(prisma.outboundOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        warehouseId: null,
+        reservedQuantity: 0,
+        shortageQuantity: 100,
+        lineItems: { create: [expect.objectContaining({ reservedQuantity: 0 })] },
+      }),
+    }));
+  });
+
   it('超装车次必须记录处理意见后才恢复待放行', async () => {
     prisma.outboundReceipt.findFirst.mockResolvedValue({
       id: 'receipt-1', status: 'VARIANCE_PENDING', varianceQuantity: 3,

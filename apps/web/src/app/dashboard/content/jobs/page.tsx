@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Bot, Play, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { contentDate, JOB_STATUS, JOB_TYPE } from '@/lib/content';
-import { Badge } from '@/components/ui/badge';
+import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -59,7 +59,7 @@ export default function ContentJobsPage() {
     <Card className="overflow-hidden">
       {!data.list.length ? <div className="p-12 text-center text-muted-foreground"><Bot className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无任务记录</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务类型</th><th className="p-3">数据源</th><th className="p-3">业务键</th><th className="p-3">状态</th><th className="p-3 text-right">执行次数</th><th className="p-3">计划 / 开始</th><th className="p-3">结束时间</th><th className="p-3">结果或错误</th><th className="p-3">操作</th></tr></thead>
-        <tbody>{data.list.map((item: any) => <tr key={item.id} className="border-b align-top"><td className="p-3 font-medium">{JOB_TYPE[item.type] || item.type}</td><td className="p-3">{item.source?.name || '-'}</td><td className="max-w-56 truncate p-3 font-mono text-xs">{item.businessKey}</td><td className="p-3"><Badge variant={item.status === 'SUCCEEDED' ? 'default' : item.status === 'FAILED' ? 'destructive' : 'secondary'} className={item.status === 'PARTIAL' ? 'border-amber-300 bg-amber-100 text-amber-800' : ''}>{JOB_STATUS[item.status] || item.status}</Badge></td><td className="p-3 text-right">{item.attempts} / {item.maxAttempts}</td><td className="p-3 text-xs">{contentDate(item.scheduledAt)}<div className="mt-1 text-muted-foreground">{contentDate(item.startedAt)}</div></td><td className="p-3 text-xs">{contentDate(item.finishedAt)}</td><td className="max-w-80 p-3 text-xs"><JobResult item={item} /></td><td className="p-3">{['FAILED', 'CANCELLED', 'PARTIAL'].includes(item.status) && <Button size="sm" variant="outline" onClick={() => retry(item.id)}>重试</Button>}</td></tr>)}</tbody>
+        <tbody>{data.list.map((item: any) => <tr key={item.id} className="border-b align-top"><td className="p-3 font-medium">{JOB_TYPE[item.type] || item.type}</td><td className="p-3">{item.source?.name || '-'}</td><td className="max-w-56 truncate p-3 font-mono text-xs">{item.businessKey}</td><td className="p-3"><StatusText status={item.status}>{JOB_STATUS[item.status] || item.status}</StatusText></td><td className="p-3 text-right">{item.attempts} / {item.maxAttempts}</td><td className="p-3 text-xs">{contentDate(item.scheduledAt)}<div className="mt-1 text-muted-foreground">{contentDate(item.startedAt)}</div></td><td className="p-3 text-xs">{contentDate(item.finishedAt)}</td><td className="max-w-80 p-3 text-xs"><JobResult item={item} /></td><td className="p-3">{['FAILED', 'CANCELLED', 'PARTIAL'].includes(item.status) && <Button size="sm" variant="outline" onClick={() => retry(item.id)}>重试</Button>}</td></tr>)}</tbody>
       </table></div>}
     </Card>
   </div>;

@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Building2, Link2, Loader2, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react';
 import { api } from '@/lib/api';
+import { StatusText } from '@/components/status-text';
 
 interface BackendAccount {
   id: string;
@@ -201,9 +202,9 @@ export default function UserManagementPage() {
                       <td className="px-4 py-3">{user.phone || '—'}{user.phoneVerifiedAt && <div className="mt-1 text-xs text-green-600">微信已验证</div>}</td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{user.openIdMasked}</td>
                       <td className="px-4 py-3">{user.linkedUser?.company ? <><div>{user.linkedUser.company.code} {user.linkedUser.company.name}</div><div className="mt-1 text-xs text-muted-foreground">{user.linkedUser.employee?.name || '—'} · {user.linkedUser.employee?.department?.name || '未分部门'}</div></> : '—'}</td>
-                      <td className="px-4 py-3">{user.linkedUser ? <><div className="font-mono">{user.linkedUser.username}</div><div className="mt-1 flex flex-wrap gap-1">{user.linkedUser.roleAssignments?.map((item) => <Badge key={item.role.code} variant="outline" className="text-[10px]">{item.role.name}</Badge>)}</div></> : <Badge variant="secondary">未关联</Badge>}</td>
+                      <td className="px-4 py-3">{user.linkedUser ? <><div className="font-mono">{user.linkedUser.username}</div><div className="mt-1 flex flex-wrap gap-1">{user.linkedUser.roleAssignments?.map((item) => <Badge key={item.role.code} variant="outline" className="text-[10px]">{item.role.name}</Badge>)}</div></> : <StatusText status="UNBOUND">未关联</StatusText>}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(user.lastLogin)}</td>
-                      <td className="px-4 py-3"><Badge className={user.status === 'ACTIVE' ? 'border-0 bg-success-bg text-success' : ''} variant="secondary">{user.status === 'ACTIVE' ? '正常' : '禁用'}</Badge></td>
+                      <td className="px-4 py-3"><StatusText status={user.status}>{user.status === 'ACTIVE' ? '正常' : '禁用'}</StatusText></td>
                       <td className="px-4 py-3"><div className="flex flex-wrap gap-x-3 gap-y-2">
                         <button className="text-xs text-primary hover:underline" onClick={() => void openBinding(user)}>{user.linkedUser ? '重新关联' : '关联账号'}</button>
                         {user.linkedUser && <button className="text-xs text-destructive hover:underline" onClick={() => void unbind(user)}>解除关联</button>}
