@@ -11,6 +11,7 @@ import { OrderService } from '../order/order.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { PartnerService } from '../master-data/partner.service';
+import { DriverService } from '../master-data/driver.service';
 import { MobileWorkspaceService } from './mobile-workspace.service';
 
 describe('MobileWorkspaceService', () => {
@@ -25,6 +26,7 @@ describe('MobileWorkspaceService', () => {
   const inventory = mockDeep<InventoryService>();
   const outbound = mockDeep<OutboundService>();
   const partners = mockDeep<PartnerService>();
+  const drivers = mockDeep<DriverService>();
   let service: MobileWorkspaceService;
 
   beforeEach(async () => {
@@ -43,6 +45,7 @@ describe('MobileWorkspaceService', () => {
         { provide: InventoryService, useValue: inventory },
         { provide: OutboundService, useValue: outbound },
         { provide: PartnerService, useValue: partners },
+        { provide: DriverService, useValue: drivers },
       ],
     }).compile();
     service = module.get(MobileWorkspaceService);
@@ -117,6 +120,24 @@ describe('MobileWorkspaceService', () => {
 
     expect(waybills.findAll).toHaveBeenCalledWith({ search: '浙A', status: undefined }, 'user-1');
     expect(result).toEqual({ items: [{ id: 'waybill-1' }], total: 1 });
+  });
+
+  it('移动端保存车辆和司机档案前校验主数据维护权限', async () => {
+    partners.createVehicle.mockResolvedValue({ id: 'vehicle-1', plateNo: '浙A12345' } as any);
+    drivers.create.mockResolvedValue({ id: 'driver-1', name: '张师傅' } as any);
+    const vehicle = {
+      plateNo: '浙A12345', vehicleType: 'TRUCK', loadCapacity: 32,
+      ownerType: 'OUTSOURCED', ownerId: 'partner-1',
+    };
+    const driver = { serviceOrganizationId: 'carrier-1', name: '张师傅', phone: '13800138000' };
+
+    await expect(service.createLogisticsVehicle('user-1', vehicle)).resolves.toMatchObject({ id: 'vehicle-1' });
+    await expect(service.createLogisticsDriver('user-1', driver)).resolves.toMatchObject({ id: 'driver-1' });
+
+    expect(access.assertPermission).toHaveBeenNthCalledWith(1, 'user-1', 'master_data.manage');
+    expect(access.assertPermission).toHaveBeenNthCalledWith(2, 'user-1', 'master_data.manage');
+    expect(partners.createVehicle).toHaveBeenCalledWith(vehicle);
+    expect(drivers.create).toHaveBeenCalledWith(driver);
   });
 
   it('库存批次详情只能从当前用户可见库存中取得', async () => {

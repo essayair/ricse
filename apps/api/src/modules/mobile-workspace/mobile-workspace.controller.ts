@@ -4,7 +4,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
-import { normalizeUploadFilename } from '../common/filename-encoding';
+import { prepareAttachmentUpload } from '../common/attachment-upload';
 import { WaybillReceiptAttachmentCategory, WaybillService } from '../logistics/waybill.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { OutboundService } from '../inventory/outbound.service';
@@ -15,13 +15,14 @@ import { UpdateQualityTaskSamplingDto } from '../quality/dto/update-quality-task
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { CreateWeighRecordDto } from '../weighbridge/dto/create-weigh-record.dto';
 import { CreateWeighTicketDto } from '../weighbridge/dto/create-weigh-ticket.dto';
-import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { MobileApprovalDecisionDto } from './dto/mobile-approval.dto';
 import { MobileUserGuard } from './mobile-user.guard';
 import { MOBILE_BUSINESS_MODULES, MobileBusinessModule, MobileWorkspaceService } from './mobile-workspace.service';
 import { DispatchLocationDto } from '../dispatch-notice/dto/create-dispatch-notice.dto';
 import { CreatePartnerAddressDto } from '../master-data/dto/partner-address.dto';
+import { CreateDriverDto } from '../master-data/dto/driver.dto';
+import { CreateVehicleDto } from '../master-data/dto/vehicle.dto';
 
 @ApiTags('小程序企业工作台')
 @ApiBearerAuth()
@@ -50,6 +51,18 @@ export class MobileWorkspaceController {
   @ApiOperation({ summary: '移动物流调度可选车辆、司机和承运商' })
   logisticsOptions(@CurrentUser('id') userId: string, @Query('search') search?: string) {
     return this.service.logisticsOptions(userId, search);
+  }
+
+  @Post('logistics/vehicles')
+  @ApiOperation({ summary: '移动端新建车辆档案' })
+  createLogisticsVehicle(@CurrentUser('id') userId: string, @Body() dto: CreateVehicleDto) {
+    return this.service.createLogisticsVehicle(userId, dto);
+  }
+
+  @Post('logistics/drivers')
+  @ApiOperation({ summary: '移动端新建承运商司机档案' })
+  createLogisticsDriver(@CurrentUser('id') userId: string, @Body() dto: CreateDriverDto) {
+    return this.service.createLogisticsDriver(userId, dto);
   }
 
   @Get('business/:module')
@@ -196,9 +209,9 @@ export class MobileWorkspaceController {
     @Body('category') category: WaybillReceiptAttachmentCategory = 'RECEIPT_OTHER',
   ) {
     if (!file) throw new BadRequestException('请选择文件');
-    const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
-    const mimeType = attachmentMimeType(originalName, file.mimetype);
-    if (!mimeType) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    const prepared = prepareAttachmentUpload(file);
+    if (!prepared) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    const { originalName, mimeType } = prepared;
     const result = await this.fileService.upload(file.buffer, originalName, mimeType);
     try {
       return await this.waybillService.createAttachment({
@@ -514,9 +527,9 @@ export class MobileWorkspaceController {
     save: (stored: { fileName: string; originalName: string; mimeType: string; size: number; fileHash: string }) => Promise<T>,
   ) {
     if (!file) throw new BadRequestException('请选择现场照片');
-    const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
-    const mimeType = attachmentMimeType(originalName, file.mimetype);
-    if (!mimeType || mimeType === 'application/pdf') throw new BadRequestException('现场影像仅支持 JPG/PNG/WEBP 格式');
+    const prepared = prepareAttachmentUpload(file);
+    if (!prepared || prepared.mimeType === 'application/pdf') throw new BadRequestException('现场影像仅支持 JPG/PNG/WEBP 格式');
+    const { originalName, mimeType } = prepared;
     const result = await this.fileService.upload(file.buffer, originalName, mimeType);
     try {
       return await save({
@@ -534,9 +547,9 @@ export class MobileWorkspaceController {
     save: (stored: { fileName: string; originalName: string; mimeType: string; size: number }) => Promise<T>,
   ) {
     if (!file) throw new BadRequestException('请选择文件');
-    const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
-    const mimeType = attachmentMimeType(originalName, file.mimetype);
-    if (!mimeType) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    const prepared = prepareAttachmentUpload(file);
+    if (!prepared) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    const { originalName, mimeType } = prepared;
     const result = await this.fileService.upload(file.buffer, originalName, mimeType);
     try {
       return await save({ fileName: result.fileName, originalName, mimeType, size: result.size });

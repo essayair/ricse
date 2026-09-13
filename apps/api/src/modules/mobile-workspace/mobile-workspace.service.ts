@@ -12,6 +12,9 @@ import { QualityInspectionService } from '../quality/quality-inspection.service'
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { DispatchLocationDto } from '../dispatch-notice/dto/create-dispatch-notice.dto';
 import { CreatePartnerAddressDto } from '../master-data/dto/partner-address.dto';
+import { CreateDriverDto } from '../master-data/dto/driver.dto';
+import { CreateVehicleDto } from '../master-data/dto/vehicle.dto';
+import { DriverService } from '../master-data/driver.service';
 import { PartnerService } from '../master-data/partner.service';
 
 export const MOBILE_BUSINESS_MODULES = [
@@ -34,6 +37,7 @@ export class MobileWorkspaceService {
     private readonly inventory: InventoryService,
     private readonly outbound: OutboundService,
     private readonly partners: PartnerService,
+    private readonly drivers: DriverService,
   ) {}
 
   private modulePermission(module: MobileBusinessModule) {
@@ -209,7 +213,7 @@ export class MobileWorkspaceService {
   }
 
   async logisticsOptions(userId: string, search?: string) {
-    await this.access.assertPermission(userId, 'logistics.manage');
+    const context = await this.access.assertPermission(userId, 'logistics.manage');
     const keyword = search?.trim();
     const [vehicles, drivers, carriers] = await Promise.all([
       this.prisma.vehicle.findMany({
@@ -297,7 +301,18 @@ export class MobileWorkspaceService {
         name: item.partner.name,
         isInternal: item.partner.isInternal,
       })),
+      canMaintainMasterData: context.isAdmin || context.permissions.includes('master_data.manage'),
     };
+  }
+
+  async createLogisticsVehicle(userId: string, dto: CreateVehicleDto) {
+    await this.access.assertPermission(userId, 'master_data.manage');
+    return this.partners.createVehicle(dto);
+  }
+
+  async createLogisticsDriver(userId: string, dto: CreateDriverDto) {
+    await this.access.assertPermission(userId, 'master_data.manage');
+    return this.drivers.create(dto);
   }
 
   async activeQualityInstitutions(userId: string) {
