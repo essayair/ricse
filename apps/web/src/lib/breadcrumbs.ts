@@ -54,7 +54,7 @@ const RESOURCE_ROUTES: ResourceRoute[] = [
   { base: '/dashboard/inbound', section: '库存管理', listLabel: '入库单管理', detailLabel: '入库单详情', createLabel: '入库单生成说明' },
   { base: '/dashboard/outbound', section: '库存管理', listLabel: '出库单管理', detailLabel: '出库单详情', createLabel: '完善出库作业' },
   { base: '/dashboard/inventory-reversals', section: '库存管理', listLabel: '库存冲销', detailLabel: '库存冲销单详情', createLabel: '新建库存冲销单' },
-  { base: '/dashboard/quality', section: '质检影像', listLabel: '质检管理', detailLabel: '质检任务详情', createLabel: '添加检测报告' },
+  { base: '/dashboard/quality', section: '磅单质检', listLabel: '质检管理', detailLabel: '质检任务详情', createLabel: '添加检测报告' },
 ];
 
 function withHome(items: BreadcrumbItem[]): BreadcrumbItem[] {
@@ -179,7 +179,7 @@ function resolveProduction(pathname: string): BreadcrumbItem[] | null {
 }
 
 function resolveWeighbridge(pathname: string): BreadcrumbItem[] | null {
-  const section: BreadcrumbItem = { label: '质检影像' };
+  const section: BreadcrumbItem = { label: '磅单质检' };
   const list: BreadcrumbItem = { label: '磅单管理', href: '/dashboard/weighbridge' };
   if (pathname === '/dashboard/weighbridge') return withHome([section, { label: '磅单管理' }]);
   if (pathname === '/dashboard/weighbridge/create') return withHome([section, list, { label: '新建或追加磅单' }]);
@@ -229,7 +229,7 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     '/dashboard/dispatch': [{ label: '物流管理' }, { label: '调度看板' }],
     '/dashboard/logistics-reconciliation': [{ label: '物流管理' }, { label: '物流对账' }],
     '/dashboard/inventory': [{ label: '库存管理' }, { label: '在库总览' }],
-    '/dashboard/monitor': [{ label: '质检影像' }, { label: '监控录像' }],
+    '/dashboard/monitor': [{ label: '影像监控' }],
     '/dashboard/settlement': [{ label: '结算中心' }, { label: '应收管理' }],
     '/dashboard/payables': [{ label: '结算中心' }, { label: '应付管理' }],
     '/dashboard/system/access-control': [{ label: '系统管理' }, { label: '用户与权限' }],

@@ -24,6 +24,7 @@ import {
   Factory,
   Newspaper,
   Users,
+  Video,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -52,6 +53,14 @@ const NAV_ITEMS: NavGroup[] = [
     ],
   },
   {
+    label: '磅单质检',
+    icon: FlaskConical,
+    children: [
+      { href: '/dashboard/weighbridge', label: '磅单管理' },
+      { href: '/dashboard/quality', label: '质检管理' },
+    ],
+  },
+  {
     label: '库存管理',
     icon: Warehouse,
     children: [
@@ -68,15 +77,6 @@ const NAV_ITEMS: NavGroup[] = [
       { href: '/dashboard/production', label: '生产任务' },
       { href: '/dashboard/production/recipes', label: '生产方案' },
       { href: '/dashboard/production/ledger', label: '生产台账' },
-    ],
-  },
-  {
-    label: '质检影像',
-    icon: FlaskConical,
-    children: [
-      { href: '/dashboard/weighbridge', label: '磅单管理' },
-      { href: '/dashboard/quality', label: '质检管理' },
-      { href: '/dashboard/monitor', label: '监控录像' },
     ],
   },
   {
@@ -160,15 +160,6 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     || permissions.some((code) => code.startsWith('content.'));
   const canViewMonitor = userRole === 'ADMIN' || permissions.some((code) => code.startsWith('monitor.'));
 
-  // 监控录像依赖 monitor.* 权限，无权账号不展示该二级入口，其余分组保持不变。
-  const navItems = canViewMonitor
-    ? NAV_ITEMS
-    : NAV_ITEMS.map((group) => (
-      group.children.some((child) => child.href === '/dashboard/monitor')
-        ? { ...group, children: group.children.filter((child) => child.href !== '/dashboard/monitor') }
-        : group
-    ));
-
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
     const [base, qs] = href.split('?');
@@ -223,7 +214,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
         />
 
         {/* 业务模块 — accordion */}
-        {navItems.map((group) => (
+        {NAV_ITEMS.map((group) => (
           <SidebarGroupItem
             key={group.label}
             icon={group.icon}
@@ -232,6 +223,16 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
             isActive={isActive}
           />
         ))}
+
+        {/* 影像监控是独立业务入口，位于结算中心之后；配置能力仍由 monitor.* 权限控制。 */}
+        {canViewMonitor && (
+          <SidebarIconItem
+            icon={Video}
+            label="影像监控"
+            isActive={pathname === '/dashboard/monitor'}
+            href="/dashboard/monitor"
+          />
+        )}
 
         {canViewContent && (
           <>

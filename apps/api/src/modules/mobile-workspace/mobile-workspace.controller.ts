@@ -23,6 +23,7 @@ import { DispatchLocationDto } from '../dispatch-notice/dto/create-dispatch-noti
 import { CreatePartnerAddressDto } from '../master-data/dto/partner-address.dto';
 import { CreateDriverDto } from '../master-data/dto/driver.dto';
 import { CreateVehicleDto } from '../master-data/dto/vehicle.dto';
+import { BatchCreateWaybillDto } from '../logistics/dto/create-waybill.dto';
 
 @ApiTags('小程序企业工作台')
 @ApiBearerAuth()
@@ -63,6 +64,18 @@ export class MobileWorkspaceController {
   @ApiOperation({ summary: '移动端新建承运商司机档案' })
   createLogisticsDriver(@CurrentUser('id') userId: string, @Body() dto: CreateDriverDto) {
     return this.service.createLogisticsDriver(userId, dto);
+  }
+
+  @Get('waybills/dispatch-notices/:id/availability')
+  @ApiOperation({ summary: '移动端查询执行通知剩余可派车数量' })
+  waybillAvailability(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.waybillService.getNoticeAvailability(id, userId, 'logistics.manage');
+  }
+
+  @Post('waybills/batch')
+  @ApiOperation({ summary: '移动端批量创建物流运单' })
+  createWaybillsBatch(@Body() dto: BatchCreateWaybillDto, @CurrentUser('id') userId: string) {
+    return this.waybillService.createBatch(dto, userId);
   }
 
   @Get('business/:module')
