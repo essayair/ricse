@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, FileText, FlaskConical, Link2, Plus, Scale, Upload } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, FileText, FlaskConical, Link2, Pencil, Plus, Scale, Trash2, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
@@ -22,12 +22,19 @@ interface Report {
   deductionAmount: string; remarks: string | null; indicators: Indicator[]; attachments: Attachment[];
   creator: { name: string }; confirmer: { name: string } | null; confirmedAt: string | null;
   weighTicket: { id: string; ticketNo: string; status: string };
+  qualitySample?: { id: string; sampleNo: string; sampleLabel: string | null } | null;
+}
+interface Sample {
+  id: string; sampleNo: string; sampleLabel: string | null; sampledAt: string; samplerName: string;
+  samplingMethod: string | null; sealNo: string | null; destinationInstitutionName: string | null;
+  sentAt: string | null; remarks: string | null; status: string; attachments: Attachment[];
+  creator: { name: string }; reports: Array<{ id: string; inspectionNo: string; reportNo: string; institutionName: string; status: string }>;
 }
 interface Task {
   id: string; taskNo: string; status: string; plannedReportCount: number; sampledAt: string | null; samplerName: string | null;
   samplingMethod: string | null; finalConclusion: string; finalizedReportCount: number; decisionReason: string | null;
   decisionVersion: number; decidedAt: string | null; createdAt: string; handler: { name: string } | null; decider: { name: string } | null;
-  qualityTemplate: { id: string; code: string; name: string; version: number } | null; attachments: Attachment[];
+  qualityTemplate: { id: string; code: string; name: string; version: number } | null; attachments: Attachment[]; samples: Sample[];
   basisInspection: { id: string; inspectionNo: string; institutionName: string; reportNo: string } | null;
   reports: Report[];
   waybill: {
@@ -57,6 +64,13 @@ export default function QualityTaskDetailPage() {
   const [sampledAt, setSampledAt] = useState('');
   const [samplerName, setSamplerName] = useState('');
   const [samplingMethod, setSamplingMethod] = useState('多点混合取样');
+  const [sampleNo, setSampleNo] = useState('');
+  const [sampleLabel, setSampleLabel] = useState('');
+  const [sealNo, setSealNo] = useState('');
+  const [destinationInstitutionName, setDestinationInstitutionName] = useState('');
+  const [sentAt, setSentAt] = useState('');
+  const [sampleRemarks, setSampleRemarks] = useState('');
+  const [editingSampleId, setEditingSampleId] = useState('');
   const [plannedReportCount, setPlannedReportCount] = useState('1');
   const [evidenceCategory, setEvidenceCategory] = useState('SAMPLING_PHOTO');
   const [evidenceSource, setEvidenceSource] = useState('WEB_UPLOAD');
@@ -152,16 +166,44 @@ export default function QualityTaskDetailPage() {
     finally { setSaving(false); }
   };
 
-  const saveSampling = async () => {
+  const resetSampleForm = () => {
+    setEditingSampleId(''); setSampleNo(''); setSampleLabel(''); setSealNo('');
+    setDestinationInstitutionName(''); setSentAt(''); setSampleRemarks('');
+    setSampledAt(toLocalDateTimeInput());
+  };
+
+  const editSample = (sample: Sample) => {
+    setEditingSampleId(sample.id); setSampleNo(sample.sampleNo); setSampleLabel(sample.sampleLabel || '');
+    setSampledAt(toLocalDateTimeInput(new Date(sample.sampledAt))); setSamplerName(sample.samplerName);
+    setSamplingMethod(sample.samplingMethod || ''); setSealNo(sample.sealNo || '');
+    setDestinationInstitutionName(sample.destinationInstitutionName || '');
+    setSentAt(sample.sentAt ? toLocalDateTimeInput(new Date(sample.sentAt)) : ''); setSampleRemarks(sample.remarks || '');
+  };
+
+  const saveSample = async () => {
     if (!sampledAt || !samplerName.trim()) return alert('请填写取样时间和取样人');
     setSaving(true);
     try {
-      await api.patch(`/quality-tasks/${id}/sampling`, {
+      const payload = {
+        sampleNo: sampleNo.trim() || undefined, sampleLabel: sampleLabel.trim() || undefined,
         sampledAt, samplerName: samplerName.trim(), samplingMethod: samplingMethod.trim() || undefined,
+        sealNo: sealNo.trim() || undefined, destinationInstitutionName: destinationInstitutionName.trim() || undefined,
+        sentAt: sentAt || undefined, remarks: sampleRemarks.trim() || undefined,
+        status: sentAt ? 'SENT' : 'SAMPLED',
         plannedReportCount: Math.max(1, Number(plannedReportCount) || 1),
-      });
-      await load();
-    } catch (error: any) { alert(error.message || '取样登记保存失败'); }
+      };
+      if (editingSampleId) await api.patch(`/quality-tasks/samples/${editingSampleId}`, payload);
+      else await api.post(`/quality-tasks/${id}/samples`, payload);
+      resetSampleForm(); await load();
+    } catch (error: any) { alert(error.message || '样品登记保存失败'); }
+    finally { setSaving(false); }
+  };
+
+  const deleteSample = async (sample: Sample) => {
+    if (!confirm(`确认删除样品“${sample.sampleNo}”？已关联有效检测报告的样品不能删除。`)) return;
+    setSaving(true);
+    try { await api.delete(`/quality-tasks/samples/${sample.id}`); await load(); }
+    catch (error: any) { alert(error.message || '样品删除失败'); }
     finally { setSaving(false); }
   };
 
@@ -194,6 +236,34 @@ export default function QualityTaskDetailPage() {
     finally { setSaving(false); }
   };
 
+  const uploadSampleEvidence = async (sampleId: string, files: FileList | null) => {
+    if (!files?.length) return;
+    setSaving(true);
+    try {
+      for (const file of Array.from(files)) {
+        const body = new FormData(); body.append('file', file); body.append('category', evidenceCategory);
+        body.append('sourceType', evidenceSource); body.append('evidenceNode', EVIDENCE_CATEGORY[evidenceCategory] || evidenceCategory);
+        body.append('capturedAt', new Date().toISOString());
+        await api.upload(`/quality-tasks/samples/${sampleId}/attachments`, body);
+      }
+      await load();
+    } catch (error: any) { alert(error.message || '样品影像上传失败'); }
+    finally { setSaving(false); }
+  };
+
+  const viewSampleAttachment = async (attachmentId: string) => {
+    try { await openStoredAttachment(`/quality-tasks/sample-attachments/${attachmentId}/view-url`); }
+    catch (error: any) { alert(error.message || '样品影像打开失败'); }
+  };
+
+  const deleteSampleAttachment = async (attachment: Attachment) => {
+    if (!confirm(`确认删除样品影像“${attachment.originalName}”？`)) return;
+    setSaving(true);
+    try { await api.delete(`/quality-tasks/sample-attachments/${attachment.id}`); await load(); }
+    catch (error: any) { alert(error.message || '样品影像删除失败'); }
+    finally { setSaving(false); }
+  };
+
   if (!item) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
   const materialNames = item.waybill.lineItems.map(line => line.materialName).filter(Boolean).join('、') || '-';
   const businessParty = item.waybill.dispatchNotice.type === 'PURCHASE' ? item.waybill.dispatchNotice.order.contract.seller?.name : item.waybill.dispatchNotice.order.contract.buyer?.name;
@@ -209,16 +279,52 @@ export default function QualityTaskDetailPage() {
     </Card>
 
     <div className="grid gap-6 lg:grid-cols-2">
-      <Card className="p-5"><Title>到货与任务信息</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="物流运单" value={item.waybill.waybillNo} /><Info label="到货时间" value={formatDateTimeToSecond(item.waybill.arrivedAt)} /><Info label="车牌号" value={item.waybill.plateNo || '-'} /><Info label="业务单位" value={businessParty || '-'} /><Info label="物料" value={materialNames} /><Info label="目标仓库" value={item.waybill.dispatchNotice.warehouse?.name || '-'} /><Info label="质检模板" value={item.qualityTemplate ? `${item.qualityTemplate.code} · ${item.qualityTemplate.name}（v${item.qualityTemplate.version}）` : '未关联模板'} /><Info label="取样人" value={item.samplerName || '待处理'} /><Info label="取样时间" value={formatDateTimeToSecond(item.sampledAt)} /><Info label="取样方法" value={item.samplingMethod || '-'} /><Info label="当前处理人" value={item.handler?.name || '质检管理人员均可处理'} /></div></Card>
+      <Card className="p-5"><Title>到货与任务信息</Title><div className="grid gap-4 sm:grid-cols-2"><Info label="物流运单" value={item.waybill.waybillNo} /><Info label="到货时间" value={formatDateTimeToSecond(item.waybill.arrivedAt)} /><Info label="车牌号" value={item.waybill.plateNo || '-'} /><Info label="业务单位" value={businessParty || '-'} /><Info label="物料" value={materialNames} /><Info label="目标仓库" value={item.waybill.dispatchNotice.warehouse?.name || '-'} /><Info label="质检模板" value={item.qualityTemplate ? `${item.qualityTemplate.code} · ${item.qualityTemplate.name}（v${item.qualityTemplate.version}）` : '未关联模板'} /><Info label="样品数量" value={`${item.samples.length} 份`} /><Info label="首次取样时间" value={formatDateTimeToSecond(item.sampledAt)} /><Info label="计划检测报告数" value={`${item.plannedReportCount} 份`} /><Info label="当前处理人" value={item.handler?.name || '质检管理人员均可处理'} /></div></Card>
       <Card className="p-5"><Title>上游关联单据</Title><div className="grid gap-4 sm:grid-cols-2"><BusinessLink label="合同" value={`${item.waybill.dispatchNotice.order.contract.contractNo} · ${item.waybill.dispatchNotice.order.contract.title}`} /><BusinessLink label="执行批次" value={`${item.waybill.dispatchNotice.order.name} · ${item.waybill.dispatchNotice.order.orderNo}`} href={`/dashboard/orders/${item.waybill.dispatchNotice.order.id}`} /><BusinessLink label="物流运单" value={item.waybill.waybillNo} href={`/dashboard/waybills/${item.waybill.id}`} /><Info label="磅单进度" value={`${item.waybill.weighTickets.length} 张，已复核 ${item.waybill.weighTickets.filter(ticket => ticket.status === 'REVIEWED').length} 张`} /></div>{item.waybill.inboundReceipts[0] && <Button className="mt-5" variant="outline" onClick={() => router.push(`/dashboard/inbound/${item.waybill.inboundReceipts[0].id}`)}>查看入库作业单 {item.waybill.inboundReceipts[0].receiptNo}</Button>}</Card>
     </div>
 
-    {!['COMPLETED', 'VOIDED'].includes(item.status) && <Card className="space-y-4 p-5"><div><h2 className="font-semibold">取样与送检登记</h2><p className="mt-1 text-xs text-muted-foreground">第一阶段保持轻量：登记一次取样信息和计划报告数，同一质检人员可继续完成后续送检与报告归集。</p></div><div className="grid gap-4 md:grid-cols-4"><Field label="取样时间"><Input type="datetime-local" step="1" value={sampledAt} onChange={event => setSampledAt(event.target.value)} /></Field><Field label="取样人"><Input value={samplerName} onChange={event => setSamplerName(event.target.value)} /></Field><Field label="取样方法"><Input value={samplingMethod} onChange={event => setSamplingMethod(event.target.value)} /></Field><Field label="计划检测报告数"><Input type="number" min="1" max="20" value={plannedReportCount} onChange={event => setPlannedReportCount(event.target.value)} /></Field></div><div className="flex justify-end"><Button disabled={saving} onClick={() => void saveSampling()}>保存取样登记</Button></div></Card>}
+    <Card className="space-y-5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="font-semibold">取样与送检登记及现场影像</h2><p className="mt-1 text-xs text-muted-foreground">一行代表一份独立样品；每份样品单独编号、贴签、登记送检信息，并在该行下方留存现场照片。</p></div>
+        {!['COMPLETED', 'VOIDED'].includes(item.status) && <Button size="sm" variant="outline" onClick={resetSampleForm}><Plus className="mr-1 h-4 w-4" />新增样品</Button>}
+      </div>
 
-    <Card className="space-y-4 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">现场证据影像</h2><p className="mt-1 text-xs text-muted-foreground">支持小程序现场拍摄，以及第三方水印相机或普通相机影像在电脑端补充上传；系统保留来源、上传人、时间和文件哈希。</p></div>{!['COMPLETED', 'VOIDED'].includes(item.status) && <div className="flex flex-wrap gap-2"><select className="h-9 rounded-md border bg-background px-2 text-sm" value={evidenceCategory} onChange={event => setEvidenceCategory(event.target.value)}>{Object.entries(EVIDENCE_CATEGORY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select className="h-9 rounded-md border bg-background px-2 text-sm" value={evidenceSource} onChange={event => setEvidenceSource(event.target.value)}>{Object.entries(EVIDENCE_SOURCE).filter(([value]) => value !== 'MINI_PROGRAM_CAPTURE').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp" disabled={saving} onChange={event => { void uploadTaskEvidence(event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-4 w-4" />上传影像</label></div>}</div>{item.attachments.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{item.attachments.map(attachment => <div key={attachment.id} className="rounded-md border p-3"><button className="w-full text-left hover:bg-muted" onClick={() => void viewTaskAttachment(attachment.id)}><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm font-medium">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></div><div className="mt-2 text-xs text-muted-foreground">{EVIDENCE_CATEGORY[attachment.category] || attachment.category} · {EVIDENCE_SOURCE[attachment.sourceType || ''] || attachment.sourceType || '未知来源'}</div><div className="mt-1 text-xs text-muted-foreground">{attachment.uploader?.name || '-'} · {formatDateTimeToSecond(attachment.capturedAt || attachment.createdAt)}</div></button>{!['COMPLETED', 'VOIDED'].includes(item.status) && <Button className="mt-3 w-full" size="sm" variant="outline" disabled={saving} onClick={() => void deleteTaskAttachment(attachment)}>删除填错的影像</Button>}</div>)}</div> : <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">暂无现场证据影像</div>}</Card>
+      {!['COMPLETED', 'VOIDED'].includes(item.status) && <div className="rounded-lg border bg-muted/20 p-4">
+        <div className="mb-3 text-sm font-medium">{editingSampleId ? '修改样品信息' : '登记新样品'}</div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <Field label="样品编号"><Input value={sampleNo} onChange={event => setSampleNo(event.target.value)} placeholder="留空自动生成" /></Field>
+          <Field label="样品标签"><Input value={sampleLabel} onChange={event => setSampleLabel(event.target.value)} placeholder="如 A样、送检样、留样" /></Field>
+          <Field label="取样时间 *"><Input type="datetime-local" step="1" value={sampledAt} onChange={event => setSampledAt(event.target.value)} /></Field>
+          <Field label="取样人 *"><Input value={samplerName} onChange={event => setSamplerName(event.target.value)} /></Field>
+          <Field label="取样方法"><Input value={samplingMethod} onChange={event => setSamplingMethod(event.target.value)} /></Field>
+          <Field label="封签编号"><Input value={sealNo} onChange={event => setSealNo(event.target.value)} placeholder="选填" /></Field>
+          <Field label="送检机构"><Input value={destinationInstitutionName} onChange={event => setDestinationInstitutionName(event.target.value)} placeholder="选填，可稍后补充" /></Field>
+          <Field label="送检时间"><Input type="datetime-local" step="1" value={sentAt} onChange={event => setSentAt(event.target.value)} /></Field>
+          <Field label="计划检测报告数"><Input type="number" min="1" max="20" value={plannedReportCount} onChange={event => setPlannedReportCount(event.target.value)} /></Field>
+          <div className="md:col-span-3"><Field label="样品备注"><Input value={sampleRemarks} onChange={event => setSampleRemarks(event.target.value)} placeholder="取样位置、样品状态或其他说明" /></Field></div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">{editingSampleId && <Button variant="outline" disabled={saving} onClick={resetSampleForm}>取消修改</Button>}<Button disabled={saving} onClick={() => void saveSample()}>{editingSampleId ? '保存修改' : '保存并生成样品'}</Button></div>
+      </div>}
+
+      {!item.samples.length ? <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">暂无样品记录，请先登记第一份样品。</div> : <div className="space-y-4">{item.samples.map((sample, index) => <div key={sample.id} className="rounded-lg border">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/30 p-4">
+          <div className="flex items-start gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{index + 1}</div><div><div className="flex flex-wrap items-center gap-2"><span className="font-mono font-semibold">{sample.sampleNo}</span>{sample.sampleLabel && <Badge variant="outline">{sample.sampleLabel}</Badge>}<StatusText status={sample.status}>{sample.status === 'SENT' ? '已送检' : sample.status === 'RECEIVED' ? '机构已接收' : '已取样'}</StatusText></div><div className="mt-1 text-xs text-muted-foreground">{sample.samplerName} · {formatDateTimeToSecond(sample.sampledAt)} · {sample.attachments.length} 张影像</div></div></div>
+          {!['COMPLETED', 'VOIDED'].includes(item.status) && <div className="flex gap-2"><Button size="sm" variant="outline" disabled={saving} onClick={() => editSample(sample)}><Pencil className="mr-1 h-3.5 w-3.5" />修改</Button><Button size="sm" variant="ghost" disabled={saving} onClick={() => void deleteSample(sample)}><Trash2 className="mr-1 h-3.5 w-3.5" />删除</Button></div>}
+        </div>
+        <div className="space-y-4 p-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Info label="取样方法" value={sample.samplingMethod || '-'} /><Info label="封签编号" value={sample.sealNo || '-'} /><Info label="送检机构" value={sample.destinationInstitutionName || '-'} /><Info label="送检时间" value={formatDateTimeToSecond(sample.sentAt)} /><Info label="备注" value={sample.remarks || '-'} /></div>
+          <div className="border-t pt-3"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-medium">样品现场影像</span>{!['COMPLETED', 'VOIDED'].includes(item.status) && <div className="flex flex-wrap gap-2"><select className="h-8 rounded-md border bg-background px-2 text-xs" value={evidenceCategory} onChange={event => setEvidenceCategory(event.target.value)}>{Object.entries(EVIDENCE_CATEGORY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select className="h-8 rounded-md border bg-background px-2 text-xs" value={evidenceSource} onChange={event => setEvidenceSource(event.target.value)}>{Object.entries(EVIDENCE_SOURCE).filter(([value]) => value !== 'MINI_PROGRAM_CAPTURE').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-2 text-xs text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp" disabled={saving} onChange={event => { void uploadSampleEvidence(sample.id, event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-3.5 w-3.5" />上传照片</label></div>}</div>
+            {sample.attachments.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{sample.attachments.map(attachment => <div key={attachment.id} className="rounded-md border p-3"><button className="flex w-full items-center gap-2 text-left" onClick={() => void viewSampleAttachment(attachment.id)}><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></button><div className="mt-2 text-xs text-muted-foreground">{EVIDENCE_CATEGORY[attachment.category] || attachment.category} · {formatDateTimeToSecond(attachment.capturedAt || attachment.createdAt)}</div>{!['COMPLETED', 'VOIDED'].includes(item.status) && <Button className="mt-2 w-full" size="sm" variant="outline" disabled={saving} onClick={() => void deleteSampleAttachment(attachment)}>删除照片</Button>}</div>)}</div> : <div className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">尚未上传该样品的现场照片</div>}
+          </div>
+          {sample.reports.length > 0 && <div className="text-xs text-muted-foreground">关联检测报告：{sample.reports.map(report => `${report.institutionName} / ${report.reportNo}`).join('；')}</div>}
+        </div>
+      </div>)}</div>}
+
+      {item.attachments.length > 0 && <div className="border-t pt-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><div className="text-sm font-medium">历史未归属样品的现场影像</div><div className="text-xs text-muted-foreground">升级前上传的任务级影像保留在此，可继续查看和删除。</div></div>{!['COMPLETED', 'VOIDED'].includes(item.status) && <div className="flex gap-2"><select className="h-8 rounded-md border bg-background px-2 text-xs" value={evidenceCategory} onChange={event => setEvidenceCategory(event.target.value)}>{Object.entries(EVIDENCE_CATEGORY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-2 text-xs text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp" disabled={saving} onChange={event => { void uploadTaskEvidence(event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-3.5 w-3.5" />补充历史影像</label></div>}</div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{item.attachments.map(attachment => <div key={attachment.id} className="rounded-md border p-3"><button className="flex w-full items-center gap-2 text-left" onClick={() => void viewTaskAttachment(attachment.id)}><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></button>{!['COMPLETED', 'VOIDED'].includes(item.status) && <Button className="mt-2 w-full" size="sm" variant="outline" disabled={saving} onClick={() => void deleteTaskAttachment(attachment)}>删除影像</Button>}</div>)}</div></div>}
+    </Card>
 
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="font-semibold">机构检测报告</h2><p className="mt-1 text-xs text-muted-foreground">每份报告对应一个样品和一家检测机构，可继续添加。</p></div><div className="flex items-center gap-2"><Badge variant="secondary">{item.reports.length} / 计划 {item.plannedReportCount}</Badge><Button disabled={!eligibleTicket || item.status === 'VOIDED'} onClick={() => router.push(`/dashboard/quality/create?taskId=${item.id}&weighTicketId=${eligibleTicket?.id || ''}`)}><Plus className="mr-1 h-4 w-4" />添加检测报告</Button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="font-semibold">机构检测报告</h2><p className="mt-1 text-xs text-muted-foreground">每份报告必须选择上方已登记的一个样品，并对应一家检测机构。</p></div><div className="flex items-center gap-2"><Badge variant="secondary">{item.reports.length} / 计划 {item.plannedReportCount}</Badge><Button disabled={!eligibleTicket || !item.samples.length || item.status === 'VOIDED'} title={!item.samples.length ? '请先登记样品' : undefined} onClick={() => router.push(`/dashboard/quality/create?taskId=${item.id}&weighTicketId=${eligibleTicket?.id || ''}`)}><Plus className="mr-1 h-4 w-4" />添加检测报告</Button></div></div>
       {!item.reports.length ? <div className="border-t p-12 text-center text-muted-foreground"><FlaskConical className="mx-auto mb-2 h-8 w-8 opacity-40" />尚未录入检测报告<br /><span className="text-xs">完成磅单称重后，可在本板块添加第一份报告。</span></div> : <div className="space-y-5 border-t p-5">{item.reports.map((report, index) => {
         const editable = !['CONFIRMED', 'VOIDED'].includes(report.status);
         return <Card key={report.id} className={`overflow-hidden ${report.id === basisInspectionId ? 'ring-2 ring-primary/30' : ''}`}>

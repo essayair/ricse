@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { CreateQualityInspectionDto, QualityIndicatorDto } from './dto/create-quality-inspection.dto';
+import { CreateQualitySampleDto, UpdateQualitySampleDto } from './dto/quality-sample.dto';
 
 @Injectable()
 export class QualityInspectionService {
@@ -18,6 +19,7 @@ export class QualityInspectionService {
     confirmer: { select: { id: true, name: true } },
     indicators: { orderBy: { sort: 'asc' as const } },
     attachments: { orderBy: { createdAt: 'desc' as const } },
+    qualitySample: { select: { id: true, sampleNo: true, sampleLabel: true } },
     qualityTask: { select: { id: true, taskNo: true, status: true, finalConclusion: true } },
     inboundReceipts: {
       where: { deletedAt: null, status: { not: 'CANCELLED' } },
@@ -60,6 +62,22 @@ export class QualityInspectionService {
       include: { uploader: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' as const },
     },
+    samples: {
+      where: { deletedAt: null },
+      include: {
+        creator: { select: { id: true, name: true } },
+        attachments: {
+          include: { uploader: { select: { id: true, name: true } } },
+          orderBy: { createdAt: 'desc' as const },
+        },
+        reports: {
+          where: { deletedAt: null },
+          select: { id: true, inspectionNo: true, reportNo: true, institutionName: true, status: true },
+          orderBy: { createdAt: 'asc' as const },
+        },
+      },
+      orderBy: [{ sampledAt: 'asc' as const }, { createdAt: 'asc' as const }],
+    },
     basisInspection: {
       select: {
         id: true, inspectionNo: true, institutionName: true, reportNo: true,
@@ -74,6 +92,7 @@ export class QualityInspectionService {
         confirmer: { select: { id: true, name: true } },
         indicators: { orderBy: { sort: 'asc' as const } },
         attachments: { orderBy: { createdAt: 'desc' as const } },
+        qualitySample: { select: { id: true, sampleNo: true, sampleLabel: true } },
         weighTicket: { select: { id: true, ticketNo: true, status: true } },
       },
       orderBy: { createdAt: 'asc' as const },
@@ -298,6 +317,121 @@ export class QualityInspectionService {
     });
   }
 
+  async createSample(taskId: string, data: CreateQualitySampleDto, userId: string) {
+    const task = await this.findTask(taskId, userId, 'quality.manage');
+    if (['COMPLETED', 'VOIDED'].includes(task.status)) {
+      throw new BadRequestException('已完成或已作废质检任务不能增加样品');
+    }
+    const sampleNo = data.sampleNo?.trim() || await this.nextSampleNo(task.id, task.taskNo);
+    const existing = await this.prisma.qualitySample.findUnique({
+      where: { qualityTaskId_sampleNo: { qualityTaskId: task.id, sampleNo } },
+    });
+    if (existing) throw new BadRequestException(`样品编号“${sampleNo}”已存在`);
+    const sampledAt = new Date(data.sampledAt);
+    const samplerName = data.samplerName.trim();
+    if (!samplerName) throw new BadRequestException('取样人不能为空');
+    const sample = await this.prisma.$transaction(async tx => {
+      const created = await tx.qualitySample.create({
+        data: {
+          qualityTaskId: task.id,
+          sampleNo,
+          sampleLabel: clean(data.sampleLabel),
+          sampledAt,
+          samplerName,
+          samplingMethod: clean(data.samplingMethod),
+          sealNo: clean(data.sealNo),
+          destinationInstitutionName: clean(data.destinationInstitutionName),
+          sentAt: data.sentAt ? new Date(data.sentAt) : null,
+          remarks: clean(data.remarks),
+          status: data.status || (data.sentAt ? 'SENT' : 'SAMPLED'),
+          createdBy: userId,
+        },
+      });
+      await tx.qualityTask.update({
+        where: { id: task.id },
+        data: {
+          sampledAt: task.sampledAt || sampledAt,
+          samplerName: task.samplerName || samplerName,
+          samplingMethod: task.samplingMethod || clean(data.samplingMethod),
+          plannedReportCount: data.plannedReportCount ?? task.plannedReportCount,
+          status: task.reports.length ? 'INSPECTING' : 'PENDING_SENDING',
+          handlerId: task.handlerId || userId,
+          handledAt: task.handledAt || new Date(),
+        },
+      });
+      return created;
+    });
+    return this.findSample(sample.id, userId);
+  }
+
+  async updateSample(id: string, data: UpdateQualitySampleDto, userId: string) {
+    const sample = await this.findSample(id, userId, 'quality.manage');
+    if (['COMPLETED', 'VOIDED'].includes(sample.qualityTask.status)) {
+      throw new BadRequestException('已完成或已作废质检任务不能修改样品');
+    }
+    const sampleNo = data.sampleNo?.trim();
+    if (sampleNo && sampleNo !== sample.sampleNo) {
+      const existing = await this.prisma.qualitySample.findUnique({
+        where: { qualityTaskId_sampleNo: { qualityTaskId: sample.qualityTaskId, sampleNo } },
+      });
+      if (existing) throw new BadRequestException(`样品编号“${sampleNo}”已存在`);
+    }
+    await this.prisma.$transaction(async tx => {
+      await tx.qualitySample.update({
+        where: { id },
+        data: {
+          sampleNo: sampleNo || undefined,
+          sampleLabel: data.sampleLabel === undefined ? undefined : clean(data.sampleLabel),
+          sampledAt: data.sampledAt ? new Date(data.sampledAt) : undefined,
+          samplerName: data.samplerName?.trim() || undefined,
+          samplingMethod: data.samplingMethod === undefined ? undefined : clean(data.samplingMethod),
+          sealNo: data.sealNo === undefined ? undefined : clean(data.sealNo),
+          destinationInstitutionName: data.destinationInstitutionName === undefined ? undefined : clean(data.destinationInstitutionName),
+          sentAt: data.sentAt === undefined ? undefined : new Date(data.sentAt),
+          remarks: data.remarks === undefined ? undefined : clean(data.remarks),
+          status: data.status,
+        },
+      });
+      if (data.plannedReportCount !== undefined) {
+        await tx.qualityTask.update({ where: { id: sample.qualityTaskId }, data: { plannedReportCount: data.plannedReportCount } });
+      }
+    });
+    return this.findSample(id, userId);
+  }
+
+  async deleteSample(id: string, userId: string) {
+    const sample = await this.findSample(id, userId, 'quality.manage');
+    if (['COMPLETED', 'VOIDED'].includes(sample.qualityTask.status)) {
+      throw new BadRequestException('已完成或已作废质检任务不能删除样品');
+    }
+    if (sample.reports.some(report => report.status !== 'VOIDED')) {
+      throw new BadRequestException('样品已关联检测报告，不能删除；请先作废填错的检测报告');
+    }
+    await this.prisma.qualitySample.update({ where: { id }, data: { status: 'VOIDED', deletedAt: new Date() } });
+    return { deleted: true, qualityTaskId: sample.qualityTaskId };
+  }
+
+  async findSample(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const sample = await this.prisma.qualitySample.findFirst({
+      where: { id, deletedAt: null, qualityTask: { deletedAt: null, AND: [scope] } },
+      include: {
+        qualityTask: { select: { id: true, taskNo: true, status: true } },
+        creator: { select: { id: true, name: true } },
+        attachments: { include: { uploader: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' } },
+        reports: { where: { deletedAt: null }, select: { id: true, status: true, inspectionNo: true } },
+      },
+    });
+    if (!sample) throw new NotFoundException('样品记录不存在');
+    return sample;
+  }
+
+  private async nextSampleNo(taskId: string, taskNo: string) {
+    const count = await this.prisma.qualitySample.count({ where: { qualityTaskId: taskId } });
+    return `${taskNo}-S${String(count + 1).padStart(2, '0')}`;
+  }
+
   async eligibleWeighTickets(userId: string, qualityTaskId?: string) {
     const task = qualityTaskId
       ? await this.findTask(qualityTaskId, userId, 'quality.view')
@@ -379,6 +513,10 @@ export class QualityInspectionService {
     await this.accessControl.assertPermission(userId, 'quality.manage');
     const task = await this.findTask(dto.qualityTaskId, userId, 'quality.manage');
     if (task.status === 'VOIDED') throw new BadRequestException('已作废质检任务不能追加检测报告');
+    const sample = await this.prisma.qualitySample.findFirst({
+      where: { id: dto.qualitySampleId, qualityTaskId: task.id, deletedAt: null, status: { not: 'VOIDED' } },
+    });
+    if (!sample) throw new BadRequestException('所选样品不存在或不属于当前质检任务');
     const scope = await this.accessControl.getWeighTicketScope(userId);
     const ticket = await this.prisma.weighTicket.findFirst({
       where: { id: dto.weighTicketId, waybillId: task.waybillId, deletedAt: null, AND: [scope] },
@@ -473,6 +611,7 @@ export class QualityInspectionService {
       data: {
         inspectionNo: await this.generateNo(),
         qualityTaskId: task.id,
+        qualitySampleId: sample.id,
         weighTicketId: ticket.id,
         status: dto.submit ? 'REPORTED' : 'DRAFT',
         conclusion,
@@ -482,10 +621,10 @@ export class QualityInspectionService {
         institutionName: institutionPartner?.name || dto.institutionName!.trim(),
         reportNo: dto.reportNo.trim(),
         testedAt: new Date(dto.testedAt),
-        sampledAt: new Date(dto.sampledAt),
-        samplerName: dto.samplerName.trim(),
-        samplingMethod: clean(dto.samplingMethod),
-        sampleNo: clean(dto.sampleNo),
+        sampledAt: sample.sampledAt,
+        samplerName: sample.samplerName,
+        samplingMethod: sample.samplingMethod || clean(dto.samplingMethod),
+        sampleNo: sample.sampleNo,
         sampleNo1: clean(dto.sampleNo1), sampleNo2: clean(dto.sampleNo2), sampleNo3: clean(dto.sampleNo3),
         materialName: ticket.materialName || ticket.waybill.lineItems.map(line => line.materialName || line.materialId).join('、'),
         materialSpec: ticket.materialSpec,
@@ -518,9 +657,9 @@ export class QualityInspectionService {
       where: { id: task.id },
       data: {
         status: ['COMPLETED', 'RECHECK_REQUIRED'].includes(task.status) ? 'RECHECK_REQUIRED' : 'INSPECTING',
-        sampledAt: task.sampledAt || new Date(dto.sampledAt),
-        samplerName: task.samplerName || dto.samplerName.trim(),
-        samplingMethod: task.samplingMethod || clean(dto.samplingMethod),
+        sampledAt: task.sampledAt || sample?.sampledAt || new Date(dto.sampledAt),
+        samplerName: task.samplerName || sample?.samplerName || dto.samplerName.trim(),
+        samplingMethod: task.samplingMethod || sample?.samplingMethod || clean(dto.samplingMethod),
         handlerId: task.handlerId || userId,
         handledAt: task.handledAt || new Date(),
       },
@@ -697,6 +836,58 @@ export class QualityInspectionService {
       },
       include: { uploader: { select: { id: true, name: true } } },
     });
+  }
+
+  async createSampleAttachment(data: {
+    qualitySampleId: string;
+    fileName: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    category: string;
+    sourceType: string;
+    evidenceNode?: string;
+    capturedAt?: string;
+    fileHash: string;
+    watermarkText?: string;
+  }, userId: string) {
+    const sample = await this.findSample(data.qualitySampleId, userId, 'quality.manage');
+    if (['COMPLETED', 'VOIDED'].includes(sample.qualityTask.status)) {
+      throw new BadRequestException('已完成或已作废质检任务不能追加样品影像');
+    }
+    return this.prisma.attachment.create({
+      data: {
+        ...data,
+        capturedAt: data.capturedAt ? new Date(data.capturedAt) : null,
+        uploadedBy: userId,
+      },
+      include: {
+        uploader: { select: { id: true, name: true } },
+        qualitySample: { select: { qualityTaskId: true } },
+      },
+    });
+  }
+
+  async findSampleAttachmentById(id: string, userId: string, permission = 'quality.view') {
+    await this.accessControl.assertPermission(userId, permission);
+    const scope = await this.accessControl.getQualityTaskScope(userId);
+    return this.prisma.attachment.findFirst({
+      where: {
+        id,
+        qualitySampleId: { not: null },
+        qualitySample: { deletedAt: null, qualityTask: { deletedAt: null, AND: [scope] } },
+      },
+      include: { qualitySample: { include: { qualityTask: { select: { id: true, status: true } } } } },
+    });
+  }
+
+  async deleteSampleAttachment(id: string, userId: string) {
+    const attachment = await this.findSampleAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return null;
+    if (['COMPLETED', 'VOIDED'].includes(attachment.qualitySample?.qualityTask.status || '')) {
+      throw new BadRequestException('已完成或已作废质检任务的样品影像不能删除');
+    }
+    return this.prisma.attachment.delete({ where: { id } });
   }
 
   async findTaskAttachmentById(id: string, userId: string, permission = 'quality.view') {

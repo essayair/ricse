@@ -12,6 +12,7 @@ import { UpdatePendingInboundReceiptDto } from '../inventory/dto/update-pending-
 import { CreateQualityInspectionDto } from '../quality/dto/create-quality-inspection.dto';
 import { FinalizeQualityTaskDto } from '../quality/dto/finalize-quality-task.dto';
 import { UpdateQualityTaskSamplingDto } from '../quality/dto/update-quality-task-sampling.dto';
+import { CreateQualitySampleDto, UpdateQualitySampleDto } from '../quality/dto/quality-sample.dto';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { CreateWeighRecordDto } from '../weighbridge/dto/create-weigh-record.dto';
 import { CreateWeighTicketDto } from '../weighbridge/dto/create-weigh-ticket.dto';
@@ -354,6 +355,70 @@ export class MobileWorkspaceController {
     @CurrentUser('id') userId: string,
   ) {
     return this.qualityService.updateTaskSampling(id, dto, userId);
+  }
+
+  @Post('quality-tasks/:id/samples')
+  createQualitySample(
+    @Param('id') id: string,
+    @Body() dto: CreateQualitySampleDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.qualityService.createSample(id, dto, userId);
+  }
+
+  @Patch('quality-samples/:id')
+  updateQualitySample(
+    @Param('id') id: string,
+    @Body() dto: UpdateQualitySampleDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.qualityService.updateSample(id, dto, userId);
+  }
+
+  @Delete('quality-samples/:id')
+  deleteQualitySample(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.qualityService.deleteSample(id, userId);
+  }
+
+  @Post('quality-samples/:id/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async uploadQualitySampleAttachment(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+    @Body('category') category = 'SAMPLING_PHOTO',
+    @Body('evidenceNode') evidenceNode?: string,
+    @Body('capturedAt') capturedAt?: string,
+  ) {
+    if (!['SAMPLING_PHOTO', 'MIXING_PHOTO', 'SPLITTING_PHOTO', 'SEALING_PHOTO', 'OTHER'].includes(category)) {
+      throw new BadRequestException('样品影像分类无效');
+    }
+    const sample = await this.qualityService.findSample(id, userId, 'quality.manage');
+    return this.saveMobileImage(file, stored => this.qualityService.createSampleAttachment({
+      qualitySampleId: id, ...stored, category, sourceType: 'MINI_PROGRAM_CAPTURE', evidenceNode, capturedAt,
+      watermarkText: this.watermark([
+        `质检任务：${sample.qualityTask.taskNo}`, `样品编号：${sample.sampleNo}`,
+        `样品标签：${sample.sampleLabel || '-'}`, `拍摄节点：${evidenceNode || category}`,
+        `拍摄时间：${capturedAt || new Date().toISOString()}`,
+      ]),
+    }, userId));
+  }
+
+  @Get('quality-sample-attachments/:id/view-url')
+  async getQualitySampleAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.qualityService.findSampleAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('样品影像不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('quality-sample-attachments/:id')
+  async deleteQualitySampleAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.qualityService.findSampleAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.qualityService.deleteSampleAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true, qualityTaskId: attachment.qualitySample?.qualityTask.id };
   }
 
   @Post('quality-inspections')

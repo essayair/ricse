@@ -21,6 +21,7 @@ export class QualityIndicatorDto {
 
 export class CreateQualityInspectionDto {
   @IsString() qualityTaskId: string;
+  @IsString() qualitySampleId: string;
   @IsString() weighTicketId: string;
   @IsDateString() sampledAt: string;
   @IsString() @MaxLength(100) samplerName: string;

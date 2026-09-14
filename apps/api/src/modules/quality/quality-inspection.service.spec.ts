@@ -152,6 +152,34 @@ describe('QualityInspectionService', () => {
     expect(prisma.qualityTask.create).not.toHaveBeenCalled();
   });
 
+  it('已经关联有效检测报告的样品不能直接删除', async () => {
+    jest.spyOn(service, 'findSample').mockResolvedValue({
+      id: 'sample-1', qualityTaskId: 'task-1',
+      qualityTask: { status: 'INSPECTING' },
+      reports: [{ id: 'report-1', status: 'REPORTED' }],
+    } as any);
+
+    await expect(service.deleteSample('sample-1', 'user-1')).rejects.toThrow('样品已关联检测报告');
+    expect(prisma.qualitySample.update).not.toHaveBeenCalled();
+  });
+
+  it('未关联有效检测报告的样品可软删除并保留任务追溯', async () => {
+    jest.spyOn(service, 'findSample').mockResolvedValue({
+      id: 'sample-1', qualityTaskId: 'task-1',
+      qualityTask: { status: 'PENDING_SENDING' },
+      reports: [],
+    } as any);
+    prisma.qualitySample.update.mockResolvedValue({} as any);
+
+    await expect(service.deleteSample('sample-1', 'user-1')).resolves.toEqual({
+      deleted: true, qualityTaskId: 'task-1',
+    });
+    expect(prisma.qualitySample.update).toHaveBeenCalledWith({
+      where: { id: 'sample-1' },
+      data: { status: 'VOIDED', deletedAt: expect.any(Date) },
+    });
+  });
+
   it('只有一份有效报告时必须填写提前判定原因', async () => {
     jest.spyOn(service, 'findTask').mockResolvedValue({
       id: 'task-1', status: 'PENDING_DECISION', plannedReportCount: 3,

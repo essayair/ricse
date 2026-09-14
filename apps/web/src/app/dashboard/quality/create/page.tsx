@@ -39,7 +39,8 @@ interface Indicator {
 }
 interface PendingFile { file: File; category: string }
 interface InstitutionProfile { id: string; partnerId: string; partner: { id: string; code: string; name: string } }
-interface QualityTaskBrief { id: string; taskNo: string; waybillId: string; reports: Array<{ id: string }>; waybill: { id: string; waybillNo: string } }
+interface QualitySampleBrief { id: string; sampleNo: string; sampleLabel: string | null; sampledAt: string; samplerName: string; samplingMethod: string | null; status: string }
+interface QualityTaskBrief { id: string; taskNo: string; waybillId: string; reports: Array<{ id: string }>; samples: QualitySampleBrief[]; waybill: { id: string; waybillNo: string } }
 
 const CATEGORY = { REPORT: '检测报告', SAMPLE_PHOTO: '取样照片', OTHER: '其他附件' };
 const INSTITUTION_TYPE = { OUR: '我方检测机构', PARTNER: '合作方检测机构', THIRD_PARTY: '第三方检测机构', OTHER: '其他检测机构' };
@@ -59,6 +60,7 @@ export default function CreateQualityInspectionPage() {
   const [samplerName, setSamplerName] = useState('');
   const [samplingMethod, setSamplingMethod] = useState('多点混合取样');
   const [sampleNo, setSampleNo] = useState('');
+  const [qualitySampleId, setQualitySampleId] = useState('');
   const [dataSource, setDataSource] = useState('MANUAL');
   const [institutionType, setInstitutionType] = useState('OUR');
   const [institutionPartnerId, setInstitutionPartnerId] = useState('');
@@ -86,6 +88,7 @@ export default function CreateQualityInspectionPage() {
       api.get<EligibleTicket[]>(`/quality-inspections/eligible-weigh-tickets?qualityTaskId=${encodeURIComponent(taskId)}`),
     ]).then(([qualityTask, items]) => {
       setTask(qualityTask);
+      if (qualityTask.samples?.[0]) setQualitySampleId(qualityTask.samples[0].id);
       setTickets(items);
       const requested = searchParams.get('weighTicketId');
       if (requested && items.some(item => item.id === requested)) setWeighTicketId(requested);
@@ -98,6 +101,14 @@ export default function CreateQualityInspectionPage() {
   }, [router, searchParams]);
 
   const ticket = tickets.find(item => item.id === weighTicketId);
+  const selectedSample = task?.samples?.find(item => item.id === qualitySampleId);
+  useEffect(() => {
+    if (!selectedSample) return;
+    setSampleNo(selectedSample.sampleNo);
+    setSampledAt(toLocalDateTimeInput(new Date(selectedSample.sampledAt)));
+    setSamplerName(selectedSample.samplerName);
+    setSamplingMethod(selectedSample.samplingMethod || '');
+  }, [selectedSample]);
   useEffect(() => {
     if (!ticket) return;
     const materialId = ticket.materials[0]?.materialId || ticket.waybill.lineItems[0]?.materialId;
@@ -172,6 +183,7 @@ export default function CreateQualityInspectionPage() {
   const submit = async () => {
     if (!task) return alert('质检任务不存在');
     if (!ticket) return alert('请选择关联磅单');
+    if (!selectedSample) return alert('请先返回质检任务登记并选择一份样品');
     if (!sampledAt || !samplerName.trim()) return alert('请填写取样时间和取样人');
     if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) && !institutionPartnerId) return alert('请选择已维护的质检机构');
     if (!institutionName.trim() || !reportNo.trim() || !testedAt) return alert('请填写检测机构、报告编号和检测时间');
@@ -179,7 +191,7 @@ export default function CreateQualityInspectionPage() {
     setSaving(true);
     try {
       const created = await api.post<{ id: string }>('/quality-inspections', {
-        qualityTaskId: task.id, weighTicketId, sampledAt, samplerName: samplerName.trim(), samplingMethod,
+        qualityTaskId: task.id, qualitySampleId: selectedSample.id, weighTicketId, sampledAt, samplerName: samplerName.trim(), samplingMethod,
         sampleNo: sampleNo.trim() || undefined,
         dataSource, institutionType, institutionPartnerId: institutionPartnerId || undefined, institutionName: institutionName.trim(), reportNo: reportNo.trim(), testedAt,
         deductionAmount: deductions.amount, remarks: remarks || undefined, submit: true,
@@ -223,16 +235,11 @@ export default function CreateQualityInspectionPage() {
     </Card>
 
     <Card className="space-y-5 p-6">
-      <SectionTitle title="取样基本信息" />
-      {!ticket && <div className="rounded-md border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">请先在上方磅单列表中选择一张磅单。</div>}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Field label="取样时间 *"><Input type="datetime-local" step="1" value={sampledAt} onChange={event => setSampledAt(event.target.value)} /></Field>
-        <Field label="取样人 *"><Input value={samplerName} onChange={event => setSamplerName(event.target.value)} /></Field>
-        <Field label="取样方法"><Input value={samplingMethod} onChange={event => setSamplingMethod(event.target.value)} /></Field>
-        <Field label="数据来源"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={dataSource} onChange={event => setDataSource(event.target.value)}><option value="MANUAL">人工录入</option><option value="DEVICE">设备采集</option><option value="OCR">附件识别</option></select></Field>
-      </div>
+      <SectionTitle title="选择关联样品" />
+      {!task?.samples?.length ? <div className="rounded-md border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">当前任务尚未登记样品。请返回任务详情，在“取样与送检登记及现场影像”中新增样品后再添加检测报告。</div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{task.samples.map(sample => <label key={sample.id} className={`cursor-pointer rounded-lg border p-4 ${qualitySampleId === sample.id ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : ''}`}><div className="flex items-center gap-2"><input type="radio" name="qualitySample" checked={qualitySampleId === sample.id} onChange={() => setQualitySampleId(sample.id)} /><span className="font-mono font-semibold">{sample.sampleNo}</span></div><div className="mt-2 text-xs text-muted-foreground">{sample.sampleLabel || '未填写标签'} · {sample.samplerName} · {formatDateTimeToSecond(sample.sampledAt)}</div></label>)}</div>}
+      {selectedSample && <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2 lg:grid-cols-5"><Info label="样品编号" value={selectedSample.sampleNo} /><Info label="样品标签" value={selectedSample.sampleLabel || '-'} /><Info label="取样时间" value={formatDateTimeToSecond(selectedSample.sampledAt)} /><Info label="取样人" value={selectedSample.samplerName} /><Info label="取样方法" value={selectedSample.samplingMethod || '-'} /></div>}
+      <div className="grid gap-4 md:grid-cols-3"><Field label="数据来源"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={dataSource} onChange={event => setDataSource(event.target.value)}><option value="MANUAL">人工录入</option><option value="DEVICE">设备采集</option><option value="OCR">附件识别</option></select></Field></div>
       {ticket && <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2 lg:grid-cols-6"><Info label="执行批次" value={ticket.waybill.dispatchNotice.order.name} /><Info label="物流运单" value={ticket.waybill.waybillNo} /><Info label="磅单" value={ticket.ticketNo} /><Info label="物料" value={ticket.materialName || '-'} /><Info label="供应商" value={ticket.shipperName || '-'} /><Info label="结算重量" value={`${Number(ticket.settlementWeight || ticket.netWeight || 0).toLocaleString()} 吨`} /></div>}
-      <div className="grid gap-4 md:grid-cols-3"><Field label="样品编号"><Input value={sampleNo} onChange={event => setSampleNo(event.target.value)} placeholder="每份机构报告对应一个样品编号" /></Field></div>
     </Card>
 
     <Card className="space-y-5 p-6"><SectionTitle title="检测机构与报告" />
@@ -256,7 +263,7 @@ export default function CreateQualityInspectionPage() {
       <textarea className="min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={remarks} onChange={event => setRemarks(event.target.value)} placeholder="化验特殊情况、复检说明、留样位置等" />
     </Card>
 
-    <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}>取消</Button><Button disabled={saving || !weighTicketId || !task} onClick={() => void submit()}><FlaskConical className="mr-2 h-4 w-4" />{saving ? '提交中...' : '提交检测报告'}</Button></div>
+    <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={() => router.push(task ? `/dashboard/quality/${task.id}` : '/dashboard/quality')}>取消</Button><Button disabled={saving || !weighTicketId || !task || !selectedSample} onClick={() => void submit()}><FlaskConical className="mr-2 h-4 w-4" />{saving ? '提交中...' : '提交检测报告'}</Button></div>
   </div>;
 }
 

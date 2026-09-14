@@ -22,6 +22,7 @@ import { normalizeUploadFilename } from '../common/filename-encoding';
 import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
 import { FinalizeQualityTaskDto } from './dto/finalize-quality-task.dto';
 import { UpdateQualityTaskSamplingDto } from './dto/update-quality-task-sampling.dto';
+import { CreateQualitySampleDto, UpdateQualitySampleDto } from './dto/quality-sample.dto';
 import { QualityInspectionService } from './quality-inspection.service';
 
 @ApiTags('质检任务')
@@ -63,6 +64,92 @@ export class QualityTaskController {
     @CurrentUser('id') userId: string,
   ) {
     return this.service.updateTaskSampling(id, dto, userId);
+  }
+
+  @Post(':id/samples')
+  @ApiOperation({ summary: '新增一份独立样品记录' })
+  createSample(
+    @Param('id') id: string,
+    @Body() dto: CreateQualitySampleDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.createSample(id, dto, userId);
+  }
+
+  @Patch('samples/:sampleId')
+  @ApiOperation({ summary: '修改样品登记信息' })
+  updateSample(
+    @Param('sampleId') sampleId: string,
+    @Body() dto: UpdateQualitySampleDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.updateSample(sampleId, dto, userId);
+  }
+
+  @Delete('samples/:sampleId')
+  @ApiOperation({ summary: '删除未关联有效检测报告的样品记录' })
+  deleteSample(@Param('sampleId') sampleId: string, @CurrentUser('id') userId: string) {
+    return this.service.deleteSample(sampleId, userId);
+  }
+
+  @Get('sample-attachments/:id/view-url')
+  async sampleAttachmentViewUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findSampleAttachmentById(id, userId);
+    if (!attachment) throw new BadRequestException('样品影像不存在');
+    return { url: await this.fileService.getUrl(attachment.fileName) };
+  }
+
+  @Delete('sample-attachments/:id')
+  async deleteSampleAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    const attachment = await this.service.findSampleAttachmentById(id, userId, 'quality.manage');
+    if (!attachment) return { deleted: false };
+    await this.service.deleteSampleAttachment(id, userId);
+    try { await this.fileService.delete(attachment.fileName); } catch {}
+    return { deleted: true, qualityTaskId: attachment.qualitySample?.qualityTask.id };
+  }
+
+  @Post('samples/:sampleId/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async uploadSampleAttachment(
+    @Param('sampleId') sampleId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+    @Body('category') category = 'SAMPLING_PHOTO',
+    @Body('sourceType') sourceType = 'WEB_UPLOAD',
+    @Body('evidenceNode') evidenceNode?: string,
+    @Body('capturedAt') capturedAt?: string,
+  ) {
+    if (!file) throw new BadRequestException('请选择文件');
+    if (!['SAMPLING_PHOTO', 'MIXING_PHOTO', 'SPLITTING_PHOTO', 'SEALING_PHOTO', 'OTHER'].includes(category)) {
+      throw new BadRequestException('样品影像分类无效');
+    }
+    if (!['MINI_PROGRAM_CAPTURE', 'RICSE_IMPORT', 'THIRD_PARTY_WATERMARK', 'WEB_UPLOAD', 'EXTERNAL'].includes(sourceType)) {
+      throw new BadRequestException('影像来源无效');
+    }
+    const originalName = normalizeUploadFilename(file.originalname).slice(0, 255);
+    const mimeType = attachmentMimeType(originalName, file.mimetype);
+    if (!mimeType || mimeType === 'application/pdf') throw new BadRequestException('样品影像仅支持 JPG/PNG/WEBP 格式');
+    const sample = await this.service.findSample(sampleId, userId, 'quality.manage');
+    const result = await this.fileService.upload(file.buffer, originalName, mimeType);
+    const watermarkText = [
+      '和光云链 RICSE',
+      `质检任务：${sample.qualityTask.taskNo}`,
+      `样品编号：${sample.sampleNo}`,
+      `样品标签：${sample.sampleLabel || '-'}`,
+      `拍摄节点：${evidenceNode || category}`,
+      `拍摄时间：${capturedAt || new Date().toISOString()}`,
+    ].join('\n');
+    try {
+      return await this.service.createSampleAttachment({
+        qualitySampleId: sampleId, fileName: result.fileName, originalName, mimeType, size: result.size,
+        category, sourceType, evidenceNode, capturedAt,
+        fileHash: createHash('sha256').update(file.buffer).digest('hex'), watermarkText,
+      }, userId);
+    } catch (error) {
+      try { await this.fileService.delete(result.fileName); } catch {}
+      throw error;
+    }
   }
 
   @Get('attachments/:id/view-url')

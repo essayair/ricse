@@ -23,6 +23,7 @@ const ROOT_TYPES: Record<string, string> = {
   waybills: 'WAYBILL',
   'weigh-tickets': 'WEIGH_TICKET',
   'quality-tasks': 'QUALITY_TASK',
+  'quality-samples': 'QUALITY_TASK',
   'quality-inspections': 'QUALITY_INSPECTION',
   'inbound-receipts': 'INBOUND_RECEIPT',
   'outbound-receipts': 'OUTBOUND_RECEIPT',
@@ -32,7 +33,7 @@ const ROOT_TYPES: Record<string, string> = {
 const STATIC_SEGMENTS = new Set([
   'form-options', 'attachments', 'contracts', 'orders', 'dispatch-notices', 'waybills',
   'availability', 'traceability', 'eligible-waybills', 'eligible-sources', 'eligible-lots',
-  'eligible-weigh-tickets', 'batch', 'management-files',
+  'eligible-weigh-tickets', 'batch', 'management-files', 'samples', 'sample-attachments',
 ]);
 
 const STATUS_LABELS: Record<string, string> = {
@@ -133,6 +134,9 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     }
     if (business.businessType === 'QUALITY_INSPECTION' && result?.qualityTaskId) {
       return { businessType: 'QUALITY_TASK', businessId: result.qualityTaskId };
+    }
+    if (business.businessType === 'QUALITY_TASK' && (result?.qualityTaskId || result?.qualitySample?.qualityTaskId)) {
+      return { businessType: 'QUALITY_TASK', businessId: result.qualityTaskId || result.qualitySample.qualityTaskId };
     }
     if (business.businessType === 'PRODUCTION_COMPLETION') {
       const taskId = result?.taskId || (result?.id && result.id !== business.businessId ? result.id : undefined);

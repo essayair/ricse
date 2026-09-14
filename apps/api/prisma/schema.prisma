@@ -46,6 +46,7 @@ model User {
   createdQualityInspections    QualityInspection[]       @relation("QualityInspectionCreator")
   confirmedQualityInspections  QualityInspection[]       @relation("QualityInspectionConfirmer")
   createdQualityTasks          QualityTask[]             @relation("QualityTaskCreator")
+  createdQualitySamples        QualitySample[]           @relation("QualitySampleCreator")
   handledQualityTasks          QualityTask[]             @relation("QualityTaskHandler")
   decidedQualityTasks          QualityTask[]             @relation("QualityTaskDecider")
   qualityMethodPreferences     QualityMethodPreference[]
@@ -1230,6 +1231,7 @@ model QualityTask {
   decider         User?               @relation("QualityTaskDecider", fields: [decidedBy], references: [id])
   basisInspection QualityInspection?  @relation("QualityTaskBasisInspection", fields: [basisInspectionId], references: [id])
   reports         QualityInspection[] @relation("QualityTaskReports")
+  samples         QualitySample[]
   qualityTemplate QualityTemplate?    @relation(fields: [qualityTemplateId], references: [id])
   attachments     Attachment[]
 
@@ -1241,10 +1243,41 @@ model QualityTask {
   @@map("quality_tasks")
 }
 
+/// 质检任务下的一份独立样品；每份样品单独编号、登记、拍照并可关联机构检测报告。
+model QualitySample {
+  id                         String    @id @default(cuid())
+  qualityTaskId              String
+  sampleNo                   String
+  sampleLabel                String?
+  sampledAt                  DateTime
+  samplerName                String
+  samplingMethod             String?
+  sealNo                     String?
+  destinationInstitutionName String?
+  sentAt                     DateTime?
+  remarks                    String?
+  status                     String    @default("SAMPLED") // SAMPLED | SENT | RECEIVED | VOIDED
+  createdBy                  String
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  deletedAt                  DateTime?
+
+  qualityTask QualityTask         @relation(fields: [qualityTaskId], references: [id], onDelete: Cascade)
+  creator     User                @relation("QualitySampleCreator", fields: [createdBy], references: [id])
+  attachments Attachment[]
+  reports     QualityInspection[]
+
+  @@unique([qualityTaskId, sampleNo])
+  @@index([qualityTaskId, status])
+  @@index([createdBy])
+  @@map("quality_samples")
+}
+
 model QualityInspection {
   id                      String    @id @default(cuid())
   inspectionNo            String    @unique
   qualityTaskId           String
+  qualitySampleId         String?
   weighTicketId           String
   status                  String    @default("DRAFT") // DRAFT | TESTING | REPORTED | CONFIRMED | VOIDED
   conclusion              String    @default("PENDING") // PENDING | PASS | DEDUCTION | FUSE
@@ -1282,6 +1315,7 @@ model QualityInspection {
   deletedAt               DateTime?
 
   qualityTask        QualityTask                  @relation("QualityTaskReports", fields: [qualityTaskId], references: [id])
+  qualitySample      QualitySample?               @relation(fields: [qualitySampleId], references: [id], onDelete: SetNull)
   basisForTasks      QualityTask[]                @relation("QualityTaskBasisInspection")
   weighTicket        WeighTicket                  @relation(fields: [weighTicketId], references: [id])
   creator            User                         @relation("QualityInspectionCreator", fields: [createdBy], references: [id])
@@ -1293,6 +1327,7 @@ model QualityInspection {
 
   @@index([inspectionNo])
   @@index([qualityTaskId])
+  @@index([qualitySampleId])
   @@index([weighTicketId])
   @@index([status])
   @@index([conclusion])
@@ -1957,6 +1992,7 @@ model Attachment {
   weighTicketId       String? // 关联磅单
   weighTaskId         String? // 关联过磅任务现场影像
   qualityTaskId       String? // 关联质检任务现场影像
+  qualitySampleId     String? // 关联独立样品现场影像
   qualityInspectionId String? // 关联质检单
   inboundReceiptId    String? // 关联物流入库单
   outboundReceiptId   String? // 关联物流出库单
@@ -1980,6 +2016,7 @@ model Attachment {
   weighTicket       WeighTicket?       @relation(fields: [weighTicketId], references: [id])
   weighTask         WeighTask?         @relation(fields: [weighTaskId], references: [id])
   qualityTask       QualityTask?       @relation(fields: [qualityTaskId], references: [id])
+  qualitySample     QualitySample?     @relation(fields: [qualitySampleId], references: [id])
   qualityInspection QualityInspection? @relation(fields: [qualityInspectionId], references: [id])
   inboundReceipt    InboundReceipt?    @relation(fields: [inboundReceiptId], references: [id])
   outboundReceipt   OutboundReceipt?   @relation(fields: [outboundReceiptId], references: [id])
@@ -1992,6 +2029,7 @@ model Attachment {
   @@index([weighTicketId])
   @@index([weighTaskId])
   @@index([qualityTaskId])
+  @@index([qualitySampleId])
   @@index([qualityInspectionId])
   @@index([inboundReceiptId])
   @@index([outboundReceiptId])
