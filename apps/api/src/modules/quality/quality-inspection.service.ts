@@ -275,7 +275,7 @@ export class QualityInspectionService {
     }
     const partial = confirmed.length < task.plannedReportCount;
     if ((partial || confirmed.length === 1) && !data.reason?.trim()) {
-      throw new BadRequestException('有效报告少于计划数量时必须填写提前判定原因');
+      throw new BadRequestException('仅一份有效报告或有效报告少于计划数量时，必须填写判定原因');
     }
     await this.prisma.qualityTask.update({
       where: { id },

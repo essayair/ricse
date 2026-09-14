@@ -180,15 +180,15 @@ describe('QualityInspectionService', () => {
     });
   });
 
-  it('只有一份有效报告时必须填写提前判定原因', async () => {
+  it('计划只有一份且实际也只有一份报告时仍必须填写判定原因', async () => {
     jest.spyOn(service, 'findTask').mockResolvedValue({
-      id: 'task-1', status: 'PENDING_DECISION', plannedReportCount: 3,
+      id: 'task-1', status: 'PENDING_DECISION', plannedReportCount: 1,
       reports: [{ id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS' }],
     } as any);
 
     await expect(service.finalizeTask('task-1', {
       conclusion: 'PASS', basisInspectionId: 'report-1',
-    }, 'user-1')).rejects.toThrow('必须填写提前判定原因');
+    }, 'user-1')).rejects.toThrow('必须填写判定原因');
   });
 
   it('任务最终合格后才以执行口径报告补齐入库依据', async () => {

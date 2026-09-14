@@ -28,6 +28,7 @@ export default function InboundDetail() {
   const [receiptForm, setReceiptForm] = useState({
     warehouseId: '', receivedAt: '', receiverName: '', remarks: '',
   });
+  const [receiptError, setReceiptError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -78,9 +79,25 @@ export default function InboundDetail() {
       post: '确认生成业务入库单、库存批次并增加库存？',
       cancel: '确认作废该物流入库单？',
     };
-    if (type === 'confirm' && (!receiptForm.warehouseId || !receiptForm.receivedAt || !receiptForm.receiverName.trim())) {
-      alert('请先选择入库仓库，并填写实际收货时间和收货人');
-      return;
+    if (type === 'confirm') {
+      if (item?.workflow?.stage !== 'READY_TO_RECEIVE') {
+        const message = `暂不能确认收货：${item?.workflow?.blocker || '请先完成到货、过磅和质检作业'}`;
+        setReceiptError(message);
+        alert(message);
+        return;
+      }
+      const missing = [
+        !receiptForm.warehouseId ? '入库仓库' : '',
+        !receiptForm.receivedAt ? '实际收货时间' : '',
+        !receiptForm.receiverName.trim() ? '收货人' : '',
+      ].filter(Boolean);
+      if (missing.length) {
+        const message = `确认收货前请补齐：${missing.join('、')}`;
+        setReceiptError(message);
+        alert(message);
+        return;
+      }
+      setReceiptError('');
     }
     if (!confirm(prompts[type])) return;
     setSaving(true);
@@ -175,11 +192,9 @@ export default function InboundDetail() {
               <Button variant="outline" disabled={saving} onClick={() => void action('cancel')}>
                 <XCircle className="mr-2 h-4 w-4" />作废
               </Button>
-              {qualityQualified && (
-                <Button disabled={saving} onClick={() => void action('confirm')}>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />确认收货
-                </Button>
-              )}
+              <Button disabled={saving} onClick={() => void action('confirm')}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />确认收货
+              </Button>
             </>
           )}
           {item.status === 'RECEIVED' && qualityQualified && (
@@ -227,6 +242,7 @@ export default function InboundDetail() {
                 <Field label="收货人 *"><Input value={receiptForm.receiverName} onChange={event => setReceiptForm(current => ({ ...current, receiverName: event.target.value }))} /></Field>
                 <Field label="备注"><Input value={receiptForm.remarks} onChange={event => setReceiptForm(current => ({ ...current, remarks: event.target.value }))} /></Field>
               </div>
+              {receiptError && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{receiptError}</div>}
               <Button variant="outline" disabled={saving} onClick={() => void savePending()}><Save className="mr-2 h-4 w-4" />保存收货信息</Button>
             </div>
           ) : (

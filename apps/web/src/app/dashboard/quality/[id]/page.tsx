@@ -91,6 +91,9 @@ export default function QualityTaskDetailPage() {
 
   const confirmed = useMemo(() => item?.reports.filter(report => report.status === 'CONFIRMED') || [], [item]);
   const selectedBasis = confirmed.find(report => report.id === basisInspectionId);
+  const needsDecisionReason = Boolean(item) && (
+    confirmed.length === 1 || confirmed.length < (item?.plannedReportCount || 1)
+  );
   const eligibleTicket = useMemo(() => {
     if (!item) return undefined;
     const tickets = item.waybill.weighTickets.filter(ticket => ['COMPLETED', 'REVIEWED'].includes(ticket.status));
@@ -118,8 +121,12 @@ export default function QualityTaskDetailPage() {
 
   const finalize = async () => {
     if (!item || !selectedBasis) return alert('请先选择一份已确认报告作为执行口径');
-    const partial = confirmed.length < item.plannedReportCount;
-    if (partial && !reason.trim()) return alert('有效报告少于计划数量，请填写提前判定原因');
+    if (needsDecisionReason && !reason.trim()) {
+      document.getElementById('quality-decision-reason')?.focus();
+      return alert(confirmed.length === 1
+        ? '当前仅有一份有效检测报告，请先填写采用单一报告形成结论的原因'
+        : '有效报告少于计划数量，请先填写提前判定原因');
+    }
     let message = `本次将依据 ${confirmed.length} 份有效检测报告形成最终结论“${CONCLUSION[selectedBasis.conclusion]}”，并以【${selectedBasis.institutionName} / ${selectedBasis.reportNo}】作为入库和结算执行口径。确认后将影响后续业务，是否继续？`;
     if (confirmed.length === 1) message = `当前仅有 1 份有效检测报告。确认后，该报告将单独作为本到货批次最终质检依据并影响入库及结算。请确认已核实合同约定、报告真实性和业务风险。是否继续？`;
     if (selectedBasis.conclusion === 'FUSE') message = `本次最终判定为“不合格（拒收）”。确认后将禁止货物入库并进入异常处理，请再次核对检测报告。是否继续？`;
@@ -337,7 +344,7 @@ export default function QualityTaskDetailPage() {
       })}</div>}
     </Card>
 
-    {confirmed.length > 0 && item.status !== 'VOIDED' && <Card className="space-y-4 p-5"><div><h2 className="font-semibold">形成最终质检结论</h2><p className="mt-1 text-sm text-muted-foreground">选择一份已确认报告作为入库、扣重和结算执行口径；系统同时留存本次参与判定的全部有效报告。</p></div><div className="grid gap-2">{confirmed.map(report => <label key={report.id} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 ${basisInspectionId === report.id ? 'border-primary bg-primary/5' : ''}`}><input type="radio" name="basis" checked={basisInspectionId === report.id} onChange={() => setBasisInspectionId(report.id)} /><div className="min-w-0 flex-1"><div className="font-medium">{report.institutionName} · {report.reportNo}</div><div className="text-xs text-muted-foreground">{report.inspectionNo} · {CONCLUSION[report.conclusion]} · 质检后重量 {weight(report.settlementWeight)}</div></div></label>)}</div>{confirmed.length < item.plannedReportCount && <div><label className="mb-1 block text-sm font-medium">提前判定原因 *</label><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={reason} onChange={event => setReason(event.target.value)} placeholder={`计划 ${item.plannedReportCount} 份，当前仅有 ${confirmed.length} 份有效报告，请填写采用现有报告判定的原因`} /></div>}<div className="flex justify-end"><Button disabled={saving || !basisInspectionId} onClick={() => void finalize()}>{item.status === 'COMPLETED' ? '重新形成结论' : '确认形成最终结论'}</Button></div></Card>}
+    {confirmed.length > 0 && item.status !== 'VOIDED' && <Card className="space-y-4 p-5"><div><h2 className="font-semibold">形成最终质检结论</h2><p className="mt-1 text-sm text-muted-foreground">选择一份已确认报告作为入库、扣重和结算执行口径；系统同时留存本次参与判定的全部有效报告。</p></div><div className="grid gap-2">{confirmed.map(report => <label key={report.id} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 ${basisInspectionId === report.id ? 'border-primary bg-primary/5' : ''}`}><input type="radio" name="basis" checked={basisInspectionId === report.id} onChange={() => setBasisInspectionId(report.id)} /><div className="min-w-0 flex-1"><div className="font-medium">{report.institutionName} · {report.reportNo}</div><div className="text-xs text-muted-foreground">{report.inspectionNo} · {CONCLUSION[report.conclusion]} · 质检后重量 {weight(report.settlementWeight)}</div></div></label>)}</div>{needsDecisionReason && <div className="rounded-md border border-warning-border bg-warning-bg p-3"><div className="mb-2 flex items-start gap-2 text-sm text-warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{confirmed.length === 1 ? '当前仅有一份有效检测报告，形成最终结论前必须说明采用单一报告的原因。' : `计划 ${item.plannedReportCount} 份、当前仅 ${confirmed.length} 份有效报告，提前判定必须填写原因。`}</span></div><label className="mb-1 block text-sm font-medium" htmlFor="quality-decision-reason">判定原因 *</label><textarea id="quality-decision-reason" className="min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={reason} onChange={event => setReason(event.target.value)} placeholder={confirmed.length === 1 ? '请填写采用单一报告形成最终结论的业务依据或核实说明' : `请填写采用当前 ${confirmed.length} 份报告提前判定的原因`} /></div>}<div className="flex justify-end"><Button disabled={saving || !basisInspectionId} onClick={() => void finalize()}>{item.status === 'COMPLETED' ? '重新形成结论' : '确认形成最终结论'}</Button></div></Card>}
 
     {item.decidedAt && <Card className="p-5"><Title>最终判定记录</Title><div className="grid gap-4 sm:grid-cols-4"><Info label="最终结论" value={CONCLUSION[item.finalConclusion]} /><Info label="执行口径报告" value={item.basisInspection ? `${item.basisInspection.institutionName} · ${item.basisInspection.reportNo}` : '-'} /><Info label="判定人 / 时间" value={`${item.decider?.name || '-'} · ${formatDateTimeToSecond(item.decidedAt)}`} /><Info label="判定原因" value={item.decisionReason || '-'} /></div></Card>}
     <BusinessOperationHistory logs={(item as any).operationLogs} />

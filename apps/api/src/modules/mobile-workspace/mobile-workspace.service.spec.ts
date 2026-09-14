@@ -82,6 +82,11 @@ describe('MobileWorkspaceService', () => {
       pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
     });
     expect(result.account.roleNames).toEqual(['系统管理员']);
+    expect(prisma.qualityTask.count).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        status: { in: ['PENDING_SAMPLING', 'PENDING_SENDING', 'INSPECTING', 'PENDING_DECISION', 'RECHECK_REQUIRED', 'EXCEPTION'] },
+      }),
+    }));
     expect(prisma.approval.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.not.objectContaining({ assigneeId: expect.anything() }),
     }));

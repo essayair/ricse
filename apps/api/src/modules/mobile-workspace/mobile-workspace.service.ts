@@ -175,7 +175,7 @@ export class MobileWorkspaceService {
         where: { deletedAt: null, status: { in: ['PENDING_WEIGHING', 'IN_PROGRESS', 'PENDING_CONFIRMATION', 'EXCEPTION'] }, waybill: { deletedAt: null, AND: [scope] } },
       })) : Promise.resolve(0),
       canViewQuality ? this.access.getQualityTaskScope(userId).then(scope => this.prisma.qualityTask.count({
-        where: { deletedAt: null, status: { in: ['PENDING_SAMPLING', 'PENDING_SENDING', 'INSPECTING', 'PENDING_DECISION', 'EXCEPTION'] }, AND: [scope] },
+        where: { deletedAt: null, status: { in: ['PENDING_SAMPLING', 'PENDING_SENDING', 'INSPECTING', 'PENDING_DECISION', 'RECHECK_REQUIRED', 'EXCEPTION'] }, AND: [scope] },
       })) : Promise.resolve(0),
       canViewInventory ? this.access.getInboundReceiptScope(userId).then(scope => this.prisma.inboundReceipt.count({
         where: { deletedAt: null, status: { in: ['PENDING', 'RECEIVED'] }, AND: [scope] },
