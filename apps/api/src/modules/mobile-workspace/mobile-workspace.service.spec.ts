@@ -127,6 +127,49 @@ describe('MobileWorkspaceService', () => {
     expect(result).toEqual({ items: [{ id: 'waybill-1' }], total: 1 });
   });
 
+  it.each([
+    ['weigh-tickets', weighTickets.findManagementFiles],
+    ['quality-tasks', quality.findTasks],
+    ['inbound-receipts', inventory.findReceipts],
+    ['outbound-receipts', outbound.findAll],
+  ] as Array<['weigh-tickets' | 'quality-tasks' | 'inbound-receipts' | 'outbound-receipts', jest.Mock]>)('兼容旧版小程序 %s 待办占位状态，不把 status=1 传给领域查询', async (businessModule, queryMethod) => {
+    queryMethod.mockResolvedValue({ items: [], total: 0 });
+
+    await service.businessList('user-1', businessModule, { status: '1', page: 1, pageSize: 100 });
+
+    expect(queryMethod).toHaveBeenCalledWith(expect.objectContaining({ status: undefined }), 'user-1');
+  });
+
+  it('现场待办由服务端按四类业务真实可操作状态直接筛选', async () => {
+    weighTickets.findManagementFiles.mockResolvedValue({ items: [
+      { id: 'weigh-active', weighTask: { status: 'PENDING_WEIGHING' } },
+      { id: 'weigh-done', weighTask: { status: 'COMPLETED' } },
+    ], total: 2 } as any);
+    quality.findTasks.mockResolvedValue({ items: [
+      { id: 'quality-active', status: 'RECHECK_REQUIRED' },
+      { id: 'quality-done', status: 'COMPLETED' },
+    ], pagination: { page: 1, pageSize: 100, total: 2, totalPages: 1 } } as any);
+    inventory.findReceipts.mockResolvedValue({ items: [
+      { id: 'inbound-active', status: 'RECEIVED' },
+      { id: 'inbound-done', status: 'POSTED' },
+    ], total: 2 } as any);
+    outbound.findAll.mockResolvedValue({ items: [
+      { id: 'outbound-active', status: 'VARIANCE_PENDING' },
+      { id: 'outbound-done', status: 'POSTED' },
+    ], total: 2 } as any);
+
+    const weighResult = await service.businessList('user-1', 'weigh-tickets', { todo: 'ACTIVE' });
+    const qualityResult = await service.businessList('user-1', 'quality-tasks', { todo: 'ACTIVE', pageSize: 100 });
+    const inboundResult = await service.businessList('user-1', 'inbound-receipts', { todo: 'ACTIVE' });
+    const outboundResult = await service.businessList('user-1', 'outbound-receipts', { todo: 'ACTIVE' });
+
+    expect(weighResult.items.map((item: any) => item.id)).toEqual(['weigh-active']);
+    expect(qualityResult.items.map((item: any) => item.id)).toEqual(['quality-active']);
+    expect(qualityResult.pagination.total).toBe(1);
+    expect(inboundResult.items.map((item: any) => item.id)).toEqual(['inbound-active']);
+    expect(outboundResult.items.map((item: any) => item.id)).toEqual(['outbound-active']);
+  });
+
   it('移动端保存车辆和司机档案前校验主数据维护权限', async () => {
     partners.createVehicle.mockResolvedValue({ id: 'vehicle-1', plateNo: '浙A12345' } as any);
     drivers.create.mockResolvedValue({ id: 'driver-1', name: '张师傅' } as any);

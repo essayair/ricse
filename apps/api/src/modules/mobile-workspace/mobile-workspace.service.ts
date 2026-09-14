@@ -79,32 +79,89 @@ export class MobileWorkspaceService {
   async businessList(
     userId: string,
     module: MobileBusinessModule,
-    query: { search?: string; status?: string; page?: number; pageSize?: number },
+    query: { search?: string; status?: string; todo?: string; page?: number; pageSize?: number },
   ) {
+    // 旧版小程序使用 status=1 表示“全部可操作待办”，新版使用 ACTIVE 后在本地筛选。
+    // 两者都不是领域单据状态，不能继续传给 Prisma 的 status 等值查询。
+    const todoModules: MobileBusinessModule[] = [
+      'weigh-tickets', 'quality-tasks', 'inbound-receipts', 'outbound-receipts',
+    ];
+    const legacyTodo = todoModules.includes(module) && ['1', 'ACTIVE'].includes(query.status || '')
+      ? 'ACTIVE'
+      : '';
+    const todo = query.todo || legacyTodo;
+    const status = legacyTodo
+      ? undefined
+      : query.status;
+    let result: any;
     switch (module) {
       case 'contracts':
-        return this.contracts.findAll({
-          search: query.search, status: query.status, page: query.page, pageSize: query.pageSize,
+        result = await this.contracts.findAll({
+          search: query.search, status, page: query.page, pageSize: query.pageSize,
         }, userId);
+        break;
       case 'orders':
-        return this.orders.findAll({
-          search: query.search, status: query.status, page: query.page, pageSize: query.pageSize,
+        result = await this.orders.findAll({
+          search: query.search, status, page: query.page, pageSize: query.pageSize,
         }, userId);
+        break;
       case 'dispatch-notices':
-        return this.dispatchNotices.findAll({ search: query.search, status: query.status }, userId);
+        result = await this.dispatchNotices.findAll({ search: query.search, status }, userId);
+        break;
       case 'waybills':
-        return this.waybills.findAll({ search: query.search, status: query.status }, userId);
+        result = await this.waybills.findAll({ search: query.search, status }, userId);
+        break;
       case 'weigh-tickets':
-        return this.weighTickets.findManagementFiles({ search: query.search, status: query.status }, userId);
+        result = await this.weighTickets.findManagementFiles({ search: query.search, status }, userId);
+        break;
       case 'quality-tasks':
-        return this.quality.findTasks({
-          search: query.search, status: query.status, page: query.page, pageSize: query.pageSize,
+        result = await this.quality.findTasks({
+          search: query.search, status, page: query.page, pageSize: query.pageSize,
         }, userId);
-      case 'inbound-receipts': return this.inventory.findReceipts({ search: query.search, status: query.status }, userId);
-      case 'outbound-receipts': return this.outbound.findAll({ search: query.search, status: query.status }, userId);
+        break;
+      case 'inbound-receipts':
+        result = await this.inventory.findReceipts({ search: query.search, status }, userId);
+        break;
+      case 'outbound-receipts':
+        result = await this.outbound.findAll({ search: query.search, status }, userId);
+        break;
       case 'inventory':
-        return this.inventory.inventoryOverview({ search: query.search }, userId);
+        result = await this.inventory.inventoryOverview({ search: query.search }, userId);
+        break;
     }
+    return this.filterTodoResult(module, result, todo);
+  }
+
+  private filterTodoResult(module: MobileBusinessModule, result: any, todo?: string) {
+    if (!todo || !Array.isArray(result?.items)) return result;
+    const items = result.items.filter((item: any) => this.isMobileTodo(module, item, todo));
+    return {
+      ...result,
+      items,
+      total: items.length,
+      ...(result.pagination ? {
+        pagination: { ...result.pagination, total: items.length, totalPages: items.length ? 1 : 0 },
+      } : {}),
+    };
+  }
+
+  private isMobileTodo(module: MobileBusinessModule, item: any, todo: string) {
+    if (module === 'waybills') {
+      if (todo === 'ACTIVE') return ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(item.status);
+      if (todo === 'PENDING_UNASSIGNED') return item.status === 'PENDING' && (!item.plateNo || !item.driverName);
+      if (todo === 'PENDING_READY') return item.status === 'PENDING' && Boolean(item.plateNo && item.driverName);
+      return item.status === todo;
+    }
+    if (module === 'weigh-tickets') {
+      return ['PENDING_WEIGHING', 'IN_PROGRESS', 'PENDING_CONFIRMATION', 'EXCEPTION'].includes(item.weighTask?.status);
+    }
+    if (module === 'quality-tasks') {
+      return ['PENDING_SAMPLING', 'PENDING_SENDING', 'INSPECTING', 'PENDING_DECISION', 'RECHECK_REQUIRED', 'EXCEPTION']
+        .includes(item.status);
+    }
+    if (module === 'inbound-receipts') return ['PENDING', 'RECEIVED'].includes(item.status);
+    if (module === 'outbound-receipts') return ['PENDING', 'READY', 'VARIANCE_PENDING'].includes(item.status);
+    return true;
   }
 
   async businessDetail(userId: string, module: MobileBusinessModule, id: string) {

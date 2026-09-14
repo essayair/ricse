@@ -86,12 +86,13 @@ export class MobileWorkspaceController {
     @Param('module') rawModule: string,
     @Query('search') search?: string,
     @Query('status') status?: string,
+    @Query('todo') todo?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
     const module = this.parseBusinessModule(rawModule);
     return this.service.businessList(userId, module, {
-      search, status,
+      search, status, todo,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
     });
