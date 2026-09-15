@@ -36,7 +36,9 @@ interface DepartmentItem {
 
 interface ContractFormOptions {
   defaultDepartmentId?: string | null;
+  defaultBusinessUnitId?: string | null;
   departments: DepartmentItem[];
+  businessUnits: Array<{ id: string; code: string; name: string; companyId: string; isDefault?: boolean }>;
 }
 
 export default function ContractCreatePage() {
@@ -54,6 +56,7 @@ export default function ContractCreatePage() {
   const [customerPartners, setCustomerPartners] = useState<any[]>([]);
   const [allPartners, setAllPartners] = useState<any[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<ContractFormOptions['businessUnits']>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
   const [departmentError, setDepartmentError] = useState('');
   const [files, setFiles] = useState<Array<{ file: File; name: string }>>([]);
@@ -62,7 +65,7 @@ export default function ContractCreatePage() {
 
   const [form, setForm] = useState({
     type: 'PURCHASE' as string, title: '',
-    signingPartnerId: '', departmentId: '', externalNo: '',
+    signingPartnerId: '', departmentId: '', businessUnitId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
     pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '10', shortfallPct: '10',
@@ -97,9 +100,11 @@ export default function ContractCreatePage() {
     api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(()=>{});
     api.get<ContractFormOptions>('/contracts/form-options').then((options) => {
       setDepartments(options.departments || []);
+      setBusinessUnits(options.businessUnits || []);
       setForm(current => ({
         ...current,
         departmentId: current.departmentId || options.defaultDepartmentId || '',
+        businessUnitId: current.businessUnitId || options.defaultBusinessUnitId || '',
       }));
       setDepartmentError('');
     }).catch((error: Error) => {
@@ -141,6 +146,7 @@ export default function ContractCreatePage() {
     sellerId: form.sellerId || null, totalAmount,
     signingPartnerId: form.signingPartnerId || null,
     departmentId: form.departmentId || undefined,
+    businessUnitId: form.businessUnitId || undefined,
     externalNo: form.externalNo || undefined,
     contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
     pricingType: form.pricingType,
@@ -240,6 +246,7 @@ export default function ContractCreatePage() {
   const handleSubmit = async () => {
     if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
     if (!form.departmentId) { alert('请选择业务部门，审批流程将据此匹配业务主管'); return; }
+    if (!form.businessUnitId) { alert('请选择业务单元（事业部），系统将据此控制数据范围并匹配审批人员'); return; }
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     if (!form.materialId || !form.quantity || !form.unitPrice) { alert('请完整填写货物信息（物料/数量/单价）'); return; }
     if (form.type === 'BILATERAL' && !form.buyerId) { alert('双边合同请选择销售对手方'); return; }
@@ -294,8 +301,36 @@ export default function ContractCreatePage() {
           </div>
 
           <SectionTitle>合同基本信息</SectionTitle>
+          <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+            <div className="mb-3 text-xs font-semibold text-muted-foreground">内部管理信息 · 不属于合同正文</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <FormField label="业务单元（事业部）" required>
+                <select value={form.businessUnitId} onChange={e => set('businessUnitId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">请选择业务单元（事业部）</option>
+                  {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.code} {unit.name}</option>)}
+                </select>
+                <span className="text-xs text-muted-foreground">确定经营归属、数据范围及按业务单元（事业部）匹配的审批人员</span>
+              </FormField>
+              <FormField label="业务部门" required>
+                <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} disabled={departmentsLoading} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60">
+                  <option value="">{departmentsLoading ? '正在加载业务部门...' : '请选择业务部门'}</option>
+                  {departments.map(department => (
+                    <option key={department.id} value={department.id}>
+                      {department.company?.name ? `${department.company.name} / ` : ''}{department.name}
+                    </option>
+                  ))}
+                </select>
+                <span className={`text-xs ${departmentError ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  {departmentError || '默认带入发起人所属部门，可按实际业务调整并用于部门审批节点'}
+                </span>
+              </FormField>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <div className="col-span-2"><FormField label="合同标题"><Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" /></FormField></div>
+            <FormField label="外部合同号">
+              <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
+            </FormField>
             <FormField label="我方签约主体（内部）">
               <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">请选择</option>
@@ -307,40 +342,24 @@ export default function ContractCreatePage() {
                   })}
               </select>
             </FormField>
-            <FormField label="业务部门" required>
-              <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} disabled={departmentsLoading} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60">
-                <option value="">{departmentsLoading ? '正在加载业务部门...' : '请选择业务部门'}</option>
-                {departments.map(department => (
-                  <option key={department.id} value={department.id}>
-                    {department.company?.name ? `${department.company.name} / ` : ''}{department.name}
-                  </option>
-                ))}
-              </select>
-              <span className={`text-xs ${departmentError ? 'text-destructive' : 'text-muted-foreground'}`}>
-                {departmentError || '默认带入当前发起人员工档案中的所属部门，可按实际业务调整；同时用于匹配按部门配置的审批节点'}
-              </span>
-            </FormField>
-            <FormField label="外部合同号">
-              <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
-            </FormField>
           </div>
 
           <SectionTitle>交易对手方</SectionTitle>
           {form.type === 'BILATERAL' ? (
             <>
               <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-3 p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg">
-                  <div className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">上游 — 供应商（采购端）</div>
-                  <FormField label="供应商" required>
+                <div className="space-y-3 rounded-lg border border-red-200 bg-red-50/60 p-4 dark:border-red-900/60 dark:bg-red-950/20">
+                  <div className="text-xs font-bold tracking-wider text-red-700 dark:text-red-400">上游交易对手方 · 供应商（采购端）</div>
+                  <FormField label="上游供应商" required>
                     <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                       <option value="">请选择</option>
                       {supplierPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
                     </select>
                   </FormField>
                 </div>
-                <div className="space-y-3 p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
-                  <div className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">下游 — 客户（销售端）</div>
-                  <FormField label="客户" required>
+                <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+                  <div className="text-xs font-bold tracking-wider text-blue-700 dark:text-blue-400">下游交易对手方 · 客户（销售端）</div>
+                  <FormField label="下游客户" required>
                     <select value={form.buyerId} onChange={e => handleSelectPartner(e.target.value, 'buyerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                       <option value="">请选择</option>
                       {customerPartners.map(p => {
@@ -352,6 +371,7 @@ export default function ContractCreatePage() {
                   </FormField>
                 </div>
               </div>
+              <div className="mt-4 text-xs font-medium text-muted-foreground">本合同主要对接人（可选）</div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-4 mt-4">
                 <FormField label="联系人"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></FormField>
                 <FormField label="联系电话"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></FormField>
@@ -359,7 +379,7 @@ export default function ContractCreatePage() {
             </>
           ) : (
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-              <FormField label={form.type === 'PURCHASE' ? '供应商' : '客户'} required>
+              <FormField label={form.type === 'PURCHASE' ? '交易对手方（供应商）' : '交易对手方（客户）'} required>
                 <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">请选择</option>
                   {(form.type === 'PURCHASE' ? supplierPartners : customerPartners).map(p => (

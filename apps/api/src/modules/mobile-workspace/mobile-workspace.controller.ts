@@ -14,6 +14,7 @@ import { FinalizeQualityTaskDto } from '../quality/dto/finalize-quality-task.dto
 import { UpdateQualityTaskSamplingDto } from '../quality/dto/update-quality-task-sampling.dto';
 import { CreateQualitySampleDto, UpdateQualitySampleDto } from '../quality/dto/quality-sample.dto';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
+import { QualityPhotoRecognitionService } from '../quality/quality-photo-recognition.service';
 import { CreateWeighRecordDto } from '../weighbridge/dto/create-weigh-record.dto';
 import { CreateWeighTicketDto } from '../weighbridge/dto/create-weigh-ticket.dto';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
@@ -35,6 +36,7 @@ export class MobileWorkspaceController {
     private readonly service: MobileWorkspaceService,
     private readonly fileService: FileService,
     private readonly qualityService: QualityInspectionService,
+    private readonly qualityPhotoRecognition: QualityPhotoRecognitionService,
     private readonly weighService: WeighTicketService,
     private readonly waybillService: WaybillService,
     private readonly inventoryService: InventoryService,
@@ -152,6 +154,24 @@ export class MobileWorkspaceController {
         ]),
       }, userId);
     });
+  }
+
+  @Post('quality-tasks/:id/sample-photo-recognition')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '识别样品照片中的标签信息' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async recognizeQualitySamplePhoto(
+    @Param('id') qualityTaskId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!file) throw new BadRequestException('请拍摄样品照片');
+    const prepared = prepareAttachmentUpload(file);
+    if (!prepared || prepared.mimeType === 'application/pdf') {
+      throw new BadRequestException('样品照片仅支持 JPG/PNG/WEBP 格式');
+    }
+    await this.qualityService.findTask(qualityTaskId, userId, 'quality.manage');
+    return this.qualityPhotoRecognition.recognize(file.buffer);
   }
 
   @Get('quality-task-attachments/:id/view-url')

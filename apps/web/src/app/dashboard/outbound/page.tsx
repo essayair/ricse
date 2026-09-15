@@ -37,7 +37,7 @@ export default function OutboundPage() {
     <div className="flex flex-wrap gap-3">
       <div className="relative min-w-72 flex-1">
         <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-9" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索出库管理单、发货通知、执行批次、合同或物料" />
+        <Input className="pl-9" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索出库管理单、事业部、发货通知、执行批次、合同或物料" />
       </div>
       <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}>
         <option value="">全部状态</option>
@@ -59,7 +59,7 @@ export default function OutboundPage() {
             return <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/outbound/${item.id}`)}>
               <td className="p-3"><div className="flex items-center gap-2"><span className="font-mono font-medium text-primary">{item.orderNo}</span><Badge variant="outline">{item.dispatchNotice.mode === 'DIRECT' ? '直拨' : '常规'}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{item.stageLabel}</div></td>
               <td className="p-3 font-mono text-xs">{item.dispatchNotice.noticeNo}</td>
-              <td className="max-w-56 p-3"><div>{item.dispatchNotice.order.contract.contractNo}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.order.name}</div></td>
+              <td className="max-w-56 p-3"><div>{item.dispatchNotice.order.contract.contractNo}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.order.name}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.businessUnit?.name || '未归属业务单元'}</div></td>
               <td className="p-3">{item.warehouse?.name || '直拨，不经过我方仓库'}</td>
               <td className="p-3">{item.lineItems.map((line: any) => line.materialName || line.materialId).join('、')}</td>
               <td className="p-3 text-right">{weight(item.plannedQuantity)}</td><td className="p-3 text-right text-primary">{item.dispatchNotice.mode === 'DIRECT' ? '-' : weight(item.reservedQuantity)}</td>

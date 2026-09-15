@@ -6,6 +6,9 @@ describe('PermissionGuard', () => {
     getAllAndOverride: jest.fn(),
   };
   const prisma = {
+    user: {
+      findUnique: jest.fn(),
+    },
     userRoleAssignment: {
       findMany: jest.fn(),
     },
@@ -20,6 +23,7 @@ describe('PermissionGuard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     reflector.getAllAndOverride.mockReturnValue(['logistics.manage']);
+    prisma.user.findUnique.mockResolvedValue({ company: { type: 'INTERNAL' } });
   });
 
   it('allows an administrator without querying role permissions', async () => {
@@ -49,6 +53,18 @@ describe('PermissionGuard', () => {
     ]);
     const guard = new PermissionGuard(reflector as any, prisma as any);
     await expect(guard.canActivate(contextFor({ id: 'u3', role: 'USER' })))
+      .rejects.toThrow(ForbiddenException);
+  });
+
+  it('拒绝外部企业账号获得主数据、组织或系统管理权限', async () => {
+    reflector.getAllAndOverride.mockReturnValue(['organization.manage']);
+    prisma.user.findUnique.mockResolvedValue({ company: { type: 'EXTERNAL' } });
+    prisma.userRoleAssignment.findMany.mockResolvedValue([
+      { role: { permissions: [{ permission: { code: 'organization.manage' } }] } },
+    ]);
+    const guard = new PermissionGuard(reflector as any, prisma as any);
+
+    await expect(guard.canActivate(contextFor({ id: 'external-user', role: 'USER' })))
       .rejects.toThrow(ForbiddenException);
   });
 });

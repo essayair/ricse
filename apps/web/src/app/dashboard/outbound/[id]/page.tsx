@@ -74,6 +74,7 @@ export default function OutboundOrderDetailPage() {
 
     <div className="grid gap-6 lg:grid-cols-2">
       <Card className="p-5"><Title>上游业务依据</Title><Grid items={[
+        ['业务单元（事业部）', item.businessUnit ? `${item.businessUnit.code} · ${item.businessUnit.name}` : '未归属'],
         ['销售发货通知', item.dispatchNotice.noticeNo], ['执行批次', `${item.dispatchNotice.order.orderNo} · ${item.dispatchNotice.order.name}`],
         ['销售合同', `${item.dispatchNotice.order.contract.contractNo} · ${item.dispatchNotice.order.contract.title}`], ['计划发货日期', date(item.dispatchNotice.plannedDate)],
         ['发货仓库', isDirect ? '直拨，不经过我方仓库' : `${item.warehouse.code} · ${item.warehouse.name}`], ['通知状态', item.dispatchNotice.status],

@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REQUIRED_PERMISSIONS_KEY } from './require-permission.decorator';
+import { isExternalBusinessPermission } from './external-permission-policy';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -31,27 +32,35 @@ export class PermissionGuard implements CanActivate {
     if (user.role === 'ADMIN' || user.roles?.includes('ADMIN')) return true;
 
     const now = new Date();
-    const assignments = await this.prisma.userRoleAssignment.findMany({
-      where: {
-        userId: user.id,
-        status: 'ACTIVE',
-        effectiveAt: { lte: now },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-        role: { status: 'ACTIVE' },
-      },
-      select: {
-        role: {
-          select: {
-            permissions: {
-              select: { permission: { select: { code: true } } },
+    const [account, assignments] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { company: { select: { type: true } } },
+      }),
+      this.prisma.userRoleAssignment.findMany({
+        where: {
+          userId: user.id,
+          status: 'ACTIVE',
+          effectiveAt: { lte: now },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          role: { status: 'ACTIVE' },
+        },
+        select: {
+          role: {
+            select: {
+              permissions: {
+                select: { permission: { select: { code: true } } },
+              },
             },
           },
         },
-      },
-    });
+      }),
+    ]);
     const granted = new Set(
       assignments.flatMap((assignment) =>
-        assignment.role.permissions.map((entry) => entry.permission.code),
+        assignment.role.permissions
+          .map((entry) => entry.permission.code)
+          .filter((code) => account?.company?.type !== 'EXTERNAL' || isExternalBusinessPermission(code)),
       ),
     );
     const missing = required.filter((permission) => !granted.has(permission));

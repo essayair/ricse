@@ -1,6 +1,7 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
+import { isExternalBusinessPermission } from './external-permission-policy';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 const USER_STATUSES = ['ACTIVE', 'DISABLED'] as const;
@@ -12,6 +13,7 @@ export class UsersService {
   async create(data: {
     username: string; password: string; name: string;
     role?: string; employeeId?: string; companyId?: string; businessGroupId?: string;
+    businessUnitIds?: string[]; defaultBusinessUnitId?: string;
   }, options: { allowUnbound?: boolean; operatedBy?: string } = {}) {
     const username = data.username.trim();
     if (!USERNAME_PATTERN.test(username)) {
@@ -74,6 +76,33 @@ export class UsersService {
       }
     }
 
+    let businessUnitIds = [...new Set(data.businessUnitIds || [])];
+    if (company?.type === 'EXTERNAL' && businessUnitIds.length) {
+      throw new BadRequestException('外部企业账号不配置内部业务单元');
+    }
+    if (company?.type === 'INTERNAL') {
+      if (businessUnitIds.length === 0) {
+        const defaults = (await this.prisma.businessUnit.findMany({
+          where: { company: { isManagementEntity: true, status: 'ACTIVE' }, status: 'ACTIVE' },
+          select: { id: true },
+          orderBy: { createdAt: 'asc' },
+        })) || [];
+        if (defaults.length === 1) businessUnitIds = [defaults[0].id];
+        else if (defaults.length > 1) throw new BadRequestException('请选择账号所属业务单元');
+        else throw new BadRequestException('平台管理主体尚未建立业务单元（事业部），请先在组织数据中创建');
+      }
+      if (businessUnitIds.length) {
+        const unitCount = await this.prisma.businessUnit.count({
+          where: { id: { in: businessUnitIds }, status: 'ACTIVE', company: { type: 'INTERNAL', status: 'ACTIVE' } },
+        });
+        if (unitCount !== businessUnitIds.length) throw new BadRequestException('所属业务单元包含不存在或已停用的数据');
+      }
+    }
+    const defaultBusinessUnitId = data.defaultBusinessUnitId || businessUnitIds[0];
+    if (defaultBusinessUnitId && !businessUnitIds.includes(defaultBusinessUnitId)) {
+      throw new BadRequestException('默认业务单元必须包含在所属业务单元中');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -88,7 +117,13 @@ export class UsersService {
           businessGroupId: data.businessGroupId,
         },
       });
-      const scopeType = roleCode === 'ADMIN' ? 'ALL' : company ? 'COMPANY' : 'SELF';
+      const scopeType = roleCode === 'ADMIN'
+        ? 'ALL'
+        : company?.type === 'INTERNAL' && businessUnitIds.length
+          ? 'BUSINESS_UNIT'
+          : company
+            ? 'COMPANY'
+            : 'SELF';
       const assignment = await tx.userRoleAssignment.create({
         data: {
           userId: user.id,
@@ -103,6 +138,24 @@ export class UsersService {
             targetType: 'COMPANY',
             targetId: company.id,
           },
+        });
+      }
+      if (scopeType === 'BUSINESS_UNIT') {
+        await tx.userRoleScope.createMany({
+          data: businessUnitIds.map((targetId) => ({
+            assignmentId: assignment.id,
+            targetType: 'BUSINESS_UNIT',
+            targetId,
+          })),
+        });
+      }
+      if (businessUnitIds.length) {
+        await tx.userBusinessUnit.createMany({
+          data: businessUnitIds.map((businessUnitId) => ({
+            userId: user.id,
+            businessUnitId,
+            isDefault: businessUnitId === defaultBusinessUnitId,
+          })),
         });
       }
       if (options.operatedBy) {
@@ -122,6 +175,7 @@ export class UsersService {
         select: {
           id: true, username: true, name: true, role: true,
           employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
+          businessUnits: { include: { businessUnit: true } },
           roleAssignments: { include: { role: true, scopes: true } },
         },
       });
@@ -148,6 +202,7 @@ export class UsersService {
       select: {
         id: true, username: true, name: true, role: true, status: true,
         employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
+        businessUnits: { include: { businessUnit: true }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }] },
         employee: {
           select: {
             id: true,
@@ -176,6 +231,7 @@ export class UsersService {
       select: {
         id: true, username: true, name: true, role: true, status: true,
         employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
+        businessUnits: { include: { businessUnit: true }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }] },
         employee: {
           select: {
             id: true,
@@ -263,14 +319,22 @@ export class UsersService {
 
   async getActiveAccess(userId: string) {
     const now = new Date();
-    const assignments = await this.prisma.userRoleAssignment.findMany({
-      where: { userId, status: 'ACTIVE', effectiveAt: { lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }], role: { status: 'ACTIVE' } },
-      select: { role: { select: { code: true, name: true, permissions: { select: { permission: { select: { code: true } } } } } } },
-    });
+    const [account, assignments] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId }, select: { company: { select: { type: true } } } }),
+      this.prisma.userRoleAssignment.findMany({
+        where: { userId, status: 'ACTIVE', effectiveAt: { lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }], role: { status: 'ACTIVE' } },
+        select: { role: { select: { code: true, name: true, permissions: { select: { permission: { select: { code: true } } } } } } },
+      }),
+    ]);
+    const permissions = assignments.flatMap((item) => item.role.permissions.map((entry) => entry.permission.code));
     return {
       roles: [...new Set(assignments.map((item) => item.role.code))],
       roleNames: [...new Set(assignments.map((item) => item.role.name))],
-      permissions: [...new Set(assignments.flatMap((item) => item.role.permissions.map((entry) => entry.permission.code)))],
+      permissions: [...new Set(
+        account?.company?.type === 'EXTERNAL'
+          ? permissions.filter(isExternalBusinessPermission)
+          : permissions,
+      )],
     };
   }
 

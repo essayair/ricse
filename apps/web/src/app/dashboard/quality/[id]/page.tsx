@@ -55,6 +55,11 @@ const OPERATOR: Record<string, string> = { GTE: '≥', LTE: '≤', EQ: '=', RANG
 const EVIDENCE_CATEGORY: Record<string, string> = { SAMPLING_PHOTO: '取样照片', MIXING_PHOTO: '混样照片', SPLITTING_PHOTO: '分样照片', SEALING_PHOTO: '封样照片', OTHER: '其他影像' };
 const EVIDENCE_SOURCE: Record<string, string> = { WEB_UPLOAD: '电脑上传', RICSE_IMPORT: '系统导入', THIRD_PARTY_WATERMARK: '第三方水印相机', EXTERNAL: '外部影像', MINI_PROGRAM_CAPTURE: '小程序现场拍摄' };
 
+function currentUserName() {
+  try { return JSON.parse(localStorage.getItem('user') || '{}').name || ''; }
+  catch { return ''; }
+}
+
 export default function QualityTaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -82,7 +87,7 @@ export default function QualityTaskDetailPage() {
       setItem(task);
       if (task.basisInspection?.id) setBasisInspectionId(task.basisInspection.id);
       setSampledAt(toLocalDateTimeInput(task.sampledAt ? new Date(task.sampledAt) : new Date()));
-      setSamplerName(task.samplerName || task.handler?.name || '');
+      setSamplerName(currentUserName() || task.samplerName || task.handler?.name || '');
       setSamplingMethod(task.samplingMethod || '多点混合取样');
       setPlannedReportCount(String(task.plannedReportCount || 1));
     } catch (error: any) { alert(error.message || '质检任务加载失败'); router.push('/dashboard/quality'); }
@@ -177,6 +182,7 @@ export default function QualityTaskDetailPage() {
     setEditingSampleId(''); setSampleNo(''); setSampleLabel(''); setSealNo('');
     setDestinationInstitutionName(''); setSentAt(''); setSampleRemarks('');
     setSampledAt(toLocalDateTimeInput());
+    setSamplerName(currentUserName());
   };
 
   const editSample = (sample: Sample) => {

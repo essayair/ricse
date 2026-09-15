@@ -27,7 +27,7 @@ const ORGANIZATION_TABS: Record<string, string> = {
   dept: '部门管理',
   employee: '员工管理',
   users: '用户账号',
-  'business-group': '业务组',
+  'business-group': '业务单元（事业部）',
 };
 
 const SERVICE_ORGANIZATION_TYPES: Record<string, string> = {

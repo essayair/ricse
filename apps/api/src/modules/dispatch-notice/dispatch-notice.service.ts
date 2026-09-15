@@ -19,6 +19,7 @@ export class DispatchNoticeService {
         contract: {
           select: {
             id: true, contractNo: true, title: true, type: true, deliveryLocation: true,
+            businessUnit: { select: { id: true, code: true, name: true } },
             signingPartner: { select: { id: true, name: true } },
             seller: { select: { id: true, name: true, address: true } },
             buyer: { select: { id: true, name: true, address: true } },
@@ -52,7 +53,7 @@ export class DispatchNoticeService {
 
   async getOrderAvailability(orderId: string, userId: string, permission = 'execution.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getOrderScope(userId);
+    const scope = await this.accessControl.getOrderScope(userId, permission);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, deletedAt: null, AND: [scope] },
       include: {
@@ -250,7 +251,7 @@ export class DispatchNoticeService {
 
   async findAll(params: { status?: string; type?: string; search?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'execution.view');
-    const scope = await this.accessControl.getDispatchNoticeScope(userId);
+    const scope = await this.accessControl.getDispatchNoticeScope(userId, 'execution.view');
     const where: Prisma.DispatchNoticeWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.type) where.type = params.type;
@@ -260,6 +261,8 @@ export class DispatchNoticeService {
         { order: { orderNo: { contains: params.search, mode: 'insensitive' } } },
         { order: { name: { contains: params.search, mode: 'insensitive' } } },
         { order: { contract: { contractNo: { contains: params.search, mode: 'insensitive' } } } },
+        { order: { contract: { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } } } },
+        { order: { contract: { businessUnit: { code: { contains: params.search, mode: 'insensitive' } } } } },
       ];
     }
     const items = await this.prisma.dispatchNotice.findMany({
@@ -270,7 +273,7 @@ export class DispatchNoticeService {
 
   async findOne(id: string, userId: string, permission = 'execution.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getDispatchNoticeScope(userId);
+    const scope = await this.accessControl.getDispatchNoticeScope(userId, permission);
     const notice = await this.prisma.dispatchNotice.findFirst({
       where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });

@@ -38,6 +38,7 @@ export class ProductionService {
   private readonly taskInclude = {
     recipe: { select: { id: true, recipeNo: true, name: true, processDescription: true, qualityRequirements: true } },
     ownerPartner: { select: { id: true, code: true, name: true } },
+    businessUnit: { select: { id: true, code: true, name: true } },
     processorOrganization: {
       include: { partner: { select: { id: true, code: true, name: true } } },
     },
@@ -94,6 +95,7 @@ export class ProductionService {
   private async getSalesReservedByLot(lots: Array<{
     id: string;
     ownerPartnerId: string | null;
+    businessUnitId: string | null;
     warehouseId: string;
     materialId: string;
     availableQuantity: unknown;
@@ -107,18 +109,19 @@ export class ProductionService {
           status: { in: ['PENDING', 'PARTIAL'] },
           warehouseId: { in: [...new Set(lots.map(lot => lot.warehouseId))] },
           ownerPartnerId: { in: [...new Set(lots.map(lot => lot.ownerPartnerId).filter(Boolean) as string[])] },
+          businessUnitId: { in: [...new Set(lots.map(lot => lot.businessUnitId).filter(Boolean) as string[])] },
         },
       },
       select: {
         materialId: true,
         reservedQuantity: true,
         actualQuantity: true,
-        outboundOrder: { select: { warehouseId: true, ownerPartnerId: true } },
+        outboundOrder: { select: { warehouseId: true, ownerPartnerId: true, businessUnitId: true } },
       },
     }) || [];
     const remainingByGroup = new Map<string, number>();
     for (const line of lines) {
-      const key = `${line.outboundOrder.ownerPartnerId || 'UNASSIGNED'}:${line.outboundOrder.warehouseId}:${line.materialId}`;
+      const key = `${line.outboundOrder.businessUnitId || 'UNASSIGNED'}:${line.outboundOrder.ownerPartnerId || 'UNASSIGNED'}:${line.outboundOrder.warehouseId}:${line.materialId}`;
       remainingByGroup.set(
         key,
         (remainingByGroup.get(key) || 0) + Math.max(0, Number(line.reservedQuantity) - Number(line.actualQuantity)),
@@ -126,7 +129,7 @@ export class ProductionService {
     }
     const result = new Map<string, number>();
     for (const lot of [...lots].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
-      const key = `${lot.ownerPartnerId || 'UNASSIGNED'}:${lot.warehouseId}:${lot.materialId}`;
+      const key = `${lot.businessUnitId || 'UNASSIGNED'}:${lot.ownerPartnerId || 'UNASSIGNED'}:${lot.warehouseId}:${lot.materialId}`;
       const reserved = Math.min(Number(lot.availableQuantity), remainingByGroup.get(key) || 0);
       result.set(lot.id, reserved);
       remainingByGroup.set(key, Math.max(0, (remainingByGroup.get(key) || 0) - reserved));
@@ -151,6 +154,11 @@ export class ProductionService {
     if (output.isVirtual) throw new BadRequestException('虚拟物料不能形成生产库存');
     if (inputs.length !== dto.inputs.length) throw new BadRequestException('存在无效或已停用的投入物料');
     if (inputs.some(material => material.isVirtual)) throw new BadRequestException('投入物料不能使用虚拟物料');
+  }
+
+  async businessUnitOptions(userId: string) {
+    await this.accessControl.assertPermission(userId, 'production.view');
+    return this.accessControl.getBusinessUnitOptions(userId, 'production.view');
   }
 
   async createRecipe(dto: CreateProductionRecipeDto, userId: string) {
@@ -188,7 +196,7 @@ export class ProductionService {
 
   async findRecipes(params: { search?: string; status?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'production.view');
-    const scope = await this.accessControl.getProductionRecipeScope(userId);
+    const scope = await this.accessControl.getProductionRecipeScope(userId, 'production.view');
     const where: Prisma.ProductionRecipeWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.search?.trim()) {
@@ -205,7 +213,7 @@ export class ProductionService {
 
   async findRecipe(id: string, userId: string, permission = 'production.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getProductionRecipeScope(userId);
+    const scope = await this.accessControl.getProductionRecipeScope(userId, permission);
     const recipe = await this.prisma.productionRecipe.findFirst({ where: { id, deletedAt: null, AND: [scope] }, include: this.recipeInclude });
     if (!recipe) throw new NotFoundException('生产方案不存在');
     return recipe;
@@ -239,6 +247,10 @@ export class ProductionService {
 
   async createTask(dto: CreateProductionTaskDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'production.manage');
+    const availableBusinessUnits = await this.accessControl.getBusinessUnitOptions(userId, 'production.manage');
+    if (!availableBusinessUnits.some(unit => unit.id === dto.businessUnitId)) {
+      throw new BadRequestException('所选业务单元（事业部）不在当前用户的生产管理范围内');
+    }
     const recipe = await this.prisma.productionRecipe.findFirst({
       where: { id: dto.recipeId, deletedAt: null, status: 'ACTIVE' }, include: { inputs: true },
     });
@@ -262,7 +274,7 @@ export class ProductionService {
     return this.prisma.productionTask.create({
       data: {
         taskNo: await this.nextNo('MO', count), name: dto.name.trim(), mode: dto.mode,
-        recipeId: recipe.id, ownerPartnerId: dto.ownerPartnerId,
+        recipeId: recipe.id, ownerPartnerId: dto.ownerPartnerId, businessUnitId: dto.businessUnitId,
         processorOrganizationId: dto.mode === 'OUTSOURCED' ? dto.processorOrganizationId : null,
         sourceWarehouseId: dto.sourceWarehouseId, targetWarehouseId: dto.targetWarehouseId,
         outputMaterialId: recipe.outputMaterialId, sourceType: dto.sourceType || 'MANUAL',
@@ -287,7 +299,7 @@ export class ProductionService {
 
   async findTasks(params: { search?: string; status?: string; mode?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'production.view');
-    const scope = await this.accessControl.getProductionTaskScope(userId);
+    const scope = await this.accessControl.getProductionTaskScope(userId, 'production.view');
     const where: Prisma.ProductionTaskWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.mode) where.mode = params.mode;
@@ -296,6 +308,7 @@ export class ProductionService {
       where.OR = [
         { taskNo: { contains: search, mode: 'insensitive' } },
         { name: { contains: search, mode: 'insensitive' } },
+        { businessUnit: { name: { contains: search, mode: 'insensitive' } } },
         { sourceOrderNo: { contains: search, mode: 'insensitive' } },
         { outputMaterial: { name: { contains: search, mode: 'insensitive' } } },
         { processorOrganization: { partner: { name: { contains: search, mode: 'insensitive' } } } },
@@ -318,7 +331,7 @@ export class ProductionService {
 
   async findTask(id: string, userId: string, permission = 'production.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getProductionTaskScope(userId);
+    const scope = await this.accessControl.getProductionTaskScope(userId, permission);
     const task = await this.prisma.productionTask.findFirst({ where: { id, deletedAt: null, AND: [scope] }, include: this.taskInclude });
     if (!task) throw new NotFoundException('生产任务不存在');
     return task;
@@ -337,6 +350,7 @@ export class ProductionService {
     const lots = await this.prisma.inventoryLot.findMany({
       where: {
         warehouseId: task.sourceWarehouseId, ownerPartnerId: task.ownerPartnerId,
+        businessUnitId: task.businessUnitId,
         materialId: { in: task.inputs.map(item => item.materialId) }, status: 'AVAILABLE', availableQuantity: { gt: 0 },
       },
       include: { material: { select: { id: true, code: true, name: true, unit: true } }, warehouse: { select: { id: true, code: true, name: true } } },
@@ -386,6 +400,7 @@ export class ProductionService {
       where: {
         warehouseId: task.sourceWarehouseId,
         ownerPartnerId: task.ownerPartnerId,
+        businessUnitId: task.businessUnitId,
         materialId: { in: task.inputs.map(input => input.materialId) },
         status: 'AVAILABLE',
         availableQuantity: { gt: 0 },
@@ -400,8 +415,8 @@ export class ProductionService {
     for (const item of dto.allocations) {
       const input = inputMap.get(item.taskInputId)!;
       const lot = lotMap.get(item.inventoryLotId);
-      if (!lot || lot.ownerPartnerId !== task.ownerPartnerId || lot.warehouseId !== task.sourceWarehouseId || lot.materialId !== input.materialId || lot.status !== 'AVAILABLE') {
-        throw new BadRequestException('选择的库存批次与任务主体、仓库或物料不一致');
+      if (!lot || lot.ownerPartnerId !== task.ownerPartnerId || lot.businessUnitId !== task.businessUnitId || lot.warehouseId !== task.sourceWarehouseId || lot.materialId !== input.materialId || lot.status !== 'AVAILABLE') {
+        throw new BadRequestException('选择的库存批次与任务业务单元、主体、仓库或物料不一致');
       }
       const available = Number(lot.availableQuantity)
         - (otherMap.get(lot.id) || 0)
@@ -442,6 +457,7 @@ export class ProductionService {
           await tx.productionMaterialAllocation.update({ where: { id: allocation.id }, data: { issuedQuantity: quantity } });
           await tx.inventoryLedger.create({ data: {
             lotId: lot.id, warehouseId: lot.warehouseId, materialId: lot.materialId,
+            businessUnitId: lot.businessUnitId,
             businessType: 'PRODUCTION_ISSUE', businessNo: task.taskNo, quantityChange: -quantity,
             balanceAfter: lot.availableQuantity,
             remarks: task.mode === 'OUTSOURCED' ? `委外发料进入生产任务 ${task.taskNo} 在制台账` : `生产领料进入任务 ${task.taskNo} 在制台账`,
@@ -488,6 +504,7 @@ export class ProductionService {
         await tx.productionTaskInput.update({ where: { id: allocation.taskInputId }, data: { returnedQuantity: { increment: item.quantity } } });
         await tx.inventoryLedger.create({ data: {
           lotId: lot.id, warehouseId: lot.warehouseId, materialId: lot.materialId,
+          businessUnitId: lot.businessUnitId,
           businessType: 'PRODUCTION_RETURN', businessNo: task.taskNo, quantityChange: item.quantity,
           balanceAfter: lot.availableQuantity, remarks: dto.remarks?.trim() || `生产任务 ${task.taskNo} 余料退回`, createdBy: userId,
         } });
@@ -521,7 +538,7 @@ export class ProductionService {
     await this.assertAnyPermission(userId, ['quality.manage', 'production.manage']);
     const completion = await this.prisma.productionCompletion.findUnique({ include: { task: true }, where: { id: completionId } });
     if (!completion) throw new NotFoundException('完工申报不存在');
-    const scope = await this.accessControl.getProductionTaskScope(userId);
+    const scope = await this.accessControl.getProductionTaskScope(userId, 'production.view');
     const visible = await this.prisma.productionTask.count({ where: { id: completion.taskId, AND: [scope] } });
     if (!visible) throw new NotFoundException('完工申报不存在');
     if (completion.status !== 'PENDING_QC') throw new BadRequestException('只有待质检完工申报可以确认质量结论');
@@ -539,7 +556,7 @@ export class ProductionService {
     await this.accessControl.assertPermission(userId, 'production.post');
     const completion = await this.prisma.productionCompletion.findUnique({ where: { id: completionId }, include: { task: { include: { processorOrganization: { include: { partner: true } } } }, inventoryLot: true } });
     if (!completion) throw new NotFoundException('完工申报不存在');
-    const scope = await this.accessControl.getProductionTaskScope(userId);
+    const scope = await this.accessControl.getProductionTaskScope(userId, 'production.post');
     if (!await this.prisma.productionTask.count({ where: { id: completion.taskId, AND: [scope] } })) throw new NotFoundException('完工申报不存在');
     if (completion.inventoryLot || completion.status === 'POSTED') return this.findTask(completion.taskId, userId, 'production.post');
     if (completion.status !== 'READY_TO_POST' || completion.qualityConclusion !== 'PASS') throw new BadRequestException('只有质检合格的完工申报可以生产入库');
@@ -557,13 +574,14 @@ export class ProductionService {
     await this.prisma.$transaction(async tx => {
       const lot = await tx.inventoryLot.create({ data: {
         lotNo, productionCompletionId: completion.id, warehouseId: completion.task.targetWarehouseId,
-        ownerPartnerId: completion.task.ownerPartnerId, materialId: completion.materialId,
+        ownerPartnerId: completion.task.ownerPartnerId, businessUnitId: completion.task.businessUnitId, materialId: completion.materialId,
         materialName: (await tx.material.findUniqueOrThrow({ where: { id: completion.materialId } })).name,
         supplierName: completion.task.processorOrganization?.partner.name || '自营生产', initialQuantity: quantity,
         availableQuantity: quantity, qualityConclusion: 'PASS', status: 'AVAILABLE',
       } });
       await tx.inventoryLedger.create({ data: {
         lotId: lot.id, warehouseId: lot.warehouseId, materialId: lot.materialId,
+        businessUnitId: lot.businessUnitId,
         businessType: 'PRODUCTION_INBOUND', businessNo: completion.completionNo,
         quantityChange: quantity, balanceAfter: quantity,
         remarks: `由生产任务 ${completion.task.taskNo} 完工入库生成`, createdBy: userId,
@@ -600,13 +618,14 @@ export class ProductionService {
 
   async traceability(userId: string, search?: string) {
     await this.accessControl.assertPermission(userId, 'production.view');
-    const scope = await this.accessControl.getProductionTaskScope(userId);
+    const scope = await this.accessControl.getProductionTaskScope(userId, 'production.view');
     return this.prisma.productionCompletion.findMany({
       where: {
         status: 'POSTED', task: { AND: [scope] },
         ...(search?.trim() ? { OR: [
           { completionNo: { contains: search.trim(), mode: 'insensitive' } },
           { task: { taskNo: { contains: search.trim(), mode: 'insensitive' } } },
+          { task: { businessUnit: { name: { contains: search.trim(), mode: 'insensitive' } } } },
           { material: { name: { contains: search.trim(), mode: 'insensitive' } } },
           { inventoryLot: { lotNo: { contains: search.trim(), mode: 'insensitive' } } },
         ] } : {}),
@@ -614,6 +633,7 @@ export class ProductionService {
       include: {
         material: { select: { code: true, name: true, unit: true } }, inventoryLot: true,
         task: { include: {
+          businessUnit: { select: { code: true, name: true } },
           ownerPartner: { select: { code: true, name: true } }, sourceWarehouse: { select: { code: true, name: true } }, targetWarehouse: { select: { code: true, name: true } },
           processorOrganization: { include: { partner: { select: { code: true, name: true } } } },
           inputs: { include: { material: { select: { code: true, name: true, unit: true } }, allocations: { include: { inventoryLot: { select: { lotNo: true } } } } } },

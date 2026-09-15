@@ -54,7 +54,13 @@ describe('MobileWorkspaceService', () => {
   it('系统管理员工作台按合同节点去重待审批数量', async () => {
     access.getContext.mockResolvedValue({
       isAdmin: true,
-      user: { id: 'admin', username: 'admin', name: '管理员', company: null, employee: null },
+      user: {
+        id: 'admin', username: 'admin', name: '管理员', company: null, employee: null,
+        businessUnits: [{
+          status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null, isDefault: true,
+          businessUnit: { id: 'bu-1', code: 'BU-300000-001', name: '综合事业部', status: 'ACTIVE' },
+        }],
+      },
       roleCodes: ['ADMIN'], roleNames: ['系统管理员'], permissions: [],
     } as any);
     access.getContractScope.mockResolvedValue({});
@@ -82,6 +88,9 @@ describe('MobileWorkspaceService', () => {
       pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
     });
     expect(result.account.roleNames).toEqual(['系统管理员']);
+    expect(result.account.businessUnits).toEqual([
+      { id: 'bu-1', code: 'BU-300000-001', name: '综合事业部', isDefault: true },
+    ]);
     expect(prisma.qualityTask.count).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         status: { in: ['PENDING_SAMPLING', 'PENDING_SENDING', 'INSPECTING', 'PENDING_DECISION', 'RECHECK_REQUIRED', 'EXCEPTION'] },

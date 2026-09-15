@@ -36,6 +36,7 @@ export class ContractController {
   @ApiQuery({ name: 'type', required: false, enum: ['PURCHASE', 'SALES', 'BILATERAL'] })
   @ApiQuery({ name: 'search', required: false, description: '合同号/标题/合作伙伴名称' })
   @ApiQuery({ name: 'sellerId', required: false, description: '合作伙伴 ID（买卖双方均匹配）' })
+  @ApiQuery({ name: 'businessUnitId', required: false, description: '业务单元 ID' })
   @ApiQuery({ name: 'dateFrom', required: false, description: '签订日期起（ISO）' })
   @ApiQuery({ name: 'dateTo', required: false, description: '签订日期止（ISO）' })
   findAll(
@@ -45,6 +46,7 @@ export class ContractController {
     @Query('type') type?: string,
     @Query('search') search?: string,
     @Query('sellerId') sellerId?: string,
+    @Query('businessUnitId') businessUnitId?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @CurrentUser('id') userId?: string,
@@ -56,6 +58,7 @@ export class ContractController {
       type,
       search,
       sellerId,
+      businessUnitId,
       dateFrom,
       dateTo,
     }, userId);
@@ -67,10 +70,22 @@ export class ContractController {
     return this.contractService.getFormOptions(userId);
   }
 
+  @Get('business-unit-options')
+  @ApiOperation({ summary: '当前用户可查看的合同业务单元选项' })
+  getBusinessUnitOptions(@CurrentUser('id') userId: string) {
+    return this.contractService.getBusinessUnitFilterOptions(userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '合同详情' })
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.contractService.findOne(id, userId);
+  }
+
+  @Get(':id/available-actions')
+  @ApiOperation({ summary: '获取当前用户在该合同上的可用操作' })
+  getAvailableActions(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.contractService.getAvailableActions(id, userId);
   }
 
   @Get(':id/approval-readiness')
@@ -164,7 +179,7 @@ export class ContractController {
     @Param('id') id: string,
     @Body() dto: {
       title?: string; type?: string; totalAmount?: number; sellerId?: string | null; buyerId?: string | null;
-      signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; externalNo?: string;
+      signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; businessUnitId?: string | null; externalNo?: string;
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;

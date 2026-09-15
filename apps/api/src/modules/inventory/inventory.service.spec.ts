@@ -272,20 +272,23 @@ describe('InventoryService', () => {
   it('库存总览按库存主体和仓库汇总账面、冻结与可用数量', async () => {
     prisma.inventoryLot.findMany.mockResolvedValue([
       {
-        id: 'lot-1', materialId: 'm1', warehouseId: 'w1', ownerPartnerId: 'owner-1',
+        id: 'lot-1', materialId: 'm1', warehouseId: 'w1', ownerPartnerId: 'owner-1', businessUnitId: 'bu-1',
         availableQuantity: 12.5, createdAt: new Date('2026-01-01'),
+        businessUnit: { id: 'bu-1', code: 'BU-YM', name: '玉门事业部' },
         warehouse: { id: 'w1', code: 'WH01', name: '一号仓' },
         inventoryOwner: { id: 'owner-1', code: 'OWN01', name: '采购主体一' },
       },
       {
-        id: 'lot-2', materialId: 'm1', warehouseId: 'w2', ownerPartnerId: 'owner-1',
+        id: 'lot-2', materialId: 'm1', warehouseId: 'w2', ownerPartnerId: 'owner-1', businessUnitId: 'bu-1',
         availableQuantity: 7.5, createdAt: new Date('2026-01-02'),
+        businessUnit: { id: 'bu-1', code: 'BU-YM', name: '玉门事业部' },
         warehouse: { id: 'w2', code: 'WH02', name: '二号仓' },
         inventoryOwner: { id: 'owner-1', code: 'OWN01', name: '采购主体一' },
       },
       {
-        id: 'lot-3', materialId: 'm2', warehouseId: 'w1', ownerPartnerId: 'owner-2',
+        id: 'lot-3', materialId: 'm2', warehouseId: 'w1', ownerPartnerId: 'owner-2', businessUnitId: 'bu-2',
         availableQuantity: 5, createdAt: new Date('2026-01-03'),
+        businessUnit: { id: 'bu-2', code: 'BU-LY', name: '龙游事业部' },
         warehouse: { id: 'w1', code: 'WH01', name: '一号仓' },
         inventoryOwner: { id: 'owner-2', code: 'OWN02', name: '采购主体二' },
       },
@@ -299,12 +302,14 @@ describe('InventoryService', () => {
       materialCount: 2,
       warehouseCount: 2,
       ownerCount: 2,
+      businessUnitCount: 2,
       totalQuantity: 25,
       totalPhysicalQuantity: 25,
       totalReservedQuantity: 0,
       totalAvailableQuantity: 25,
     });
     expect(result.ownerSummaries).toHaveLength(2);
+    expect(result.businessUnitSummaries).toHaveLength(2);
     expect(result.ownerSummaries).toEqual(expect.arrayContaining([expect.objectContaining({
       ownerPartnerId: 'owner-1', ownerName: '采购主体一', warehouseCount: 2,
       totalPhysicalQuantity: 20, totalAvailableQuantity: 20,

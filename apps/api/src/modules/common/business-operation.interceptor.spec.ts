@@ -64,6 +64,17 @@ describe('BusinessOperationInterceptor', () => {
     expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
   });
 
+  it('合同业务单元选项保持数组结构，不会被误判为合同详情', async () => {
+    const response = [{ id: 'unit-1', code: 'YM', name: '玉门业务单元' }];
+    const result = await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'GET', path: '/api/v1/contracts/business-unit-options', user: { id: 'user-1' },
+    }), handler(response)));
+
+    expect(result).toEqual(response);
+    expect(Array.isArray(result)).toBe(true);
+    expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
+  });
+
   it('质检可选磅单列表不会被误判为机构报告详情', async () => {
     const response = [{ id: 'ticket-1', ticketNo: 'PD-001' }];
     const result = await lastValueFrom(interceptor.intercept(executionContext({

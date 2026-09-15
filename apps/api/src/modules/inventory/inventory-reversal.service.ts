@@ -64,7 +64,7 @@ export class InventoryReversalService {
   async eligibleSources(type: string, userId: string, search?: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
     if (type === 'INBOUND') {
-      const scope = await this.accessControl.getBusinessInboundScope(userId);
+      const scope = await this.accessControl.getBusinessInboundScope(userId, 'inventory.view');
       const items = await this.prisma.businessInbound.findMany({
         where: {
           AND: [scope],
@@ -105,7 +105,7 @@ export class InventoryReversalService {
     }
 
     if (type === 'OUTBOUND') {
-      const scope = await this.accessControl.getSalesOutboundScope(userId);
+      const scope = await this.accessControl.getSalesOutboundScope(userId, 'inventory.view');
       const items = await this.prisma.salesOutbound.findMany({
         where: {
           AND: [scope],
@@ -166,7 +166,7 @@ export class InventoryReversalService {
     }
 
     if (dto.type === 'INBOUND') {
-      const scope = await this.accessControl.getBusinessInboundScope(userId);
+      const scope = await this.accessControl.getBusinessInboundScope(userId, 'inventory.manage');
       const source = await this.prisma.businessInbound.findFirst({
         where: { id: dto.sourceId, status: { in: ['POSTED', 'PARTIALLY_REVERSED'] }, AND: [scope] },
         include: { inventoryLot: true },
@@ -205,7 +205,7 @@ export class InventoryReversalService {
     }
 
     if (dto.type === 'OUTBOUND') {
-      const scope = await this.accessControl.getSalesOutboundScope(userId);
+      const scope = await this.accessControl.getSalesOutboundScope(userId, 'inventory.manage');
       const source = await this.prisma.salesOutbound.findFirst({
         where: { id: dto.sourceId, status: { in: ['POSTED', 'PARTIALLY_REVERSED'] }, AND: [scope] },
         include: { lines: true },
@@ -251,7 +251,7 @@ export class InventoryReversalService {
 
   async findAll(params: { search?: string; status?: string; type?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getInventoryReversalScope(userId);
+    const scope = await this.accessControl.getInventoryReversalScope(userId, 'inventory.view');
     const where: Prisma.InventoryReversalWhereInput = { AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.type) where.type = params.type;
@@ -273,7 +273,7 @@ export class InventoryReversalService {
 
   async findOne(id: string, userId: string, permission = 'inventory.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getInventoryReversalScope(userId);
+    const scope = await this.accessControl.getInventoryReversalScope(userId, permission);
     const item = await this.prisma.inventoryReversal.findFirst({
       where: { id, AND: [scope] },
       include: this.include,
@@ -378,6 +378,7 @@ export class InventoryReversalService {
               lotId: lot.id,
               warehouseId: lot.warehouseId,
               materialId: lot.materialId,
+              businessUnitId: lot.businessUnitId,
               businessType: 'INBOUND_REVERSAL',
               businessNo: item.reversalNo,
               quantityChange: -quantity,
@@ -428,6 +429,7 @@ export class InventoryReversalService {
               lotId: lot.id,
               warehouseId: lot.warehouseId,
               materialId: lot.materialId,
+              businessUnitId: lot.businessUnitId,
               businessType: 'OUTBOUND_REVERSAL',
               businessNo: item.reversalNo,
               quantityChange: quantity,
@@ -474,7 +476,7 @@ export class InventoryReversalService {
 
   async findAttachmentById(id: string, userId: string, permission = 'inventory.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getInventoryReversalScope(userId);
+    const scope = await this.accessControl.getInventoryReversalScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,

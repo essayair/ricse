@@ -54,7 +54,7 @@ describe('OutboundService', () => {
     prisma.dispatchNotice.findUnique.mockResolvedValue({
       id: 'notice-1', type: 'SALES', mode: 'STANDARD', warehouseId: 'warehouse-1',
       outboundOrder: null,
-      order: { contract: { signingPartnerId: 'owner-1' } },
+      order: { contract: { signingPartnerId: 'owner-1', businessUnitId: 'bu-1' } },
       lineItems: [{
         id: 'notice-line-1', materialId: 'material-1', materialName: '测试物料',
         unit: 'TON', quantity: 100,
@@ -71,6 +71,7 @@ describe('OutboundService', () => {
       data: expect.objectContaining({
         plannedQuantity: 100,
         ownerPartnerId: 'owner-1',
+        businessUnitId: 'bu-1',
         reservedQuantity: 70,
         shortageQuantity: 30,
         lineItems: { create: [expect.objectContaining({ reservedQuantity: 70 })] },
@@ -82,7 +83,7 @@ describe('OutboundService', () => {
     prisma.dispatchNotice.findUnique.mockResolvedValue({
       id: 'notice-direct', type: 'SALES', mode: 'DIRECT', warehouseId: null,
       outboundOrder: null,
-      order: { contract: { signingPartnerId: 'owner-1' } },
+      order: { contract: { signingPartnerId: 'owner-1', businessUnitId: 'bu-1' } },
       lineItems: [{
         id: 'notice-line-direct', materialId: 'material-1', materialName: '测试物料',
         unit: 'TON', quantity: 120,
@@ -99,6 +100,7 @@ describe('OutboundService', () => {
         orderNo: expect.stringMatching(/^DFM-/),
         warehouseId: null,
         ownerPartnerId: 'owner-1',
+        businessUnitId: 'bu-1',
         plannedQuantity: 120,
         reservedQuantity: 0,
         shortageQuantity: 0,
@@ -111,7 +113,7 @@ describe('OutboundService', () => {
     prisma.dispatchNotice.findUnique.mockResolvedValue({
       id: 'notice-manual', type: 'SALES', mode: 'STANDARD', warehouseId: null,
       outboundOrder: null,
-      order: { contract: { signingPartnerId: 'owner-1' } },
+      order: { contract: { signingPartnerId: 'owner-1', businessUnitId: 'bu-1' } },
       lineItems: [{
         id: 'notice-line-manual', materialId: 'material-1', materialName: '测试物料',
         unit: 'TON', quantity: 100,
@@ -160,6 +162,7 @@ describe('OutboundService', () => {
       materialName: '测试物料',
       customerName: '测试客户',
       outboundOrderId: 'order-1',
+      outboundOrder: { id: 'order-1', businessUnitId: 'bu-1' },
       waybillId: 'waybill-1',
       weighTicketId: 'ticket-1',
       weighTicket: { id: 'ticket-1', status: 'REVIEWED' },

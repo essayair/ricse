@@ -27,6 +27,7 @@ model User {
 
   company                      Company?                  @relation(fields: [companyId], references: [id])
   employee                     Employee?                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  businessUnits                UserBusinessUnit[]
   roleAssignments              UserRoleAssignment[]
   wechatIdentity               WechatIdentity?           @relation("WechatLinkedUser")
   wechatBindingTargets         WechatAccountBinding[]    @relation("WechatBindingTarget")
@@ -92,25 +93,27 @@ model BusinessOperationLog {
 
 /// 企业主体（内部企业 + 外部企业）
 model Company {
-  id        String   @id @default(cuid())
-  code      String   @unique // 6位(内部) 或 8位(外部)
-  name      String
-  shortName String?
-  type      String   @default("INTERNAL") // INTERNAL | EXTERNAL
-  partnerId String? // 外部企业关联合作伙伴
-  parentId  String? // 上级企业（组织树）
-  status    String   @default("ACTIVE")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  code               String   @unique // 6位(内部) 或 8位(外部)
+  name               String
+  shortName          String?
+  type               String   @default("INTERNAL") // INTERNAL | EXTERNAL
+  isManagementEntity Boolean  @default(false) // 平台管理主体：承载部门、员工、账号和业务单元，不等同于合同签约主体
+  partnerId          String? // 组织企业关联的统一合作伙伴档案；内部法律主体也从合作伙伴引用
+  parentId           String? // 上级企业（组织树）
+  status             String   @default("ACTIVE")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  parent      Company?               @relation("CompanyTree", fields: [parentId], references: [id])
-  children    Company[]              @relation("CompanyTree")
-  partner     Partner?               @relation("CompanyPartner", fields: [partnerId], references: [id])
-  departments Department[]
-  employees   Employee[]
-  users       User[]
-  contracts   Contract[]
-  bgMappings  BusinessGroupCompany[]
+  parent        Company?               @relation("CompanyTree", fields: [parentId], references: [id])
+  children      Company[]              @relation("CompanyTree")
+  partner       Partner?               @relation("CompanyPartner", fields: [partnerId], references: [id])
+  departments   Department[]
+  employees     Employee[]
+  users         User[]
+  contracts     Contract[]
+  bgMappings    BusinessGroupCompany[]
+  businessUnits BusinessUnit[]
 
   @@map("companies")
 }
@@ -179,6 +182,58 @@ model BusinessGroupCompany {
 
   @@id([businessGroupId, companyId])
   @@map("business_group_companies")
+}
+
+/// 业务单元：承担经营责任、利润中心属性、内部数据边界和审批责任。
+model BusinessUnit {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  type             String   @default("COMPREHENSIVE") // REGION | PRODUCT | PROJECT | COMPREHENSIVE
+  companyId        String // 所属平台管理主体；不代表合同签约或库存货权主体
+  parentId         String?
+  profitCenterCode String?
+  status           String   @default("ACTIVE") // ACTIVE | DISABLED
+  description      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  parent           BusinessUnit?      @relation("BusinessUnitTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children         BusinessUnit[]     @relation("BusinessUnitTree")
+  memberships      UserBusinessUnit[]
+  contracts        Contract[]
+  productionTasks  ProductionTask[]
+  businessInbounds BusinessInbound[]
+  inventoryLots    InventoryLot[]
+  inventoryLedgers InventoryLedger[]
+  outboundOrders   OutboundOrder[]
+  salesOutbounds   SalesOutbound[]
+
+  @@index([companyId, status])
+  @@index([parentId])
+  @@map("business_units")
+}
+
+/// 用户可以参与多个业务单元，并设置唯一默认业务单元。
+model UserBusinessUnit {
+  id             String    @id @default(cuid())
+  userId         String
+  businessUnitId String
+  isDefault      Boolean   @default(false)
+  status         String    @default("ACTIVE") // ACTIVE | DISABLED
+  effectiveAt    DateTime  @default(now())
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessUnit BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, businessUnitId])
+  @@index([businessUnitId, status])
+  @@index([userId, isDefault])
+  @@map("user_business_units")
 }
 
 // ========== 角色、权限与数据范围 ==========
@@ -792,8 +847,9 @@ model Contract {
   buyerId          String?
   // 我方信息
   signingPartnerId String? // 我方签约主体（内部合作伙伴）
-  companyId        String? // 签约主体（内部企业）
+  companyId        String? // 内部管理组织；法律签约主体以 signingPartnerId 为准
   departmentId     String? // 业务部门
+  businessUnitId   String? // 主业务单元（经营与利润中心归属）
   externalNo       String? // 外部合同号：纸质合同或其他系统合同编号
   // 对手方
   contactPerson    String? // 对手方联系人
@@ -831,6 +887,7 @@ model Contract {
   buyer          Partner?           @relation("ContractBuyer", fields: [buyerId], references: [id])
   signingPartner Partner?           @relation("ContractSigningPartner", fields: [signingPartnerId], references: [id])
   company        Company?           @relation(fields: [companyId], references: [id])
+  businessUnit   BusinessUnit?      @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
   orders         Order[]
 
   @@unique([createdBy, clientRequestId])
@@ -838,6 +895,7 @@ model Contract {
   @@index([status])
   @@index([sellerId])
   @@index([signingPartnerId])
+  @@index([businessUnitId])
   @@map("contracts")
 }
 
@@ -1421,6 +1479,7 @@ model BusinessInbound {
   receiptId      String   @unique
   warehouseId    String
   ownerPartnerId String?
+  businessUnitId String?
   materialId     String
   materialName   String
   supplierName   String?
@@ -1435,6 +1494,7 @@ model BusinessInbound {
   receipt        InboundReceipt      @relation(fields: [receiptId], references: [id])
   warehouse      Warehouse           @relation(fields: [warehouseId], references: [id])
   inventoryOwner Partner?            @relation("BusinessInboundOwner", fields: [ownerPartnerId], references: [id])
+  businessUnit   BusinessUnit?       @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
   material       Material            @relation(fields: [materialId], references: [id])
   creator        User                @relation("BusinessInboundCreator", fields: [createdBy], references: [id])
   inventoryLot   InventoryLot?
@@ -1443,6 +1503,7 @@ model BusinessInbound {
   @@index([inboundNo])
   @@index([warehouseId])
   @@index([ownerPartnerId])
+  @@index([businessUnitId])
   @@index([materialId])
   @@index([status])
   @@map("business_inbounds")
@@ -1455,6 +1516,7 @@ model InventoryLot {
   productionCompletionId String?  @unique
   warehouseId            String
   ownerPartnerId         String?
+  businessUnitId         String?
   materialId             String
   materialName           String
   supplierName           String?
@@ -1469,6 +1531,7 @@ model InventoryLot {
   productionCompletion  ProductionCompletion?          @relation(fields: [productionCompletionId], references: [id])
   warehouse             Warehouse                      @relation(fields: [warehouseId], references: [id])
   inventoryOwner        Partner?                       @relation("InventoryLotOwner", fields: [ownerPartnerId], references: [id])
+  businessUnit          BusinessUnit?                  @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
   material              Material                       @relation(fields: [materialId], references: [id])
   ledgers               InventoryLedger[]
   outboundAllocations   OutboundReceiptAllocation[]
@@ -1478,6 +1541,7 @@ model InventoryLot {
 
   @@index([warehouseId])
   @@index([ownerPartnerId])
+  @@index([businessUnitId])
   @@index([materialId])
   @@index([status])
   @@map("inventory_lots")
@@ -1488,6 +1552,7 @@ model InventoryLedger {
   lotId          String
   warehouseId    String
   materialId     String
+  businessUnitId String?
   businessType   String // INBOUND | OUTBOUND | ADJUSTMENT
   businessNo     String
   quantityChange Decimal  @db.Decimal(15, 3)
@@ -1496,14 +1561,16 @@ model InventoryLedger {
   createdBy      String
   createdAt      DateTime @default(now())
 
-  lot       InventoryLot @relation(fields: [lotId], references: [id])
-  warehouse Warehouse    @relation(fields: [warehouseId], references: [id])
-  material  Material     @relation(fields: [materialId], references: [id])
-  creator   User         @relation("InventoryLedgerCreator", fields: [createdBy], references: [id])
+  lot          InventoryLot  @relation(fields: [lotId], references: [id])
+  warehouse    Warehouse     @relation(fields: [warehouseId], references: [id])
+  material     Material      @relation(fields: [materialId], references: [id])
+  businessUnit BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
+  creator      User          @relation("InventoryLedgerCreator", fields: [createdBy], references: [id])
 
   @@index([lotId])
   @@index([warehouseId])
   @@index([materialId])
+  @@index([businessUnitId])
   @@index([businessType])
   @@map("inventory_ledgers")
 }
@@ -1571,6 +1638,7 @@ model ProductionTask {
   status                  String    @default("DRAFT") // DRAFT | RELEASED | MATERIAL_PREPARED | IN_PROGRESS | PENDING_QC | PARTIAL_COMPLETED | COMPLETED | CLOSED | CANCELLED
   recipeId                String
   ownerPartnerId          String
+  businessUnitId          String?
   processorOrganizationId String?
   sourceWarehouseId       String
   targetWarehouseId       String
@@ -1599,6 +1667,7 @@ model ProductionTask {
 
   recipe                ProductionRecipe       @relation(fields: [recipeId], references: [id])
   ownerPartner          Partner                @relation("ProductionTaskOwner", fields: [ownerPartnerId], references: [id])
+  businessUnit          BusinessUnit?          @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
   processorOrganization ServiceOrganization?   @relation(fields: [processorOrganizationId], references: [id])
   sourceWarehouse       Warehouse              @relation("ProductionTaskSourceWarehouse", fields: [sourceWarehouseId], references: [id])
   targetWarehouse       Warehouse              @relation("ProductionTaskTargetWarehouse", fields: [targetWarehouseId], references: [id])
@@ -1611,6 +1680,7 @@ model ProductionTask {
   @@index([mode])
   @@index([recipeId])
   @@index([ownerPartnerId])
+  @@index([businessUnitId])
   @@index([processorOrganizationId])
   @@index([sourceWarehouseId])
   @@index([targetWarehouseId])
@@ -1706,6 +1776,7 @@ model OutboundOrder {
   dispatchNoticeId String   @unique
   warehouseId      String?
   ownerPartnerId   String?
+  businessUnitId   String?
   status           String   @default("PENDING") // PENDING | PARTIAL | COMPLETED | CANCELLED
   plannedQuantity  Decimal  @db.Decimal(15, 3)
   reservedQuantity Decimal  @default(0) @db.Decimal(15, 3)
@@ -1718,6 +1789,7 @@ model OutboundOrder {
   dispatchNotice DispatchNotice      @relation(fields: [dispatchNoticeId], references: [id])
   warehouse      Warehouse?          @relation(fields: [warehouseId], references: [id])
   inventoryOwner Partner?            @relation("OutboundOrderOwner", fields: [ownerPartnerId], references: [id])
+  businessUnit   BusinessUnit?       @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
   creator        User                @relation("OutboundOrderCreator", fields: [createdBy], references: [id])
   lineItems      OutboundOrderLine[]
   receipts       OutboundReceipt[]
@@ -1725,6 +1797,7 @@ model OutboundOrder {
   @@index([orderNo])
   @@index([warehouseId])
   @@index([ownerPartnerId])
+  @@index([businessUnitId])
   @@index([status])
   @@map("outbound_orders")
 }
@@ -1814,29 +1887,32 @@ model OutboundReceiptAllocation {
 }
 
 model SalesOutbound {
-  id           String   @id @default(cuid())
-  outboundNo   String   @unique
-  receiptId    String   @unique
-  warehouseId  String
-  materialId   String
-  materialName String
-  customerName String?
-  quantity     Decimal  @db.Decimal(15, 3)
-  status       String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
-  postedAt     DateTime @default(now())
-  createdBy    String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  outboundNo     String   @unique
+  receiptId      String   @unique
+  warehouseId    String
+  businessUnitId String?
+  materialId     String
+  materialName   String
+  customerName   String?
+  quantity       Decimal  @db.Decimal(15, 3)
+  status         String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
+  postedAt       DateTime @default(now())
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  receipt   OutboundReceipt     @relation(fields: [receiptId], references: [id])
-  warehouse Warehouse           @relation(fields: [warehouseId], references: [id])
-  material  Material            @relation(fields: [materialId], references: [id])
-  creator   User                @relation("SalesOutboundCreator", fields: [createdBy], references: [id])
-  lines     SalesOutboundLine[]
-  reversals InventoryReversal[]
+  receipt      OutboundReceipt     @relation(fields: [receiptId], references: [id])
+  warehouse    Warehouse           @relation(fields: [warehouseId], references: [id])
+  material     Material            @relation(fields: [materialId], references: [id])
+  businessUnit BusinessUnit?       @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
+  creator      User                @relation("SalesOutboundCreator", fields: [createdBy], references: [id])
+  lines        SalesOutboundLine[]
+  reversals    InventoryReversal[]
 
   @@index([outboundNo])
   @@index([warehouseId])
+  @@index([businessUnitId])
   @@index([materialId])
   @@index([status])
   @@map("sales_outbounds")

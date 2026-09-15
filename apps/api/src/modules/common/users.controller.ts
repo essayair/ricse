@@ -21,6 +21,7 @@ export class UsersController {
   create(@Body() dto: {
     username: string; password: string; name: string; role?: string;
     employeeId?: string; companyId?: string; businessGroupId?: string;
+    businessUnitIds?: string[]; defaultBusinessUnitId?: string;
   }, @CurrentUser('id') operatedBy?: string) {
     if (!dto.username || !USERNAME_PATTERN.test(dto.username.trim())) {
       throw new BadRequestException('用户名须以字母或数字开头，可包含字母、数字、点、下划线和短横线，长度3-50位');

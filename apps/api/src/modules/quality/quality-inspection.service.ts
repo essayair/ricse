@@ -38,6 +38,7 @@ export class QualityInspectionService {
                     contract: {
                       select: {
                         id: true, contractNo: true, title: true, type: true,
+                        businessUnit: { select: { id: true, code: true, name: true } },
                         seller: { select: { id: true, name: true } },
                         buyer: { select: { id: true, name: true } },
                         signingPartner: { select: { id: true, name: true } },
@@ -125,6 +126,7 @@ export class QualityInspectionService {
                 contract: {
                   select: {
                     id: true, contractNo: true, title: true, type: true,
+                    businessUnit: { select: { id: true, code: true, name: true } },
                     seller: { select: { id: true, name: true } },
                     buyer: { select: { id: true, name: true } },
                     signingPartner: { select: { id: true, name: true } },
@@ -222,7 +224,7 @@ export class QualityInspectionService {
 
   async findTasks(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.view');
-    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const scope = await this.accessControl.getQualityTaskScope(userId, 'quality.view');
     const page = Math.max(1, params.page || 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize || 20));
     const where: Prisma.QualityTaskWhereInput = { deletedAt: null, AND: [scope] };
@@ -242,6 +244,8 @@ export class QualityInspectionService {
         { waybill: { lineItems: { some: { materialName: { contains: search, mode: 'insensitive' } } } } },
         { waybill: { dispatchNotice: { order: { name: { contains: search, mode: 'insensitive' } } } } },
         { waybill: { dispatchNotice: { order: { orderNo: { contains: search, mode: 'insensitive' } } } } },
+        { waybill: { dispatchNotice: { order: { contract: { businessUnit: { name: { contains: search, mode: 'insensitive' } } } } } } },
+        { waybill: { dispatchNotice: { order: { contract: { businessUnit: { code: { contains: search, mode: 'insensitive' } } } } } } },
         { reports: { some: { institutionName: { contains: search, mode: 'insensitive' } } } },
         { reports: { some: { reportNo: { contains: search, mode: 'insensitive' } } } },
       ];
@@ -255,7 +259,7 @@ export class QualityInspectionService {
 
   async findTask(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const scope = await this.accessControl.getQualityTaskScope(userId, permission);
     const task = await this.prisma.qualityTask.findFirst({
       where: { id, deletedAt: null, AND: [scope] }, include: this.taskInclude,
     });
@@ -328,8 +332,11 @@ export class QualityInspectionService {
     });
     if (existing) throw new BadRequestException(`样品编号“${sampleNo}”已存在`);
     const sampledAt = new Date(data.sampledAt);
-    const samplerName = data.samplerName.trim();
-    if (!samplerName) throw new BadRequestException('取样人不能为空');
+    const operator = data.samplerName?.trim()
+      ? null
+      : await this.accessControl.getContext(userId);
+    const samplerName = data.samplerName?.trim() || operator?.user.name?.trim();
+    if (!samplerName) throw new BadRequestException('当前账号未维护姓名，请填写取样人');
     const sample = await this.prisma.$transaction(async tx => {
       const created = await tx.qualitySample.create({
         data: {
@@ -413,7 +420,7 @@ export class QualityInspectionService {
 
   async findSample(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const scope = await this.accessControl.getQualityTaskScope(userId, permission);
     const sample = await this.prisma.qualitySample.findFirst({
       where: { id, deletedAt: null, qualityTask: { deletedAt: null, AND: [scope] } },
       include: {
@@ -437,7 +444,7 @@ export class QualityInspectionService {
       ? await this.findTask(qualityTaskId, userId, 'quality.view')
       : null;
     if (!task) await this.accessControl.assertPermission(userId, 'quality.view');
-    const scope = await this.accessControl.getWeighTicketScope(userId);
+    const scope = await this.accessControl.getWeighTicketScope(userId, 'quality.view');
     const tickets = await this.prisma.weighTicket.findMany({
       where: {
         ...(task ? { waybillId: task.waybillId } : {}),
@@ -517,7 +524,7 @@ export class QualityInspectionService {
       where: { id: dto.qualitySampleId, qualityTaskId: task.id, deletedAt: null, status: { not: 'VOIDED' } },
     });
     if (!sample) throw new BadRequestException('所选样品不存在或不属于当前质检任务');
-    const scope = await this.accessControl.getWeighTicketScope(userId);
+    const scope = await this.accessControl.getWeighTicketScope(userId, 'quality.manage');
     const ticket = await this.prisma.weighTicket.findFirst({
       where: { id: dto.weighTicketId, waybillId: task.waybillId, deletedAt: null, AND: [scope] },
       include: {
@@ -686,7 +693,7 @@ export class QualityInspectionService {
 
   async findAll(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.view');
-    const scope = await this.accessControl.getQualityInspectionScope(userId);
+    const scope = await this.accessControl.getQualityInspectionScope(userId, 'quality.view');
     const page = Math.max(1, params.page || 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize || 20));
     const where: Prisma.QualityInspectionWhereInput = { deletedAt: null, AND: [scope] };
@@ -720,7 +727,7 @@ export class QualityInspectionService {
 
   async findOne(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getQualityInspectionScope(userId);
+    const scope = await this.accessControl.getQualityInspectionScope(userId, permission);
     const item = await this.prisma.qualityInspection.findFirst({
       where: { id, deletedAt: null, AND: [scope] },
       include: this.include,
@@ -791,7 +798,7 @@ export class QualityInspectionService {
 
   async findAttachmentById(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getQualityInspectionScope(userId);
+    const scope = await this.accessControl.getQualityInspectionScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,
@@ -870,7 +877,7 @@ export class QualityInspectionService {
 
   async findSampleAttachmentById(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const scope = await this.accessControl.getQualityTaskScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,
@@ -892,7 +899,7 @@ export class QualityInspectionService {
 
   async findTaskAttachmentById(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getQualityTaskScope(userId);
+    const scope = await this.accessControl.getQualityTaskScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,

@@ -31,7 +31,7 @@ const ROOT_TYPES: Record<string, string> = {
 };
 
 const STATIC_SEGMENTS = new Set([
-  'form-options', 'attachments', 'contracts', 'orders', 'dispatch-notices', 'waybills',
+  'form-options', 'business-unit-options', 'attachments', 'contracts', 'orders', 'dispatch-notices', 'waybills',
   'availability', 'traceability', 'eligible-waybills', 'eligible-sources', 'eligible-lots',
   'eligible-weigh-tickets', 'batch', 'management-files', 'samples', 'sample-attachments',
 ]);

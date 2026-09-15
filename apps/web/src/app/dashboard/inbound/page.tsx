@@ -75,7 +75,7 @@ export default function InboundPage() {
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="搜索入库作业单、运单、磅单、质检单、合同、物料、供应商或车牌"
+            placeholder="搜索入库作业单、事业部、运单、磅单、质检单、合同、物料、供应商或车牌"
             value={search}
             onChange={event => setSearch(event.target.value)}
           />
@@ -140,6 +140,7 @@ export default function InboundPage() {
                       <td className="max-w-64 p-3">
                         <div className="truncate font-mono text-xs">{contract?.contractNo || '-'}</div>
                         <div className="mt-1 truncate">{order?.name || order?.orderNo || '-'}</div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">{contract?.businessUnit?.name || '未归属业务单元'}</div>
                       </td>
                       <td className="max-w-56 p-3">
                         <div className="truncate font-medium">{item.materialName}</div>

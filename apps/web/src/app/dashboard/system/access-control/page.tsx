@@ -35,12 +35,28 @@ interface Company {
   type: string;
 }
 
+interface BusinessUnit {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  companyId: string;
+  status: string;
+  profitCenterCode?: string | null;
+  company?: Company;
+}
+
 interface User {
   id: string;
   username: string;
   name: string;
   companyId?: string;
   company?: Company | null;
+  businessUnits?: Array<{
+    businessUnitId: string;
+    isDefault: boolean;
+    businessUnit: BusinessUnit;
+  }>;
   roleAssignments?: Array<{
     role: Role;
     scopeType: string;
@@ -69,7 +85,14 @@ const SCOPE_LABELS: Record<string, string> = {
   SELF: '本人创建',
   DEPARTMENT: '本部门',
   DEPARTMENT_AND_CHILDREN: '本部门及下级',
+  BUSINESS_UNIT: '指定业务单元（事业部）',
 };
+
+type AssignmentDraft = Record<string, {
+  scopeType: string;
+  targetCompanyIds: string[];
+  targetBusinessUnitIds: string[];
+}>;
 
 export default function AccessControlPage() {
   const [tab, setTab] = useState<'roles' | 'users'>('roles');
@@ -77,10 +100,13 @@ export default function AccessControlPage() {
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState('');
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<Set<string>>(new Set());
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [assignmentDraft, setAssignmentDraft] = useState<Record<string, { scopeType: string; targetCompanyIds: string[] }>>({});
+  const [assignmentDraft, setAssignmentDraft] = useState<AssignmentDraft>({});
+  const [selectedBusinessUnitIds, setSelectedBusinessUnitIds] = useState<Set<string>>(new Set());
+  const [defaultBusinessUnitId, setDefaultBusinessUnitId] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -88,16 +114,18 @@ export default function AccessControlPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [roleData, permissionData, userData, companyData] = await Promise.all([
+      const [roleData, permissionData, userData, companyData, businessUnitData] = await Promise.all([
         api.get<Role[]>('/access-control/roles'),
         api.get<Permission[]>('/access-control/permissions'),
         api.get<User[]>('/users'),
         api.get<Company[]>('/org/companies'),
+        api.get<BusinessUnit[]>('/org/business-units'),
       ]);
       setRoles(roleData || []);
       setPermissions(permissionData || []);
       setUsers(userData || []);
       setCompanies(companyData || []);
+      setBusinessUnits(businessUnitData || []);
       setSelectedRoleId((current) => current || roleData?.[0]?.id || '');
     } finally {
       setLoading(false);
@@ -113,16 +141,22 @@ export default function AccessControlPage() {
 
   useEffect(() => {
     const user = users.find((item) => item.id === selectedUserId);
-    const draft: Record<string, { scopeType: string; targetCompanyIds: string[] }> = {};
+    const draft: AssignmentDraft = {};
     for (const assignment of user?.roleAssignments || []) {
       draft[assignment.role.id] = {
         scopeType: assignment.scopeType,
         targetCompanyIds: assignment.scopes
           .filter((scope) => scope.targetType === 'COMPANY')
           .map((scope) => scope.targetId),
+        targetBusinessUnitIds: assignment.scopes
+          .filter((scope) => scope.targetType === 'BUSINESS_UNIT')
+          .map((scope) => scope.targetId),
       };
     }
     setAssignmentDraft(draft);
+    const memberships = user?.businessUnits || [];
+    setSelectedBusinessUnitIds(new Set(memberships.map((item) => item.businessUnitId)));
+    setDefaultBusinessUnitId(memberships.find((item) => item.isDefault)?.businessUnitId || memberships[0]?.businessUnitId || '');
   }, [selectedUserId, users]);
 
   const permissionGroups = useMemo(() => {
@@ -181,8 +215,9 @@ export default function AccessControlPage() {
         delete next[roleId];
       } else {
         next[roleId] = {
-          scopeType: isExternal ? 'COMPANY' : 'ALL',
+          scopeType: isExternal ? 'COMPANY' : selectedBusinessUnitIds.size ? 'BUSINESS_UNIT' : 'COMPANY',
           targetCompanyIds: isExternal && selectedUser?.companyId ? [selectedUser.companyId] : [],
+          targetBusinessUnitIds: isExternal ? [] : [...selectedBusinessUnitIds],
         };
       }
       return next;
@@ -197,14 +232,23 @@ export default function AccessControlPage() {
       targetCompanyIds: isExternal && selectedUser?.companyId
         ? [selectedUser.companyId]
         : value.targetCompanyIds,
+      targetBusinessUnitIds: isExternal ? [] : value.targetBusinessUnitIds,
     }));
     if (!assignments.length) {
       alert('用户至少需要一个角色');
       return;
     }
+    if (!isExternal && selectedUser?.companyId && selectedBusinessUnitIds.size === 0) {
+      alert('内部企业账号至少需要选择一个所属业务单元（事业部）');
+      return;
+    }
     setSaving(true);
     try {
-      await api.put(`/access-control/users/${selectedUserId}/assignments`, { assignments });
+      await api.put(`/access-control/users/${selectedUserId}/assignments`, {
+        assignments,
+        businessUnitIds: isExternal ? [] : [...selectedBusinessUnitIds],
+        defaultBusinessUnitId: isExternal ? null : defaultBusinessUnitId || null,
+      });
       await load();
       alert('用户授权已保存');
     } catch (error: any) {
@@ -325,12 +369,52 @@ export default function AccessControlPage() {
                     <p className="mt-1 text-sm text-muted-foreground">{selectedUser.company?.code} {selectedUser.company?.name}</p>
                     {isExternal && (
                       <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                        外部企业账号的数据范围固定为“本企业全部关联数据”，包括本企业作为买方、卖方或签约方的业务单据。
+                        外部企业账号的数据范围固定为“本企业全部关联数据”，仅生效合同、物流、磅单、质检和出入库等业务权限；主数据、组织和系统管理权限即使误配也不会生效。
                       </div>
                     )}
                   </div>
                   <Button onClick={saveUserAssignments} disabled={saving}><Save className="mr-2 h-4 w-4" />保存授权</Button>
                 </div>
+
+                {!isExternal && (
+                  <div className="mb-5 rounded-lg border bg-muted/20 p-4">
+                    <div className="font-medium">所属业务单元（事业部）</div>
+                    <p className="mt-1 text-xs text-muted-foreground">先选择该账号参与的业务单元（事业部），再为每个角色选择适用范围。所属关系本身不授予操作权限。</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {businessUnits.filter((unit) => unit.status === 'ACTIVE').map((unit) => {
+                        const checked = selectedBusinessUnitIds.has(unit.id);
+                        return (
+                          <div key={unit.id} className="flex items-start gap-2 rounded-md border bg-background p-3 text-sm">
+                            <input aria-label={`选择业务单元（事业部）${unit.name}`} type="checkbox" checked={checked} onChange={(event) => {
+                              const next = new Set(selectedBusinessUnitIds);
+                              if (event.target.checked) next.add(unit.id); else next.delete(unit.id);
+                              setSelectedBusinessUnitIds(next);
+                              setAssignmentDraft((current) => Object.fromEntries(Object.entries(current).map(([roleId, value]) => [roleId, {
+                                ...value,
+                                targetBusinessUnitIds: value.targetBusinessUnitIds.filter((id) => next.has(id)),
+                              }])));
+                              if (!event.target.checked && defaultBusinessUnitId === unit.id) {
+                                setDefaultBusinessUnitId([...next][0] || '');
+                              } else if (event.target.checked && !defaultBusinessUnitId) {
+                                setDefaultBusinessUnitId(unit.id);
+                              }
+                            }} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-medium">{unit.name}</span>
+                              <span className="block text-xs text-muted-foreground">{unit.code} · {unit.company?.name || '未关联企业'}{unit.profitCenterCode ? ` · 利润中心 ${unit.profitCenterCode}` : ''}</span>
+                            </span>
+                            {checked && (
+                              <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <input type="radio" name="default-business-unit" checked={defaultBusinessUnitId === unit.id} onChange={() => setDefaultBusinessUnitId(unit.id)} />默认
+                              </label>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {businessUnits.length === 0 && <div className="mt-3 text-sm text-muted-foreground">请先在“组织数据 → 业务单元（事业部）”中创建业务单元（事业部）。</div>}
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   {roles.filter((role) => role.status === 'ACTIVE').map((role) => {
@@ -356,10 +440,15 @@ export default function AccessControlPage() {
                                 <select value={assignment.scopeType}
                                   onChange={(event) => setAssignmentDraft((current) => ({
                                     ...current,
-                                    [role.id]: { ...current[role.id], scopeType: event.target.value, targetCompanyIds: [] },
+                                    [role.id]: {
+                                      ...current[role.id],
+                                      scopeType: event.target.value,
+                                      targetCompanyIds: [],
+                                      targetBusinessUnitIds: event.target.value === 'BUSINESS_UNIT' ? [...selectedBusinessUnitIds] : [],
+                                    },
                                   }))}
                                   className="h-9 rounded-md border bg-background px-3 text-sm">
-                                  {['ALL', 'COMPANY', 'SPECIFIED_COMPANIES', 'SELF', 'DEPARTMENT', 'DEPARTMENT_AND_CHILDREN'].map((scope) => (
+                                  {['BUSINESS_UNIT', 'COMPANY', 'SPECIFIED_COMPANIES', 'SELF', 'DEPARTMENT', 'DEPARTMENT_AND_CHILDREN', 'ALL'].map((scope) => (
                                     <option key={scope} value={scope}>{SCOPE_LABELS[scope]}</option>
                                   ))}
                                 </select>
@@ -383,6 +472,31 @@ export default function AccessControlPage() {
                                         {company.code} {company.name}
                                       </label>
                                     ))}
+                                  </div>
+                                )}
+                                {assignment.scopeType === 'BUSINESS_UNIT' && (
+                                  <div>
+                                    <div className="mb-2 text-xs font-medium text-muted-foreground">该角色适用的业务单元（事业部）</div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      {businessUnits.filter((unit) => selectedBusinessUnitIds.has(unit.id)).map((unit) => (
+                                        <label key={unit.id} className="flex items-center gap-2 text-sm">
+                                          <input type="checkbox" checked={assignment.targetBusinessUnitIds.includes(unit.id)}
+                                            onChange={(event) => setAssignmentDraft((current) => {
+                                              const existing = current[role.id].targetBusinessUnitIds;
+                                              return {
+                                                ...current,
+                                                [role.id]: {
+                                                  ...current[role.id],
+                                                  targetBusinessUnitIds: event.target.checked
+                                                    ? [...existing, unit.id]
+                                                    : existing.filter((id) => id !== unit.id),
+                                                },
+                                              };
+                                            })} />
+                                          {unit.name}
+                                        </label>
+                                      ))}
+                                    </div>
                                   </div>
                                 )}
                               </div>

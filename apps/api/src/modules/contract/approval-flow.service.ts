@@ -70,8 +70,8 @@ export class ApprovalFlowService {
     if (data.approvalMode && !['ALL', 'ANY'].includes(data.approvalMode)) {
       throw new BadRequestException('审批方式仅支持会签或或签');
     }
-    if (data.scopeType && !['DEPARTMENT', 'COMPANY', 'ALL'].includes(data.scopeType)) {
-      throw new BadRequestException('人员范围仅支持合同部门、合同企业或全平台');
+    if (data.scopeType && !['DEPARTMENT', 'BUSINESS_UNIT', 'COMPANY', 'ALL'].includes(data.scopeType)) {
+      throw new BadRequestException('人员范围仅支持合同业务单元、合同部门、合同企业或全平台');
     }
     return this.prisma.approvalFlowNode.update({ where: { id }, data });
   }

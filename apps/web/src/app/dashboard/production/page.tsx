@@ -42,16 +42,17 @@ export default function ProductionPage() {
       <Summary label="合格入库" value={quantity(data.summary.qualifiedQuantity)} />
     </div>
     <div className="flex flex-wrap gap-3">
-      <div className="relative min-w-72 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索任务编号、名称、来源单号、产出物料或加工商" /></div>
+      <div className="relative min-w-72 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索任务编号、名称、事业部、来源单号、产出物料或加工商" /></div>
       <select className="h-10 rounded-md border bg-background px-3 text-sm" value={mode} onChange={event => setMode(event.target.value)}><option value="">全部模式</option><option value="INTERNAL">自营生产</option><option value="OUTSOURCED">委外加工</option></select>
       <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(PRODUCTION_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     </div>
     <Card className="overflow-hidden">
-      {!data.items.length ? <div className="p-12 text-center text-muted-foreground"><Factory className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无生产任务</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1550px] text-sm">
-        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务编号 / 名称</th><th className="p-3">生产方式</th><th className="p-3">库存主体</th><th className="p-3">产出物料</th><th className="p-3">原料仓 → 成品仓</th><th className="p-3">加工服务商</th><th className="p-3 text-right">计划产量</th><th className="p-3 text-right">已入库</th><th className="p-3 text-right">实际收率</th><th className="p-3">来源</th><th className="p-3">状态</th><th className="p-3">创建时间</th></tr></thead>
+      {!data.items.length ? <div className="p-12 text-center text-muted-foreground"><Factory className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无生产任务</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1680px] text-sm">
+        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务编号 / 名称</th><th className="p-3">生产方式</th><th className="p-3">业务单元（事业部）</th><th className="p-3">库存主体</th><th className="p-3">产出物料</th><th className="p-3">原料仓 → 成品仓</th><th className="p-3">加工服务商</th><th className="p-3 text-right">计划产量</th><th className="p-3 text-right">已入库</th><th className="p-3 text-right">实际收率</th><th className="p-3">来源</th><th className="p-3">状态</th><th className="p-3">创建时间</th></tr></thead>
         <tbody>{data.items.map((item: any) => <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/production/${item.id}`)}>
           <td className="p-3"><div className="font-mono font-medium text-primary">{item.taskNo}</div><div className="mt-1 max-w-56 truncate">{item.name}</div></td>
           <td className="p-3"><Badge variant="outline">{item.mode === 'OUTSOURCED' ? '委外加工' : '自营生产'}</Badge></td>
+          <td className="p-3"><div>{item.businessUnit?.name || '未归属'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.businessUnit?.code || '-'}</div></td>
           <td className="p-3">{item.ownerPartner.name}</td><td className="p-3"><div>{item.outputMaterial.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.outputMaterial.code}</div></td>
           <td className="p-3">{item.sourceWarehouse.name} → {item.targetWarehouse.name}</td><td className="p-3">{item.processorOrganization?.partner?.name || '-'}</td>
           <td className="p-3 text-right">{quantity(item.plannedOutputQuantity)}</td><td className="p-3 text-right font-medium text-primary">{quantity(item.qualifiedQuantity)}</td><td className="p-3 text-right">{percent(item.actualYieldRate)}</td>

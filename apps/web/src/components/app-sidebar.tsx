@@ -111,7 +111,7 @@ const BASE_ITEMS: NavGroup[] = [
       { href: '/dashboard/org?tab=dept', label: '部门管理' },
       { href: '/dashboard/org?tab=employee', label: '员工管理' },
       { href: '/dashboard/org?tab=users', label: '用户账号' },
-      { href: '/dashboard/org?tab=business-group', label: '业务组' },
+      { href: '/dashboard/org?tab=business-group', label: '业务单元（事业部）' },
     ],
   },
 ];
@@ -159,6 +159,26 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
   const canViewContent = ['ADMIN', 'CONTENT_OPERATOR'].includes(userRole)
     || permissions.some((code) => code.startsWith('content.'));
   const canViewMonitor = userRole === 'ADMIN' || permissions.some((code) => code.startsWith('monitor.'));
+  const can = (permission: string) => userRole === 'ADMIN' || permissions.includes(permission);
+  const permissionForHref = (href: string) => {
+    if (href.startsWith('/dashboard/contracts')) return 'contract.view';
+    if (href.startsWith('/dashboard/orders') || href.startsWith('/dashboard/dispatch-notices')) return 'execution.view';
+    if (href.startsWith('/dashboard/dispatch') || href.startsWith('/dashboard/waybills') || href.startsWith('/dashboard/logistics-reconciliation')) return 'logistics.view';
+    if (href.startsWith('/dashboard/weighbridge') || href.startsWith('/dashboard/quality')) return 'quality.view';
+    if (href.startsWith('/dashboard/inventory') || href.startsWith('/dashboard/inbound') || href.startsWith('/dashboard/outbound')) return 'inventory.view';
+    if (href.startsWith('/dashboard/production')) return 'production.view';
+    if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/payables')) return 'settlement.view';
+    if (href.startsWith('/dashboard/master-data') || href.startsWith('/dashboard/org')) return 'organization.view';
+    return '';
+  };
+  const visibleGroups = (groups: NavGroup[]) => groups
+    .map((group) => ({ ...group, children: group.children.filter((item) => {
+      const required = permissionForHref(item.href);
+      return !required || can(required);
+    }) }))
+    .filter((group) => group.children.length > 0);
+  const businessGroups = visibleGroups(NAV_ITEMS);
+  const baseGroups = visibleGroups(BASE_ITEMS);
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
@@ -214,7 +234,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
         />
 
         {/* 业务模块 — accordion */}
-        {NAV_ITEMS.map((group) => (
+        {businessGroups.map((group) => (
           <SidebarGroupItem
             key={group.label}
             icon={group.icon}
@@ -263,23 +283,21 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
           />
         ))}
 
-        {/* 基础管理分隔线 */}
-        <div className="px-3 py-2">
-          <div className="h-px bg-border" />
-        </div>
-
-        {/* 基础管理 */}
-        <SidebarSectionLabel>基础管理</SidebarSectionLabel>
-
-        {BASE_ITEMS.map((group) => (
-          <SidebarGroupItem
-            key={group.label}
-            icon={group.icon}
-            label={group.label}
-            items={group.children}
-            isActive={isActive}
-          />
-        ))}
+        {baseGroups.length > 0 && (
+          <>
+            <div className="px-3 py-2"><div className="h-px bg-border" /></div>
+            <SidebarSectionLabel>基础管理</SidebarSectionLabel>
+            {baseGroups.map((group) => (
+              <SidebarGroupItem
+                key={group.label}
+                icon={group.icon}
+                label={group.label}
+                items={group.children}
+                isActive={isActive}
+              />
+            ))}
+          </>
+        )}
 
         {userRole === 'ADMIN' && SYSTEM_ITEMS.map((group) => (
           <SidebarGroupItem

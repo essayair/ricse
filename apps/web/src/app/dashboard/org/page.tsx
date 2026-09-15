@@ -17,10 +17,16 @@ const EMPLOYEE_STATUS_LABEL: Record<string, string> = { ACTIVE: '在职', DISABL
 
 type TabKey = 'company' | 'dept' | 'employee' | 'business-group' | 'users';
 
-interface CompanyItem { id: string; code: string; name: string; shortName?: string; type: string; status: string; partner?: { id: string; code: string; name: string } | null; departments?: { id: string; name: string }[]; _count?: { departments: number; employees: number; users: number } }
+interface CompanyItem { id: string; code: string; name: string; shortName?: string; type: string; status: string; isManagementEntity?: boolean; partner?: { id: string; code: string; name: string } | null; departments?: { id: string; name: string }[]; _count?: { departments: number; employees: number; users: number } }
 interface DeptItem { id: string; name: string; companyId: string; sort: number; company?: { code: string; name: string }; parentId?: string }
 interface EmployeeItem { id: string; name: string; departmentId: string; companyId: string; position?: string; phone?: string; email?: string; status: string; department?: { name: string }; company?: { code: string; name: string }; user?: { id: string; username: string; status: string } | null }
-interface BusinessGroupItem { id: string; name: string; description?: string; companies?: { company: { id: string; code: string; name: string } }[] }
+interface BusinessUnitItem {
+  id: string; code: string; name: string; description?: string; companyId: string;
+  type: string; status: string; profitCenterCode?: string;
+  company?: { id: string; code: string; name: string };
+  parent?: { id: string; code: string; name: string } | null;
+  _count?: { memberships: number; contracts: number; children: number };
+}
 interface RoleOption { id: string; code: string; name: string; status: string }
 interface UserItem {
   id: string; username: string; name: string; role: string; status: string;
@@ -33,13 +39,14 @@ interface UserItem {
     role: { id: string; code: string; name: string };
     scopes: Array<{ targetType: string; targetId: string }>;
   }>;
+  businessUnits?: Array<{ businessUnitId: string; isDefault: boolean; businessUnit: BusinessUnitItem }>;
 }
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'company', label: '企业维护', icon: Building2 },
   { key: 'dept', label: '部门管理', icon: Layers },
   { key: 'employee', label: '员工管理', icon: Users },
-  { key: 'business-group', label: '业务组', icon: Network },
+  { key: 'business-group', label: '业务单元（事业部）', icon: Network },
   { key: 'users', label: '用户账号', icon: Users },
 ];
 
@@ -64,7 +71,7 @@ function OrgPageInner() {
   const [companies, setCompanies] = useState<CompanyItem[]>([]);
   const [depts, setDepts] = useState<DeptItem[]>([]);
   const [employees, setEmployees] = useState<EmployeeItem[]>([]);
-  const [bgroups, setBgroups] = useState<BusinessGroupItem[]>([]);
+  const [bgroups, setBgroups] = useState<BusinessUnitItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
 
@@ -94,7 +101,6 @@ function OrgPageInner() {
   const [newPosition, setNewPosition] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newEmployeeStatus, setNewEmployeeStatus] = useState('ACTIVE');
-  const [newCode, setNewCode] = useState('');
   const [newParent, setNewParent] = useState('');
   const [newCompanyId, setNewCompanyId] = useState('');
   const [newUsername, setNewUsername] = useState('');
@@ -102,6 +108,11 @@ function OrgPageInner() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newBgroupId, setNewBgroupId] = useState('');
+  const [newBusinessUnitIds, setNewBusinessUnitIds] = useState<string[]>([]);
+  const [newDefaultBusinessUnitId, setNewDefaultBusinessUnitId] = useState('');
+  const [newUnitType, setNewUnitType] = useState('COMPREHENSIVE');
+  const [newProfitCenterCode, setNewProfitCenterCode] = useState('');
+  const [editingBusinessUnit, setEditingBusinessUnit] = useState<{ id: string; name: string } | null>(null);
   const [newRole, setNewRole] = useState('USER');
   const [partnerLoading, setPartnerLoading] = useState(false);
 
@@ -145,7 +156,7 @@ function OrgPageInner() {
         setEmpCompanyMap(empMap);
       }
       if (tab === 'business-group') {
-        const bgs = await api.get<BusinessGroupItem[]>('/org/business-groups');
+        const bgs = await api.get<BusinessUnitItem[]>('/org/business-units');
         setBgroups(Array.isArray(bgs) ? bgs : []);
         const cs = await api.get<CompanyItem[]>('/org/companies');
         setCompanies(Array.isArray(cs) ? cs : []);
@@ -157,7 +168,7 @@ function OrgPageInner() {
         const cs = await api.get<CompanyItem[]>('/org/companies');
         const companyList = Array.isArray(cs) ? cs : [];
         setCompanies(companyList);
-        const bgs = await api.get<BusinessGroupItem[]>('/org/business-groups');
+        const bgs = await api.get<BusinessUnitItem[]>('/org/business-units');
         setBgroups(Array.isArray(bgs) ? bgs : []);
         const es = await api.get<EmployeeItem[]>('/org/employees');
         setEmployees(Array.isArray(es) ? es : []);
@@ -268,6 +279,21 @@ function OrgPageInner() {
     } catch (e: any) { alert(e.message || '修改失败'); }
   };
 
+  const handleRenameBusinessUnit = async () => {
+    const name = editingBusinessUnit?.name.trim();
+    if (!editingBusinessUnit || !name) {
+      alert('请填写业务单元（事业部）名称');
+      return;
+    }
+    try {
+      await api.patch(`/org/business-units/${editingBusinessUnit.id}`, { name });
+      setEditingBusinessUnit(null);
+      await fetchAll();
+    } catch (e: any) {
+      alert(e.message || '修改失败');
+    }
+  };
+
   const handleCreate = async () => {
     if (creating) return;
 
@@ -292,9 +318,8 @@ function OrgPageInner() {
         return;
       }
     }
-    if (tab === 'business-group' && !trimmedName) {
-      alert('请填写业务组名称');
-      return;
+    if (tab === 'business-group') {
+      if (!trimmedName) { alert('请填写业务单元（事业部）名称'); return; }
     }
     if (tab === 'users') {
       if (!newCompanyId || !newParent) { alert('请选择企业和员工'); return; }
@@ -304,6 +329,11 @@ function OrgPageInner() {
       }
       if (!newPassword || newPassword.length < 6) { alert('密码至少6位'); return; }
       if (newPassword !== confirmPassword) { alert('两次输入的密码不一致'); return; }
+      const selectedCompany = companies.find((company) => company.id === newCompanyId);
+      if (selectedCompany?.type !== 'EXTERNAL' && newBusinessUnitIds.length === 0) {
+        alert('请选择账号所属业务单元（事业部）');
+        return;
+      }
     }
 
     setCreating(true);
@@ -328,7 +358,11 @@ function OrgPageInner() {
         });
       }
       if (tab === 'business-group') {
-        await api.post('/org/business-groups', { name: trimmedName });
+        await api.post('/org/business-units', {
+          name: trimmedName,
+          type: newUnitType,
+          profitCenterCode: newProfitCenterCode.trim() || undefined,
+        });
       }
       if (tab === 'users') {
         const emp = employees.find((e) => e.id === newParent);
@@ -339,9 +373,11 @@ function OrgPageInner() {
           employeeId: newParent,
           companyId: newCompanyId,
           businessGroupId: newBgroupId || undefined,
+          businessUnitIds: newBusinessUnitIds,
+          defaultBusinessUnitId: newDefaultBusinessUnitId || newBusinessUnitIds[0] || undefined,
         });
       }
-      setShowCreate(false); setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewCode(''); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); setNewRole('USER'); await fetchAll();
+      setShowCreate(false); setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); setNewBusinessUnitIds([]); setNewDefaultBusinessUnitId(''); setNewUnitType('COMPREHENSIVE'); setNewProfitCenterCode(''); setNewRole('USER'); await fetchAll();
     } catch (e: any) {
       alert(e.message || '创建失败');
     } finally {
@@ -470,13 +506,23 @@ function OrgPageInner() {
   };
 
   const typeLabel = (t: string) => t === 'INTERNAL' ? '内部企业' : '外部企业';
+  const selectedBusinessUnitCompany = companies.find((company) => company.isManagementEntity);
+  const businessUnitCodePrefix = selectedBusinessUnitCompany
+    ? `BU-${selectedBusinessUnitCompany.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 40)}-`
+    : '';
+  const businessUnitCodePreview = businessUnitCodePrefix
+    ? `${businessUnitCodePrefix}${String(Math.max(0, ...bgroups
+        .filter((unit) => unit.code.startsWith(businessUnitCodePrefix))
+        .map((unit) => Number(unit.code.slice(businessUnitCodePrefix.length)))
+        .filter(Number.isFinite)) + 1).padStart(3, '0')}`
+    : '配置平台管理主体后自动生成';
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">组织数据</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理企业、部门、员工和业务组</p>
+          <p className="text-sm text-muted-foreground mt-1">管理企业、部门、员工、业务单元（事业部）和用户账号</p>
         </div>
         {tab === 'dept' ? (
           <Button onClick={async () => {
@@ -498,7 +544,7 @@ function OrgPageInner() {
               } catch (e: any) { alert('加载合作伙伴失败: ' + (e.message || '未知错误')); return; }
               finally { setPartnerLoading(false); }
             }
-            setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId('');
+            setNewName(''); setNewPhone(''); setNewPosition(''); setNewEmail(''); setNewEmployeeStatus('ACTIVE'); setNewParent(''); setNewCompanyId(''); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowNewPassword(false); setNewBgroupId(''); setNewBusinessUnitIds([]); setNewDefaultBusinessUnitId(''); setNewUnitType('COMPREHENSIVE'); setNewProfitCenterCode('');
             setShowCreate(true); setSelectedPartner(null);
           }}><Plus className="h-4 w-4 mr-1" />新建</Button>
         )}
@@ -561,7 +607,7 @@ function OrgPageInner() {
       {showCreate && tab !== 'company' && (
         <Card className="p-4 space-y-3">
           <h3 className="font-semibold text-sm">
-            {tab === 'dept' ? '新建部门' : tab === 'employee' ? '新建员工' : tab === 'users' ? '开通账号' : '新建业务组'}
+            {tab === 'dept' ? '新建部门' : tab === 'employee' ? '新建员工' : tab === 'users' ? '开通账号' : '新建业务单元（事业部）'}
           </h3>
 
           {/* dept: company selector first, then name */}
@@ -650,6 +696,8 @@ function OrgPageInner() {
                 setNewUsername('');
                 setNewPassword('');
                 setConfirmPassword('');
+                setNewBusinessUnitIds([]);
+                setNewDefaultBusinessUnitId('');
               }}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">1. 选择所属企业</option>
@@ -725,18 +773,68 @@ function OrgPageInner() {
                       <p className="mt-1 text-xs text-muted-foreground">默认数据范围为所属企业，后续可在“角色权限”中调整。</p>
                     </div>
                   )}
-                  <select value={newBgroupId} onChange={(e) => setNewBgroupId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    <option value="">选择业务组（可选）</option>
-                    {bgroups.map((bg) => <option key={bg.id} value={bg.id}>{bg.name}</option>)}
-                  </select>
+                  {companies.find((company) => company.id === newCompanyId)?.type !== 'EXTERNAL' ? (
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs font-medium text-muted-foreground">所属业务单元（事业部） *</div>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {bgroups.filter((unit) => unit.status === 'ACTIVE').map((unit) => {
+                          const checked = newBusinessUnitIds.includes(unit.id);
+                          return (
+                            <div key={unit.id} className="flex items-center gap-2 text-sm">
+                              <input type="checkbox" checked={checked} onChange={(event) => {
+                                const next = event.target.checked
+                                  ? [...newBusinessUnitIds, unit.id]
+                                  : newBusinessUnitIds.filter((id) => id !== unit.id);
+                                setNewBusinessUnitIds(next);
+                                if (event.target.checked && !newDefaultBusinessUnitId) setNewDefaultBusinessUnitId(unit.id);
+                                if (!event.target.checked && newDefaultBusinessUnitId === unit.id) setNewDefaultBusinessUnitId(next[0] || '');
+                              }} />
+                              <span className="min-w-0 flex-1">{unit.name}</span>
+                              {checked && (
+                                <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <input type="radio" name="new-default-business-unit" checked={newDefaultBusinessUnitId === unit.id} onChange={() => setNewDefaultBusinessUnitId(unit.id)} />默认
+                                </label>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {bgroups.filter((unit) => unit.status === 'ACTIVE').length === 0 && <p className="mt-2 text-xs text-destructive">平台尚无可用业务单元（事业部），请先创建。</p>}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                      外部企业账号不配置内部业务单元（事业部），数据范围按所属外部企业控制。
+                    </div>
+                  )}
                 </>
               )}
             </>
           )}
 
-          {/* business-group: just name */}
+          {/* 业务单元 */}
           {tab === 'business-group' && (
-            <Input placeholder="业务组名称" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            <>
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">平台管理主体：</span>
+                {selectedBusinessUnitCompany
+                  ? `${selectedBusinessUnitCompany.code} ${selectedBusinessUnitCompany.name}`
+                  : '尚未配置'}
+                <p className="mt-1 text-xs text-muted-foreground">业务单元统一归属平台管理主体，与合同选择的我方签约主体相互独立。</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">业务单元（事业部）编码</label>
+                <Input value={businessUnitCodePreview} readOnly className="bg-muted/40 font-mono" />
+                <p className="mt-1 text-xs text-muted-foreground">编码由系统按“BU-企业编码-三位流水号”生成，创建后不可修改。</p>
+              </div>
+              <Input placeholder="业务单元（事业部）名称，例如 玉门事业部" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              <select value={newUnitType} onChange={(e) => setNewUnitType(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="COMPREHENSIVE">综合型</option>
+                <option value="REGION">区域型</option>
+                <option value="PRODUCT">产品型</option>
+                <option value="PROJECT">项目型</option>
+              </select>
+              <Input placeholder="利润中心编码（可选）" value={newProfitCenterCode} onChange={(e) => setNewProfitCenterCode(e.target.value)} />
+            </>
           )}
 
           <div className="flex gap-2 justify-end">
@@ -753,6 +851,8 @@ function OrgPageInner() {
               setConfirmPassword('');
               setShowNewPassword(false);
               setNewRole('USER');
+              setNewBusinessUnitIds([]);
+              setNewDefaultBusinessUnitId('');
             }}>取消</Button>
             <Button
               onClick={handleCreate}
@@ -817,10 +917,13 @@ function OrgPageInner() {
               <DataTable headers={['编码', '名称 / 合作伙伴', '类型', '组织规模', '状态', '操作']} rows={companies.map((c) => [
                 <span key="co" className="font-mono text-xs">{c.code}</span>,
                 <div key="nm"><div className="font-medium">{c.name}</div><div className="mt-1 text-xs text-muted-foreground">{c.shortName || c.partner?.name || '—'}</div></div>,
-                <Badge key="tp" variant={c.type === 'INTERNAL' ? 'default' : 'secondary'} className="text-xs">{typeLabel(c.type)}</Badge>,
+                <div key="tp" className="flex flex-wrap gap-1">
+                  <Badge variant={c.type === 'INTERNAL' ? 'default' : 'secondary'} className="text-xs">{typeLabel(c.type)}</Badge>
+                  {c.isManagementEntity && <Badge variant="outline" className="text-xs text-primary">平台管理主体</Badge>}
+                </div>,
                 <div key="sz" className="text-xs"><div>{c._count?.departments ?? c.departments?.length ?? 0} 个部门 · {c._count?.employees ?? 0} 名员工</div><div className="mt-1 text-muted-foreground">{c._count?.users ?? 0} 个账号</div></div>,
                 <StatusText key="st" status={c.status}>{c.status === 'ACTIVE' ? '启用' : '停用'}</StatusText>,
-                <button key="op" onClick={async () => {
+                c.isManagementEntity ? <span key="op" className="text-xs text-muted-foreground">管理主体锁定</span> : <button key="op" onClick={async () => {
                   const newStatus = c.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
                   if (!confirm(newStatus === 'DISABLED'
                     ? `确定停用企业 ${c.name}？\n该企业下的后台账号将无法继续登录。`
@@ -1080,13 +1183,44 @@ function OrgPageInner() {
               </div>
             )}
 
-            {/* 业务组 */}
+            {/* 业务单元 */}
             {tab === 'business-group' && (
-              <DataTable headers={['名称', '关联企业', '说明']} rows={bgroups.map((bg) => [
-                <span key="nm" className="font-medium">{bg.name}</span>,
-                <span key="cs" className="text-xs text-muted-foreground">{bg.companies?.map((c) => c.company.code).join('、') || '—'}</span>,
-                <span key="ds" className="text-muted-foreground">{bg.description || '—'}</span>,
-              ])} empty="暂无业务组数据" />
+              <DataTable headers={['编码 / 名称', '平台管理主体', '类型', '利润中心', '使用情况', '状态', '操作']} rows={bgroups.map((unit) => [
+                <div key="nm">
+                  {editingBusinessUnit?.id === unit.id ? (
+                    <div className="flex min-w-[220px] items-center gap-1.5">
+                      <Input
+                        value={editingBusinessUnit.name}
+                        onChange={(event) => setEditingBusinessUnit({ ...editingBusinessUnit, name: event.target.value })}
+                        className="h-8"
+                        autoFocus
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') void handleRenameBusinessUnit();
+                          if (event.key === 'Escape') setEditingBusinessUnit(null);
+                        }}
+                      />
+                      <button type="button" onClick={() => void handleRenameBusinessUnit()} className="rounded p-1 text-primary hover:bg-primary/10" aria-label="保存名称"><Check className="h-4 w-4" /></button>
+                      <button type="button" onClick={() => setEditingBusinessUnit(null)} className="rounded p-1 text-muted-foreground hover:bg-muted" aria-label="取消编辑"><X className="h-4 w-4" /></button>
+                    </div>
+                  ) : (
+                    <div className="font-medium">{unit.name}</div>
+                  )}
+                  <div className="font-mono text-xs text-muted-foreground">{unit.code}</div>
+                </div>,
+                <span key="company" className="text-xs">{unit.company ? `${unit.company.code} ${unit.company.name}` : '—'}</span>,
+                <span key="type" className="text-xs text-muted-foreground">{{ REGION: '区域型', PRODUCT: '产品型', PROJECT: '项目型', COMPREHENSIVE: '综合型' }[unit.type] || unit.type}</span>,
+                <span key="profit" className="font-mono text-xs text-muted-foreground">{unit.profitCenterCode || '—'}</span>,
+                <span key="usage" className="text-xs text-muted-foreground">{unit._count?.memberships || 0} 名成员 · {unit._count?.contracts || 0} 份合同</span>,
+                <StatusText key="status" tone={unit.status === 'ACTIVE' ? 'success' : 'muted'}>{unit.status === 'ACTIVE' ? '启用' : '停用'}</StatusText>,
+                <button
+                  key="operation"
+                  type="button"
+                  onClick={() => setEditingBusinessUnit({ id: unit.id, name: unit.name })}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <Pencil className="h-3 w-3" />修改名称
+                </button>,
+              ])} empty="暂无业务单元（事业部）数据" />
             )}
           </>
         )}

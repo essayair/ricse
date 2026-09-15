@@ -27,6 +27,7 @@ export class OrderService {
         title: true,
         type: true,
         status: true,
+        businessUnit: { select: { id: true, code: true, name: true } },
         signingPartner: { select: { id: true, name: true } },
         seller: { select: { id: true, name: true } },
         buyer: { select: { id: true, name: true } },
@@ -58,7 +59,7 @@ export class OrderService {
 
   async create(dto: CreateOrderDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'execution.manage');
-    const scope = await this.accessControl.getContractScope(userId);
+    const scope = await this.accessControl.getContractScope(userId, 'execution.manage');
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('请填写执行批次名称');
     const contract = await this.prisma.contract.findFirst({
@@ -144,7 +145,7 @@ export class OrderService {
 
   async findAll(params: { page?: number; pageSize?: number; status?: string; type?: string; search?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'execution.view');
-    const scope = await this.accessControl.getOrderScope(userId);
+    const scope = await this.accessControl.getOrderScope(userId, 'execution.view');
     const page = params.page || 1;
     const pageSize = Math.min(params.pageSize || 20, 100);
     const where: Prisma.OrderWhereInput = { deletedAt: null, AND: [scope] };
@@ -156,6 +157,8 @@ export class OrderService {
         { name: { contains: params.search, mode: 'insensitive' } },
         { contract: { contractNo: { contains: params.search, mode: 'insensitive' } } },
         { contract: { title: { contains: params.search, mode: 'insensitive' } } },
+        { contract: { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } } },
+        { contract: { businessUnit: { code: { contains: params.search, mode: 'insensitive' } } } },
       ];
     }
     const [items, total] = await Promise.all([
@@ -173,7 +176,7 @@ export class OrderService {
 
   async getContractAvailability(contractId: string, type: string, userId: string, excludeOrderId?: string) {
     await this.accessControl.assertPermission(userId, 'execution.view');
-    const scope = await this.accessControl.getContractScope(userId);
+    const scope = await this.accessControl.getContractScope(userId, 'execution.view');
     if (!['PURCHASE', 'SALES'].includes(type)) throw new BadRequestException('执行批次类型无效');
     const contract = await this.prisma.contract.findFirst({
       where: { id: contractId, deletedAt: null, AND: [scope] },
@@ -219,7 +222,7 @@ export class OrderService {
 
   async findOne(id: string, userId: string, permission = 'execution.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getOrderScope(userId);
+    const scope = await this.accessControl.getOrderScope(userId, permission);
     const order = await this.prisma.order.findFirst({
       where: { id, deletedAt: null, AND: [scope] },
       include: this.include,

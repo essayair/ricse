@@ -14,13 +14,14 @@ export default function NewProductionTaskPage() {
   const [recipes, setRecipes] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [processors, setProcessors] = useState<any[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', mode: 'INTERNAL', recipeId: '', ownerPartnerId: '', sourceWarehouseId: '', targetWarehouseId: '', processorOrganizationId: '', plannedOutputQuantity: '', sourceType: 'MANUAL', sourceOrderNo: '', processingFeeRate: '', operatorName: '', plannedStartAt: '', plannedEndAt: '', remarks: '' });
+  const [form, setForm] = useState({ name: '', mode: 'INTERNAL', recipeId: '', ownerPartnerId: '', businessUnitId: '', sourceWarehouseId: '', targetWarehouseId: '', processorOrganizationId: '', plannedOutputQuantity: '', sourceType: 'MANUAL', sourceOrderNo: '', processingFeeRate: '', operatorName: '', plannedStartAt: '', plannedEndAt: '', remarks: '' });
   const recipe = recipes.find(item => item.id === form.recipeId);
 
   useEffect(() => {
-    Promise.all([api.get<any[]>('/production/recipes?status=ACTIVE'), api.get<any[]>('/master-data/warehouses'), api.get<{ items: any[] }>('/service-organizations?type=PROCESSING_PROVIDER&status=ACTIVE&pageSize=200')])
-      .then(([recipeData, warehouseData, processorData]) => { setRecipes(recipeData || []); setWarehouses((warehouseData || []).filter(item => item.status === 'ACTIVE')); setProcessors(processorData.items || []); })
+    Promise.all([api.get<any[]>('/production/recipes?status=ACTIVE'), api.get<any[]>('/master-data/warehouses'), api.get<{ items: any[] }>('/service-organizations?type=PROCESSING_PROVIDER&status=ACTIVE&pageSize=200'), api.get<any[]>('/production/business-unit-options')])
+      .then(([recipeData, warehouseData, processorData, businessUnitData]) => { setRecipes(recipeData || []); setWarehouses((warehouseData || []).filter(item => item.status === 'ACTIVE')); setProcessors(processorData.items || []); setBusinessUnits(businessUnitData || []); setForm(current => ({ ...current, businessUnitId: current.businessUnitId || businessUnitData.find((unit: any) => unit.isDefault)?.id || (businessUnitData.length === 1 ? businessUnitData[0].id : '') })); })
       .catch((error: any) => alert(error.message));
   }, []);
 
@@ -29,7 +30,7 @@ export default function NewProductionTaskPage() {
     setForm(current => ({ ...current, recipeId, ownerPartnerId: selected?.ownerPartnerId || '', plannedOutputQuantity: selected ? String(selected.baseOutputQuantity) : '', name: selected ? `${selected.name}生产任务` : current.name }));
   };
   const submit = async () => {
-    if (!form.name.trim() || !form.recipeId || !form.sourceWarehouseId || !form.targetWarehouseId || !Number(form.plannedOutputQuantity)) return alert('请完整填写生产方案、任务名称、原料仓、成品仓和计划产量');
+    if (!form.name.trim() || !form.recipeId || !form.businessUnitId || !form.sourceWarehouseId || !form.targetWarehouseId || !Number(form.plannedOutputQuantity)) return alert('请完整填写业务单元、生产方案、任务名称、原料仓、成品仓和计划产量');
     if (form.mode === 'OUTSOURCED' && !form.processorOrganizationId) return alert('委外加工必须选择加工服务商');
     setSaving(true);
     try {
@@ -42,6 +43,7 @@ export default function NewProductionTaskPage() {
     <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">新建生产任务</h1><p className="mt-1 text-sm text-muted-foreground">生产任务创建为草稿，确认计划后再下达并预占原料批次</p></div></div>
     <Card className="space-y-5 p-6"><h2 className="font-semibold">任务信息</h2><div className="grid gap-4 md:grid-cols-2">
       <Field label="生产方案 *"><Select value={form.recipeId} onChange={chooseRecipe} options={recipes.map(item => ({ value: item.id, label: `${item.recipeNo} · ${item.name}` }))} /></Field>
+      <Field label="业务单元（事业部） *"><Select value={form.businessUnitId} onChange={value => setForm({ ...form, businessUnitId: value })} options={businessUnits.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Field>
       <Field label="任务名称 *"><Input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} /></Field>
       <Field label="生产方式 *"><select className="h-10 w-full rounded-md border bg-background px-3" value={form.mode} onChange={event => setForm({ ...form, mode: event.target.value })}><option value="INTERNAL">自营生产</option><option value="OUTSOURCED">委外加工</option></select></Field>
       <Field label="库存主体"><Input value={recipe?.ownerPartner?.name || ''} disabled placeholder="由生产方案确定" /></Field>

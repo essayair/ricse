@@ -50,6 +50,13 @@ interface CurrentUserProfile {
   employee?: { departmentId?: string | null } | null;
 }
 
+interface ContractFormOptions {
+  defaultDepartmentId?: string | null;
+  defaultBusinessUnitId?: string | null;
+  departments: DepartmentItem[];
+  businessUnits: Array<{ id: string; code: string; name: string; companyId: string; isDefault?: boolean }>;
+}
+
 export default function ContractEditPage() {
   const router = useRouter();
   const params = useParams();
@@ -63,6 +70,7 @@ export default function ContractEditPage() {
   const [supplierPartners, setSupplierPartners] = useState<any[]>([]);
   const [customerPartners, setCustomerPartners] = useState<any[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<ContractFormOptions['businessUnits']>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ file: File; name: string }>>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
@@ -70,7 +78,7 @@ export default function ContractEditPage() {
 
   const [form, setForm] = useState({
     type: 'PURCHASE', title: '',
-    signingPartnerId: '', departmentId: '', externalNo: '',
+    signingPartnerId: '', departmentId: '', businessUnitId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     pricingType: 'FIXED', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
@@ -97,9 +105,9 @@ export default function ContractEditPage() {
       api.get<{ items: any[] }>('/partners?role=CUSTOMER'),
       api.get<{ items: any[] }>('/partners'),
       api.get<{ items: any[] }>('/master-data/materials'),
-      api.get<DepartmentItem[]>('/org/departments'),
+      api.get<ContractFormOptions>('/contracts/form-options'),
       api.get<CurrentUserProfile>('/auth/profile'),
-    ]).then(([contract, supplierData, customerData, allData, materialData, departmentItems, profile]) => {
+    ]).then(([contract, supplierData, customerData, allData, materialData, formOptions, profile]) => {
       const suppliers = supplierData.items || [];
       const customers = customerData.items || [];
       const all = allData.items || [];
@@ -110,8 +118,9 @@ export default function ContractEditPage() {
       setInternalPartners(all.filter((p: any) => p.isInternal));
       setMaterials(materialData.items || []);
       setDepartments(companyId
-        ? departmentItems.filter((item) => item.companyId === companyId)
-        : departmentItems);
+        ? formOptions.departments.filter((item) => item.companyId === companyId)
+        : formOptions.departments);
+      setBusinessUnits(formOptions.businessUnits);
       setAttachments(contract.attachments || []);
 
       const persistedForm = {
@@ -119,6 +128,7 @@ export default function ContractEditPage() {
         title: contract.title || '',
         signingPartnerId: contract.signingPartnerId || '',
         departmentId: contract.departmentId || profile.employee?.departmentId || '',
+        businessUnitId: contract.businessUnitId || formOptions.defaultBusinessUnitId || '',
         externalNo: contract.externalNo || '',
         sellerId: contract.sellerId || '',
         buyerId: contract.buyerId || '',
@@ -227,6 +237,7 @@ export default function ContractEditPage() {
         buyerId: form.buyerId || null,
         signingPartnerId: form.signingPartnerId || null,
         departmentId: form.departmentId || null,
+        businessUnitId: form.businessUnitId || null,
         draftData: { form, lineItems },
         lineItems: validItems.map(item => ({
           materialId: item.materialId,
@@ -349,23 +360,45 @@ export default function ContractEditPage() {
       <div className="max-w-4xl space-y-4">
         {/* 基本信息 */}
         <Card className="p-6">
+          <SectionTitle>合同类型</SectionTitle>
+          <div className="mb-6 flex gap-2">
+            {[{ key: 'PURCHASE', label: '采购合同' }, { key: 'SALES', label: '销售合同' }, { key: 'BILATERAL', label: '双边合同' }].map(t => (
+              <button key={t.key} type="button" onClick={() => set('type', t.key)}
+                className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${form.type === t.key ? 'border-primary bg-primary/5 text-primary' : 'border-input text-muted-foreground'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
           <SectionTitle>合同基本信息</SectionTitle>
+          <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+            <div className="mb-3 text-xs font-semibold text-muted-foreground">内部管理信息 · 不属于合同正文</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <FormField label="业务单元（事业部）" required>
+                <select value={form.businessUnitId} onChange={e => set('businessUnitId', e.target.value)} className={SELECT_CLS}>
+                  <option value="">请选择业务单元（事业部）</option>
+                  {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.code} {unit.name}</option>)}
+                </select>
+                <span className="text-xs text-muted-foreground">确定经营归属、数据范围及按业务单元（事业部）匹配的审批人员</span>
+              </FormField>
+              <FormField label="业务部门" required>
+                <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} className={SELECT_CLS}>
+                  <option value="">请选择业务部门</option>
+                  {departments.map(department => (
+                    <option key={department.id} value={department.id}>
+                      {department.company?.name ? `${department.company.name} / ` : ''}{department.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-muted-foreground">默认带入发起人所属部门，可按实际业务调整并用于部门审批节点</span>
+              </FormField>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <div className="col-span-2">
               <FormField label="合同标题" required>
                 <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" />
               </FormField>
             </div>
-            <FormField label="合同类型">
-              <div className="flex gap-2">
-                {[{ key: 'PURCHASE', label: '采购' }, { key: 'SALES', label: '销售' }, { key: 'BILATERAL', label: '双边' }].map(t => (
-                  <button key={t.key} type="button" onClick={() => set('type', t.key)}
-                    className={`px-3 py-1.5 rounded-md border text-sm transition-colors ${form.type === t.key ? 'border-primary bg-primary/5 text-primary' : 'border-input text-muted-foreground'}`}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </FormField>
             <FormField label="外部合同号">
               <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
             </FormField>
@@ -380,39 +413,42 @@ export default function ContractEditPage() {
                   })}
               </select>
             </FormField>
-            <FormField label="业务部门" required>
-              <select value={form.departmentId} onChange={e => set('departmentId', e.target.value)} className={SELECT_CLS}>
-                <option value="">请选择业务部门</option>
-                {departments.map(department => (
-                  <option key={department.id} value={department.id}>
-                    {department.company?.name ? `${department.company.name} / ` : ''}{department.name}
-                  </option>
-                ))}
-              </select>
-              <span className="text-xs text-muted-foreground">用于匹配业务主管等按部门配置的审批节点</span>
-            </FormField>
           </div>
 
           <SectionTitle>交易对手方</SectionTitle>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <FormField label={form.type === 'PURCHASE' ? '供应商' : form.type === 'SALES' ? '客户' : '上游供应商'} required>
+          {form.type === 'BILATERAL' ? (
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-3 rounded-lg border border-red-200 bg-red-50/60 p-4 dark:border-red-900/60 dark:bg-red-950/20">
+                <div className="text-xs font-bold tracking-wider text-red-700 dark:text-red-400">上游交易对手方 · 供应商（采购端）</div>
+                <FormField label="上游供应商" required>
+                  <select value={form.sellerId} onChange={e => set('sellerId', e.target.value)} className={SELECT_CLS}>
+                    <option value="">请选择</option>
+                    {supplierPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
+                  </select>
+                </FormField>
+              </div>
+              <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+                <div className="text-xs font-bold tracking-wider text-blue-700 dark:text-blue-400">下游交易对手方 · 客户（销售端）</div>
+                <FormField label="下游客户" required>
+                  <select value={form.buyerId} onChange={e => set('buyerId', e.target.value)} className={SELECT_CLS}>
+                    <option value="">请选择</option>
+                    {customerPartners.map(p => {
+                      const disabled = p.id === form.signingPartnerId || p.id === form.sellerId;
+                      const suffix = p.id === form.signingPartnerId ? '（我方）' : p.id === form.sellerId ? '（已选为上游）' : '';
+                      return <option key={p.id} value={p.id} disabled={disabled}>{p.code} {p.name}{suffix}</option>;
+                    })}
+                  </select>
+                </FormField>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+            <FormField label={form.type === 'PURCHASE' ? '交易对手方（供应商）' : '交易对手方（客户）'} required>
               <select value={form.sellerId} onChange={e => set('sellerId', e.target.value)} className={SELECT_CLS}>
                 <option value="">请选择</option>
-                {(form.type === 'PURCHASE' || form.type === 'BILATERAL' ? supplierPartners : customerPartners).map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
+                {(form.type === 'PURCHASE' ? supplierPartners : customerPartners).map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
               </select>
             </FormField>
-            {form.type === 'BILATERAL' && (
-              <FormField label="下游客户" required>
-                <select value={form.buyerId} onChange={e => set('buyerId', e.target.value)} className={SELECT_CLS}>
-                  <option value="">请选择</option>
-                  {customerPartners.map(p => {
-                    const disabled = p.id === form.signingPartnerId || p.id === form.sellerId;
-                    const suffix = p.id === form.signingPartnerId ? '（我方）' : p.id === form.sellerId ? '（已选为上游）' : '';
-                    return <option key={p.id} value={p.id} disabled={disabled}>{p.code} {p.name}{suffix}</option>;
-                  })}
-                </select>
-              </FormField>
-            )}
             <FormField label="联系人">
               <Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} />
             </FormField>
@@ -420,6 +456,16 @@ export default function ContractEditPage() {
               <Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} />
             </FormField>
           </div>
+          )}
+          {form.type === 'BILATERAL' && (
+            <>
+              <div className="mb-3 mt-4 text-xs font-medium text-muted-foreground">本合同主要对接人（可选）</div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <FormField label="联系人"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></FormField>
+                <FormField label="联系电话"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></FormField>
+              </div>
+            </>
+          )}
         </Card>
 
         {/* 货物行项 */}

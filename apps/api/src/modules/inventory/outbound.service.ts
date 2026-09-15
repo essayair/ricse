@@ -12,6 +12,13 @@ export class OutboundService {
   ) {}
 
   private readonly include = {
+    outboundOrder: {
+      select: {
+        id: true,
+        businessUnitId: true,
+        businessUnit: { select: { id: true, code: true, name: true } },
+      },
+    },
     warehouse: { select: { id: true, code: true, name: true } },
     material: { select: { id: true, code: true, name: true, unit: true } },
     creator: { select: { id: true, name: true } },
@@ -29,7 +36,12 @@ export class OutboundService {
             warehouse: { select: { id: true, code: true, name: true } },
             order: {
               include: {
-                contract: { select: { id: true, contractNo: true, title: true } },
+                contract: {
+                  select: {
+                    id: true, contractNo: true, title: true,
+                    businessUnit: { select: { id: true, code: true, name: true } },
+                  },
+                },
               },
             },
           },
@@ -77,12 +89,13 @@ export class OutboundService {
     warehouseId: string,
     ownerPartnerId: string,
     materialId: string,
+    businessUnitId: string,
     db: any = this.prisma,
   ) {
     const result = await db.productionMaterialAllocation.aggregate({
       where: {
         issuedQuantity: 0,
-        inventoryLot: { warehouseId, ownerPartnerId, materialId },
+        inventoryLot: { warehouseId, ownerPartnerId, materialId, businessUnitId },
         taskInput: { task: { deletedAt: null, status: { in: ['RELEASED', 'MATERIAL_PREPARED'] } } },
       },
       _sum: { reservedQuantity: true },
@@ -92,6 +105,7 @@ export class OutboundService {
 
   private orderInclude() {
     return {
+      businessUnit: { select: { id: true, code: true, name: true } },
       warehouse: { select: { id: true, code: true, name: true, address: true } },
       creator: { select: { id: true, name: true } },
       dispatchNotice: {
@@ -144,7 +158,7 @@ export class OutboundService {
       include: {
         lineItems: { orderBy: { createdAt: 'asc' } },
         outboundOrder: true,
-        order: { include: { contract: { select: { signingPartnerId: true } } } },
+        order: { include: { contract: { select: { signingPartnerId: true, businessUnitId: true } } } },
       },
     });
     if (!notice) throw new NotFoundException('销售发货通知不存在');
@@ -152,6 +166,8 @@ export class OutboundService {
     const isDirect = notice.mode === 'DIRECT';
     const ownerPartnerId = notice.order.contract.signingPartnerId;
     if (!ownerPartnerId) throw new BadRequestException('销售合同缺少我方签约主体，无法确认出库库存主体');
+    const businessUnitId = notice.order.contract.businessUnitId;
+    if (!businessUnitId) throw new BadRequestException('销售合同缺少业务单元（事业部），无法确认出库经营归属');
     if (notice.outboundOrder) return notice.outboundOrder;
 
     const lines: Array<any> = [];
@@ -162,6 +178,7 @@ export class OutboundService {
           where: {
             warehouseId: notice.warehouseId,
             ownerPartnerId,
+            businessUnitId,
             materialId: line.materialId,
             status: 'AVAILABLE',
             availableQuantity: { gt: 0 },
@@ -172,7 +189,7 @@ export class OutboundService {
           where: {
             materialId: line.materialId,
             outboundOrder: {
-              warehouseId: notice.warehouseId, ownerPartnerId,
+              warehouseId: notice.warehouseId, ownerPartnerId, businessUnitId,
               status: { in: ['PENDING', 'PARTIAL'] },
             },
           },
@@ -186,6 +203,7 @@ export class OutboundService {
           notice.warehouseId,
           ownerPartnerId,
           line.materialId,
+          businessUnitId,
           db,
         );
         available = Math.max(0, Number(physical._sum.availableQuantity || 0) - reservedByOthers - reservedByProduction);
@@ -208,6 +226,7 @@ export class OutboundService {
         dispatchNoticeId: notice.id,
         warehouseId: notice.warehouseId,
         ownerPartnerId,
+        businessUnitId,
         plannedQuantity,
         reservedQuantity,
         shortageQuantity: isDirect ? 0 : Math.max(0, plannedQuantity - reservedQuantity),
@@ -256,12 +275,13 @@ export class OutboundService {
 
   async findOrders(params: { search?: string; status?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getDispatchNoticeScope(userId);
+    const scope = await this.accessControl.getDispatchNoticeScope(userId, 'inventory.view');
     const where: Prisma.OutboundOrderWhereInput = { dispatchNotice: { deletedAt: null, AND: [scope] } };
     if (params.status) where.status = params.status;
     if (params.search) {
       where.OR = [
         { orderNo: { contains: params.search, mode: 'insensitive' } },
+        { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } },
         { dispatchNotice: { noticeNo: { contains: params.search, mode: 'insensitive' } } },
         { dispatchNotice: { order: { orderNo: { contains: params.search, mode: 'insensitive' } } } },
         { dispatchNotice: { order: { contract: { contractNo: { contains: params.search, mode: 'insensitive' } } } } },
@@ -276,7 +296,7 @@ export class OutboundService {
 
   async findOrder(id: string, userId: string, permission = 'inventory.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getDispatchNoticeScope(userId);
+    const scope = await this.accessControl.getDispatchNoticeScope(userId, permission);
     const item = await this.prisma.outboundOrder.findFirst({
       where: { id, dispatchNotice: { deletedAt: null, AND: [scope] } },
       include: this.orderInclude(),
@@ -332,7 +352,7 @@ export class OutboundService {
 
   async eligibleWaybills(userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'inventory.view');
     return this.prisma.waybill.findMany({
       where: {
         deletedAt: null,
@@ -390,12 +410,12 @@ export class OutboundService {
 
   async eligibleLots(waybillId: string, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const waybillScope = await this.accessControl.getWaybillScope(userId);
+    const waybillScope = await this.accessControl.getWaybillScope(userId, 'inventory.view');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null, AND: [waybillScope] },
       include: {
         lineItems: true,
-        dispatchNotice: { include: { order: { include: { contract: { select: { signingPartnerId: true } } } } } },
+        dispatchNotice: { include: { order: { include: { contract: { select: { signingPartnerId: true, businessUnitId: true } } } } } },
       },
     });
     if (!waybill) throw new NotFoundException('物流运单不存在');
@@ -405,14 +425,17 @@ export class OutboundService {
     if (!waybill.dispatchNotice.warehouseId) throw new BadRequestException('销售发货通知单缺少发货仓库');
     const ownerPartnerId = waybill.dispatchNotice.order.contract.signingPartnerId;
     if (!ownerPartnerId) throw new BadRequestException('销售合同缺少我方签约主体，无法选择所属库存');
+    const businessUnitId = waybill.dispatchNotice.order.contract.businessUnitId;
+    if (!businessUnitId) throw new BadRequestException('销售合同缺少业务单元（事业部），无法选择所属库存');
     const materialIds = [...new Set(waybill.lineItems.map(item => item.materialId))];
     if (materialIds.length !== 1) throw new BadRequestException('首版销售出库只支持单一物料运单');
-    const lotScope = await this.accessControl.getInventoryLotScope(userId);
+    const lotScope = await this.accessControl.getInventoryLotScope(userId, 'inventory.view');
     const lots = await this.prisma.inventoryLot.findMany({
       where: {
         AND: [lotScope],
         warehouseId: waybill.dispatchNotice.warehouseId,
         ownerPartnerId,
+        businessUnitId,
         materialId: materialIds[0],
         status: 'AVAILABLE',
         availableQuantity: { gt: 0 },
@@ -471,7 +494,7 @@ export class OutboundService {
 
   async create(dto: CreateOutboundReceiptDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.manage');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'inventory.manage');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: dto.waybillId, deletedAt: null, AND: [scope] },
       include: {
@@ -534,7 +557,7 @@ export class OutboundService {
     if (Math.abs(allocated - quantity) > 0.0005) {
       throw new BadRequestException(`批次分配数量 ${allocated} 吨必须等于出库重量 ${quantity} 吨`);
     }
-    const lotScope = await this.accessControl.getInventoryLotScope(userId);
+    const lotScope = await this.accessControl.getInventoryLotScope(userId, 'inventory.manage');
     const lots = await this.prisma.inventoryLot.findMany({
       where: { id: { in: [...allocationMap.keys()] }, AND: [lotScope] },
     });
@@ -619,7 +642,7 @@ export class OutboundService {
 
   async findAll(params: { search?: string; status?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getOutboundReceiptScope(userId);
+    const scope = await this.accessControl.getOutboundReceiptScope(userId, 'inventory.view');
     const where: Prisma.OutboundReceiptWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.search) {
@@ -630,6 +653,8 @@ export class OutboundService {
         { plateNo: { contains: params.search, mode: 'insensitive' } },
         { waybill: { waybillNo: { contains: params.search, mode: 'insensitive' } } },
         { weighTicket: { ticketNo: { contains: params.search, mode: 'insensitive' } } },
+        { outboundOrder: { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } } },
+        { outboundOrder: { businessUnit: { code: { contains: params.search, mode: 'insensitive' } } } },
       ];
     }
     const items = await this.prisma.outboundReceipt.findMany({
@@ -642,7 +667,7 @@ export class OutboundService {
 
   async findOne(id: string, userId: string, permission = 'inventory.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getOutboundReceiptScope(userId);
+    const scope = await this.accessControl.getOutboundReceiptScope(userId, permission);
     const receipt = await this.prisma.outboundReceipt.findFirst({
       where: { id, deletedAt: null, AND: [scope] },
       include: this.include,
@@ -655,11 +680,12 @@ export class OutboundService {
     const order = await this.findOrder(id, userId, 'inventory.manage') as any;
     if (order.dispatchNotice.mode === 'DIRECT') throw new BadRequestException('直拨业务不经过我方库存，无需刷新库存预留');
     if (!['PENDING', 'PARTIAL'].includes(order.status)) throw new BadRequestException('当前出库管理单不能刷新库存预留');
+    if (!order.businessUnitId) throw new BadRequestException('出库管理单缺少业务单元（事业部），不能刷新库存预留');
     const updates: Array<{ id: string; planned: number; reserved: number }> = [];
     for (const line of order.lineItems) {
       const physical = await this.prisma.inventoryLot.aggregate({
         where: {
-          warehouseId: order.warehouseId, ownerPartnerId: order.ownerPartnerId, materialId: line.materialId,
+          warehouseId: order.warehouseId, ownerPartnerId: order.ownerPartnerId, businessUnitId: order.businessUnitId, materialId: line.materialId,
           status: 'AVAILABLE', availableQuantity: { gt: 0 },
         },
         _sum: { availableQuantity: true },
@@ -668,7 +694,7 @@ export class OutboundService {
         where: {
           outboundOrderId: { not: order.id }, materialId: line.materialId,
           outboundOrder: {
-            warehouseId: order.warehouseId, ownerPartnerId: order.ownerPartnerId,
+            warehouseId: order.warehouseId, ownerPartnerId: order.ownerPartnerId, businessUnitId: order.businessUnitId,
             status: { in: ['PENDING', 'PARTIAL'] },
           },
         },
@@ -681,6 +707,7 @@ export class OutboundService {
         order.warehouseId,
         order.ownerPartnerId,
         line.materialId,
+        order.businessUnitId,
       );
       const remainingPhysical = Math.max(
         0,
@@ -771,6 +798,7 @@ export class OutboundService {
           outboundNo,
           receiptId: receipt.id,
           warehouseId: receipt.warehouseId,
+          businessUnitId: receipt.outboundOrder.businessUnitId,
           materialId: receipt.materialId,
           materialName: receipt.materialName,
           customerName: receipt.customerName,
@@ -785,6 +813,7 @@ export class OutboundService {
             id: allocation.inventoryLotId,
             warehouseId: receipt.warehouseId,
             materialId: receipt.materialId,
+            businessUnitId: receipt.outboundOrder.businessUnitId,
             status: 'AVAILABLE',
             availableQuantity: { gte: quantity },
           },
@@ -814,6 +843,7 @@ export class OutboundService {
             lotId: lot.id,
             warehouseId: receipt.warehouseId,
             materialId: receipt.materialId,
+            businessUnitId: receipt.outboundOrder.businessUnitId,
             businessType: 'OUTBOUND',
             businessNo: outboundNo,
             quantityChange: -quantity,
@@ -860,7 +890,7 @@ export class OutboundService {
 
   async findAttachmentById(id: string, userId: string, permission = 'inventory.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getOutboundReceiptScope(userId);
+    const scope = await this.accessControl.getOutboundReceiptScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,

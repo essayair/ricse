@@ -62,6 +62,7 @@ export class InventoryService {
                     id: true, contractNo: true, title: true,
                     seller: { select: { id: true, name: true } },
                     signingPartner: { select: { id: true, code: true, name: true } },
+                    businessUnit: { select: { id: true, code: true, name: true } },
                   },
                 },
               },
@@ -235,7 +236,7 @@ export class InventoryService {
 
   async eligibleWaybills(userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'inventory.view');
     return this.prisma.waybill.findMany({
       where: {
         deletedAt: null,
@@ -271,7 +272,7 @@ export class InventoryService {
 
   async createReceipt(dto: CreateInboundReceiptDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.manage');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'inventory.manage');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: dto.waybillId, deletedAt: null, AND: [scope] },
       include: {
@@ -528,7 +529,7 @@ export class InventoryService {
 
   async findReceipts(params: { search?: string; status?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getInboundReceiptScope(userId);
+    const scope = await this.accessControl.getInboundReceiptScope(userId, 'inventory.view');
     const where: Prisma.InboundReceiptWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.search) where.OR = [
@@ -538,6 +539,7 @@ export class InventoryService {
       { plateNo: { contains: params.search, mode: 'insensitive' } },
       { waybill: { waybillNo: { contains: params.search, mode: 'insensitive' } } },
       { waybill: { dispatchNotice: { order: { name: { contains: params.search, mode: 'insensitive' } } } } },
+      { waybill: { dispatchNotice: { order: { contract: { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } } } } } },
       { waybill: { dispatchNotice: { order: { contract: { contractNo: { contains: params.search, mode: 'insensitive' } } } } } },
       { waybill: { weighTickets: { some: { ticketNo: { contains: params.search, mode: 'insensitive' } } } } },
       { waybill: { weighTickets: { some: { qualityInspections: { some: { inspectionNo: { contains: params.search, mode: 'insensitive' } } } } } } },
@@ -550,7 +552,7 @@ export class InventoryService {
 
   async findReceipt(id: string, userId: string, permission = 'inventory.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getInboundReceiptScope(userId);
+    const scope = await this.accessControl.getInboundReceiptScope(userId, permission);
     const item = await this.prisma.inboundReceipt.findFirst({
       where: { id, deletedAt: null, AND: [scope] },
       include: this.include,
@@ -622,7 +624,7 @@ export class InventoryService {
 
   async findAttachmentById(id: string, userId: string, permission = 'inventory.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getInboundReceiptScope(userId);
+    const scope = await this.accessControl.getInboundReceiptScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,
@@ -658,6 +660,8 @@ export class InventoryService {
     const inventoryOwner = receipt.waybill.dispatchNotice.order.contract.signingPartner;
     if (!inventoryOwner) throw new BadRequestException('采购合同缺少我方签约主体，无法确认库存所有权');
     const ownerPartnerId = inventoryOwner.id;
+    const businessUnitId = receipt.waybill.dispatchNotice.order.contract.businessUnit?.id;
+    if (!businessUnitId) throw new BadRequestException('采购合同缺少业务单元（事业部），无法确认库存经营归属');
     const line = receipt.waybill.lineItems[0];
     if (!line) throw new BadRequestException('运单缺少物料明细');
     const quantity = Number(receipt.receivedQuantity || 0);
@@ -667,14 +671,14 @@ export class InventoryService {
     await this.prisma.$transaction(async tx => {
       const inbound = await tx.businessInbound.create({
         data: {
-          inboundNo, receiptId: receipt.id, warehouseId, ownerPartnerId,
+          inboundNo, receiptId: receipt.id, warehouseId, ownerPartnerId, businessUnitId,
           materialId: line.materialId, materialName: receipt.materialName,
           supplierName: receipt.supplierName, quantity, lotNo, createdBy: userId,
         },
       });
       const lot = await tx.inventoryLot.create({
         data: {
-          lotNo, businessInboundId: inbound.id, warehouseId, ownerPartnerId,
+          lotNo, businessInboundId: inbound.id, warehouseId, ownerPartnerId, businessUnitId,
           materialId: line.materialId, materialName: receipt.materialName,
           supplierName: receipt.supplierName, initialQuantity: quantity,
           availableQuantity: quantity, qualityConclusion: receipt.acceptanceConclusion!,
@@ -682,7 +686,7 @@ export class InventoryService {
       });
       await tx.inventoryLedger.create({
         data: {
-          lotId: lot.id, warehouseId, materialId: line.materialId,
+          lotId: lot.id, warehouseId, materialId: line.materialId, businessUnitId,
           businessType: 'INBOUND', businessNo: inboundNo, quantityChange: quantity,
           balanceAfter: quantity, remarks: `由物流入库单 ${receipt.receiptNo} 生成`, createdBy: userId,
         },
@@ -705,23 +709,26 @@ export class InventoryService {
     }
   }
 
-  async inventoryOverview(params: { search?: string; warehouseId?: string; ownerPartnerId?: string }, userId: string) {
+  async inventoryOverview(params: { search?: string; warehouseId?: string; ownerPartnerId?: string; businessUnitId?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getInventoryLotScope(userId);
+    const scope = await this.accessControl.getInventoryLotScope(userId, 'inventory.view');
     const where: Prisma.InventoryLotWhereInput = { AND: [scope] };
     if (params.warehouseId) where.warehouseId = params.warehouseId;
     if (params.ownerPartnerId) where.ownerPartnerId = params.ownerPartnerId;
+    if (params.businessUnitId) where.businessUnitId = params.businessUnitId;
     if (params.search) where.OR = [
       { lotNo: { contains: params.search, mode: 'insensitive' } },
       { materialName: { contains: params.search, mode: 'insensitive' } },
       { supplierName: { contains: params.search, mode: 'insensitive' } },
       { inventoryOwner: { name: { contains: params.search, mode: 'insensitive' } } },
+      { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } },
     ];
     const lots = await this.prisma.inventoryLot.findMany({
       where,
       include: {
         warehouse: { select: { id: true, code: true, name: true } },
         inventoryOwner: { select: { id: true, code: true, name: true } },
+        businessUnit: { select: { id: true, code: true, name: true } },
         material: { select: { code: true, unit: true } },
         businessInbound: { select: { inboundNo: true, postedAt: true } },
         productionCompletion: {
@@ -758,19 +765,19 @@ export class InventoryService {
       },
       select: {
         materialId: true, reservedQuantity: true, actualQuantity: true,
-        outboundOrder: { select: { warehouseId: true, ownerPartnerId: true } },
+        outboundOrder: { select: { warehouseId: true, ownerPartnerId: true, businessUnitId: true } },
       },
     });
     const reservedByGroup = new Map<string, number>();
     for (const item of reservations) {
-      const key = `${item.outboundOrder.ownerPartnerId || 'UNASSIGNED'}:${item.outboundOrder.warehouseId}:${item.materialId}`;
+      const key = `${item.outboundOrder.businessUnitId || 'UNASSIGNED'}:${item.outboundOrder.ownerPartnerId || 'UNASSIGNED'}:${item.outboundOrder.warehouseId}:${item.materialId}`;
       reservedByGroup.set(key, (reservedByGroup.get(key) || 0)
         + Math.max(0, Number(item.reservedQuantity) - Number(item.actualQuantity)));
     }
     const remainingByGroup = new Map(reservedByGroup);
     const reservedByLot = new Map<string, number>();
     for (const lot of [...lots].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
-      const key = `${lot.ownerPartnerId || 'UNASSIGNED'}:${lot.warehouseId}:${lot.materialId}`;
+      const key = `${lot.businessUnitId || 'UNASSIGNED'}:${lot.ownerPartnerId || 'UNASSIGNED'}:${lot.warehouseId}:${lot.materialId}`;
       const remainingAfterProduction = Math.max(
         0,
         Number(lot.availableQuantity) - (productionReservedByLot.get(lot.id) || 0),
@@ -795,9 +802,32 @@ export class InventoryService {
     const totalReservedQuantity = enrichedLots.reduce((sum, lot) => sum + lot.totalReservedQuantity, 0);
     const totalAvailableQuantity = totalPhysicalQuantity - totalReservedQuantity;
     const ownerGroups = new Map<string, any>();
+    const businessUnitGroups = new Map<string, any>();
     const warehouseGroups = new Map<string, any>();
     const ownerWarehouseGroups = new Map<string, any>();
     for (const lot of enrichedLots) {
+      const businessUnitKey = lot.businessUnitId || 'UNASSIGNED';
+      const businessUnit = businessUnitGroups.get(businessUnitKey) || {
+        businessUnitId: lot.businessUnitId,
+        businessUnitCode: lot.businessUnit?.code || null,
+        businessUnitName: lot.businessUnit?.name || '未归属业务单元（事业部）',
+        lotCount: 0,
+        materialIds: new Set<string>(),
+        warehouseIds: new Set<string>(),
+        ownerIds: new Set<string>(),
+        totalPhysicalQuantity: 0,
+        totalReservedQuantity: 0,
+        totalAvailableQuantity: 0,
+      };
+      businessUnit.lotCount += 1;
+      businessUnit.materialIds.add(lot.materialId);
+      businessUnit.warehouseIds.add(lot.warehouseId);
+      businessUnit.ownerIds.add(lot.ownerPartnerId || 'UNASSIGNED');
+      businessUnit.totalPhysicalQuantity += Number(lot.availableQuantity);
+      businessUnit.totalReservedQuantity += lot.totalReservedQuantity;
+      businessUnit.totalAvailableQuantity += lot.availableToPromiseQuantity;
+      businessUnitGroups.set(businessUnitKey, businessUnit);
+
       const ownerKey = lot.ownerPartnerId || 'UNASSIGNED';
       const owner = ownerGroups.get(ownerKey) || {
         ownerPartnerId: lot.ownerPartnerId,
@@ -837,8 +867,11 @@ export class InventoryService {
       warehouse.totalAvailableQuantity += lot.availableToPromiseQuantity;
       warehouseGroups.set(lot.warehouseId, warehouse);
 
-      const ownerWarehouseKey = `${ownerKey}:${lot.warehouseId}`;
+      const ownerWarehouseKey = `${businessUnitKey}:${ownerKey}:${lot.warehouseId}`;
       const ownerWarehouse = ownerWarehouseGroups.get(ownerWarehouseKey) || {
+        businessUnitId: lot.businessUnitId,
+        businessUnitCode: lot.businessUnit?.code || null,
+        businessUnitName: lot.businessUnit?.name || '未归属业务单元（事业部）',
         ownerPartnerId: lot.ownerPartnerId,
         ownerCode: lot.inventoryOwner?.code || null,
         ownerName: lot.inventoryOwner?.name || '未归属库存主体',
@@ -865,6 +898,15 @@ export class InventoryService {
       materialIds: undefined,
       warehouseIds: undefined,
     })).sort((a, b) => b.totalPhysicalQuantity - a.totalPhysicalQuantity);
+    const businessUnitSummaries = [...businessUnitGroups.values()].map(item => ({
+      ...item,
+      materialCount: item.materialIds.size,
+      warehouseCount: item.warehouseIds.size,
+      ownerCount: item.ownerIds.size,
+      materialIds: undefined,
+      warehouseIds: undefined,
+      ownerIds: undefined,
+    })).sort((a, b) => b.totalPhysicalQuantity - a.totalPhysicalQuantity);
     const warehouseSummaries = [...warehouseGroups.values()].map(item => ({
       ...item,
       materialCount: item.materialIds.size,
@@ -879,6 +921,7 @@ export class InventoryService {
     })).sort((a, b) => b.totalPhysicalQuantity - a.totalPhysicalQuantity);
     return {
       lots: enrichedLots,
+      businessUnitSummaries,
       ownerSummaries,
       warehouseSummaries,
       ownerWarehouseSummaries,
@@ -887,6 +930,7 @@ export class InventoryService {
         materialCount: new Set(lots.map(item => item.materialId)).size,
         warehouseCount: new Set(lots.map(item => item.warehouseId)).size,
         ownerCount: new Set(lots.map(item => item.ownerPartnerId || 'UNASSIGNED')).size,
+        businessUnitCount: new Set(lots.map(item => item.businessUnitId || 'UNASSIGNED')).size,
         totalQuantity: totalAvailableQuantity,
         totalPhysicalQuantity,
         totalReservedQuantity,
@@ -897,10 +941,10 @@ export class InventoryService {
 
   async inventoryLedger(userId: string) {
     await this.accessControl.assertPermission(userId, 'inventory.view');
-    const scope = await this.accessControl.getInventoryLedgerScope(userId);
+    const scope = await this.accessControl.getInventoryLedgerScope(userId, 'inventory.view');
     return this.prisma.inventoryLedger.findMany({
       where: scope,
-      include: { lot: { select: { lotNo: true } }, warehouse: { select: { name: true } }, material: { select: { name: true, unit: true } }, creator: { select: { name: true } } },
+      include: { lot: { select: { lotNo: true } }, businessUnit: { select: { code: true, name: true } }, warehouse: { select: { name: true } }, material: { select: { name: true, unit: true } }, creator: { select: { name: true } } },
       orderBy: { createdAt: 'desc' }, take: 200,
     });
   }

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { mockDeep } from 'jest-mock-extended';
+import { mockDeep, mockReset } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService } from './users.service';
 
@@ -8,7 +8,7 @@ describe('UsersService', () => {
   let service: UsersService;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    mockReset(prisma);
     prisma.$transaction.mockImplementation(async (input: any) => (
       typeof input === 'function' ? input(prisma) : Promise.all(input)
     ));
@@ -59,16 +59,18 @@ describe('UsersService', () => {
     } as any);
     prisma.user.create.mockResolvedValue({ id: 'user-1' } as any);
     prisma.userRoleAssignment.create.mockResolvedValue({ id: 'assignment-1' } as any);
+    prisma.businessUnit.findMany.mockResolvedValue([{ id: 'unit-1' }] as any);
+    prisma.businessUnit.count.mockResolvedValue(1);
 
     await service.create({
       username: 'employee01', password: 'secret123', name: '员工', employeeId: 'employee-1', companyId: 'company-1',
     });
 
     expect(prisma.userRoleAssignment.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ scopeType: 'COMPANY' }),
+      data: expect.objectContaining({ scopeType: 'BUSINESS_UNIT' }),
     });
-    expect(prisma.userRoleScope.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ targetType: 'COMPANY', targetId: 'company-1' }),
+    expect(prisma.userRoleScope.createMany).toHaveBeenCalledWith({
+      data: [{ assignmentId: 'assignment-1', targetType: 'BUSINESS_UNIT', targetId: 'unit-1' }],
     });
   });
 

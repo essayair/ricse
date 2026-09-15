@@ -4,7 +4,7 @@ export class CreateQualitySampleDto {
   @IsOptional() @IsString() @MaxLength(100) sampleNo?: string;
   @IsOptional() @IsString() @MaxLength(100) sampleLabel?: string;
   @IsDateString() sampledAt: string;
-  @IsString() @MaxLength(100) samplerName: string;
+  @IsOptional() @IsString() @MaxLength(100) samplerName?: string;
   @IsOptional() @IsString() @MaxLength(200) samplingMethod?: string;
   @IsOptional() @IsString() @MaxLength(100) sealNo?: string;
   @IsOptional() @IsString() @MaxLength(200) destinationInstitutionName?: string;

@@ -180,4 +180,41 @@ export class OrgController {
   deleteBusinessGroup(@Param('id') id: string) {
     return this.orgService.deleteBusinessGroup(id);
   }
+
+  // ========== 业务单元 ==========
+
+  @Post('business-units')
+  @RequirePermission('organization.manage')
+  @ApiOperation({ summary: '创建业务单元' })
+  createBusinessUnit(@Body() dto: {
+    name: string; type?: string; companyId?: string; parentId?: string;
+    profitCenterCode?: string; status?: string; description?: string;
+  }) {
+    return this.orgService.createBusinessUnit(dto);
+  }
+
+  @Get('business-units')
+  @RequirePermission('organization.view')
+  @ApiOperation({ summary: '业务单元列表' })
+  findAllBusinessUnits(@Query('companyId') companyId?: string, @Query('status') status?: string) {
+    return this.orgService.findAllBusinessUnits(companyId, status);
+  }
+
+  @Patch('business-units/:id')
+  @RequirePermission('organization.manage')
+  @ApiOperation({ summary: '更新业务单元' })
+  updateBusinessUnit(@Param('id') id: string, @Body() dto: {
+    name?: string; type?: string; companyId?: string; parentId?: string | null;
+    profitCenterCode?: string | null; status?: string; description?: string | null;
+  }) {
+    return this.orgService.updateBusinessUnit(id, dto);
+  }
+
+  @Delete('business-units/:id')
+  @RequirePermission('organization.manage')
+  @HttpCode(204)
+  @ApiOperation({ summary: '删除未使用的业务单元' })
+  deleteBusinessUnit(@Param('id') id: string) {
+    return this.orgService.deleteBusinessUnit(id);
+  }
 }

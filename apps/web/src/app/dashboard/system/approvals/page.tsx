@@ -62,6 +62,7 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 const SCOPE_LABEL: Record<string, string> = {
+  BUSINESS_UNIT: '合同业务单元（事业部）',
   DEPARTMENT: '合同业务部门',
   COMPANY: '合同所属企业',
   ALL: '全平台',

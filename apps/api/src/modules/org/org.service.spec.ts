@@ -22,6 +22,78 @@ describe('OrgService', () => {
     service = module.get(OrgService);
   });
 
+  it('仅首个内部组织企业成为平台管理主体并自动建立综合事业部', async () => {
+    prisma.partner.findUnique.mockResolvedValue({
+      code: '300001', name: '和光云链有限公司', shortName: '和光云链', isInternal: true,
+    } as any);
+    prisma.company.findUnique.mockResolvedValue(null);
+    prisma.company.count.mockResolvedValue(0);
+    prisma.company.create.mockResolvedValue({ id: 'company-1', isManagementEntity: true } as any);
+    prisma.businessUnit.create.mockResolvedValue({ id: 'bu-1' } as any);
+
+    await service.createCompany({ partnerId: 'partner-1' });
+
+    expect(prisma.company.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ isManagementEntity: true }),
+    }));
+    expect(prisma.businessUnit.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        code: 'BU-300001-001',
+        name: '和光云链综合事业部',
+        companyId: 'company-1',
+      }),
+    }));
+  });
+
+  it('后续内部签约企业不重复创建事业部', async () => {
+    prisma.partner.findUnique.mockResolvedValue({
+      code: '300002', name: '第二业务公司', shortName: null, isInternal: true,
+    } as any);
+    prisma.company.findUnique.mockResolvedValue(null);
+    prisma.company.count.mockResolvedValue(1);
+    prisma.company.create.mockResolvedValue({ id: 'company-2', isManagementEntity: false } as any);
+
+    await service.createCompany({ partnerId: 'partner-2' });
+
+    expect(prisma.company.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ isManagementEntity: false }),
+    }));
+    expect(prisma.businessUnit.create).not.toHaveBeenCalled();
+  });
+
+  it('业务单元编码按企业编码和三位流水号自动生成', async () => {
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1', code: '300001', type: 'INTERNAL', status: 'ACTIVE', isManagementEntity: true,
+    } as any);
+    prisma.businessUnit.findMany.mockResolvedValue([
+      { code: 'BU-300001-001' },
+      { code: 'BU-300001-002' },
+    ] as any);
+    prisma.businessUnit.create.mockResolvedValue({ id: 'unit-3', code: 'BU-300001-003' } as any);
+
+    await service.createBusinessUnit({
+      name: '玉门事业部',
+      companyId: 'company-1',
+      type: 'REGION',
+    });
+
+    expect(prisma.businessUnit.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ code: 'BU-300001-003', name: '玉门事业部' }),
+    }));
+  });
+
+  it('业务单元编码不允许手工填写或创建后修改', async () => {
+    await expect(service.createBusinessUnit({
+      code: 'BU-CUSTOM',
+      name: '玉门事业部',
+      companyId: 'company-1',
+    })).rejects.toThrow('编码由系统自动生成');
+
+    prisma.businessUnit.findUnique.mockResolvedValue({ id: 'unit-1', code: 'BU-300001-001', companyId: 'company-1' } as any);
+    await expect(service.updateBusinessUnit('unit-1', { code: 'BU-300001-009' }))
+      .rejects.toThrow('编码创建后不能修改');
+  });
+
   it('创建员工时保存去除首尾空格后的必填手机号', async () => {
     prisma.company.findUnique.mockResolvedValue({ id: 'company-1', status: 'ACTIVE' } as any);
     prisma.department.findUnique.mockResolvedValue({ id: 'department-1', companyId: 'company-1' } as any);

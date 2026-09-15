@@ -171,7 +171,19 @@ export class MobileWorkspaceService {
       case 'dispatch-notices': return this.dispatchNotices.findOne(id, userId);
       case 'waybills': return this.waybills.findOne(id, userId);
       case 'weigh-tickets': return this.weighTickets.findManagementFile(id, userId);
-      case 'quality-tasks': return this.quality.findTask(id, userId);
+      case 'quality-tasks': {
+        const [task, context] = await Promise.all([
+          this.quality.findTask(id, userId),
+          this.access.getContext(userId),
+        ]);
+        return {
+          ...task,
+          currentOperator: {
+            id: context.user.id,
+            name: context.user.name,
+          },
+        };
+      }
       case 'inbound-receipts': return this.inventory.findReceipt(id, userId);
       case 'outbound-receipts': return this.outbound.findOne(id, userId);
       case 'inventory': {
@@ -198,6 +210,18 @@ export class MobileWorkspaceService {
 
   async overview(userId: string) {
     const context = await this.access.getContext(userId);
+    const now = new Date();
+    const businessUnits = (context.user.businessUnits || [])
+      .filter((item) => item.status === 'ACTIVE'
+        && item.businessUnit.status === 'ACTIVE'
+        && item.effectiveAt <= now
+        && (!item.expiresAt || item.expiresAt > now))
+      .map((item) => ({
+        id: item.businessUnit.id,
+        code: item.businessUnit.code,
+        name: item.businessUnit.name,
+        isDefault: item.isDefault,
+      }));
     const canApprove = context.isAdmin || context.permissions.includes('contract.approve');
     const canViewContracts = context.isAdmin || context.permissions.includes('contract.view');
     const pendingWhere = context.isAdmin ? {} : { assigneeId: userId };
@@ -249,6 +273,7 @@ export class MobileWorkspaceService {
         name: context.user.name,
         company: context.user.company,
         employee: context.user.employee,
+        businessUnits,
         roles: context.roleCodes,
         roleNames: context.roleNames,
         permissions: context.permissions,
@@ -411,6 +436,7 @@ export class MobileWorkspaceService {
             buyer: { select: { id: true, name: true } },
             signingPartner: { select: { id: true, name: true } },
             company: { select: { id: true, code: true, name: true } },
+            businessUnit: { select: { id: true, code: true, name: true } },
             creator: { select: { id: true, name: true } },
           },
         },

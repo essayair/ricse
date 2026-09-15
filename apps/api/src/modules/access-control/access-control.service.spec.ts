@@ -148,6 +148,34 @@ describe('AccessControlService', () => {
     await expect(service.getContractScope('admin')).resolves.toEqual({});
   });
 
+  it('权限与业务单元范围按同一个角色绑定，不跨角色拼接', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'scoped-user',
+      username: 'scoped',
+      name: '跨单元用户',
+      role: 'USER',
+      company: { id: 'internal-company', type: 'INTERNAL', partnerId: 'partner-internal' },
+      businessUnits: [],
+      roleAssignments: [
+        {
+          id: 'approval-yumen', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          scopeType: 'BUSINESS_UNIT',
+          role: { code: 'BUSINESS_MANAGER', status: 'ACTIVE', permissions: [{ permission: { code: 'contract.approve' } }] },
+          scopes: [{ targetType: 'BUSINESS_UNIT', targetId: 'bu-yumen' }],
+        },
+        {
+          id: 'view-longyou', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          scopeType: 'BUSINESS_UNIT',
+          role: { code: 'OBSERVER', status: 'ACTIVE', permissions: [{ permission: { code: 'contract.view' } }] },
+          scopes: [{ targetType: 'BUSINESS_UNIT', targetId: 'bu-longyou' }],
+        },
+      ],
+    } as any);
+
+    await expect(service.getContractScope('scoped-user', 'contract.approve')).resolves.toEqual({ businessUnitId: { in: ['bu-yumen'] } });
+    await expect(service.getContractScope('scoped-user', 'contract.view')).resolves.toEqual({ businessUnitId: { in: ['bu-longyou'] } });
+  });
+
   it('保存外部企业授权时强制锁定为所属企业范围', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'external-user',

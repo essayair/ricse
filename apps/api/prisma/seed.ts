@@ -42,6 +42,32 @@ async function main() {
 
   // ===== 部门（和光云链）=====
   const hgyl = await prisma.company.findFirst({ where: { code: '300001' } });
+  let defaultBusinessUnit: { id: string } | null = null;
+  if (hgyl) {
+    await prisma.$transaction(async (tx) => {
+      await tx.company.updateMany({
+        where: { isManagementEntity: true, id: { not: hgyl.id } },
+        data: { isManagementEntity: false },
+      });
+      await tx.company.update({
+        where: { id: hgyl.id },
+        data: { isManagementEntity: true },
+      });
+      await tx.businessUnit.updateMany({ data: { companyId: hgyl.id } });
+    });
+    defaultBusinessUnit = await prisma.businessUnit.upsert({
+      where: { code: 'BU-300001-001' },
+      update: { companyId: hgyl.id, status: 'ACTIVE' },
+      create: {
+        code: 'BU-300001-001',
+        name: '和光云链综合事业部',
+        type: 'COMPREHENSIVE',
+        companyId: hgyl.id,
+        profitCenterCode: 'PC-300001',
+        description: '开发演示环境的平台默认业务单元（事业部）。',
+      },
+    });
+  }
   const deptData = [
     { id: 'dept-leadership', name: '公司领导', sort: 0 },
     { id: 'dept-office', name: '办公室', sort: 1 },
@@ -124,6 +150,28 @@ async function main() {
         where: { userId_roleId: { userId: user.id, roleId: role.id } },
         update: { scopeType: account.scopeType, status: 'ACTIVE', expiresAt: null },
         create: { userId: user.id, roleId: role.id, scopeType: account.scopeType },
+      });
+    }
+  }
+  if (defaultBusinessUnit) {
+    const internalUsers = await prisma.user.findMany({
+      where: { company: { type: 'INTERNAL' } },
+      select: { id: true },
+    });
+    for (const user of internalUsers) {
+      await prisma.userBusinessUnit.upsert({
+        where: {
+          userId_businessUnitId: {
+            userId: user.id,
+            businessUnitId: defaultBusinessUnit.id,
+          },
+        },
+        update: { isDefault: true, status: 'ACTIVE', expiresAt: null },
+        create: {
+          userId: user.id,
+          businessUnitId: defaultBusinessUnit.id,
+          isDefault: true,
+        },
       });
     }
   }

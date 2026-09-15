@@ -90,6 +90,7 @@ export class InventoryController {
     @Query('search') search?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('ownerPartnerId') ownerPartnerId?: string,
-  ) { return this.service.inventoryOverview({ search, warehouseId, ownerPartnerId }, userId); }
+    @Query('businessUnitId') businessUnitId?: string,
+  ) { return this.service.inventoryOverview({ search, warehouseId, ownerPartnerId, businessUnitId }, userId); }
   @Get('ledger') ledger(@CurrentUser('id') userId: string) { return this.service.inventoryLedger(userId); }
 }

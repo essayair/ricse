@@ -56,7 +56,7 @@ describe('ApprovalFlowService', () => {
     await expect(service.updateNode('node-1', { approvalMode: 'UNKNOWN' }))
       .rejects.toThrow('审批方式仅支持会签或或签');
     await expect(service.updateNode('node-1', { scopeType: 'WAREHOUSE' }))
-      .rejects.toThrow('人员范围仅支持合同部门、合同企业或全平台');
+      .rejects.toThrow('人员范围仅支持合同业务单元、合同部门、合同企业或全平台');
   });
 
   it('节点不存在时拒绝修改', async () => {

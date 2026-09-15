@@ -69,16 +69,35 @@ export class OrgService {
     const exists = await this.prisma.company.findUnique({ where: { code } });
     if (exists) throw new ConflictException(`企业编码 ${code} 已存在`);
 
-    return this.prisma.company.create({
-      data: {
-        code,
-        name: partner.name,
-        shortName: partner.shortName,
-        type: partner.isInternal ? 'INTERNAL' : 'EXTERNAL',
-        partnerId: data.partnerId,
-        parentId: data.parentId,
-      },
-      include: { partner: { select: { id: true, code: true, name: true } } },
+    return this.prisma.$transaction(async (tx) => {
+      const shouldBecomeManagementEntity = partner.isInternal
+        && await tx.company.count({ where: { isManagementEntity: true } }) === 0;
+      const company = await tx.company.create({
+        data: {
+          code,
+          name: partner.name,
+          shortName: partner.shortName,
+          type: partner.isInternal ? 'INTERNAL' : 'EXTERNAL',
+          isManagementEntity: shouldBecomeManagementEntity,
+          partnerId: data.partnerId,
+          parentId: data.parentId,
+        },
+        include: { partner: { select: { id: true, code: true, name: true } } },
+      });
+      if (shouldBecomeManagementEntity) {
+        const normalizedCompanyCode = this.normalizeBusinessUnitCompanyCode(code);
+        await tx.businessUnit.create({
+          data: {
+            code: `BU-${normalizedCompanyCode}-001`,
+            name: `${partner.shortName || partner.name}综合事业部`,
+            type: 'COMPREHENSIVE',
+            companyId: company.id,
+            profitCenterCode: `PC-${code}`,
+            description: '系统随平台管理主体建立的首个业务单元（事业部），名称可按实际经营结构调整。',
+          },
+        });
+      }
+      return company;
     });
   }
 
@@ -123,9 +142,12 @@ export class OrgService {
   }
 
   async updateCompany(id: string, data: { name?: string; shortName?: string; status?: string; parentId?: string }) {
-    await this.findCompanyById(id);
+    const company = await this.findCompanyById(id);
     this.validateStatus(data.status, '企业');
     if (data.status === 'DISABLED') {
+      if (company.isManagementEntity) {
+        throw new BadRequestException('平台管理主体不能直接停用，请先完成组织与业务单元迁移');
+      }
       const [companyAdminCount, otherAdminCount] = await Promise.all([
         this.prisma.userRoleAssignment.count({
           where: {
@@ -483,5 +505,174 @@ export class OrgService {
 
   async deleteBusinessGroup(id: string) {
     return this.prisma.businessGroup.delete({ where: { id } });
+  }
+
+  // ========== 业务单元（经营责任与利润中心） ==========
+
+  async createBusinessUnit(data: {
+    code?: string;
+    name: string;
+    type?: string;
+    companyId?: string;
+    parentId?: string;
+    profitCenterCode?: string;
+    status?: string;
+    description?: string;
+  }) {
+    if (data.code !== undefined) throw new BadRequestException('业务单元（事业部）编码由系统自动生成，不能手工填写');
+    if (!['REGION', 'PRODUCT', 'PROJECT', 'COMPREHENSIVE'].includes(data.type || 'COMPREHENSIVE')) {
+      throw new BadRequestException('无效的业务单元类型');
+    }
+    this.validateStatus(data.status, '业务单元');
+    const company = await this.prisma.company.findFirst({
+      where: {
+        ...(data.companyId ? { id: data.companyId } : {}),
+        isManagementEntity: true,
+        type: 'INTERNAL',
+        status: 'ACTIVE',
+      },
+    });
+    if (!company) throw new BadRequestException('尚未配置有效的平台管理主体，无法创建业务单元（事业部）');
+    if (data.parentId) await this.validateBusinessUnitParent(data.parentId, company.id);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const code = await this.generateBusinessUnitCode(company.code);
+      try {
+        return await this.prisma.businessUnit.create({
+          data: {
+            code,
+            name: this.normalizeName(data.name, '业务单元（事业部）名称'),
+            type: data.type || 'COMPREHENSIVE',
+            companyId: company.id,
+            parentId: data.parentId || null,
+            profitCenterCode: data.profitCenterCode?.trim() || null,
+            status: data.status || 'ACTIVE',
+            description: data.description?.trim() || null,
+          },
+          include: this.businessUnitInclude,
+        });
+      } catch (error: any) {
+        if (error?.code !== 'P2002') throw error;
+      }
+    }
+    throw new ConflictException('业务单元（事业部）编码生成冲突，请重试');
+  }
+
+  async findAllBusinessUnits(companyId?: string, status?: string) {
+    return this.prisma.businessUnit.findMany({
+      where: {
+        ...(companyId ? { companyId } : {}),
+        ...(status ? { status } : {}),
+      },
+      include: this.businessUnitInclude,
+      orderBy: [{ companyId: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  async updateBusinessUnit(id: string, data: {
+    code?: string;
+    name?: string;
+    type?: string;
+    companyId?: string;
+    parentId?: string | null;
+    profitCenterCode?: string | null;
+    status?: string;
+    description?: string | null;
+  }) {
+    const current = await this.prisma.businessUnit.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('业务单元不存在');
+    if (data.code !== undefined && data.code !== current.code) {
+      throw new BadRequestException('业务单元（事业部）编码创建后不能修改');
+    }
+    const companyId = data.companyId || current.companyId;
+    if (data.companyId && data.companyId !== current.companyId) {
+      const company = await this.prisma.company.findUnique({ where: { id: data.companyId } });
+      if (!company || !company.isManagementEntity || company.type !== 'INTERNAL' || company.status !== 'ACTIVE') {
+        throw new BadRequestException('所属管理主体不存在、已停用或不是平台管理主体');
+      }
+      const usageCount = await this.prisma.contract.count({ where: { businessUnitId: id } });
+      if (usageCount > 0) throw new BadRequestException('业务单元已有合同，不能变更所属企业');
+    }
+    if (data.parentId === id) throw new BadRequestException('业务单元不能作为自己的上级');
+    if (data.parentId) await this.validateBusinessUnitParent(data.parentId, companyId);
+    if (data.type && !['REGION', 'PRODUCT', 'PROJECT', 'COMPREHENSIVE'].includes(data.type)) {
+      throw new BadRequestException('无效的业务单元类型');
+    }
+    this.validateStatus(data.status, '业务单元');
+    try {
+      return await this.prisma.businessUnit.update({
+        where: { id },
+        data: {
+          name: data.name === undefined ? undefined : this.normalizeName(data.name, '业务单元名称'),
+          type: data.type,
+          companyId: data.companyId,
+          parentId: data.parentId,
+          profitCenterCode: data.profitCenterCode === undefined ? undefined : data.profitCenterCode?.trim() || null,
+          status: data.status,
+          description: data.description === undefined ? undefined : data.description?.trim() || null,
+        },
+        include: this.businessUnitInclude,
+      });
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  private normalizeBusinessUnitCompanyCode(companyCode: string) {
+    const normalized = companyCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+    if (!normalized) throw new BadRequestException('所属企业编码不符合业务单元自动编号规则');
+    return normalized.slice(0, 40);
+  }
+
+  private async generateBusinessUnitCode(companyCode: string) {
+    const prefix = `BU-${this.normalizeBusinessUnitCompanyCode(companyCode)}-`;
+    const existing = await this.prisma.businessUnit.findMany({
+      where: { code: { startsWith: prefix } },
+      select: { code: true },
+    });
+    const maxSerial = existing.reduce((max, item) => {
+      const matched = item.code.match(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d{3})$`));
+      return matched ? Math.max(max, Number(matched[1])) : max;
+    }, 0);
+    if (maxSerial >= 999) throw new BadRequestException('该企业业务单元（事业部）数量已达到999个，请联系系统管理员');
+    return `${prefix}${String(maxSerial + 1).padStart(3, '0')}`;
+  }
+
+  async deleteBusinessUnit(id: string) {
+    const unit = await this.prisma.businessUnit.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            contracts: true,
+            memberships: true,
+            children: true,
+            productionTasks: true,
+            businessInbounds: true,
+            inventoryLots: true,
+            inventoryLedgers: true,
+            outboundOrders: true,
+            salesOutbounds: true,
+          },
+        },
+      },
+    });
+    if (!unit) throw new NotFoundException('业务单元不存在');
+    if (Object.values(unit._count).some((count) => count > 0)) {
+      throw new BadRequestException('业务单元已有成员、合同或业务数据，请停用而不是删除');
+    }
+    return this.prisma.businessUnit.delete({ where: { id } });
+  }
+
+  private readonly businessUnitInclude = {
+    company: { select: { id: true, code: true, name: true } },
+    parent: { select: { id: true, code: true, name: true } },
+    _count: { select: { memberships: true, contracts: true, children: true } },
+  } as const;
+
+  private async validateBusinessUnitParent(parentId: string, companyId: string) {
+    const parent = await this.prisma.businessUnit.findUnique({ where: { id: parentId } });
+    if (!parent || parent.companyId !== companyId) {
+      throw new BadRequestException('上级业务单元必须属于同一平台管理主体');
+    }
   }
 }

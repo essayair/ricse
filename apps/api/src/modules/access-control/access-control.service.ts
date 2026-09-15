@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { isExternalBusinessPermission } from '../common/external-permission-policy';
 
 const SCOPE_TYPES = [
   'SELF',
@@ -14,6 +15,7 @@ const SCOPE_TYPES = [
   'DEPARTMENT_AND_CHILDREN',
   'COMPANY',
   'SPECIFIED_COMPANIES',
+  'BUSINESS_UNIT',
   'ALL',
 ] as const;
 
@@ -125,6 +127,10 @@ export class AccessControlService {
         role: true,
         employee: { select: { id: true, companyId: true, departmentId: true } },
         company: { select: { id: true, code: true, name: true, type: true, partnerId: true } },
+        businessUnits: {
+          include: { businessUnit: true },
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        },
         roleAssignments: {
           include: {
             role: {
@@ -146,9 +152,11 @@ export class AccessControlService {
       roleId: string;
       scopeType: string;
       targetCompanyIds?: string[];
+      targetBusinessUnitIds?: string[];
       expiresAt?: string | null;
     }>,
     assignedBy: string,
+    membership?: { businessUnitIds?: string[]; defaultBusinessUnitId?: string | null },
   ) {
     if (!assignments.length) throw new BadRequestException('用户至少需要一个角色');
 
@@ -162,6 +170,7 @@ export class AccessControlService {
     if (roleIds.length !== assignments.length) throw new BadRequestException('同一角色不能重复授权');
     const roles = await this.prisma.role.findMany({
       where: { id: { in: roleIds }, status: 'ACTIVE' },
+      include: { permissions: { include: { permission: true } } },
     });
     if (roles.length !== roleIds.length) throw new BadRequestException('包含不存在或已停用的角色');
 
@@ -196,6 +205,43 @@ export class AccessControlService {
       return item;
     });
 
+    const currentMemberships = (await this.prisma.userBusinessUnit.findMany({
+      where: { userId, status: 'ACTIVE' },
+      select: { businessUnitId: true, isDefault: true },
+    })) || [];
+    const businessUnitIds = [...new Set(
+      membership?.businessUnitIds === undefined
+        ? currentMemberships.map((item) => item.businessUnitId)
+        : membership.businessUnitIds,
+    )];
+    const defaultBusinessUnitId = membership?.defaultBusinessUnitId === undefined
+      ? currentMemberships.find((item) => item.isDefault)?.businessUnitId || businessUnitIds[0] || null
+      : membership.defaultBusinessUnitId;
+    if (externalCompany && businessUnitIds.length > 0) {
+      throw new BadRequestException('外部企业账号不配置内部业务单元');
+    }
+    if (!externalCompany && user.companyId && businessUnitIds.length === 0) {
+      throw new BadRequestException('内部企业账号至少需要归属一个业务单元');
+    }
+    if (defaultBusinessUnitId && !businessUnitIds.includes(defaultBusinessUnitId)) {
+      throw new BadRequestException('默认业务单元必须包含在所属业务单元中');
+    }
+    if (businessUnitIds.length) {
+      const units = await this.prisma.businessUnit.findMany({
+        where: { id: { in: businessUnitIds }, status: 'ACTIVE', company: { type: 'INTERNAL', status: 'ACTIVE' } },
+        select: { id: true },
+      });
+      if (units.length !== businessUnitIds.length) throw new BadRequestException('所属业务单元包含不存在或已停用的数据');
+    }
+    for (const item of normalized) {
+      if (item.scopeType !== 'BUSINESS_UNIT') continue;
+      const unitIds = [...new Set(item.targetBusinessUnitIds || [])];
+      if (unitIds.length === 0) throw new BadRequestException('业务单元范围至少选择一个业务单元');
+      if (unitIds.some((id) => !businessUnitIds.includes(id))) {
+        throw new BadRequestException('角色适用业务单元必须包含在用户所属业务单元中');
+      }
+    }
+
     const targetIds = [...new Set(normalized.flatMap((item) => item.targetCompanyIds || []))];
     if (targetIds.length) {
       const companyCount = await this.prisma.company.count({ where: { id: { in: targetIds } } });
@@ -203,6 +249,18 @@ export class AccessControlService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      if (membership?.businessUnitIds !== undefined && !externalCompany) {
+        await tx.userBusinessUnit.deleteMany({ where: { userId } });
+        if (businessUnitIds.length) {
+          await tx.userBusinessUnit.createMany({
+            data: businessUnitIds.map((businessUnitId) => ({
+              userId,
+              businessUnitId,
+              isDefault: businessUnitId === defaultBusinessUnitId,
+            })),
+          });
+        }
+      }
       await tx.userRoleAssignment.deleteMany({ where: { userId } });
       for (const item of normalized) {
         const assignment = await tx.userRoleAssignment.create({
@@ -228,6 +286,15 @@ export class AccessControlService {
             })),
           });
         }
+        if (item.scopeType === 'BUSINESS_UNIT' && item.targetBusinessUnitIds?.length) {
+          await tx.userRoleScope.createMany({
+            data: [...new Set(item.targetBusinessUnitIds)].map((targetId) => ({
+              assignmentId: assignment.id,
+              targetType: 'BUSINESS_UNIT',
+              targetId,
+            })),
+          });
+        }
       }
 
       const primaryRole = roles.find((role) => role.code === 'ADMIN') || roles[0];
@@ -248,10 +315,14 @@ export class AccessControlService {
     );
     const roleCodes = new Set(activeAssignments.map((assignment) => assignment.role.code));
     const roleNames = new Set(activeAssignments.map((assignment) => assignment.role.name));
+    let permissionCodes = activeAssignments.flatMap((assignment) =>
+      assignment.role.permissions.map((entry) => entry.permission.code),
+    );
+    if (user.company?.type === 'EXTERNAL') {
+      permissionCodes = permissionCodes.filter(isExternalBusinessPermission);
+    }
     const permissions = new Set(
-      activeAssignments.flatMap((assignment) =>
-        assignment.role.permissions.map((entry) => entry.permission.code),
-      ),
+      permissionCodes,
     );
     return {
       user,
@@ -273,7 +344,55 @@ export class AccessControlService {
     return context;
   }
 
-  async getContractScope(userId: string): Promise<Prisma.ContractWhereInput> {
+  async getBusinessUnitOptions(userId: string, permissionCode?: string) {
+    const context = await this.getContext(userId);
+    const now = new Date();
+    if (context.isExternal) return [];
+    if (context.isAdmin) {
+      return this.prisma.businessUnit.findMany({
+        where: { status: 'ACTIVE' },
+        include: { company: { select: { id: true, code: true, name: true } } },
+        orderBy: [{ companyId: 'asc' }, { code: 'asc' }],
+      });
+    }
+
+    const membershipIds = context.user.businessUnits
+      .filter((item) => item.status === 'ACTIVE'
+        && item.effectiveAt <= now
+        && (!item.expiresAt || item.expiresAt > now))
+      .map((item) => item.businessUnitId);
+    const assignments = permissionCode
+      ? context.assignments.filter((assignment) =>
+        assignment.role.permissions.some((entry) => entry.permission.code === permissionCode))
+      : context.assignments;
+    const allowedIds = new Set<string>();
+    const companyIds = new Set<string>();
+    let allMemberships = false;
+    for (const assignment of assignments) {
+      if (assignment.scopeType === 'ALL') allMemberships = true;
+      if (assignment.scopeType === 'BUSINESS_UNIT') {
+        assignment.scopes
+          .filter((scope) => scope.targetType === 'BUSINESS_UNIT')
+          .forEach((scope) => allowedIds.add(scope.targetId));
+      }
+      // 内部账号的“本企业”权限在新模型中表示其管理组织内的全部已加入事业部，
+      // 不再拿签约法律主体与事业部做归属匹配。
+      if (assignment.scopeType === 'COMPANY') allMemberships = true;
+      if (assignment.scopeType === 'SPECIFIED_COMPANIES') {
+        assignment.scopes
+          .filter((scope) => scope.targetType === 'COMPANY')
+          .forEach((scope) => companyIds.add(scope.targetId));
+      }
+      if (['SELF', 'DEPARTMENT', 'DEPARTMENT_AND_CHILDREN'].includes(assignment.scopeType)) allMemberships = true;
+    }
+    const units = context.user.businessUnits
+      .filter((item) => membershipIds.includes(item.businessUnitId))
+      .filter((item) => allMemberships || allowedIds.has(item.businessUnitId) || companyIds.has(item.businessUnit.companyId))
+      .map((item) => ({ ...item.businessUnit, isDefault: item.isDefault }));
+    return units;
+  }
+
+  async getContractScope(userId: string, permissionCode = 'contract.view'): Promise<Prisma.ContractWhereInput> {
     const context = await this.getContext(userId);
     if (context.isAdmin) return {};
 
@@ -294,12 +413,16 @@ export class AccessControlService {
       };
     }
 
-    if (context.assignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
+    const permissionAssignments = context.assignments.filter((assignment) =>
+      assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
+    );
+    if (permissionAssignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
 
     const clauses: Prisma.ContractWhereInput[] = [];
     const companyIds = new Set<string>();
     const departmentIds = new Set<string>();
-    for (const assignment of context.assignments) {
+    const businessUnitIds = new Set<string>();
+    for (const assignment of permissionAssignments) {
       if (assignment.scopeType === 'SELF') {
         clauses.push({ createdBy: userId });
       }
@@ -334,57 +457,66 @@ export class AccessControlService {
         }
         allowed.forEach((departmentId) => departmentIds.add(departmentId));
       }
+      if (assignment.scopeType === 'BUSINESS_UNIT') {
+        assignment.scopes
+          .filter((scope) => scope.targetType === 'BUSINESS_UNIT')
+          .forEach((scope) => businessUnitIds.add(scope.targetId));
+      }
     }
     if (companyIds.size > 0) clauses.push({ companyId: { in: [...companyIds] } });
     if (departmentIds.size > 0) clauses.push({ departmentId: { in: [...departmentIds] } });
+    if (businessUnitIds.size > 0) clauses.push({ businessUnitId: { in: [...businessUnitIds] } });
     if (clauses.length === 0) return { id: { equals: '__NO_ACCESS__' } };
     return clauses.length === 1 ? clauses[0] : { OR: clauses };
   }
 
-  async getOrderScope(userId: string): Promise<Prisma.OrderWhereInput> {
-    return { contract: await this.getContractScope(userId) };
+  async getOrderScope(userId: string, permissionCode = 'execution.view'): Promise<Prisma.OrderWhereInput> {
+    return { contract: await this.getContractScope(userId, permissionCode) };
   }
 
-  async getDispatchNoticeScope(userId: string): Promise<Prisma.DispatchNoticeWhereInput> {
-    return { order: await this.getOrderScope(userId) };
+  async getDispatchNoticeScope(userId: string, permissionCode = 'execution.view'): Promise<Prisma.DispatchNoticeWhereInput> {
+    return { order: await this.getOrderScope(userId, permissionCode) };
   }
 
-  async getWaybillScope(userId: string): Promise<Prisma.WaybillWhereInput> {
-    return { dispatchNotice: await this.getDispatchNoticeScope(userId) };
+  async getWaybillScope(userId: string, permissionCode = 'logistics.view'): Promise<Prisma.WaybillWhereInput> {
+    return { dispatchNotice: await this.getDispatchNoticeScope(userId, permissionCode) };
   }
 
-  async getWeighTicketScope(userId: string): Promise<Prisma.WeighTicketWhereInput> {
-    return { waybill: await this.getWaybillScope(userId) };
+  async getWeighTicketScope(userId: string, permissionCode = 'quality.view'): Promise<Prisma.WeighTicketWhereInput> {
+    return { waybill: await this.getWaybillScope(userId, permissionCode) };
   }
 
-  async getQualityInspectionScope(userId: string): Promise<Prisma.QualityInspectionWhereInput> {
-    return { weighTicket: await this.getWeighTicketScope(userId) };
+  async getQualityInspectionScope(userId: string, permissionCode = 'quality.view'): Promise<Prisma.QualityInspectionWhereInput> {
+    return { weighTicket: await this.getWeighTicketScope(userId, permissionCode) };
   }
 
-  async getQualityTaskScope(userId: string): Promise<Prisma.QualityTaskWhereInput> {
-    return { waybill: await this.getWaybillScope(userId) };
+  async getQualityTaskScope(userId: string, permissionCode = 'quality.view'): Promise<Prisma.QualityTaskWhereInput> {
+    return { waybill: await this.getWaybillScope(userId, permissionCode) };
   }
 
-  async getInboundReceiptScope(userId: string): Promise<Prisma.InboundReceiptWhereInput> {
-    return { waybill: await this.getWaybillScope(userId) };
+  async getInboundReceiptScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.InboundReceiptWhereInput> {
+    return { waybill: await this.getWaybillScope(userId, permissionCode) };
   }
 
-  async getBusinessInboundScope(userId: string): Promise<Prisma.BusinessInboundWhereInput> {
-    return { receipt: await this.getInboundReceiptScope(userId) };
+  async getBusinessInboundScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.BusinessInboundWhereInput> {
+    return { receipt: await this.getInboundReceiptScope(userId, permissionCode) };
   }
 
-  async getInventoryLotScope(userId: string): Promise<Prisma.InventoryLotWhereInput> {
+  async getInventoryLotScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.InventoryLotWhereInput> {
     return {
       OR: [
-        { businessInbound: await this.getBusinessInboundScope(userId) },
-        { productionCompletion: { task: await this.getProductionTaskScope(userId) } },
+        { businessInbound: await this.getBusinessInboundScope(userId, permissionCode) },
+        { productionCompletion: { task: await this.getProductionTaskScope(userId, permissionCode) } },
       ],
     };
   }
 
-  async getProductionTaskScope(userId: string): Promise<Prisma.ProductionTaskWhereInput> {
+  async getProductionTaskScope(userId: string, permissionCode = 'production.view'): Promise<Prisma.ProductionTaskWhereInput> {
     const context = await this.getContext(userId);
-    if (context.isAdmin || context.assignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
+    const permissionAssignments = context.assignments.filter((assignment) =>
+      assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
+    );
+    if (context.isAdmin || permissionAssignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
     if (context.isExternal) {
       if (!context.externalPartnerId) {
         throw new ForbiddenException('外部企业未关联合作伙伴，无法确定生产任务数据范围');
@@ -396,36 +528,65 @@ export class AccessControlService {
         ],
       };
     }
-    const clauses: Prisma.ProductionTaskWhereInput[] = [{ createdBy: userId }];
-    if (context.user.company?.partnerId) clauses.push({ ownerPartnerId: context.user.company.partnerId });
-    return { OR: clauses };
+    const clauses: Prisma.ProductionTaskWhereInput[] = [];
+    const businessUnitIds = new Set<string>();
+    const companyIds = new Set<string>();
+    for (const assignment of permissionAssignments) {
+      if (assignment.scopeType === 'SELF') clauses.push({ createdBy: userId });
+      if (assignment.scopeType === 'BUSINESS_UNIT') {
+        assignment.scopes
+          .filter(scope => scope.targetType === 'BUSINESS_UNIT')
+          .forEach(scope => businessUnitIds.add(scope.targetId));
+      }
+      if (assignment.scopeType === 'COMPANY' && context.user.employee?.companyId) {
+        companyIds.add(context.user.employee.companyId);
+      }
+      if (assignment.scopeType === 'SPECIFIED_COMPANIES') {
+        assignment.scopes
+          .filter(scope => scope.targetType === 'COMPANY')
+          .forEach(scope => companyIds.add(scope.targetId));
+      }
+      if (assignment.scopeType === 'DEPARTMENT' && context.user.employee?.departmentId) {
+        clauses.push({ creator: { employee: { departmentId: context.user.employee.departmentId } } });
+      }
+    }
+    if (businessUnitIds.size) clauses.push({ businessUnitId: { in: [...businessUnitIds] } });
+    if (companyIds.size) clauses.push({ businessUnit: { companyId: { in: [...companyIds] } } });
+    return clauses.length ? { OR: clauses } : { id: { equals: '__NO_ACCESS__' } };
   }
 
-  async getProductionRecipeScope(userId: string): Promise<Prisma.ProductionRecipeWhereInput> {
+  async getProductionRecipeScope(userId: string, permissionCode = 'production.view'): Promise<Prisma.ProductionRecipeWhereInput> {
     const context = await this.getContext(userId);
-    if (context.isAdmin || context.assignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
+    const permissionAssignments = context.assignments.filter((assignment) =>
+      assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
+    );
+    if (context.isAdmin || permissionAssignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
     if (context.externalPartnerId) return { ownerPartnerId: context.externalPartnerId };
-    if (context.user.company?.partnerId) return { ownerPartnerId: context.user.company.partnerId };
+    // 生产方案以法律/货权主体维护，但内部授权按管理组织和业务单元控制。
+    // 不能再用账号所属企业的 partnerId 限制方案，否则其他内部签约主体的方案无法使用。
+    if (permissionAssignments.some((assignment) => assignment.scopeType !== 'SELF')) {
+      return { ownerPartner: { isInternal: true, status: 'ACTIVE', deletedAt: null } };
+    }
     return { createdBy: userId };
   }
 
-  async getInventoryLedgerScope(userId: string): Promise<Prisma.InventoryLedgerWhereInput> {
-    return { lot: await this.getInventoryLotScope(userId) };
+  async getInventoryLedgerScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.InventoryLedgerWhereInput> {
+    return { lot: await this.getInventoryLotScope(userId, permissionCode) };
   }
 
-  async getOutboundReceiptScope(userId: string): Promise<Prisma.OutboundReceiptWhereInput> {
-    return { waybill: await this.getWaybillScope(userId) };
+  async getOutboundReceiptScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.OutboundReceiptWhereInput> {
+    return { waybill: await this.getWaybillScope(userId, permissionCode) };
   }
 
-  async getSalesOutboundScope(userId: string): Promise<Prisma.SalesOutboundWhereInput> {
-    return { receipt: await this.getOutboundReceiptScope(userId) };
+  async getSalesOutboundScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.SalesOutboundWhereInput> {
+    return { receipt: await this.getOutboundReceiptScope(userId, permissionCode) };
   }
 
-  async getInventoryReversalScope(userId: string): Promise<Prisma.InventoryReversalWhereInput> {
+  async getInventoryReversalScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.InventoryReversalWhereInput> {
     return {
       OR: [
-        { businessInbound: await this.getBusinessInboundScope(userId) },
-        { salesOutbound: await this.getSalesOutboundScope(userId) },
+        { businessInbound: await this.getBusinessInboundScope(userId, permissionCode) },
+        { salesOutbound: await this.getSalesOutboundScope(userId, permissionCode) },
       ],
     };
   }

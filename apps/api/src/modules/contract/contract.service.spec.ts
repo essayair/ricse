@@ -20,6 +20,7 @@ describe('ContractService', () => {
     buyerId: null,
     signingPartnerId: 'internal-1',
     companyId: 'company-1',
+    businessUnitId: 'bu-1',
     departmentId: null,
     totalAmount: '100000',
     lineItems: [{
@@ -54,6 +55,7 @@ describe('ContractService', () => {
     } as any));
     accessControl.getContractScope.mockResolvedValue({});
     prisma.partner.findFirst.mockResolvedValue({ roles: ['SUPPLIER', 'CUSTOMER'] } as any);
+    prisma.businessUnit.findFirst.mockResolvedValue({ id: 'bu-1', companyId: 'management-company-1' } as any);
     (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: PrismaService) => unknown) => callback(prisma));
 
     const module: TestingModule = await Test.createTestingModule({
@@ -378,6 +380,47 @@ describe('ContractService', () => {
               assigneeCount: 1,
             }),
           ],
+        }),
+      );
+    });
+
+    it('业务单元与合同管理企业独立时仍按业务单元匹配审批人', async () => {
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        companyId: 'operating-company-1',
+        businessUnitId: 'bu-yumen',
+      } as any);
+      prisma.businessUnit.findFirst.mockResolvedValue({
+        id: 'bu-yumen',
+        companyId: 'management-company-1',
+      } as any);
+      prisma.approvalFlow.findUnique.mockResolvedValue({
+        id: 'flow-1',
+        name: '采购合同审批流',
+        status: 'ACTIVE',
+        amountThreshold: null,
+        nodes: [{
+          id: 'node-1', nodeName: '玉门业务负责人', step: 1,
+          roleId: 'role-owner', approvalMode: 'ANY', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS',
+          role: {
+            id: 'role-owner', code: 'BUSINESS_OWNER', name: '业务负责人', status: 'ACTIVE',
+            permissions: [{ permission: { code: 'contract.approve' } }],
+          },
+        }],
+      } as any);
+      prisma.userRoleAssignment.findMany.mockResolvedValue([{
+        scopeType: 'BUSINESS_UNIT',
+        user: {
+          id: 'approver-yumen', name: '玉门负责人', username: 'yumen_owner', status: 'ACTIVE',
+          companyId: 'management-company-1', employee: { departmentId: 'dept-1' },
+        },
+        scopes: [{ targetType: 'BUSINESS_UNIT', targetId: 'bu-yumen' }],
+      }] as any);
+
+      await expect(service.getApprovalReadiness('test-id')).resolves.toEqual(
+        expect.objectContaining({
+          ready: true,
+          nodes: [expect.objectContaining({ assigneeCount: 1 })],
         }),
       );
     });

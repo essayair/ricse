@@ -12,6 +12,7 @@ type ApprovalContractContext = {
   totalAmount: unknown;
   companyId?: string | null;
   departmentId?: string | null;
+  businessUnitId?: string | null;
   createdBy: string;
 };
 
@@ -60,6 +61,7 @@ export class ContractService {
     buyer: { select: { id: true, code: true, name: true, roles: true } },
     signingPartner: { select: { id: true, code: true, name: true, roles: true, isInternal: true } },
     company: { select: { id: true, code: true, name: true } },
+    businessUnit: { select: { id: true, code: true, name: true, type: true, profitCenterCode: true } },
     attachments: { orderBy: { createdAt: 'desc' as const } },
     orders: {
       where: { deletedAt: null },
@@ -179,11 +181,38 @@ export class ContractService {
       },
       orderBy: [{ companyId: 'asc' }, { sort: 'asc' }, { name: 'asc' }],
     });
+    const availableBusinessUnits = (await this.accessControl.getBusinessUnitOptions(userId, 'contract.create')) || [];
+    const businessUnits = availableBusinessUnits;
+    const defaultBusinessUnitId = businessUnits.find((item: any) => item.isDefault)?.id
+      || (businessUnits.length === 1 ? businessUnits[0].id : null);
 
     return {
       defaultDepartmentId,
+      defaultBusinessUnitId,
       departments,
+      businessUnits,
     };
+  }
+
+  async getBusinessUnitFilterOptions(userId: string) {
+    await this.accessControl.assertPermission(userId, 'contract.view');
+    return this.accessControl.getBusinessUnitOptions(userId, 'contract.view');
+  }
+
+  private async resolveBusinessUnit(
+    userId: string,
+    requestedBusinessUnitId: string | null | undefined,
+    permissionCode: string,
+  ) {
+    const options = (await this.accessControl.getBusinessUnitOptions(userId, permissionCode)) || [];
+    const selected = requestedBusinessUnitId
+      ? options.find((item: any) => item.id === requestedBusinessUnitId)
+      : options.find((item: any) => item.isDefault) || (options.length === 1 ? options[0] : null);
+    if (!selected) {
+      if (requestedBusinessUnitId) throw new ForbiddenException('所选业务单元不在当前角色授权范围内');
+      return null;
+    }
+    return selected;
   }
 
   private async validateSigningPartner(
@@ -229,8 +258,10 @@ export class ContractService {
         unitPrice: unknown;
         salesUnitPrice: unknown;
       }>;
+      businessUnitId?: string | null;
     },
   ) {
+    if (!contract.businessUnitId) throw new BadRequestException('请选择业务单元（事业部）');
     await this.validateSigningPartner(contract.signingPartnerId || undefined, contract.type, client);
     if (!contract.sellerId) throw new BadRequestException('请选择交易对手方');
     if (contract.type === 'BILATERAL' && !contract.buyerId) {
@@ -295,6 +326,9 @@ export class ContractService {
       if (!department) throw new BadRequestException('业务部门不存在');
       companyId = department.companyId;
     }
+    const businessUnit = access.isExternal
+      ? null
+      : await this.resolveBusinessUnit(userId, dto.businessUnitId, 'contract.create');
     const contractNo = await this.generateContractNo(dto.type);
 
     try {
@@ -310,6 +344,7 @@ export class ContractService {
           signingPartnerId: dto.signingPartnerId,
           companyId,
           departmentId,
+          businessUnitId: businessUnit?.id || dto.businessUnitId || null,
           externalNo: dto.externalNo,
           contactPerson: dto.contactPerson,
           contactPhone: dto.contactPhone,
@@ -374,6 +409,7 @@ export class ContractService {
     type?: string;
     search?: string;
     sellerId?: string;
+    businessUnitId?: string;
     dateFrom?: string;
     dateTo?: string;
   }, userId?: string) {
@@ -391,6 +427,7 @@ export class ContractService {
         { buyerId: params.sellerId },
       ];
     }
+    if (params.businessUnitId) where.businessUnitId = params.businessUnitId;
     if (params.dateFrom || params.dateTo) {
       where.signedAt = {};
       if (params.dateFrom) where.signedAt.gte = new Date(params.dateFrom);
@@ -400,6 +437,7 @@ export class ContractService {
       const searchCondition = [
         { contractNo: { contains: params.search, mode: 'insensitive' as const } },
         { title: { contains: params.search, mode: 'insensitive' as const } },
+        { businessUnit: { name: { contains: params.search, mode: 'insensitive' as const } } },
         { seller: { name: { contains: params.search, mode: 'insensitive' as const } } },
       ];
       if (where.OR) {
@@ -411,7 +449,7 @@ export class ContractService {
     }
     if (userId) {
       await this.accessControl.assertPermission(userId, 'contract.view');
-      const scope = await this.accessControl.getContractScope(userId);
+      const scope = await this.accessControl.getContractScope(userId, 'contract.view');
       const existingAnd = Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : [];
       where.AND = [...existingAnd, scope];
     }
@@ -427,9 +465,63 @@ export class ContractService {
       this.prisma.contract.count({ where }),
     ]);
 
+    const permissionMap = userId
+      ? await this.getScopedPermissionMap(userId, items.map((item) => item.id))
+      : new Map<string, string[]>();
     return {
-      items: items.map((contract) => this.withFulfillment(contract)),
+      items: items.map((contract) => ({
+        ...this.withFulfillment(contract),
+        allowedPermissions: permissionMap.get(contract.id) || [],
+      })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    };
+  }
+
+  private async getScopedPermissionMap(userId: string, contractIds: string[]) {
+    const result = new Map(contractIds.map((id) => [id, [] as string[]]));
+    if (!contractIds.length) return result;
+    const context = await this.accessControl.getContext(userId);
+    const permissionCodes = [
+      'contract.edit', 'contract.submit', 'contract.approve',
+      'contract.void', 'contract.delete', 'execution.manage',
+    ];
+    for (const permissionCode of permissionCodes) {
+      if (!context.isAdmin && !context.permissions.includes(permissionCode)) continue;
+      const scope = await this.accessControl.getContractScope(userId, permissionCode);
+      const matches = await this.prisma.contract.findMany({
+        where: { id: { in: contractIds }, deletedAt: null, AND: [scope] },
+        select: { id: true },
+      });
+      for (const match of matches) result.get(match.id)?.push(permissionCode);
+    }
+    return result;
+  }
+
+  async getAvailableActions(id: string, userId: string) {
+    const contract = await this.findOne(id, userId, 'contract.view');
+    const permissions = (await this.getScopedPermissionMap(userId, [id])).get(id) || [];
+    const context = await this.accessControl.getContext(userId);
+    const hasPendingApproval = contract.approvals?.some(
+      (approval: any) => approval.status === 'PENDING' && approval.assigneeId === userId,
+    );
+    return {
+      permissions,
+      canEdit: ['DRAFT', 'REJECTED'].includes(contract.status) && permissions.includes('contract.edit'),
+      canSubmit: ['DRAFT', 'REJECTED'].includes(contract.status) && permissions.includes('contract.submit'),
+      canApprove: contract.status === 'PENDING_APPROVAL'
+        && permissions.includes('contract.approve')
+        && (context.isAdmin || hasPendingApproval),
+      canWithdraw: contract.status === 'PENDING_APPROVAL'
+        && contract.createdBy === userId
+        && permissions.includes('contract.submit'),
+      canVoid: !['CLOSED', 'VOIDED'].includes(contract.status) && permissions.includes('contract.void'),
+      canStartExecution: contract.status === 'APPROVED' && permissions.includes('execution.manage'),
+      canComplete: contract.status === 'EXECUTING' && permissions.includes('execution.manage'),
+      canClose: ['EXECUTING', 'COMPLETED'].includes(contract.status) && permissions.includes('execution.manage'),
+      canDelete: (contract.status === 'DRAFT'
+        && permissions.includes('contract.edit')
+        && (context.isAdmin || contract.createdBy === userId))
+        || (contract.status === 'VOIDED' && context.isAdmin && permissions.includes('contract.delete')),
     };
   }
 
@@ -437,15 +529,22 @@ export class ContractService {
     let scope: Prisma.ContractWhereInput = {};
     if (userId) {
       await this.accessControl.assertPermission(userId, permissionCode);
-      scope = await this.accessControl.getContractScope(userId);
+      scope = await this.accessControl.getContractScope(userId, permissionCode);
     }
     const contract = await this.prisma.contract.findFirst({
       where: { id, deletedAt: null, AND: [scope] },
       include: this.include,
     });
     if (!contract || contract.deletedAt) throw new NotFoundException('合同不存在');
+    const department = contract.departmentId
+      ? await this.prisma.department.findUnique({
+        where: { id: contract.departmentId },
+        select: { id: true, name: true },
+      })
+      : null;
     return this.withFulfillment({
       ...contract,
+      department,
       attachments: (contract.attachments || []).map((attachment) => ({
         ...attachment,
         originalName: normalizeUploadFilename(attachment.originalName),
@@ -469,7 +568,7 @@ export class ContractService {
       user.id,
       permissionByStatus[status] || 'contract.edit',
     );
-    const scope = await this.accessControl.getContractScope(user.id);
+    const scope = await this.accessControl.getContractScope(user.id, permissionByStatus[status] || 'contract.edit');
 
     return this.prisma.$transaction(async (tx) => {
       const contract = await tx.contract.findFirst({
@@ -484,6 +583,7 @@ export class ContractService {
           buyerId: true,
           companyId: true,
           departmentId: true,
+          businessUnitId: true,
           createdBy: true,
           lineItems: {
             select: {
@@ -607,7 +707,7 @@ export class ContractService {
         }
       }
 
-      let approvalScope: { companyId: string | null; departmentId: string | null } | null = null;
+      let approvalScope: { companyId: string | null; departmentId: string | null; businessUnitId: string | null } | null = null;
       if (status === 'PENDING_APPROVAL') {
         await this.validateContractForSubmission(tx, contract);
         if (
@@ -618,7 +718,11 @@ export class ContractService {
           throw new ForbiddenException('外部企业只能提交本企业作为交易参与方的合同');
         }
         const plan = await this.resolveApprovalPlan(tx, contract);
-        approvalScope = { companyId: plan.companyId, departmentId: plan.departmentId };
+        approvalScope = {
+          companyId: plan.companyId,
+          departmentId: plan.departmentId,
+          businessUnitId: plan.businessUnitId,
+        };
         await this.assignApprovals(tx, id, plan.nodes);
       }
 
@@ -635,6 +739,7 @@ export class ContractService {
       if (approvalScope) {
         updateData.companyId = approvalScope.companyId;
         updateData.departmentId = approvalScope.departmentId;
+        updateData.businessUnitId = approvalScope.businessUnitId;
       }
 
       const changed = await tx.contract.updateMany({
@@ -651,7 +756,7 @@ export class ContractService {
     let scope: Prisma.ContractWhereInput = {};
     if (userId) {
       await this.accessControl.assertPermission(userId, 'contract.submit');
-      scope = await this.accessControl.getContractScope(userId);
+      scope = await this.accessControl.getContractScope(userId, 'contract.submit');
     }
     const contract = await this.prisma.contract.findFirst({
       where: { id, deletedAt: null, AND: [scope] },
@@ -665,6 +770,7 @@ export class ContractService {
         buyerId: true,
         companyId: true,
         departmentId: true,
+        businessUnitId: true,
         createdBy: true,
         lineItems: {
           select: {
@@ -747,6 +853,7 @@ export class ContractService {
 
     let companyId = contract.companyId || null;
     let departmentId = contract.departmentId || null;
+    let businessUnitId = contract.businessUnitId || null;
     if (!companyId || !departmentId) {
       const creator = await client.user.findUnique({
         where: { id: contract.createdBy },
@@ -758,6 +865,18 @@ export class ContractService {
       companyId = companyId || creator?.companyId || null;
       departmentId = departmentId || creator?.employee?.departmentId || null;
     }
+    if (!businessUnitId) {
+      const membership = await client.userBusinessUnit?.findFirst?.({
+        where: {
+          userId: contract.createdBy,
+          status: 'ACTIVE',
+          businessUnit: { status: 'ACTIVE' },
+        },
+        select: { businessUnitId: true },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      });
+      businessUnitId = membership?.businessUnitId || null;
+    }
     if (departmentId) {
       const department = await client.department.findUnique({
         where: { id: departmentId },
@@ -765,6 +884,13 @@ export class ContractService {
       });
       if (!department) throw new BadRequestException('合同业务部门不存在，无法确定审批人员范围');
       companyId = department.companyId;
+    }
+    if (businessUnitId) {
+      const businessUnit = await client.businessUnit.findFirst({
+        where: { id: businessUnitId, status: 'ACTIVE' },
+        select: { id: true, companyId: true },
+      });
+      if (!businessUnit) throw new BadRequestException('合同业务单元不存在或已停用，无法确定审批人员范围');
     }
 
     const departments = activeNodes.some((node) => node.scopeType === 'DEPARTMENT')
@@ -789,6 +915,9 @@ export class ContractService {
       }
       if (node.scopeType === 'DEPARTMENT' && !departmentId) {
         throw new BadRequestException(`审批节点“${node.nodeName}”需要合同业务部门，请编辑合同并选择业务部门`);
+      }
+      if (node.scopeType === 'BUSINESS_UNIT' && !businessUnitId) {
+        throw new BadRequestException(`审批节点“${node.nodeName}”需要合同业务单元，请编辑合同并选择业务单元`);
       }
 
       const assignments = await client.userRoleAssignment.findMany({
@@ -822,6 +951,9 @@ export class ContractService {
         const departmentScopeIds = assignment.scopes
           .filter((item) => item.targetType === 'DEPARTMENT')
           .map((item) => item.targetId);
+        const businessUnitScopeIds = assignment.scopes
+          .filter((item) => item.targetType === 'BUSINESS_UNIT')
+          .map((item) => item.targetId);
 
         if (node.scopeType === 'COMPANY') {
           if (assignment.scopeType === 'COMPANY') {
@@ -831,6 +963,19 @@ export class ContractService {
             return companyScopeIds.includes(companyId!);
           }
           if (assignment.scopeType === 'SELF') return assignment.user.id === contract.createdBy;
+          return false;
+        }
+
+        if (node.scopeType === 'BUSINESS_UNIT') {
+          if (assignment.scopeType === 'BUSINESS_UNIT') {
+            return businessUnitScopeIds.includes(businessUnitId!);
+          }
+          if (assignment.scopeType === 'COMPANY') {
+            return assignment.user.companyId === companyId || companyScopeIds.includes(companyId!);
+          }
+          if (assignment.scopeType === 'SPECIFIED_COMPANIES') {
+            return companyScopeIds.includes(companyId!);
+          }
           return false;
         }
 
@@ -889,6 +1034,7 @@ export class ContractService {
       flowName: flow.name,
       companyId,
       departmentId,
+      businessUnitId,
       nodes: resolvedNodes,
     };
   }
@@ -935,7 +1081,7 @@ export class ContractService {
     id: string,
     dto: {
       title?: string; type?: string; totalAmount?: number; sellerId?: string | null; buyerId?: string | null;
-      signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; externalNo?: string;
+      signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; businessUnitId?: string | null; externalNo?: string;
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;
@@ -983,6 +1129,12 @@ export class ContractService {
       if (!department) throw new BadRequestException('业务部门不存在');
       resolvedCompanyId = department.companyId;
     }
+    const requestedBusinessUnitId = dto.businessUnitId === undefined
+      ? contract.businessUnitId
+      : dto.businessUnitId;
+    const businessUnit = userId && requestedBusinessUnitId
+      ? await this.resolveBusinessUnit(userId, requestedBusinessUnitId, 'contract.edit')
+      : null;
 
     return this.prisma.$transaction(async (tx) => {
       if (lineItems !== undefined) {
@@ -1015,6 +1167,7 @@ export class ContractService {
           ...rest,
           draftData: draftData as Prisma.InputJsonValue | undefined,
           companyId: resolvedCompanyId,
+          businessUnitId: businessUnit?.id || requestedBusinessUnitId || null,
           signedAt: signedAt ? new Date(signedAt) : undefined,
           effectiveAt: effectiveAt ? new Date(effectiveAt) : undefined,
           expireAt: expireAt ? new Date(expireAt) : undefined,
@@ -1073,7 +1226,7 @@ export class ContractService {
     let contractScope: Prisma.ContractWhereInput = {};
     if (userId) {
       await this.accessControl.assertPermission(userId, permissionCode);
-      contractScope = await this.accessControl.getContractScope(userId);
+      contractScope = await this.accessControl.getContractScope(userId, permissionCode);
     }
     return this.prisma.attachment.findFirst({
       where: {

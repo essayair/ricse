@@ -35,6 +35,7 @@ export class WeighTicketService {
                 contract: {
                   select: {
                     id: true, contractNo: true, title: true, type: true,
+                    businessUnit: { select: { id: true, code: true, name: true } },
                     seller: { select: { id: true, name: true } },
                     buyer: { select: { id: true, name: true } },
                     signingPartner: { select: { id: true, name: true } },
@@ -78,6 +79,7 @@ export class WeighTicketService {
             contract: {
               select: {
                 id: true, contractNo: true, title: true, type: true,
+                businessUnit: { select: { id: true, code: true, name: true } },
                 seller: { select: { id: true, name: true } },
                 buyer: { select: { id: true, name: true } },
                 signingPartner: { select: { id: true, name: true } },
@@ -203,7 +205,7 @@ export class WeighTicketService {
 
   async eligibleWaybills(userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.view');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.view');
     return this.prisma.waybill.findMany({
       where: {
         deletedAt: null,
@@ -244,7 +246,7 @@ export class WeighTicketService {
 
   async create(dto: CreateWeighTicketDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.manage');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: dto.waybillId, deletedAt: null, AND: [scope] },
       include: {
@@ -337,7 +339,7 @@ export class WeighTicketService {
       throw new BadRequestException('只有待称重或称重中的磅单可以更换物流运单');
     }
     if (ticket.waybillId === waybillId) return ticket;
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null, AND: [scope] },
       include: { dispatchNotice: true },
@@ -374,7 +376,7 @@ export class WeighTicketService {
 
   async findAll(params: { status?: string; abnormal?: string; search?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.view');
-    const scope = await this.accessControl.getWeighTicketScope(userId);
+    const scope = await this.accessControl.getWeighTicketScope(userId, 'quality.view');
     const where: Prisma.WeighTicketWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.abnormal === 'true') where.abnormal = true;
@@ -399,7 +401,7 @@ export class WeighTicketService {
 
   async findManagementFiles(params: { status?: string; abnormal?: string; search?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.view');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.view');
     const ticketFilter: Prisma.WeighTicketWhereInput = { deletedAt: null };
     if (params.status) ticketFilter.status = params.status;
     if (params.abnormal === 'true') ticketFilter.abnormal = true;
@@ -417,6 +419,8 @@ export class WeighTicketService {
         { dispatchNotice: { noticeNo: { contains: params.search, mode: 'insensitive' } } },
         { dispatchNotice: { order: { name: { contains: params.search, mode: 'insensitive' } } } },
         { dispatchNotice: { order: { orderNo: { contains: params.search, mode: 'insensitive' } } } },
+        { dispatchNotice: { order: { contract: { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } } } } },
+        { dispatchNotice: { order: { contract: { businessUnit: { code: { contains: params.search, mode: 'insensitive' } } } } } },
         { weighTickets: { some: { deletedAt: null, ticketNo: { contains: params.search, mode: 'insensitive' } } } },
         { weighTickets: { some: { deletedAt: null, materialName: { contains: params.search, mode: 'insensitive' } } } },
         { weighTickets: { some: { deletedAt: null, shipperName: { contains: params.search, mode: 'insensitive' } } } },
@@ -434,7 +438,7 @@ export class WeighTicketService {
 
   async findManagementFile(waybillId: string, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.view');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.view');
     const item = await this.prisma.waybill.findFirst({
       where: {
         id: waybillId,
@@ -450,7 +454,7 @@ export class WeighTicketService {
 
   async findOne(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getWeighTicketScope(userId);
+    const scope = await this.accessControl.getWeighTicketScope(userId, permission);
     const ticket = await this.prisma.weighTicket.findFirst({
       where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });
@@ -644,7 +648,7 @@ export class WeighTicketService {
 
   async findAttachmentById(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getWeighTicketScope(userId);
+    const scope = await this.accessControl.getWeighTicketScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,
@@ -684,7 +688,7 @@ export class WeighTicketService {
       include: { waybill: true },
     });
     if (!task) throw new NotFoundException('过磅任务不存在');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
     const permitted = await this.prisma.waybill.findFirst({ where: { id: task.waybillId, AND: [scope] }, select: { id: true } });
     if (!permitted) throw new NotFoundException('过磅任务不存在');
     if (['COMPLETED', 'VOIDED'].includes(task.status)) throw new BadRequestException('已完成或已作废过磅任务不能追加现场影像');
@@ -700,7 +704,7 @@ export class WeighTicketService {
 
   async findTaskForEvidence(id: string, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.manage');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
     const task = await this.prisma.weighTask.findFirst({
       where: { id, deletedAt: null, waybill: { deletedAt: null, AND: [scope] } },
       include: {
@@ -718,7 +722,7 @@ export class WeighTicketService {
 
   async findTaskAttachmentById(id: string, userId: string, permission = 'quality.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,
@@ -766,7 +770,7 @@ export class WeighTicketService {
     userId: string,
   ) {
     await this.accessControl.assertPermission(userId, 'quality.manage');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null, AND: [scope] },
       select: { id: true },

@@ -45,6 +45,7 @@ export class CreateProductionTaskDto {
   @IsIn(['INTERNAL', 'OUTSOURCED']) mode: string;
   @IsString() recipeId: string;
   @IsString() ownerPartnerId: string;
+  @IsString() businessUnitId: string;
   @IsOptional() @IsString() processorOrganizationId?: string;
   @IsString() sourceWarehouseId: string;
   @IsString() targetWarehouseId: string;

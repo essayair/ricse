@@ -55,6 +55,10 @@ interface ContractDetail {
   signingPartnerId?: string;
   signingPartner?: { id: string; code: string; name: string; roles: string[]; isInternal: boolean } | null;
   company?: { code: string; name: string } | null;
+  departmentId?: string | null;
+  department?: { id: string; name: string } | null;
+  businessUnitId?: string | null;
+  businessUnit?: { id: string; code: string; name: string; type: string; profitCenterCode?: string | null } | null;
   externalNo?: string; contactPerson?: string; contactPhone?: string;
   pricingType?: string; overfillPct?: string; shortfallPct?: string;
   deliveryMethod?: string; deliveryLocation?: string;
@@ -83,6 +87,19 @@ interface ContractDetail {
       _count: { waybills: number };
     }>;
   }>;
+}
+
+interface AvailableActions {
+  permissions: string[];
+  canEdit: boolean;
+  canSubmit: boolean;
+  canApprove: boolean;
+  canWithdraw: boolean;
+  canVoid: boolean;
+  canStartExecution: boolean;
+  canComplete: boolean;
+  canClose: boolean;
+  canDelete: boolean;
 }
 
 interface FulfillmentDirection {
@@ -506,6 +523,7 @@ export default function ContractDetailPage() {
   const [pendingAction, setPendingAction] = useState<ContractAction | null>(null);
   const [protectedAction, setProtectedAction] = useState<ContractAction | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: string; role: string; name: string } | null>(null);
+  const [availableActions, setAvailableActions] = useState<AvailableActions | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -516,8 +534,12 @@ export default function ContractDetailPage() {
 
   const fetchContract = useCallback(async () => {
     try {
-      const data = await api.get<ContractDetail>(`/contracts/${params.id}`);
+      const [data, actionData] = await Promise.all([
+        api.get<ContractDetail>(`/contracts/${params.id}`),
+        api.get<AvailableActions>(`/contracts/${params.id}/available-actions`),
+      ]);
       setContract(data);
+      setAvailableActions(actionData);
     } catch { console.error('Failed to load contract'); }
     finally { setLoading(false); }
   }, [params.id]);
@@ -577,27 +599,20 @@ export default function ContractDetailPage() {
     : 0;
   const bilateralProfit = bilateralSalesAmount - Number(c.totalAmount || 0);
   const cfg = STATUS_MAP[c.status] || { label: c.status };
-  const userRole = currentUser?.role || 'USER';
-  const roleActions = ROLE_ACTIONS[c.status]?.[userRole] || ROLE_ACTIONS[c.status]?.['USER'] || [];
-  const hasCurrentApprovalTask = c.approvals?.some(
-    (approval) => approval.status === 'PENDING' && approval.assignee.id === currentUser?.id,
-  );
-  let actions = roleActions;
-  if (c.status === 'PENDING_APPROVAL' && userRole !== 'ADMIN') {
-    const approvalActions = hasCurrentApprovalTask
-      ? ROLE_ACTIONS.PENDING_APPROVAL.APPROVER
-      : [];
-    const ownerActions = c.creator.id === currentUser?.id
-      ? roleActions.filter((action) => ['DRAFT', 'VOIDED'].includes(action.next))
-      : [];
-    actions = [...approvalActions, ...ownerActions].filter(
-      (action, index, items) => items.findIndex((item) => item.next === action.next) === index,
-    );
-  }
-  const canEdit = ['DRAFT', 'REJECTED'].includes(c.status) && ['SALESPERSON', 'MANAGER', 'ADMIN', 'USER'].includes(userRole);
-  const canDelete = (
-    c.status === 'DRAFT' && (userRole === 'ADMIN' || c.creator.id === currentUser?.id)
-  ) || (c.status === 'VOIDED' && userRole === 'ADMIN');
+  const actions: ContractAction[] = [
+    ...(availableActions?.canSubmit ? [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' as const }] : []),
+    ...(availableActions?.canApprove ? [
+      { next: 'APPROVED', label: '审核通过', variant: 'default' as const, needsComment: true },
+      { next: 'REJECTED', label: '驳回', variant: 'destructive' as const, needsComment: true },
+    ] : []),
+    ...(availableActions?.canWithdraw ? [{ next: 'DRAFT', label: '撤回', variant: 'outline' as const }] : []),
+    ...(availableActions?.canStartExecution ? [{ next: 'EXECUTING', label: '开始执行', variant: 'default' as const }] : []),
+    ...(availableActions?.canComplete ? [{ next: 'COMPLETED', label: '标记完成', variant: 'default' as const }] : []),
+    ...(availableActions?.canClose ? [{ next: 'CLOSED', label: c.status === 'COMPLETED' ? '归档关闭' : '关闭', variant: 'outline' as const }] : []),
+    ...(availableActions?.canVoid ? [{ next: 'VOIDED', label: c.status === 'EXECUTING' ? '终止并作废' : '作废', variant: 'destructive' as const }] : []),
+  ];
+  const canEdit = Boolean(availableActions?.canEdit);
+  const canDelete = Boolean(availableActions?.canDelete);
   const directActions = actions.filter((action) => !PROTECTED_STATUS_ACTIONS.has(action.next));
   const protectedActions = actions.filter((action) => PROTECTED_STATUS_ACTIONS.has(action.next));
 
@@ -655,14 +670,22 @@ export default function ContractDetailPage() {
           <StatusText status={c.status}>{cfg.label}</StatusText>
         </CardHeader>
         <CardContent>
+          <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+            <div className="mb-3 text-xs font-semibold text-muted-foreground">内部管理信息 · 不属于合同正文</div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <Field label="业务单元（事业部）" value={c.businessUnit ? `${c.businessUnit.code} ${c.businessUnit.name}` : '—'} />
+              <Field label="业务部门" value={c.department?.name || '—'} />
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-4 text-sm">
-            <Field label={c.type === 'PURCHASE' ? '对手方（供应商）' : c.type === 'SALES' ? '对手方（客户）' : '上游对手方（供应商）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
-            {c.type === 'BILATERAL' && <Field label="下游对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />}
+            <div className="col-span-2"><Field label="合同标题" value={c.title} /></div>
+            <Field label="外部合同号" value={c.externalNo || '—'} />
             <Field label="我方签约主体（内部）" value={c.signingPartner ? `${c.signingPartner.code} ${c.signingPartner.name}` : c.company ? `${c.company.code} ${c.company.name}（旧数据）` : '—'} />
+            <Field label={c.type === 'PURCHASE' ? '交易对手方（供应商）' : c.type === 'SALES' ? '交易对手方（客户）' : '上游交易对手方（供应商）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
+            {c.type === 'BILATERAL' && <Field label="下游交易对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />}
             <Field label={c.type === 'BILATERAL' ? '采购金额（审批口径）' : '总金额'} value={<span className="text-lg font-bold text-primary">¥{Number(c.totalAmount).toLocaleString()}</span>} />
             {c.type === 'BILATERAL' && <Field label="销售金额" value={<span className="font-mono">¥{bilateralSalesAmount.toLocaleString()}</span>} />}
             {c.type === 'BILATERAL' && <Field label="预计毛利" value={<span className={`font-bold ${bilateralProfit >= 0 ? 'text-success' : 'text-destructive'}`}>¥{bilateralProfit.toLocaleString()}</span>} />}
-            <Field label="外部合同号" value={c.externalNo || '—'} />
             <Field label="联系人" value={`${c.contactPerson || '—'}${c.contactPhone ? ` ${c.contactPhone}` : ''}`} />
             <Field label="定价类型" value={c.pricingType === 'FIXED' ? '一口价' : c.pricingType === 'BASIS' ? '基差定价' : c.pricingType === 'FLOATING' ? '不定价' : '—'} />
             <Field label="溢装/短装" value={`${c.overfillPct || '—'}% / ${c.shortfallPct || '—'}%`} />
@@ -696,7 +719,7 @@ export default function ContractDetailPage() {
               <Separator className="my-4" />
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">当前角色: {userRole}</span>
+                <span className="text-xs text-muted-foreground">当前用户：{currentUser?.name || '—'}；以下操作已按业务单元（事业部）权限过滤</span>
                 <div className="flex gap-2 ml-4">
                   {directActions.map((a) => (
                     <Button key={a.next} variant={a.variant} onClick={() => handleActionClick(a)}>

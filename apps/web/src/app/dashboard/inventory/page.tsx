@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 
 export default function InventoryPage() {
-  const [data, setData] = useState<any>({ lots: [], ownerSummaries: [], warehouseSummaries: [], ownerWarehouseSummaries: [], summary: {} });
+  const [data, setData] = useState<any>({ lots: [], businessUnitSummaries: [], ownerSummaries: [], warehouseSummaries: [], ownerWarehouseSummaries: [], summary: {} });
   const [ledger, setLedger] = useState<any[]>([]);
   const [search, setSearch] = useState('');
 
@@ -28,13 +28,14 @@ export default function InventoryPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">在库总览</h1>
-        <p className="mt-1 text-sm text-muted-foreground">总库存仅作统计，库存所有权按我方采购主体区分，实物位置按仓库区分</p>
+        <p className="mt-1 text-sm text-muted-foreground">总库存仅作统计；经营归属按业务单元（事业部）区分，库存所有权按法律主体区分，实物位置按仓库区分</p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <Summary label="总账面库存" value={`${Number(data.summary.totalPhysicalQuantity || 0).toLocaleString()} 吨`} />
         <Summary label="业务预占" value={`${Number(data.summary.totalReservedQuantity || 0).toLocaleString()} 吨`} />
         <Summary label="可用库存" value={`${Number(data.summary.totalAvailableQuantity || 0).toLocaleString()} 吨`} />
         <Summary label="库存主体" value={data.summary.ownerCount || 0} />
+        <Summary label="业务单元" value={data.summary.businessUnitCount || 0} />
         <Summary label="库存批次" value={data.summary.lotCount || 0} />
         <Summary label="物料种类" value={data.summary.materialCount || 0} />
         <Summary label="涉及仓库" value={data.summary.warehouseCount || 0} />
@@ -45,11 +46,21 @@ export default function InventoryPage() {
           className="pl-9"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜索库存主体、批次、物料或供应商"
+          placeholder="搜索业务单元、库存主体、批次、物料或供应商"
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-3">
+        <InventorySummaryTable
+          title="各业务单元（事业部）库存"
+          description="按经营与利润责任归属分别统计"
+          rows={data.businessUnitSummaries}
+          emptyText="暂无业务单元库存"
+          name={(row) => row.businessUnitName}
+          code={(row) => row.businessUnitCode || '未设置业务单元编码'}
+          extraHeader="库存主体"
+          extraValue={(row) => row.ownerCount}
+        />
         <InventorySummaryTable
           title="各仓库库存"
           description="合并统计同一仓库内所有库存主体的货物"
@@ -73,11 +84,12 @@ export default function InventoryPage() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="border-b p-4"><div className="font-semibold">主体×仓库库存明细</div><div className="mt-1 text-xs text-muted-foreground">同一采购主体可分布在多个仓库；同一仓库内的不同主体库存分行核算，不会混用。</div></div>
+        <div className="border-b p-4"><div className="font-semibold">业务单元×主体×仓库库存明细</div><div className="mt-1 text-xs text-muted-foreground">业务单元、货权主体或仓库任一维度不同即分行核算，不会相互混用。</div></div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1050px] text-sm">
-            <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">库存主体</th><th className="p-3">仓库位置</th><th className="p-3 text-right">账面库存</th><th className="p-3 text-right">业务预占</th><th className="p-3 text-right">可用库存</th><th className="p-3 text-right">批次数</th><th className="p-3 text-right">物料种类</th></tr></thead>
-            <tbody>{data.ownerWarehouseSummaries.map((row: any) => <tr key={`${row.ownerPartnerId || 'unassigned'}:${row.warehouseId}`} className="border-b">
+          <table className="w-full min-w-[1200px] text-sm">
+            <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">业务单元（事业部）</th><th className="p-3">库存主体</th><th className="p-3">仓库位置</th><th className="p-3 text-right">账面库存</th><th className="p-3 text-right">业务预占</th><th className="p-3 text-right">可用库存</th><th className="p-3 text-right">批次数</th><th className="p-3 text-right">物料种类</th></tr></thead>
+            <tbody>{data.ownerWarehouseSummaries.map((row: any) => <tr key={`${row.businessUnitId || 'unassigned'}:${row.ownerPartnerId || 'unassigned'}:${row.warehouseId}`} className="border-b">
+              <td className="p-3"><div className="font-medium">{row.businessUnitName}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{row.businessUnitCode || '-'}</div></td>
               <td className="p-3"><div className="font-medium">{row.ownerName}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{row.ownerCode || '未设置主体编码'}</div></td>
               <td className="p-3"><div>{row.warehouseName}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{row.warehouseCode}</div></td>
               <td className="p-3 text-right font-medium">{weight(row.totalPhysicalQuantity)}</td><td className="p-3 text-right text-amber-600">{weight(row.totalReservedQuantity)}</td><td className="p-3 text-right font-medium text-primary">{weight(row.totalAvailableQuantity)}</td><td className="p-3 text-right">{row.lotCount}</td><td className="p-3 text-right">{row.materialCount}</td>
@@ -90,10 +102,11 @@ export default function InventoryPage() {
       <Card className="overflow-hidden">
         <div className="border-b p-4 font-semibold">库存批次</div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1400px] text-sm">
+          <table className="w-full min-w-[1520px] text-sm">
             <thead className="border-b bg-muted/50 text-left">
               <tr>
                 <th className="p-3">批次号</th>
+                <th className="p-3">业务单元（事业部）</th>
                 <th className="p-3">库存主体</th>
                 <th className="p-3">仓库</th>
                 <th className="p-3">物料</th>
@@ -112,6 +125,7 @@ export default function InventoryPage() {
               {data.lots.map((lot: any) => (
                 <tr key={lot.id} className="border-b">
                   <td className="p-3 font-mono text-primary">{lot.lotNo}</td>
+                  <td className="p-3"><div>{lot.businessUnit?.name || '未归属'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{lot.businessUnit?.code || '-'}</div></td>
                   <td className="p-3"><div>{lot.inventoryOwner?.name || '未归属库存主体'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{lot.inventoryOwner?.code || '-'}</div></td>
                   <td className="p-3">{lot.warehouse.name}</td>
                   <td className="p-3">{lot.materialName}</td>
@@ -149,6 +163,7 @@ export default function InventoryPage() {
                 <th className="p-3">类型</th>
                 <th className="p-3">业务单号</th>
                 <th className="p-3">批次</th>
+                <th className="p-3">业务单元（事业部）</th>
                 <th className="p-3">仓库</th>
                 <th className="p-3">物料</th>
                 <th className="p-3 text-right">数量变动</th>
@@ -167,6 +182,7 @@ export default function InventoryPage() {
                     </td>
                     <td className="p-3 font-mono text-xs">{entry.businessNo}</td>
                     <td className="p-3">{entry.lot.lotNo}</td>
+                    <td className="p-3">{entry.businessUnit ? `${entry.businessUnit.code} · ${entry.businessUnit.name}` : '未归属'}</td>
                     <td className="p-3">{entry.warehouse.name}</td>
                     <td className="p-3">{entry.material.name}</td>
                     <td className={`p-3 text-right font-medium ${change >= 0 ? 'text-primary' : 'text-destructive'}`}>
@@ -205,7 +221,7 @@ function InventorySummaryTable({ title, description, rows, emptyText, name, code
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] text-sm">
         <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">{title.replace('各', '').replace('库存', '') || '名称'}</th><th className="p-3 text-right">账面库存</th><th className="p-3 text-right">冻结</th><th className="p-3 text-right">可用</th><th className="p-3 text-right">{extraHeader}</th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.warehouseId || row.ownerPartnerId || 'unassigned'} className="border-b">
+        <tbody>{rows.map((row) => <tr key={row.businessUnitId || row.warehouseId || row.ownerPartnerId || 'unassigned'} className="border-b">
           <td className="p-3"><div className="font-medium">{name(row)}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{code(row)}</div></td>
           <td className="p-3 text-right font-medium">{weight(row.totalPhysicalQuantity)}</td><td className="p-3 text-right text-amber-600">{weight(row.totalReservedQuantity)}</td><td className="p-3 text-right font-medium text-primary">{weight(row.totalAvailableQuantity)}</td><td className="p-3 text-right">{extraValue(row)}</td>
         </tr>)}</tbody>

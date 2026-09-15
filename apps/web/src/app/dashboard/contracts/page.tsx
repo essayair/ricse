@@ -26,11 +26,13 @@ interface Contract {
   deliveryLocation: string | null;
   creator: { id: string; name: string };
   signingPartner: { name: string } | null;
+  businessUnit?: { id: string; code: string; name: string } | null;
   seller: { name: string } | null;
   buyer: { name: string } | null;
   lineItems: Array<{ materialName: string; quantity: string; unit: string }>;
   orders: Array<{ dispatchNotices: Array<{ _count?: { waybills: number } }> }>;
   fulfillment: { directions: FulfillmentDirection[] };
+  allowedPermissions?: string[];
 }
 
 interface FulfillmentDirection {
@@ -60,9 +62,12 @@ export default function ContractsPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [businessUnitFilter, setBusinessUnitFilter] = useState('');
+  const [businessUnits, setBusinessUnits] = useState<Array<{ id: string; code: string; name: string }>>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [userRole, setUserRole] = useState('');
   const [currentUserId, setCurrentUserId] = useState('');
+  const [permissions, setPermissions] = useState<string[]>([]);
 
   const fetchContracts = useCallback(async () => {
     setLoading(true);
@@ -71,6 +76,7 @@ export default function ContractsPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (typeFilter) params.set('type', typeFilter);
       if (searchTerm) params.set('search', searchTerm);
+      if (businessUnitFilter) params.set('businessUnitId', businessUnitFilter);
       const json = await api.get<{ items: Contract[]; pagination: any }>(`/contracts?${params}`);
       setData(json);
     } catch (e) {
@@ -79,7 +85,7 @@ export default function ContractsPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, statusFilter, typeFilter]);
+  }, [businessUnitFilter, searchTerm, statusFilter, typeFilter]);
 
   const handleDelete = async (contract: Contract) => {
     if (!['DRAFT', 'VOIDED'].includes(contract.status)) {
@@ -101,10 +107,16 @@ export default function ContractsPage() {
       const user = JSON.parse(stored);
       setUserRole(user.role || '');
       setCurrentUserId(user.id || '');
+      setPermissions(user.permissions || []);
     } catch {}
   }, []);
 
   useEffect(() => { void fetchContracts(); }, [fetchContracts]);
+  useEffect(() => {
+    api.get<Array<{ id: string; code: string; name: string }>>('/contracts/business-unit-options')
+      .then((items) => setBusinessUnits(Array.isArray(items) ? items : []))
+      .catch(() => setBusinessUnits([]));
+  }, []);
 
   // Summary stats computed from contract data
   const contractItems = data?.items ?? [];
@@ -124,12 +136,16 @@ export default function ContractsPage() {
           <Button variant="outline" onClick={() => {}}>
             <FileText className="h-4 w-4 mr-1" />导出
           </Button>
-          <Button variant="outline" onClick={() => router.push('/dashboard/orders/create')}>
-            <Package className="h-4 w-4 mr-1" />新建执行批次
-          </Button>
-          <Button onClick={() => router.push('/dashboard/contracts/create')}>
-            <Plus className="h-4 w-4 mr-1" />新建合同
-          </Button>
+          {(userRole === 'ADMIN' || permissions.includes('execution.manage')) && (
+            <Button variant="outline" onClick={() => router.push('/dashboard/orders/create')}>
+              <Package className="h-4 w-4 mr-1" />新建执行批次
+            </Button>
+          )}
+          {(userRole === 'ADMIN' || permissions.includes('contract.create')) && (
+            <Button onClick={() => router.push('/dashboard/contracts/create')}>
+              <Plus className="h-4 w-4 mr-1" />新建合同
+            </Button>
+          )}
         </div>
       </div>
 
@@ -163,6 +179,10 @@ export default function ContractsPage() {
               </button>
             ))}
           </div>
+          <select value={businessUnitFilter} onChange={(event) => setBusinessUnitFilter(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs">
+            <option value="">全部业务单元（事业部）</option>
+            {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.code} {unit.name}</option>)}
+          </select>
         </div>
         {/* 状态筛选 */}
         <div className="flex items-center gap-1.5">
@@ -245,10 +265,11 @@ export default function ContractsPage() {
                   </td>
                   <td className="px-4 py-3 text-xs">
                     <div>{c.creator?.name || '-'}</div>
+                    <div className="mt-1 text-muted-foreground">{c.businessUnit?.name || '未归属业务单元（事业部）'}</div>
                     <div className="mt-1 text-muted-foreground">{formatDate(c.createdAt)}</div>
                   </td>
                   <td className="px-4 py-3">
-                    {['APPROVED', 'EXECUTING'].includes(c.status) ? (
+                    {['APPROVED', 'EXECUTING'].includes(c.status) && c.allowedPermissions?.includes('execution.manage') ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -260,8 +281,8 @@ export default function ContractsPage() {
                         <Package className="mr-1 h-3.5 w-3.5" />新建执行批次
                       </Button>
                     ) : (
-                      (c.status === 'DRAFT' && (userRole === 'ADMIN' || c.creator?.id === currentUserId))
-                      || (c.status === 'VOIDED' && userRole === 'ADMIN')
+                      (c.status === 'DRAFT' && c.allowedPermissions?.includes('contract.edit') && (userRole === 'ADMIN' || c.creator?.id === currentUserId))
+                      || (c.status === 'VOIDED' && userRole === 'ADMIN' && c.allowedPermissions?.includes('contract.delete'))
                     ) ? (
                       <button onClick={(e) => { e.stopPropagation(); void handleDelete(c); }}
                         className="text-destructive hover:bg-destructive/10 rounded p-1"

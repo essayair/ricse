@@ -82,6 +82,8 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET:-ricse-attachments}
       MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      BAIDU_OCR_API_KEY: ${BAIDU_OCR_API_KEY:-}
+      BAIDU_OCR_SECRET_KEY: ${BAIDU_OCR_SECRET_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

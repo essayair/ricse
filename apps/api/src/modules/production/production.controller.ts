@@ -60,6 +60,12 @@ export class ProductionController {
     return this.service.createTask(dto, userId);
   }
 
+  @Get('business-unit-options')
+  @RequirePermission('production.view')
+  businessUnitOptions(@CurrentUser('id') userId: string) {
+    return this.service.businessUnitOptions(userId);
+  }
+
   @Get('tasks')
   @RequirePermission('production.view')
   findTasks(

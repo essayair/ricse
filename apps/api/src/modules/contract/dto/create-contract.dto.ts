@@ -120,6 +120,10 @@ export class CreateContractDto {
   @IsOptional() @IsString()
   departmentId?: string;
 
+  @ApiPropertyOptional({ description: '主业务单元（草稿可由系统默认，提交审批前必填）' })
+  @IsOptional() @IsString()
+  businessUnitId?: string;
+
   @ApiPropertyOptional({ description: '纸质合同或其他系统合同编号' })
   @IsOptional() @IsString()
   externalNo?: string;

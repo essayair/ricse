@@ -24,6 +24,7 @@ interface EmployeeDetail {
 interface CompanyOption { id: string; code: string; name: string; status: string; type: string }
 interface DepartmentOption { id: string; name: string; companyId: string }
 interface RoleOption { id: string; code: string; name: string; status: string }
+interface BusinessUnitOption { id: string; code: string; name: string; companyId: string; status: string }
 interface OperationLog { id: string; actionLabel: string; createdAt: string; operator?: { name: string; username: string }; details?: { changedFields?: string[] } }
 
 export default function EmployeeDetailPage() {
@@ -37,8 +38,11 @@ export default function EmployeeDetailPage() {
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnitOption[]>([]);
   const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
   const [selectedRole, setSelectedRole] = useState('USER');
+  const [selectedBusinessUnitIds, setSelectedBusinessUnitIds] = useState<string[]>([]);
+  const [defaultBusinessUnitId, setDefaultBusinessUnitId] = useState('');
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
@@ -77,10 +81,12 @@ export default function EmployeeDetailPage() {
       api.get<CompanyOption[]>('/org/companies'),
       api.get<DepartmentOption[]>('/org/departments'),
       api.get<RoleOption[]>('/access-control/roles').catch(() => []),
-    ]).then(([companyList, departmentList, roleList]) => {
+      api.get<BusinessUnitOption[]>('/org/business-units').catch(() => []),
+    ]).then(([companyList, departmentList, roleList, businessUnitList]) => {
       setCompanies(Array.isArray(companyList) ? companyList : []);
       setDepartments(Array.isArray(departmentList) ? departmentList : []);
       setRoles(Array.isArray(roleList) ? roleList.filter((role) => role.status === 'ACTIVE') : []);
+      setBusinessUnits(Array.isArray(businessUnitList) ? businessUnitList : []);
     }).catch(() => {});
   }, []);
 
@@ -166,6 +172,11 @@ export default function EmployeeDetailPage() {
     }
     if (newPassword.length < 6) { setPwdMsg('密码至少6位'); return; }
     if (newPassword !== confirmPassword) { setPwdMsg('两次输入的密码不一致'); return; }
+    const employeeCompany = companies.find((company) => company.id === emp?.company?.id);
+    if (!emp?.user?.id && employeeCompany?.type !== 'EXTERNAL' && selectedBusinessUnitIds.length === 0) {
+      setPwdMsg('请选择账号所属业务单元（事业部）');
+      return;
+    }
     setPwdLoading(true);
     setPwdMsg('');
     try {
@@ -179,6 +190,10 @@ export default function EmployeeDetailPage() {
           role: selectedRole || 'USER',
           employeeId: id,
           companyId: emp?.company?.id,
+          businessUnitIds: employeeCompany?.type === 'EXTERNAL' ? [] : selectedBusinessUnitIds,
+          defaultBusinessUnitId: employeeCompany?.type === 'EXTERNAL'
+            ? undefined
+            : defaultBusinessUnitId || selectedBusinessUnitIds[0] || undefined,
         });
       }
       setNewPassword('');
@@ -448,6 +463,9 @@ export default function EmployeeDetailPage() {
                   setConfirmPassword('');
                   setShowPassword(false);
                   setSelectedRole('USER');
+                  const availableUnits = businessUnits.filter((unit) => unit.status === 'ACTIVE');
+                  setSelectedBusinessUnitIds(availableUnits.length === 1 ? [availableUnits[0].id] : []);
+                  setDefaultBusinessUnitId(availableUnits.length === 1 ? availableUnits[0].id : '');
                   setShowPwdInput(true);
                   setPwdMsg('');
                 }}>
@@ -474,6 +492,42 @@ export default function EmployeeDetailPage() {
                         {roles.filter((role) => role.code !== 'ADMIN' || companies.find((company) => company.id === emp.company?.id)?.type === 'INTERNAL').map((role) => <option key={role.id} value={role.code}>{role.name} · {role.code}</option>)}
                       </select>
                       <p className="mt-1 text-xs text-muted-foreground">初始数据范围为所属企业，后续可在角色权限中调整。</p>
+                    </div>
+                  )}
+                  {companies.find((company) => company.id === emp.company?.id)?.type !== 'EXTERNAL' ? (
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs font-medium">所属业务单元（事业部） *</div>
+                      <p className="mt-1 text-xs text-muted-foreground">可选择多个，并指定创建业务单据时默认使用的业务单元（事业部）。</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {businessUnits.filter((unit) => unit.status === 'ACTIVE').map((unit) => {
+                          const checked = selectedBusinessUnitIds.includes(unit.id);
+                          return (
+                            <div key={unit.id} className="flex items-center gap-2 text-sm">
+                              <input type="checkbox" checked={checked} onChange={(event) => {
+                                const next = event.target.checked
+                                  ? [...selectedBusinessUnitIds, unit.id]
+                                  : selectedBusinessUnitIds.filter((unitId) => unitId !== unit.id);
+                                setSelectedBusinessUnitIds(next);
+                                if (event.target.checked && !defaultBusinessUnitId) setDefaultBusinessUnitId(unit.id);
+                                if (!event.target.checked && defaultBusinessUnitId === unit.id) setDefaultBusinessUnitId(next[0] || '');
+                              }} />
+                              <span className="min-w-0 flex-1">{unit.code} {unit.name}</span>
+                              {checked && (
+                                <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <input type="radio" name="employee-default-business-unit" checked={defaultBusinessUnitId === unit.id} onChange={() => setDefaultBusinessUnitId(unit.id)} />默认
+                                </label>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {businessUnits.filter((unit) => unit.status === 'ACTIVE').length === 0 && (
+                        <p className="mt-2 text-xs text-destructive">所属企业尚无可用业务单元（事业部），请先到“组织数据 → 业务单元（事业部）”创建。</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                      外部企业账号不配置内部业务单元（事业部），数据范围按所属外部企业控制。
                     </div>
                   )}
                   <div>
@@ -512,10 +566,11 @@ export default function EmployeeDetailPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" onClick={handleSetPassword}
-                      disabled={pwdLoading || !newUsername || !newPassword || !confirmPassword || newPassword !== confirmPassword}>
+                      disabled={pwdLoading || !newUsername || !newPassword || !confirmPassword || newPassword !== confirmPassword
+                        || (companies.find((company) => company.id === emp.company?.id)?.type !== 'EXTERNAL' && selectedBusinessUnitIds.length === 0)}>
                       <Save className="h-3.5 w-3.5 mr-1" />{pwdLoading ? '...' : '开通账号'}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => { setShowPwdInput(false); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowPassword(false); setPwdMsg(''); }}>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowPwdInput(false); setNewUsername(''); setNewPassword(''); setConfirmPassword(''); setShowPassword(false); setSelectedBusinessUnitIds([]); setDefaultBusinessUnitId(''); setPwdMsg(''); }}>
                       取消
                     </Button>
                   </div>

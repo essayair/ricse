@@ -69,11 +69,17 @@ export class AccessControlController {
         roleId: string;
         scopeType: string;
         targetCompanyIds?: string[];
+        targetBusinessUnitIds?: string[];
         expiresAt?: string | null;
       }>;
+      businessUnitIds?: string[];
+      defaultBusinessUnitId?: string | null;
     },
     @CurrentUser('id') currentUserId: string,
   ) {
-    return this.service.replaceUserAssignments(id, dto.assignments || [], currentUserId);
+    return this.service.replaceUserAssignments(id, dto.assignments || [], currentUserId, {
+      businessUnitIds: dto.businessUnitIds,
+      defaultBusinessUnitId: dto.defaultBusinessUnitId,
+    });
   }
 }

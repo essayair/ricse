@@ -12,6 +12,7 @@ describe('ProductionService', () => {
     getContext: jest.fn().mockResolvedValue({ isAdmin: true, permissions: [] }),
     getProductionRecipeScope: jest.fn().mockResolvedValue({}),
     getProductionTaskScope: jest.fn().mockResolvedValue({}),
+    getBusinessUnitOptions: jest.fn().mockResolvedValue([{ id: 'bu-1' }]),
   };
   let service: ProductionService;
 
@@ -47,6 +48,7 @@ describe('ProductionService', () => {
 
     await service.createTask({
       name: '200吨任务', mode: 'INTERNAL', recipeId: 'recipe-1', ownerPartnerId: 'owner-1',
+      businessUnitId: 'bu-1',
       sourceWarehouseId: 'warehouse-1', targetWarehouseId: 'warehouse-2', plannedOutputQuantity: 200,
     }, 'user-1');
 
@@ -67,6 +69,7 @@ describe('ProductionService', () => {
 
     await expect(service.createTask({
       name: '委外任务', mode: 'OUTSOURCED', recipeId: 'recipe-1', ownerPartnerId: 'owner-1',
+      businessUnitId: 'bu-1',
       sourceWarehouseId: 'warehouse-1', targetWarehouseId: 'warehouse-2', plannedOutputQuantity: 100,
     }, 'user-1')).rejects.toThrow('委外加工必须选择加工服务商');
   });

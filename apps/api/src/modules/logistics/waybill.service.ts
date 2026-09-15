@@ -41,7 +41,12 @@ export class WaybillService {
       include: {
         order: {
           include: {
-            contract: { select: { id: true, contractNo: true, title: true } },
+            contract: {
+              select: {
+                id: true, contractNo: true, title: true,
+                businessUnit: { select: { id: true, code: true, name: true } },
+              },
+            },
           },
         },
         warehouse: { select: { id: true, code: true, name: true, address: true } },
@@ -242,7 +247,7 @@ export class WaybillService {
 
   async getNoticeAvailability(dispatchNoticeId: string, userId: string, permission = 'logistics.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getDispatchNoticeScope(userId);
+    const scope = await this.accessControl.getDispatchNoticeScope(userId, permission);
     const notice = await this.prisma.dispatchNotice.findFirst({
       where: { id: dispatchNoticeId, deletedAt: null, AND: [scope] },
       include: {
@@ -460,7 +465,7 @@ export class WaybillService {
 
   async findAll(params: { status?: string; search?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'logistics.view');
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, 'logistics.view');
     const where: Prisma.WaybillWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.search) {
@@ -469,6 +474,8 @@ export class WaybillService {
         { plateNo: { contains: params.search, mode: 'insensitive' } },
         { dispatchNotice: { noticeNo: { contains: params.search, mode: 'insensitive' } } },
         { dispatchNotice: { order: { name: { contains: params.search, mode: 'insensitive' } } } },
+        { dispatchNotice: { order: { contract: { businessUnit: { name: { contains: params.search, mode: 'insensitive' } } } } } },
+        { dispatchNotice: { order: { contract: { businessUnit: { code: { contains: params.search, mode: 'insensitive' } } } } } },
       ];
     }
     const items = await this.prisma.waybill.findMany({
@@ -479,7 +486,7 @@ export class WaybillService {
 
   async findOne(id: string, userId: string, permission = 'logistics.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, permission);
     const waybill = await this.prisma.waybill.findFirst({
       where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });
@@ -641,7 +648,7 @@ export class WaybillService {
 
   async findAttachmentById(id: string, userId: string, permission = 'logistics.view') {
     await this.accessControl.assertPermission(userId, permission);
-    const scope = await this.accessControl.getWaybillScope(userId);
+    const scope = await this.accessControl.getWaybillScope(userId, permission);
     return this.prisma.attachment.findFirst({
       where: {
         id,
