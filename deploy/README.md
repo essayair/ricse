@@ -51,6 +51,20 @@ mkdir -p deploy/certs
    `deploy/flow-host-deploy.sh`；
 5. 检查 `/api/v1/health` 和 `/login`。
 
+主机源码发布还会执行自动维护与保护：
+
+- 发布前检查系统盘至少有 4096MB 可用空间，不足时先清理未使用的 Docker 缓存；仍不足则停止发布，避免 PostgreSQL 因满盘损坏；
+- 系统日志压缩到约 500MB，Docker 容器日志默认单文件 10MB、最多 3 个文件；
+- 发布目录默认保留最近 5 个，当前生效目录始终保留；
+- 部署前 PostgreSQL 备份默认保留 30 天且至少保留最近 10 份，失败备份不会留下空文件；
+- 发布成功后清理未使用的构建缓存及 7 天以前的旧镜像；
+- 流水线传入的构建号优先于服务器环境文件，确保容器镜像标签与发布版本一致。
+
+以上参数可通过服务器 `.env.staging` 的 `RELEASE_KEEP_COUNT`、
+`BACKUP_RETENTION_DAYS`、`BACKUP_MIN_KEEP`、`MIN_FREE_DISK_MB`、
+`JOURNAL_MAX_SIZE`、`DOCKER_IMAGE_PRUNE_UNTIL`、`DOCKER_LOG_MAX_SIZE` 和
+`DOCKER_LOG_MAX_FILES` 调整。生产系统盘建议不低于 80GB，并配置 70% 预警、85% 告警。
+
 内容运营中心上线后还应检查 `/api/v1/content-health`。同一 API 镜像会分别启动
 `core-api`、`content-api` 和 `content-worker`：第三方采集和批量 AI 只在 Worker 中运行，
 其异常不会阻塞合同、库存等核心 API。部署前需要在云效密钥变量或服务器

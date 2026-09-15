@@ -1,7 +1,14 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILES:-3}"
+
 services:
   postgres:
     image: postgres:15-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -21,6 +28,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
@@ -37,6 +45,7 @@ services:
   minio:
     image: minio/minio
     restart: unless-stopped
+    logging: *default-logging
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -51,6 +60,7 @@ services:
 
   api:
     image: ${API_IMAGE:-ricse-staging-api}:${IMAGE_TAG:-local}
+    logging: *default-logging
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
@@ -111,6 +121,7 @@ services:
   content-api:
     image: ${API_IMAGE:-ricse-staging-api}:${IMAGE_TAG:-local}
     restart: unless-stopped
+    logging: *default-logging
     command: ["node", "apps/api/dist/src/content-main.js"]
     environment:
       NODE_ENV: production
@@ -162,6 +173,7 @@ services:
   content-worker:
     image: ${API_IMAGE:-ricse-staging-api}:${IMAGE_TAG:-local}
     restart: unless-stopped
+    logging: *default-logging
     command: ["node", "apps/api/dist/src/worker-main.js"]
     environment:
       NODE_ENV: production
@@ -203,6 +215,7 @@ services:
 
   web:
     image: ${WEB_IMAGE:-ricse-staging-web}:${IMAGE_TAG:-local}
+    logging: *default-logging
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
@@ -237,6 +250,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST}
       NGINX_ENVSUBST_FILTER: PUBLIC_HOST

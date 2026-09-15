@@ -35,6 +35,24 @@ set -a
 source "${TARGET_ENV}"
 set +a
 
+RELEASE_KEEP_COUNT="${RELEASE_KEEP_COUNT:-5}"
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+BACKUP_MIN_KEEP="${BACKUP_MIN_KEEP:-10}"
+MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-4096}"
+JOURNAL_MAX_SIZE="${JOURNAL_MAX_SIZE:-500M}"
+DOCKER_IMAGE_PRUNE_UNTIL="${DOCKER_IMAGE_PRUNE_UNTIL:-168h}"
+
+DEPLOY_ROOT="${DEPLOY_ROOT}" \
+RELEASE_DIR="${RELEASE_DIR}" \
+BACKUP_DIR="${BACKUP_DIR}" \
+RELEASE_KEEP_COUNT="${RELEASE_KEEP_COUNT}" \
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS}" \
+BACKUP_MIN_KEEP="${BACKUP_MIN_KEEP}" \
+MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB}" \
+JOURNAL_MAX_SIZE="${JOURNAL_MAX_SIZE}" \
+DOCKER_IMAGE_PRUNE_UNTIL="${DOCKER_IMAGE_PRUNE_UNTIL}" \
+  "${RELEASE_DIR}/deploy/host-maintenance.sh" --preflight
+
 : "${POSTGRES_USER:?环境配置缺少 POSTGRES_USER}"
 : "${POSTGRES_DB:?环境配置缺少 POSTGRES_DB}"
 
@@ -86,9 +104,15 @@ fi
 
 if docker compose "${COMPOSE_ARGS[@]}" ps --status running --services | grep -qx postgres; then
   backup_file="${BACKUP_DIR}/ricse-${SOURCE_TAG}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+  backup_tmp="${backup_file}.tmp"
   echo "发布前备份 PostgreSQL：${backup_file}"
-  docker compose "${COMPOSE_ARGS[@]}" exec -T postgres \
-    pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" | gzip >"${backup_file}"
+  if ! docker compose "${COMPOSE_ARGS[@]}" exec -T postgres \
+    pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" | gzip >"${backup_tmp}"; then
+    rm -f -- "${backup_tmp}"
+    echo "发布前 PostgreSQL 备份失败，已停止发布。" >&2
+    exit 1
+  fi
+  mv "${backup_tmp}" "${backup_file}"
   chmod 600 "${backup_file}"
 fi
 
@@ -124,4 +148,16 @@ if [[ "${healthy}" != "true" ]]; then
 fi
 
 ln -sfn "${RELEASE_DIR}" "${DEPLOY_ROOT}/current"
+
+DEPLOY_ROOT="${DEPLOY_ROOT}" \
+RELEASE_DIR="${RELEASE_DIR}" \
+BACKUP_DIR="${BACKUP_DIR}" \
+RELEASE_KEEP_COUNT="${RELEASE_KEEP_COUNT}" \
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS}" \
+BACKUP_MIN_KEEP="${BACKUP_MIN_KEEP}" \
+MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB}" \
+JOURNAL_MAX_SIZE="${JOURNAL_MAX_SIZE}" \
+DOCKER_IMAGE_PRUNE_UNTIL="${DOCKER_IMAGE_PRUNE_UNTIL}" \
+  "${RELEASE_DIR}/deploy/host-maintenance.sh" --post-deploy
+
 echo "源码版本 ${SOURCE_TAG} 发布完成。"

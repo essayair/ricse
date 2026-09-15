@@ -4,6 +4,7 @@ set -euo pipefail
 
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/.env.staging}"
+REQUESTED_IMAGE_TAG="${IMAGE_TAG:-}"
 COMPOSE_ARGS=(
   --env-file "${ENV_FILE}"
   -f "${DEPLOY_DIR}/docker-compose.staging.yml"
@@ -32,6 +33,12 @@ set -a
 # shellcheck disable=SC1090
 source "${ENV_FILE}"
 set +a
+
+# 流水线/调用方传入的构建号优先于服务器环境文件中的历史值，避免新源码继续覆盖旧标签。
+if [[ -n "${REQUESTED_IMAGE_TAG}" ]]; then
+  IMAGE_TAG="${REQUESTED_IMAGE_TAG}"
+  export IMAGE_TAG
+fi
 
 ENABLE_HTTPS="${ENABLE_HTTPS:-false}"
 if [[ "${HTTPS_ARGUMENT}" == "true" ]]; then
