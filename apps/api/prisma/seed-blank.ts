@@ -6,31 +6,35 @@ const prisma = new PrismaClient();
 const flowDefinitions = [
   {
     contractType: 'PURCHASE',
-    name: '采购合同审批流',
-    amountThreshold: 1_000_000,
+    name: '采购合同四级审批流',
+    amountThreshold: null,
     nodes: [
-      { step: 1, nodeName: '业务主管', roleCode: 'BUSINESS_MANAGER', scopeType: 'DEPARTMENT', condition: 'ALWAYS' },
-      { step: 2, nodeName: '风控经理', roleCode: 'RISK_MANAGER', scopeType: 'COMPANY', condition: 'ALWAYS' },
-      { step: 3, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'COMPANY', condition: 'AMOUNT_GTE_THRESHOLD' },
+      { step: 1, nodeName: '运营经理', roleCode: 'BUSINESS_MANAGER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 2, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      { step: 3, nodeName: '业务责任人', roleCode: 'BUSINESS_OWNER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 4, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
     ],
   },
   {
     contractType: 'SALES',
-    name: '销售合同审批流',
+    name: '销售合同四级审批流',
     amountThreshold: null,
     nodes: [
-      { step: 1, nodeName: '业务主管', roleCode: 'BUSINESS_MANAGER', scopeType: 'DEPARTMENT', condition: 'ALWAYS' },
-      { step: 2, nodeName: '风控经理', roleCode: 'RISK_MANAGER', scopeType: 'COMPANY', condition: 'ALWAYS' },
+      { step: 1, nodeName: '运营经理', roleCode: 'BUSINESS_MANAGER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 2, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      { step: 3, nodeName: '业务责任人', roleCode: 'BUSINESS_OWNER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 4, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
     ],
   },
   {
     contractType: 'BILATERAL',
-    name: '双边合同审批流',
-    amountThreshold: 0,
+    name: '双边合同四级审批流',
+    amountThreshold: null,
     nodes: [
-      { step: 1, nodeName: '业务主管', roleCode: 'BUSINESS_MANAGER', scopeType: 'DEPARTMENT', condition: 'ALWAYS' },
-      { step: 2, nodeName: '风控经理', roleCode: 'RISK_MANAGER', scopeType: 'COMPANY', condition: 'ALWAYS' },
-      { step: 3, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'COMPANY', condition: 'ALWAYS' },
+      { step: 1, nodeName: '运营经理', roleCode: 'BUSINESS_MANAGER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 2, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      { step: 3, nodeName: '业务责任人', roleCode: 'BUSINESS_OWNER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 4, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
     ],
   },
 ];
@@ -75,7 +79,7 @@ async function main() {
   });
 
   const approvalRoles = await prisma.role.findMany({
-    where: { code: { in: ['BUSINESS_MANAGER', 'RISK_MANAGER', 'GENERAL_MANAGER'] } },
+    where: { code: { in: ['BUSINESS_MANAGER', 'RISK_MANAGER', 'BUSINESS_OWNER', 'GENERAL_MANAGER'] } },
   });
   const roleByCode = new Map(approvalRoles.map(role => [role.code, role]));
 
@@ -103,7 +107,7 @@ async function main() {
         update: {
           nodeName: node.nodeName,
           roleId: role.id,
-          approvalMode: 'ALL',
+          approvalMode: 'ANY',
           scopeType: node.scopeType,
           condition: node.condition,
           enabled: true,
@@ -113,13 +117,16 @@ async function main() {
           step: node.step,
           nodeName: node.nodeName,
           roleId: role.id,
-          approvalMode: 'ALL',
+          approvalMode: 'ANY',
           scopeType: node.scopeType,
           condition: node.condition,
           enabled: true,
         },
       });
     }
+    await prisma.approvalFlowNode.deleteMany({
+      where: { flowId: flow.id, step: { notIn: definition.nodes.map((node) => node.step) } },
+    });
   }
 
   console.log('空白系统初始化完成：仅保留系统配置、默认审批模板和 admin 管理员。');

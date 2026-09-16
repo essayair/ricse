@@ -1,6 +1,4 @@
-import {
-  BadRequestException, ForbiddenException, Injectable, NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
@@ -294,9 +292,8 @@ export class InventoryReversalService {
   }
 
   async review(id: string, action: string, comment: string | undefined, userId: string) {
-    const item = await this.findOne(id, userId, 'inventory.manage');
+    const item = await this.findOne(id, userId, 'inventory.review');
     if (item.status !== 'PENDING_APPROVAL') throw new BadRequestException('只有待审批冲销单可以审核');
-    await this.assertReviewer(userId);
     if (action === 'REJECT') {
       if (!comment?.trim()) throw new BadRequestException('驳回时必须填写原因');
       return this.prisma.inventoryReversal.update({
@@ -550,10 +547,4 @@ export class InventoryReversalService {
     }
   }
 
-  private async assertReviewer(userId: string) {
-    const context = await this.accessControl.getContext(userId);
-    if (!context.roleCodes.some(role => ['ADMIN', 'APPROVER'].includes(role))) {
-      throw new ForbiddenException('仅系统管理员或审批人可以审核库存冲销');
-    }
-  }
 }

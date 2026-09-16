@@ -769,7 +769,7 @@ describe('ContractService', () => {
       await expect(service.updateStatus(
         'test-id',
         { status: 'APPROVED', comment: '越权审批' },
-        { id: 'approver-user', role: 'APPROVER' },
+        { id: 'approver-user', role: 'USER' },
       )).rejects.toThrow(ForbiddenException);
     });
 

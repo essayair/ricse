@@ -19,6 +19,6 @@ export class RegisterDto {
 
   @ApiProperty({ example: 'USER', required: false })
   @IsOptional()
-  @IsIn(['USER', 'ADMIN', 'APPROVER'])
+  @IsIn(['USER'])
   role?: string;
 }

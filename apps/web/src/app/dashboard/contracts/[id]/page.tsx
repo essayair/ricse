@@ -138,52 +138,6 @@ type ContractAction = {
 
 const PROTECTED_STATUS_ACTIONS = new Set(['EXECUTING', 'COMPLETED', 'CLOSED']);
 
-// 每个状态下，各角色可执行的操作
-const ROLE_ACTIONS: Record<string, Record<string, ContractAction[]>> = {
-  DRAFT: {
-    SALESPERSON: [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    MANAGER:     [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    ADMIN:       [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    USER:        [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-  },
-  PENDING_APPROVAL: {
-    APPROVER: [
-      { next: 'APPROVED', label: '审核通过', variant: 'default', needsComment: true },
-      { next: 'REJECTED', label: '驳回', variant: 'destructive', needsComment: true },
-    ],
-    ADMIN: [
-      { next: 'APPROVED', label: '审核通过', variant: 'default', needsComment: true },
-      { next: 'REJECTED', label: '驳回', variant: 'destructive', needsComment: true },
-      { next: 'VOIDED', label: '作废', variant: 'destructive' },
-    ],
-    SALESPERSON: [{ next: 'DRAFT', label: '撤回', variant: 'outline' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    MANAGER:     [{ next: 'DRAFT', label: '撤回', variant: 'outline' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    USER:        [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
-  },
-  REJECTED: {
-    SALESPERSON: [{ next: 'DRAFT', label: '修改重提', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    MANAGER:     [{ next: 'DRAFT', label: '修改重提', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    ADMIN:       [{ next: 'DRAFT', label: '修改重提', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    USER:        [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
-  },
-  APPROVED: {
-    SALESPERSON: [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    MANAGER: [{ next: 'EXECUTING', label: '开始执行', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    ADMIN:   [{ next: 'EXECUTING', label: '开始执行', variant: 'default' }, { next: 'VOIDED', label: '作废', variant: 'destructive' }],
-    USER: [{ next: 'VOIDED', label: '作废', variant: 'destructive' }],
-  },
-  EXECUTING: {
-    SALESPERSON: [{ next: 'VOIDED', label: '终止并作废', variant: 'destructive' }],
-    MANAGER: [{ next: 'COMPLETED', label: '标记完成', variant: 'default' }, { next: 'CLOSED', label: '关闭', variant: 'outline' }, { next: 'VOIDED', label: '终止并作废', variant: 'destructive' }],
-    ADMIN:   [{ next: 'COMPLETED', label: '标记完成', variant: 'default' }, { next: 'CLOSED', label: '关闭', variant: 'outline' }, { next: 'VOIDED', label: '终止', variant: 'destructive' }],
-    USER: [{ next: 'VOIDED', label: '终止并作废', variant: 'destructive' }],
-  },
-  COMPLETED: {
-    MANAGER: [{ next: 'CLOSED', label: '归档关闭', variant: 'outline' }],
-    ADMIN:   [{ next: 'CLOSED', label: '归档关闭', variant: 'outline' }],
-  },
-};
-
 const PROTECTED_ACTION_COPY: Record<string, { title: string; description: string; acknowledgement: string }> = {
   EXECUTING: {
     title: '确认开始执行合同？',
@@ -768,7 +722,6 @@ export default function ContractDetailPage() {
                   <th className="pb-2">单位</th>
                   <th className="pb-2">{c.type === 'BILATERAL' ? '采购单价' : c.type === 'PURCHASE' ? '采购单价' : '销售单价'}</th>
                   {c.type === 'BILATERAL' && <th className="pb-2">销售单价</th>}
-                  <th className="pb-2">交货日期</th>
                   <th className="pb-2">行项备注</th>
                   <th className="pb-2 text-right">{c.type === 'BILATERAL' ? '采购小计' : '小计'}</th>
                   {c.type === 'BILATERAL' && <th className="pb-2 text-right">销售小计</th>}
@@ -782,7 +735,6 @@ export default function ContractDetailPage() {
                     <td className="py-3">{unitLabel(item.unit)}</td>
                     <td className="py-3 font-mono">¥{Number(item.unitPrice).toLocaleString()}</td>
                     {c.type === 'BILATERAL' && <td className="py-3 font-mono">{item.salesUnitPrice == null ? '—' : `¥${Number(item.salesUnitPrice).toLocaleString()}`}</td>}
-                    <td className="py-3">{item.deliveryDate ? new Date(item.deliveryDate).toLocaleDateString('zh-CN') : '—'}</td>
                     <td className="py-3">{item.remarks || '—'}</td>
                     <td className="py-3 text-right font-mono">¥{Number(item.totalPrice).toLocaleString()}</td>
                     {c.type === 'BILATERAL' && <td className="py-3 text-right font-mono">{item.salesTotalPrice == null ? '—' : `¥${Number(item.salesTotalPrice).toLocaleString()}`}</td>}

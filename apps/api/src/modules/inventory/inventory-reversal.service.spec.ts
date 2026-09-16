@@ -135,7 +135,10 @@ describe('InventoryReversalService', () => {
     prisma.inventoryReversal.findFirst.mockResolvedValue({
       id: 'reversal-1', status: 'PENDING_APPROVAL', type: 'INBOUND', lines: [],
     } as any);
+    accessControl.assertPermission
+      .mockRejectedValueOnce(new ForbiddenException('缺少权限：inventory.review'));
     await expect(service.review('reversal-1', 'APPROVE', undefined, 'user-1'))
       .rejects.toThrow(ForbiddenException);
+    expect(accessControl.assertPermission).toHaveBeenLastCalledWith('user-1', 'inventory.review');
   });
 });

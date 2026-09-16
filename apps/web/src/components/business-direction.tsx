@@ -37,7 +37,7 @@ export function BusinessDirectionBadge({ type, suffix = '', className }: {
   className?: string;
 }) {
   const style = businessDirectionStyle(type);
-  return <span className={cn('inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[11px] font-medium', style.badge, className)}>{style.label}{suffix}</span>;
+  return <span className={cn('inline-flex shrink-0 items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium', style.badge, className)}>{style.label}{suffix}</span>;
 }
 
 export function businessDirectionFilterClass(type: BusinessDirection, active: boolean) {

@@ -2045,7 +2045,7 @@ model ApprovalFlowNode {
   step         Int
   roleId       String
   approvalMode String   @default("ALL") // ALL（会签）| ANY（或签）
-  scopeType    String   @default("COMPANY") // DEPARTMENT | COMPANY | ALL
+  scopeType    String   @default("COMPANY") // DEPARTMENT | BUSINESS_UNIT | COMPANY | ALL
   condition    String   @default("ALWAYS") // ALWAYS | AMOUNT_GTE_THRESHOLD
   enabled      Boolean  @default(true)
   createdAt    DateTime @default(now())

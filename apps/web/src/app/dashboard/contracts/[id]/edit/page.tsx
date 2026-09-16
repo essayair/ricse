@@ -394,25 +394,25 @@ export default function ContractEditPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <div className="col-span-2">
-              <FormField label="合同标题" required>
-                <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" />
-              </FormField>
-            </div>
+            <FormField label="合同标题" required>
+              <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" />
+            </FormField>
             <FormField label="外部合同号">
               <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
             </FormField>
-            <FormField label="我方签约主体（内部）">
-              <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className={SELECT_CLS}>
-                <option value="">请选择</option>
-                {internalPartners
-                  .filter(p => form.type === 'BILATERAL' || p.roles?.includes(form.type === 'PURCHASE' ? 'CUSTOMER' : 'SUPPLIER'))
-                  .map(p => {
-                    const selectedAsCounterparty = p.id === form.sellerId || p.id === form.buyerId;
-                    return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
-                  })}
-              </select>
-            </FormField>
+            <div className="col-span-2">
+              <FormField label="我方签约主体（内部）">
+                <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className={SELECT_CLS}>
+                  <option value="">请选择</option>
+                  {internalPartners
+                    .filter(p => form.type === 'BILATERAL' || p.roles?.includes(form.type === 'PURCHASE' ? 'CUSTOMER' : 'SUPPLIER'))
+                    .map(p => {
+                      const selectedAsCounterparty = p.id === form.sellerId || p.id === form.buyerId;
+                      return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
+                    })}
+                </select>
+              </FormField>
+            </div>
           </div>
 
           <SectionTitle>交易对手方</SectionTitle>
@@ -474,7 +474,7 @@ export default function ContractEditPage() {
           <div className="space-y-3">
             {lineItems.map((item, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-lg bg-muted/20">
-                <div className={form.type === 'BILATERAL' ? 'col-span-2' : 'col-span-3'}>
+                <div className={form.type === 'BILATERAL' ? 'col-span-4' : 'col-span-5'}>
                   <label className="text-xs text-muted-foreground">物料{idx === 0 && <span className="text-destructive">*</span>}</label>
                   <select value={item.materialId} onChange={e => updateLineItem(idx, 'materialId', e.target.value)} className={SELECT_CLS + ' mt-1'}>
                     <option value="">请选择</option>
@@ -499,10 +499,6 @@ export default function ContractEditPage() {
                     <Input className="mt-1" type="number" min="0" step="0.01" value={item.salesUnitPrice} onChange={e => updateLineItem(idx, 'salesUnitPrice', e.target.value)} />
                   </div>
                 )}
-                <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground">交货日期</label>
-                  <Input className="mt-1" type="date" value={item.deliveryDate} onChange={e => updateLineItem(idx, 'deliveryDate', e.target.value)} />
-                </div>
                 {form.type !== 'BILATERAL' && <div className="col-span-1 flex items-end justify-center">
                   {(Number(item.quantity) * Number(item.unitPrice)) > 0 && (
                     <div className="text-xs text-center text-primary font-mono">

@@ -245,7 +245,7 @@ export default function ContractCreatePage() {
 
   const handleSubmit = async () => {
     if (!form.signingPartnerId) { alert('请选择我方签约主体'); return; }
-    if (!form.departmentId) { alert('请选择业务部门，审批流程将据此匹配业务主管'); return; }
+    if (!form.departmentId) { alert('请选择业务部门'); return; }
     if (!form.businessUnitId) { alert('请选择业务单元（事业部），系统将据此控制数据范围并匹配审批人员'); return; }
     if (!form.sellerId) { alert('请选择交易对手方'); return; }
     if (!form.materialId || !form.quantity || !form.unitPrice) { alert('请完整填写货物信息（物料/数量/单价）'); return; }
@@ -327,21 +327,23 @@ export default function ContractCreatePage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <div className="col-span-2"><FormField label="合同标题"><Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" /></FormField></div>
+            <FormField label="合同标题"><Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" /></FormField>
             <FormField label="外部合同号">
               <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
             </FormField>
-            <FormField label="我方签约主体（内部）">
-              <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">请选择</option>
-                {internalPartners
-                  .filter(p => form.type === 'BILATERAL' || p.roles?.includes(form.type === 'PURCHASE' ? 'CUSTOMER' : 'SUPPLIER'))
-                  .map(p => {
-                    const selectedAsCounterparty = p.id === form.sellerId || p.id === form.buyerId;
-                    return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
-                  })}
-              </select>
-            </FormField>
+            <div className="col-span-2">
+              <FormField label="我方签约主体（内部）">
+                <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">请选择</option>
+                  {internalPartners
+                    .filter(p => form.type === 'BILATERAL' || p.roles?.includes(form.type === 'PURCHASE' ? 'CUSTOMER' : 'SUPPLIER'))
+                    .map(p => {
+                      const selectedAsCounterparty = p.id === form.sellerId || p.id === form.buyerId;
+                      return <option key={p.id} value={p.id} disabled={selectedAsCounterparty}>{p.code} {p.name}{selectedAsCounterparty ? '（已选为对手方）' : ''}</option>;
+                    })}
+                </select>
+              </FormField>
+            </div>
           </div>
 
           <SectionTitle>交易对手方</SectionTitle>

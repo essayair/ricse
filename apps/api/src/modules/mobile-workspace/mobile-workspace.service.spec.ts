@@ -104,12 +104,12 @@ describe('MobileWorkspaceService', () => {
   it('移动审批复用现有合同状态流转服务', async () => {
     contracts.updateStatus.mockResolvedValue({ id: 'contract-1', status: 'APPROVED' } as any);
 
-    await service.decide('user-1', 'APPROVER', 'contract-1', 'APPROVED', ' 同意 ');
+    await service.decide('user-1', 'BUSINESS_OWNER', 'contract-1', 'APPROVED', ' 同意 ');
 
     expect(contracts.updateStatus).toHaveBeenCalledWith(
       'contract-1',
       { status: 'APPROVED', comment: '同意' },
-      { id: 'user-1', role: 'APPROVER' },
+      { id: 'user-1', role: 'BUSINESS_OWNER' },
     );
   });
 

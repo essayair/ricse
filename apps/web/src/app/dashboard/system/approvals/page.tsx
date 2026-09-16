@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, ShieldCheck, Users } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -53,7 +52,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 const CONDITION_LABEL: Record<string, string> = {
   ALWAYS: '固定执行',
-  AMOUNT_GTE_THRESHOLD: '达到金额门槛时执行',
+  AMOUNT_GTE_THRESHOLD: '达到金额门槛时执行（历史配置）',
 };
 
 const MODE_LABEL: Record<string, string> = {
@@ -118,7 +117,7 @@ export default function ApprovalFlowsPage() {
 
   const updateFlow = async (
     flow: ApprovalFlow,
-    data: { amountThreshold?: number | null; status?: string },
+    data: { status?: string },
   ) => {
     setSaving(flow.id);
     try {
@@ -159,7 +158,7 @@ export default function ApprovalFlowsPage() {
       <div>
         <h1 className="text-2xl font-bold">审批流程</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          审批节点绑定角色；提交合同时按人员范围生成审批人快照。
+          默认路径为运营经理 → 风控/财务经理 → 业务责任人 → 总经理；提交时按合同业务单元解析人员并生成审批快照。
         </p>
       </div>
 
@@ -169,13 +168,13 @@ export default function ApprovalFlowsPage() {
           <h2 className="font-semibold">审批流程列表</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-sm">
+          <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-left">
                 <th className="px-3 py-3 font-medium">合同类型</th>
                 <th className="px-3 py-3 font-medium">流程名称</th>
                 <th className="px-3 py-3 font-medium">流程状态</th>
-                <th className="px-3 py-3 font-medium">总经理审批金额门槛（元）</th>
+                <th className="px-3 py-3 font-medium">当前审批路径</th>
                 <th className="px-3 py-3 font-medium">审批节点数</th>
                 <th className="px-3 py-3 font-medium">最后更新时间</th>
                 <th className="px-3 py-3 text-right font-medium">操作</th>
@@ -199,17 +198,11 @@ export default function ApprovalFlowsPage() {
                     </label>
                   </td>
                   <td className="px-3 py-3">
-                    {flow.contractType === 'PURCHASE' ? (
-                      <Input
-                        type="number"
-                        min="0"
-                        className="h-8 w-44"
-                        defaultValue={flow.amountThreshold || '1000000'}
-                        onBlur={(event) => void updateFlow(flow, {
-                          amountThreshold: Number(event.target.value) || 0,
-                        })}
-                      />
-                    ) : '不适用'}
+                    {flow.nodes
+                      .filter((node) => node.enabled)
+                      .sort((a, b) => a.step - b.step)
+                      .map((node) => node.nodeName)
+                      .join(' → ') || '未配置'}
                   </td>
                   <td className="px-3 py-3">{flow.nodes.length}</td>
                   <td className="px-3 py-3">
@@ -240,7 +233,7 @@ export default function ApprovalFlowsPage() {
             <div>
               <h2 className="font-semibold">{selectedFlow.name}—审批节点列表</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                会签节点需要范围内所有角色成员通过；或签节点由任意一名角色成员通过。
+                默认采用或签：范围内任意一名有效角色成员通过即可进入下一级；业务单元节点只匹配合同所属事业部。
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -281,7 +274,14 @@ export default function ApprovalFlowsPage() {
                         ))}
                       </select>
                     </td>
-                    <td className="px-3 py-3">{node.role?._count?.assignments || 0} 人</td>
+                    <td className="px-3 py-3">
+                      <span className={(node.role?._count?.assignments || 0) === 0 ? 'font-medium text-destructive' : ''}>
+                        {node.role?._count?.assignments || 0} 人
+                      </span>
+                      {(node.role?._count?.assignments || 0) === 0 && (
+                        <span className="mt-1 block text-xs text-destructive">提交合同前必须配置</span>
+                      )}
+                    </td>
                     <td className="px-3 py-3">
                       <select
                         className="h-9 w-44 rounded-md border border-input bg-background px-3 text-sm"

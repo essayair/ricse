@@ -29,6 +29,7 @@ export default function InventoryReversalDetailPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [item, setItem] = useState<any>(null);
   const [role, setRole] = useState('');
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   const load = () => api.get(`/inventory-reversals/${id}`)
@@ -39,7 +40,11 @@ export default function InventoryReversalDetailPage() {
     void load();
     const user = localStorage.getItem('user');
     if (user) {
-      try { setRole(JSON.parse(user).role || ''); } catch {}
+      try {
+        const parsed = JSON.parse(user) as { role?: string; permissions?: string[] };
+        setRole(parsed.role || '');
+        setPermissions(parsed.permissions || []);
+      } catch {}
     }
   }, [id]);
 
@@ -112,7 +117,8 @@ export default function InventoryReversalDetailPage() {
 
   if (!item) return <div className="py-20 text-center">加载中...</div>;
   const source = item.type === 'INBOUND' ? item.businessInbound : item.salesOutbound;
-  const canReview = ['ADMIN', 'APPROVER'].includes(role);
+  const canReview = role === 'ADMIN' || permissions.includes('inventory.review');
+  const canManage = role === 'ADMIN' || permissions.includes('inventory.manage');
 
   return (
     <div className="space-y-6">
@@ -133,7 +139,7 @@ export default function InventoryReversalDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {item.status === 'DRAFT' && (
+          {item.status === 'DRAFT' && canManage && (
             <>
               <Button variant="outline" disabled={saving} onClick={() => void simpleAction('cancel')}>
                 <XCircle className="mr-2 h-4 w-4" />取消
@@ -153,7 +159,7 @@ export default function InventoryReversalDetailPage() {
               </Button>
             </>
           )}
-          {item.status === 'APPROVED' && (
+          {item.status === 'APPROVED' && canManage && (
             <Button disabled={saving} onClick={() => void simpleAction('post')}>
               <RotateCcw className="mr-2 h-4 w-4" />冲销过账
             </Button>
@@ -235,7 +241,7 @@ export default function InventoryReversalDetailPage() {
             <h2 className="font-semibold">冲销依据附件</h2>
             <p className="mt-1 text-xs text-muted-foreground">支持业务撤销说明、纠错凭证、照片和 PDF，提交审批后锁定。</p>
           </div>
-          {item.status === 'DRAFT' && (
+          {item.status === 'DRAFT' && canManage && (
             <>
               <input
                 ref={fileRef}
@@ -262,7 +268,7 @@ export default function InventoryReversalDetailPage() {
                 </button>
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</span>
-                  {item.status === 'DRAFT' && (
+                  {item.status === 'DRAFT' && canManage && (
                     <Button variant="ghost" size="icon" onClick={() => void removeAttachment(attachment)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>

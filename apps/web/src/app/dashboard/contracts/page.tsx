@@ -216,7 +216,7 @@ export default function ContractsPage() {
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">合同编号 / 外部编号</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">标题 / 标的</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">我方 / 对手方</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">类型 / 状态</th>
+                <th className="min-w-28 whitespace-nowrap px-4 py-3 text-left font-medium text-muted-foreground">类型 / 状态</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">数量 / 金额</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">有效期 / 交付地</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">履约进度</th>
@@ -245,9 +245,9 @@ export default function ContractsPage() {
                     <div className="truncate">{c.signingPartner?.name || '-'}</div>
                     <div className="mt-1 truncate text-xs text-muted-foreground">对手方：{counterpartyName(c)}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="min-w-28 whitespace-nowrap px-4 py-3">
                     <BusinessDirectionBadge type={c.type} suffix="合同" className="mb-1" />
-                    <StatusText status={c.status} className="block">
+                    <StatusText status={c.status} className="block whitespace-nowrap">
                       {STATUS_MAP[c.status]?.label || c.status}
                     </StatusText>
                   </td>

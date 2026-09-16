@@ -413,7 +413,7 @@ function OrgPageInner() {
         <div className="mt-1 flex flex-wrap gap-1">
           {(u.roleAssignments?.length
             ? u.roleAssignments.map((assignment) => assignment.role.name)
-            : [u.role === 'ADMIN' ? '系统管理员' : u.role === 'MANAGER' ? '管理人员' : '普通用户']
+            : [u.role === 'ADMIN' ? '系统管理员' : u.role === 'USER' ? '基础查看' : u.role]
           ).map((name) => <Badge key={name} variant="outline" className="text-[10px] font-normal">{name}</Badge>)}
         </div>
         {u.company?.type === 'EXTERNAL' && (

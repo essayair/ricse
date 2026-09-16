@@ -58,6 +58,7 @@ interface User {
     businessUnit: BusinessUnit;
   }>;
   roleAssignments?: Array<{
+    status?: string;
     role: Role;
     scopeType: string;
     scopes: Array<{ targetType: string; targetId: string }>;
@@ -71,12 +72,26 @@ const MODULE_LABELS: Record<string, string> = {
   QUALITY: '磅单质检',
   MONITOR: '影像监控',
   INVENTORY: '库存管理',
+  PRODUCTION: '生产管理',
   SETTLEMENT: '结算中心',
   MASTER_DATA: '主数据',
   ORGANIZATION: '组织数据',
   SYSTEM: '系统管理',
   CONTENT: '内容运营中心',
 };
+
+const PROTECTED_PERMISSION_ROLE_CODES = new Set([
+  'ADMIN',
+  'BUSINESS_MANAGER',
+  'RISK_MANAGER',
+  'BUSINESS_OWNER',
+  'GENERAL_MANAGER',
+]);
+
+const CENTRAL_APPROVAL_ROLE_CODES = new Set(['RISK_MANAGER', 'GENERAL_MANAGER']);
+const INTERNAL_APPROVAL_ROLE_CODES = new Set([
+  'BUSINESS_MANAGER', 'RISK_MANAGER', 'BUSINESS_OWNER', 'GENERAL_MANAGER',
+]);
 
 const SCOPE_LABELS: Record<string, string> = {
   ALL: '全部数据',
@@ -143,6 +158,7 @@ export default function AccessControlPage() {
     const user = users.find((item) => item.id === selectedUserId);
     const draft: AssignmentDraft = {};
     for (const assignment of user?.roleAssignments || []) {
+      if (assignment.status === 'INACTIVE' || assignment.role.status !== 'ACTIVE') continue;
       draft[assignment.role.id] = {
         scopeType: assignment.scopeType,
         targetCompanyIds: assignment.scopes
@@ -174,17 +190,15 @@ export default function AccessControlPage() {
   const selectedUser = users.find((user) => user.id === selectedUserId);
   const isExternal = selectedUser?.company?.type === 'EXTERNAL';
   const selectedRole = roles.find((role) => role.id === selectedRoleId);
-  const adminRoleLocked = selectedRole?.code === 'ADMIN';
-  const allPermissionsSelected = adminRoleLocked || (
+  const rolePermissionsLocked = Boolean(selectedRole && PROTECTED_PERMISSION_ROLE_CODES.has(selectedRole.code));
+  const allPermissionsSelected = (
     permissions.length > 0
     && permissions.every((permission) => selectedPermissionIds.has(permission.id))
   );
-  const selectedPermissionCount = adminRoleLocked
-    ? permissions.length
-    : permissions.filter((permission) => selectedPermissionIds.has(permission.id)).length;
+  const selectedPermissionCount = permissions.filter((permission) => selectedPermissionIds.has(permission.id)).length;
 
   const toggleAllPermissions = () => {
-    if (adminRoleLocked || permissions.length === 0) return;
+    if (rolePermissionsLocked || permissions.length === 0) return;
     setSelectedPermissionIds(
       allPermissionsSelected
         ? new Set()
@@ -209,15 +223,31 @@ export default function AccessControlPage() {
   };
 
   const toggleUserRole = (roleId: string) => {
+    const role = roles.find((item) => item.id === roleId);
+    if (!role) return;
     setAssignmentDraft((current) => {
       const next = { ...current };
       if (next[roleId]) {
         delete next[roleId];
       } else {
+        if (role.code === 'ADMIN') {
+          return {
+            [roleId]: {
+              scopeType: 'ALL',
+              targetCompanyIds: [],
+              targetBusinessUnitIds: [],
+            },
+          };
+        }
+        const adminRole = roles.find((item) => item.code === 'ADMIN');
+        if (adminRole) delete next[adminRole.id];
+        const defaultScope = CENTRAL_APPROVAL_ROLE_CODES.has(role.code)
+          ? 'ALL'
+          : selectedBusinessUnitIds.size ? 'BUSINESS_UNIT' : 'COMPANY';
         next[roleId] = {
-          scopeType: isExternal ? 'COMPANY' : selectedBusinessUnitIds.size ? 'BUSINESS_UNIT' : 'COMPANY',
+          scopeType: isExternal ? 'COMPANY' : defaultScope,
           targetCompanyIds: isExternal && selectedUser?.companyId ? [selectedUser.companyId] : [],
-          targetBusinessUnitIds: isExternal ? [] : [...selectedBusinessUnitIds],
+          targetBusinessUnitIds: isExternal || defaultScope !== 'BUSINESS_UNIT' ? [] : [...selectedBusinessUnitIds],
         };
       }
       return next;
@@ -287,7 +317,10 @@ export default function AccessControlPage() {
                   className={`w-full rounded-md px-3 py-3 text-left ${selectedRoleId === role.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}>
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{role.name}</span>
-                    {role.isSystem && <Badge variant="outline">预置</Badge>}
+                    <span className="flex items-center gap-1">
+                      {role.status !== 'ACTIVE' && <Badge variant="secondary">已停用</Badge>}
+                      {role.isSystem && <Badge variant="outline">预置</Badge>}
+                    </span>
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">{role.code} · {role._count?.assignments || 0} 人</div>
                 </button>
@@ -303,21 +336,21 @@ export default function AccessControlPage() {
                   {selectedRole?.description || '勾选该角色允许执行的功能操作'}
                 </p>
               </div>
-              <Button onClick={saveRolePermissions} disabled={saving || adminRoleLocked}><Save className="mr-2 h-4 w-4" />保存权限</Button>
+              <Button onClick={saveRolePermissions} disabled={saving || rolePermissionsLocked}><Save className="mr-2 h-4 w-4" />保存权限</Button>
             </div>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 px-4 py-3">
-              <label className={`flex items-center gap-2 text-sm font-medium ${adminRoleLocked ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
+              <label className={`flex items-center gap-2 text-sm font-medium ${rolePermissionsLocked ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
                   checked={allPermissionsSelected}
-                  disabled={adminRoleLocked || permissions.length === 0}
+                  disabled={rolePermissionsLocked || permissions.length === 0}
                   onChange={toggleAllPermissions}
                 />
                 {allPermissionsSelected ? '取消全选' : '全选全部权限'}
               </label>
               <span className="text-sm text-muted-foreground">
                 已选择 {selectedPermissionCount} / {permissions.length} 项
-                {adminRoleLocked ? ' · 系统管理员固定拥有全部权限' : ''}
+                {rolePermissionsLocked ? ' · 审批路由角色使用受控权限模板' : ''}
               </span>
             </div>
             <div className="space-y-5">
@@ -326,8 +359,8 @@ export default function AccessControlPage() {
                   <div className="mb-2 text-sm font-medium">{MODULE_LABELS[module] || module}</div>
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                     {items.map((permission) => (
-                      <label key={permission.id} className="flex cursor-pointer items-center gap-2 rounded-md border p-3 text-sm hover:bg-muted/50">
-                        <input type="checkbox" checked={adminRoleLocked || selectedPermissionIds.has(permission.id)} disabled={adminRoleLocked}
+                      <label key={permission.id} className={`flex items-center gap-2 rounded-md border p-3 text-sm ${rolePermissionsLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer hover:bg-muted/50'}`}>
+                        <input type="checkbox" checked={selectedPermissionIds.has(permission.id)} disabled={rolePermissionsLocked}
                           onChange={(event) => setSelectedPermissionIds((current) => {
                             const next = new Set(current);
                             if (event.target.checked) next.add(permission.id); else next.delete(permission.id);
@@ -370,6 +403,11 @@ export default function AccessControlPage() {
                     {isExternal && (
                       <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
                         外部企业账号的数据范围固定为“本企业全部关联数据”，仅生效合同、物流、磅单、质检和出入库等业务权限；主数据、组织和系统管理权限即使误配也不会生效。
+                      </div>
+                    )}
+                    {!isExternal && Object.keys(assignmentDraft).length >= 5 && (
+                      <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        当前账号已叠加 {Object.keys(assignmentDraft).length} 个角色。请确认均为实际岗位职责，避免使用多个宽权限角色代替明确分工。
                       </div>
                     )}
                   </div>
@@ -419,7 +457,9 @@ export default function AccessControlPage() {
                 <div className="space-y-3">
                   {roles.filter((role) => role.status === 'ACTIVE').map((role) => {
                     const assignment = assignmentDraft[role.id];
-                    const unavailableForExternal = isExternal && role.code === 'ADMIN';
+                    const unavailableForExternal = isExternal && (
+                      role.code === 'ADMIN' || INTERNAL_APPROVAL_ROLE_CODES.has(role.code)
+                    );
                     return (
                       <div key={role.id} className="rounded-lg border p-4">
                         <label className="flex items-center gap-3">
@@ -429,6 +469,7 @@ export default function AccessControlPage() {
                             <div className="text-xs text-muted-foreground">
                               {role.code}{unavailableForExternal ? ' · 外部账号不可授予' : ''}
                             </div>
+                            {role.description && <div className="mt-1 text-xs text-muted-foreground">{role.description}</div>}
                           </div>
                         </label>
                         {assignment && (

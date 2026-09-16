@@ -19,6 +19,21 @@ const SCOPE_TYPES = [
   'ALL',
 ] as const;
 
+const PROTECTED_PERMISSION_ROLE_CODES = new Set([
+  'ADMIN',
+  'BUSINESS_MANAGER',
+  'RISK_MANAGER',
+  'BUSINESS_OWNER',
+  'GENERAL_MANAGER',
+]);
+
+const INTERNAL_APPROVAL_ROLE_CODES = new Set([
+  'BUSINESS_MANAGER',
+  'RISK_MANAGER',
+  'BUSINESS_OWNER',
+  'GENERAL_MANAGER',
+]);
+
 @Injectable()
 export class AccessControlService {
   constructor(private readonly prisma: PrismaService) {}
@@ -30,7 +45,13 @@ export class AccessControlService {
           include: { permission: true },
           orderBy: { permission: { code: 'asc' } },
         },
-        _count: { select: { assignments: true } },
+        _count: {
+          select: {
+            assignments: {
+              where: { status: 'ACTIVE', user: { status: 'ACTIVE' } },
+            },
+          },
+        },
       },
       orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
     });
@@ -95,8 +116,8 @@ export class AccessControlService {
   async replaceRolePermissions(roleId: string, permissionIds: string[]) {
     const role = await this.prisma.role.findUnique({ where: { id: roleId } });
     if (!role) throw new NotFoundException('角色不存在');
-    if (role.code === 'ADMIN') {
-      throw new BadRequestException('系统管理员固定拥有全部权限，不能收紧');
+    if (PROTECTED_PERMISSION_ROLE_CODES.has(role.code)) {
+      throw new BadRequestException('系统管理员和审批路由角色使用受控权限模板，不能在页面中直接修改');
     }
 
     const uniqueIds = [...new Set(permissionIds)];
@@ -173,10 +194,17 @@ export class AccessControlService {
       include: { permissions: { include: { permission: true } } },
     });
     if (roles.length !== roleIds.length) throw new BadRequestException('包含不存在或已停用的角色');
+    const adminRole = roles.find((role) => role.code === 'ADMIN');
+    if (adminRole && roles.length > 1) {
+      throw new BadRequestException('系统管理员已经拥有全部权限，不能再叠加其他角色');
+    }
 
     const externalCompany = user.company?.type === 'EXTERNAL' ? user.company : null;
     if (externalCompany && roles.some((role) => role.code === 'ADMIN')) {
       throw new BadRequestException('外部企业账号不能授予平台系统管理员角色');
+    }
+    if (externalCompany && roles.some((role) => INTERNAL_APPROVAL_ROLE_CODES.has(role.code))) {
+      throw new BadRequestException('外部企业账号不能授予内部合同审批角色');
     }
     const currentAdminAssignment = await this.prisma.userRoleAssignment.findFirst({
       where: { userId, role: { code: 'ADMIN' }, status: 'ACTIVE' },

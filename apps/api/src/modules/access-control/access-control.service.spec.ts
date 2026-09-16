@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { mockDeep } from 'jest-mock-extended';
 import { AccessControlService } from './access-control.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -20,6 +20,50 @@ describe('AccessControlService', () => {
       ],
     }).compile();
     service = module.get(AccessControlService);
+  });
+
+  it('审批路由角色的权限模板不能在页面中直接改写', async () => {
+    prisma.role.findUnique.mockResolvedValue({ id: 'role-owner', code: 'BUSINESS_OWNER' } as any);
+
+    await expect(service.replaceRolePermissions('role-owner', []))
+      .rejects.toThrow(BadRequestException);
+    expect(prisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('系统管理员角色不能与其他角色叠加', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1', companyId: null, company: null,
+    } as any);
+    prisma.role.findMany.mockResolvedValue([
+      { id: 'role-admin', code: 'ADMIN', status: 'ACTIVE', permissions: [] },
+      { id: 'role-user', code: 'USER', status: 'ACTIVE', permissions: [] },
+    ] as any);
+
+    await expect(service.replaceUserAssignments(
+      'user-1',
+      [
+        { roleId: 'role-admin', scopeType: 'ALL' },
+        { roleId: 'role-user', scopeType: 'ALL' },
+      ],
+      'operator-1',
+    )).rejects.toThrow('系统管理员已经拥有全部权限，不能再叠加其他角色');
+  });
+
+  it('外部企业账号不能获得内部合同审批角色', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'external-user',
+      companyId: 'external-company',
+      company: { id: 'external-company', type: 'EXTERNAL' },
+    } as any);
+    prisma.role.findMany.mockResolvedValue([
+      { id: 'role-owner', code: 'BUSINESS_OWNER', status: 'ACTIVE', permissions: [] },
+    ] as any);
+
+    await expect(service.replaceUserAssignments(
+      'external-user',
+      [{ roleId: 'role-owner', scopeType: 'COMPANY' }],
+      'operator-1',
+    )).rejects.toThrow('外部企业账号不能授予内部合同审批角色');
   });
 
   it('外部企业账号可查看本企业作为任一交易方的全部合同及本企业未选主体草稿', async () => {
