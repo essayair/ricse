@@ -313,6 +313,8 @@ describe('WaybillService', () => {
       prisma.waybill.findFirst.mockResolvedValue({
         id: 'waybill-1', status: 'ARRIVED', attachments: [{ id: 'attachment-1', category }],
         outboundReceipts: [], dispatchNotice: { id: notice.id, type: 'PURCHASE', status: 'IN_PROGRESS' },
+        weighTickets: [{ status: 'REVIEWED', netWeight: 10 }],
+        weightSelections: [{ purpose: 'INVENTORY' }, { purpose: 'SETTLEMENT' }],
       } as any);
       prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
       prisma.waybill.update.mockResolvedValue({ id: 'waybill-1', status: 'SIGNED' } as any);
