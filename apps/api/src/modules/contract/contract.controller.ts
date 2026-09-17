@@ -10,7 +10,7 @@ import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractStatusDto } from './dto/update-status.dto';
 import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
-import { normalizeUploadFilename } from '../common/filename-encoding';
+import { prepareAttachmentUpload } from '../common/attachment-upload';
 
 @ApiTags('合同管理')
 @ApiBearerAuth()
@@ -106,17 +106,17 @@ export class ContractController {
     @CurrentUser('id') userId?: string,
   ) {
     if (!file) throw new BadRequestException('请选择文件');
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!allowed.includes(file.mimetype)) throw new BadRequestException('仅支持 JPG/PNG/WEBP/PDF 格式');
+    const prepared = prepareAttachmentUpload(file, requestedName);
+    if (!prepared) throw new BadRequestException('文件内容无法识别，仅支持 JPG/PNG/WEBP/PDF 格式');
     await this.contractService.findOne(contractId, userId, 'contract.edit');
-    const originalName = (requestedName?.trim() || normalizeUploadFilename(file.originalname)).slice(0, 255);
-    const result = await this.fileService.upload(file.buffer, originalName, file.mimetype);
+    const { originalName, mimeType } = prepared;
+    const result = await this.fileService.upload(file.buffer, originalName, mimeType);
     try {
       return await this.contractService.createAttachment({
         contractId,
         fileName: result.fileName,
         originalName,
-        mimeType: file.mimetype,
+        mimeType,
         size: result.size,
         category: category || 'OTHER',
       });

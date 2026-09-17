@@ -324,21 +324,14 @@ export class OrgService {
     this.validateStatus(data.status, '员工');
     const companyId = data.companyId ?? current.company?.id;
     const departmentId = data.departmentId ?? current.department?.id;
-    const targetEmployeeStatus = data.status ?? current.status;
     if (!companyId || !departmentId) throw new BadRequestException('员工必须关联企业和部门');
     const targetCompany = await this.validateCompanyAndDepartment(companyId, departmentId);
     if (current.user && companyId !== current.company?.id && targetCompany.type === 'EXTERNAL') {
-      const [adminAssignment, activeAccountCount] = await Promise.all([
-        this.prisma.userRoleAssignment.findFirst({
-          where: { userId: current.user.id, status: 'ACTIVE', role: { code: 'ADMIN' } },
-          select: { id: true },
-        }),
-        this.prisma.user.count({ where: { companyId, status: 'ACTIVE' } }),
-      ]);
+      const adminAssignment = await this.prisma.userRoleAssignment.findFirst({
+        where: { userId: current.user.id, status: 'ACTIVE', role: { code: 'ADMIN' } },
+        select: { id: true },
+      });
       if (adminAssignment) throw new BadRequestException('系统管理员不能调入外部企业，请先调整账号角色');
-      if (current.user.status === 'ACTIVE' && targetEmployeeStatus === 'ACTIVE' && activeAccountCount >= 6) {
-        throw new BadRequestException('目标外部企业已达到 6 个有效账号上限');
-      }
     }
     if (current.user && current.status === 'ACTIVE' && data.status !== undefined && data.status !== 'ACTIVE') {
       const adminAssignment = await this.prisma.userRoleAssignment.findFirst({
@@ -411,12 +404,21 @@ export class OrgService {
             where: { userId: current.user.id },
             include: { role: { select: { code: true } } },
           });
-          for (const assignment of assignments) {
-            if (assignment.role.code === 'ADMIN') continue;
-            await tx.userRoleAssignment.update({ where: { id: assignment.id }, data: { scopeType: 'COMPANY' } });
-            await tx.userRoleScope.deleteMany({ where: { assignmentId: assignment.id } });
-            await tx.userRoleScope.create({
-              data: { assignmentId: assignment.id, targetType: 'COMPANY', targetId: companyId },
+          const isAdmin = assignments.some((assignment) => assignment.role.code === 'ADMIN');
+          if (!isAdmin) {
+            const transferredAt = new Date();
+            // 跨管理企业调动不能按名称自动映射事业部或沿用旧角色，避免旧授权在新组织中重新放大。
+            await tx.userBusinessUnit.updateMany({
+              where: { userId: current.user.id, status: 'ACTIVE' },
+              data: { status: 'DISABLED', expiresAt: transferredAt, isDefault: false },
+            });
+            await tx.userRoleAssignment.updateMany({
+              where: { userId: current.user.id, status: 'ACTIVE' },
+              data: { status: 'DISABLED', expiresAt: transferredAt },
+            });
+            await tx.user.update({
+              where: { id: current.user.id },
+              data: { status: 'DISABLED', refreshToken: null },
             });
           }
         }
@@ -439,7 +441,14 @@ export class OrgService {
         await tx.businessOperationLog.create({
           data: {
             businessType: 'EMPLOYEE', businessId: id, action, actionLabel, operatorId: operatedBy,
-            details: { changedFields: Object.keys(data), accountDisabled: data.status !== undefined && data.status !== 'ACTIVE' && Boolean(current.user) },
+            details: {
+              changedFields: Object.keys(data),
+              accountDisabled: Boolean(current.user) && (
+                (data.status !== undefined && data.status !== 'ACTIVE')
+                || companyId !== current.company?.id
+              ),
+              accessReset: Boolean(current.user) && companyId !== current.company?.id,
+            },
           },
         });
       }

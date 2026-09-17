@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, TrendingDown, TrendingUp, Zap, Save } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment } from '@/lib/attachment-preview';
+import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachment-file';
 import { SETTLEMENT_METHOD_SUGGESTIONS } from '@/lib/contract-settlement';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 
@@ -191,8 +192,7 @@ export default function ContractCreatePage() {
         method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: fd,
       });
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || `附件 ${item.name} 上传失败`);
+        throw new Error(await attachmentUploadError(response, item.name));
       }
       // 上传成功后立即从待上传列表移除，后续重试不会重复上传。
       setFiles(current => current.filter(entry => entry !== item));
@@ -490,10 +490,10 @@ export default function ContractCreatePage() {
         {/* Attachments */}
         <Card className="p-6 mt-4">
           <SectionTitle>合同附件</SectionTitle>
-          <p className="text-xs text-muted-foreground mb-3">上传合同扫描件、签章文件等。支持 JPG/PNG/PDF。</p>
+          <p className="text-xs text-muted-foreground mb-3">上传合同扫描件、签章文件等。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB。</p>
           <label className="block border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
-            <input type="file" multiple accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => {
-              const selectedFiles = Array.from(e.currentTarget.files || []);
+            <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" onChange={(e) => {
+              const selectedFiles = selectValidAttachmentFiles(Array.from(e.currentTarget.files || []));
               if (selectedFiles.length > 0) setIsDirty(true);
               setFiles(prev => [...prev, ...selectedFiles.map(file => ({ file, name: file.name }))]);
               e.target.value = '';

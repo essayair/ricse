@@ -225,6 +225,37 @@ describe('OrgService', () => {
     }));
   });
 
+  it('员工跨企业调动时停用旧业务单元和角色授权并暂停账号', async () => {
+    prisma.employee.findUnique.mockResolvedValue({
+      id: 'employee-1', name: '张三', status: 'ACTIVE',
+      company: { id: 'company-1' }, department: { id: 'department-1' },
+      user: { id: 'user-1', username: 'employee01', status: 'ACTIVE' },
+    } as any);
+    prisma.company.findUnique.mockResolvedValue({ id: 'company-2', type: 'INTERNAL', status: 'ACTIVE' } as any);
+    prisma.department.findUnique.mockResolvedValue({ id: 'department-2', companyId: 'company-2' } as any);
+    prisma.employee.update.mockResolvedValue({ id: 'employee-1', companyId: 'company-2' } as any);
+    prisma.userRoleAssignment.findMany.mockResolvedValue([{
+      id: 'assignment-1', role: { code: 'SALESPERSON' },
+    }] as any);
+
+    await service.updateEmployee('employee-1', {
+      companyId: 'company-2', departmentId: 'department-2',
+    });
+
+    expect(prisma.userBusinessUnit.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 'user-1', status: 'ACTIVE' },
+      data: expect.objectContaining({ status: 'DISABLED', isDefault: false }),
+    }));
+    expect(prisma.userRoleAssignment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 'user-1', status: 'ACTIVE' },
+      data: expect.objectContaining({ status: 'DISABLED' }),
+    }));
+    expect(prisma.user.update).toHaveBeenLastCalledWith({
+      where: { id: 'user-1' },
+      data: { status: 'DISABLED', refreshToken: null },
+    });
+  });
+
   it('已开通账号的员工档案不允许删除', async () => {
     prisma.employee.findUnique.mockResolvedValue({
       id: 'employee-1', name: '张三', company: { id: 'company-1' }, department: { id: 'department-1' }, user: { id: 'user-1' },

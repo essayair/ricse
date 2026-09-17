@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save, Plus, Trash2, Paperclip, Loader2, Pencil, X } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
+import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachment-file';
 import { SETTLEMENT_METHOD_SUGGESTIONS, settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
@@ -287,8 +288,8 @@ export default function ContractEditPage() {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
           body,
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.message || `附件 ${item.name} 上传失败`);
+        if (!response.ok) throw new Error(await attachmentUploadError(response, item.name));
+        const result = await response.json();
         setAttachments(current => [result, ...current]);
         setPendingAttachments(current => current.filter(entry => entry !== item));
       }
@@ -630,6 +631,7 @@ export default function ContractEditPage() {
 
         <Card className="p-6">
           <SectionTitle>合同附件</SectionTitle>
+          <p className="mb-3 text-xs text-muted-foreground">支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB。</p>
           <div className="space-y-2">
             {attachments.map(att => (
               <div key={att.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
@@ -664,10 +666,10 @@ export default function ContractEditPage() {
             ))}
             <label className={`inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-muted ${uploadingAttachments ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
               <Paperclip className="mr-2 h-4 w-4" />选择附件
-              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" className="hidden" onChange={e => {
-              const selectedFiles = Array.from(e.currentTarget.files || []);
-              if (selectedFiles.length > 0) setIsDirty(true);
-              setPendingAttachments(current => [...current, ...selectedFiles.map(file => ({ file, name: file.name }))]);
+              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" className="hidden" onChange={e => {
+                const selectedFiles = selectValidAttachmentFiles(Array.from(e.currentTarget.files || []));
+                if (selectedFiles.length > 0) setIsDirty(true);
+                setPendingAttachments(current => [...current, ...selectedFiles.map(file => ({ file, name: file.name }))]);
                 e.target.value = '';
               }} disabled={uploadingAttachments} />
             </label>

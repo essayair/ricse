@@ -1,18 +1,22 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { TemporalInput } from './temporal-input';
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, type, onChange, onWheel, step, ...props }, ref) => {
-    // 纯日期选择完成即可收起；日期时间需要继续选择时、分、秒，不能在选完日期时提前失焦。
-    const closesAfterSelection = type === 'date' || type === 'month';
+    if (type && ['date', 'month', 'time', 'datetime-local'].includes(type)) {
+      return (
+        <TemporalInput
+          {...props}
+          ref={ref}
+          type={type as 'date' | 'month' | 'time' | 'datetime-local'}
+          className={className}
+          onChange={onChange}
+        />
+      );
+    }
+
     const resolvedStep = step ?? (type === 'datetime-local' || type === 'time' ? 1 : undefined);
-    const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-      onChange?.(event);
-      if (closesAfterSelection && event.currentTarget.value) {
-        const input = event.currentTarget;
-        window.requestAnimationFrame(() => input.blur());
-      }
-    };
     const handleWheel = (event: React.WheelEvent<HTMLInputElement>) => {
       onWheel?.(event);
       // 浏览页面时不应误改仍处于焦点中的数字字段。
@@ -29,7 +33,7 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
         )}
         ref={ref}
         step={resolvedStep}
-        onChange={handleChange}
+        onChange={onChange}
         onWheel={handleWheel}
         {...props}
       />;

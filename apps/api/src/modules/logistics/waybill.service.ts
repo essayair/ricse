@@ -239,6 +239,9 @@ export class WaybillService {
   private async syncCreatedWaybill(waybill: any, userId: string) {
     if (waybill.vehicleId || waybill.plateNo) {
       await this.weighService.ensureTaskForWaybill(waybill.id, userId);
+      if (waybill.dispatchNotice?.type === 'SALES') {
+        await this.weighService.ensurePrimaryTicketForWaybill(waybill.id, userId);
+      }
     }
     if (waybill.dispatchNotice?.type === 'SALES' && waybill.dispatchNotice?.mode === 'STANDARD') {
       await this.outboundService.ensureReceiptForWaybill(waybill.id, userId);
@@ -547,6 +550,9 @@ export class WaybillService {
     });
     if (updated.vehicleId || updated.plateNo) {
       await this.weighService.ensureTaskForWaybill(updated.id, userId);
+      if (updated.dispatchNotice?.type === 'SALES') {
+        await this.weighService.ensurePrimaryTicketForWaybill(updated.id, userId);
+      }
     }
     return this.findOne(updated.id, userId, 'logistics.manage');
   }
@@ -583,6 +589,20 @@ export class WaybillService {
         ? '确认客户签收前必须上传至少一份物流交付凭证'
         : '确认收货前必须上传至少一份物流收货凭证');
     }
+    if (status === 'SIGNED') {
+      const validTickets = (waybill.weighTickets || []).filter(ticket => (
+        ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0
+      ));
+      if (validTickets.length === 0) {
+        throw new BadRequestException('确认签收前必须至少完成并复核一张有效磅单');
+      }
+      const purposes = new Set((waybill.weightSelections || []).map(selection => selection.purpose));
+      if (!purposes.has('INVENTORY') || !purposes.has('SETTLEMENT')) {
+        throw new BadRequestException(validTickets.length > 1
+          ? '存在多张有效磅单，请先选择库存与结算统一执行磅单'
+          : '请先将唯一有效磅单确认为库存与结算执行口径');
+      }
+    }
     const updated = await this.prisma.$transaction(async tx => {
       const updated = await tx.waybill.update({
         where: { id },
@@ -616,6 +636,12 @@ export class WaybillService {
     }
     if (['ARRIVED', 'SIGNED'].includes(status)) {
       await this.qualityService.ensureTaskForWaybill(id, userId);
+    }
+    if (
+      waybill.dispatchNotice.type === 'PURCHASE'
+      && ['ARRIVED', 'SIGNED'].includes(status)
+    ) {
+      await this.weighService.ensurePrimaryTicketForWaybill(id, userId);
     }
     if (status === 'CANCELLED') await this.weighService.voidTaskForWaybill(id, userId);
     else await this.weighService.syncTaskForWaybill(id, userId);

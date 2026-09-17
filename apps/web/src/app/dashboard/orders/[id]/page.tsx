@@ -102,7 +102,7 @@ export default function OrderDetailPage() {
             <Field label="执行批次编号" value={order.orderNo} />
             <Field label="执行批次类型" value={order.type === 'PURCHASE' ? '采购执行批次' : '销售执行批次'} />
             <Field label="执行批次金额" value={`¥${Number(order.totalAmount).toLocaleString()}`} />
-            <Field label={order.type === 'PURCHASE' ? '计划到货日期' : '计划发货日期'} value={order.plannedDate ? new Date(order.plannedDate).toLocaleDateString('zh-CN') : '-'} />
+            <Field label={order.type === 'PURCHASE' ? '计划发货日期（供应商发货）' : '计划发货日期（我方发货）'} value={order.plannedDate ? new Date(order.plannedDate).toLocaleDateString('zh-CN') : '-'} />
             <Field label={order.type === 'PURCHASE' ? '收货地点' : '交付地点'} value={order.deliveryLocation || '-'} />
             <Field label="开始执行时间" value={order.dispatchedAt ? new Date(order.dispatchedAt).toLocaleString('zh-CN') : '-'} />
             <Field label="完成时间" value={order.completedAt ? new Date(order.completedAt).toLocaleString('zh-CN') : '-'} />

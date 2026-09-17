@@ -28,4 +28,15 @@ describe('attachment upload detection', () => {
   it('rejects content that is not a supported attachment format', () => {
     expect(prepareAttachmentUpload(uploadFile('fake.png', 'image/png', Buffer.from('not-an-image')))).toBeNull();
   });
+
+  it('recognizes a PDF reported as a generic binary file and keeps a requested Chinese name', () => {
+    const buffer = Buffer.from('\uFEFF%PDF-1.7\ncontract-content');
+    expect(prepareAttachmentUpload(
+      uploadFile('upload.bin', 'application/octet-stream', buffer),
+      '采购合同扫描件',
+    )).toEqual({
+      originalName: '采购合同扫描件.pdf',
+      mimeType: 'application/pdf',
+    });
+  });
 });

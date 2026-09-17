@@ -38,6 +38,30 @@ const INTERNAL_APPROVAL_ROLE_CODES = new Set([
 export class AccessControlService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private getEffectiveBusinessUnitIds(context: {
+    user: {
+      businessUnits: Array<{
+        status: string;
+        effectiveAt: Date;
+        expiresAt: Date | null;
+        businessUnitId: string;
+        businessUnit: { status: string };
+      }>;
+    };
+  }) {
+    const now = new Date();
+    return context.user.businessUnits
+      .filter((membership) => membership.status === 'ACTIVE'
+        && membership.businessUnit.status === 'ACTIVE'
+        && membership.effectiveAt <= now
+        && (!membership.expiresAt || membership.expiresAt > now))
+      .map((membership) => membership.businessUnitId);
+  }
+
+  private noAccess() {
+    return { id: { equals: '__NO_ACCESS__' } } as const;
+  }
+
   findAllRoles() {
     return this.prisma.role.findMany({
       include: {
@@ -374,7 +398,6 @@ export class AccessControlService {
 
   async getBusinessUnitOptions(userId: string, permissionCode?: string) {
     const context = await this.getContext(userId);
-    const now = new Date();
     if (context.isExternal) return [];
     if (context.isAdmin) {
       return this.prisma.businessUnit.findMany({
@@ -384,11 +407,7 @@ export class AccessControlService {
       });
     }
 
-    const membershipIds = context.user.businessUnits
-      .filter((item) => item.status === 'ACTIVE'
-        && item.effectiveAt <= now
-        && (!item.expiresAt || item.expiresAt > now))
-      .map((item) => item.businessUnitId);
+    const membershipIds = this.getEffectiveBusinessUnitIds(context);
     const assignments = permissionCode
       ? context.assignments.filter((assignment) =>
         assignment.role.permissions.some((entry) => entry.permission.code === permissionCode))
@@ -444,7 +463,10 @@ export class AccessControlService {
     const permissionAssignments = context.assignments.filter((assignment) =>
       assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
     );
-    if (permissionAssignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
+    const membershipIds = this.getEffectiveBusinessUnitIds(context);
+    if (membershipIds.length === 0) return this.noAccess();
+    const membershipSet = new Set(membershipIds);
+    const hasAllScope = permissionAssignments.some((assignment) => assignment.scopeType === 'ALL');
 
     const clauses: Prisma.ContractWhereInput[] = [];
     const companyIds = new Set<string>();
@@ -488,14 +510,18 @@ export class AccessControlService {
       if (assignment.scopeType === 'BUSINESS_UNIT') {
         assignment.scopes
           .filter((scope) => scope.targetType === 'BUSINESS_UNIT')
+          .filter((scope) => membershipSet.has(scope.targetId))
           .forEach((scope) => businessUnitIds.add(scope.targetId));
       }
     }
+    const membershipClause: Prisma.ContractWhereInput = { businessUnitId: { in: membershipIds } };
+    if (hasAllScope) return membershipClause;
     if (companyIds.size > 0) clauses.push({ companyId: { in: [...companyIds] } });
     if (departmentIds.size > 0) clauses.push({ departmentId: { in: [...departmentIds] } });
     if (businessUnitIds.size > 0) clauses.push({ businessUnitId: { in: [...businessUnitIds] } });
-    if (clauses.length === 0) return { id: { equals: '__NO_ACCESS__' } };
-    return clauses.length === 1 ? clauses[0] : { OR: clauses };
+    if (clauses.length === 0) return this.noAccess();
+    const roleScope = clauses.length === 1 ? clauses[0] : { OR: clauses };
+    return { AND: [membershipClause, roleScope] };
   }
 
   async getOrderScope(userId: string, permissionCode = 'execution.view'): Promise<Prisma.OrderWhereInput> {
@@ -544,7 +570,7 @@ export class AccessControlService {
     const permissionAssignments = context.assignments.filter((assignment) =>
       assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
     );
-    if (context.isAdmin || permissionAssignments.some((assignment) => assignment.scopeType === 'ALL')) return {};
+    if (context.isAdmin) return {};
     if (context.isExternal) {
       if (!context.externalPartnerId) {
         throw new ForbiddenException('外部企业未关联合作伙伴，无法确定生产任务数据范围');
@@ -556,6 +582,11 @@ export class AccessControlService {
         ],
       };
     }
+    const membershipIds = this.getEffectiveBusinessUnitIds(context);
+    if (membershipIds.length === 0) return this.noAccess();
+    const membershipSet = new Set(membershipIds);
+    const membershipClause: Prisma.ProductionTaskWhereInput = { businessUnitId: { in: membershipIds } };
+    if (permissionAssignments.some((assignment) => assignment.scopeType === 'ALL')) return membershipClause;
     const clauses: Prisma.ProductionTaskWhereInput[] = [];
     const businessUnitIds = new Set<string>();
     const companyIds = new Set<string>();
@@ -564,6 +595,7 @@ export class AccessControlService {
       if (assignment.scopeType === 'BUSINESS_UNIT') {
         assignment.scopes
           .filter(scope => scope.targetType === 'BUSINESS_UNIT')
+          .filter(scope => membershipSet.has(scope.targetId))
           .forEach(scope => businessUnitIds.add(scope.targetId));
       }
       if (assignment.scopeType === 'COMPANY' && context.user.employee?.companyId) {
@@ -580,7 +612,9 @@ export class AccessControlService {
     }
     if (businessUnitIds.size) clauses.push({ businessUnitId: { in: [...businessUnitIds] } });
     if (companyIds.size) clauses.push({ businessUnit: { companyId: { in: [...companyIds] } } });
-    return clauses.length ? { OR: clauses } : { id: { equals: '__NO_ACCESS__' } };
+    if (!clauses.length) return this.noAccess();
+    const roleScope = clauses.length === 1 ? clauses[0] : { OR: clauses };
+    return { AND: [membershipClause, roleScope] };
   }
 
   async getProductionRecipeScope(userId: string, permissionCode = 'production.view'): Promise<Prisma.ProductionRecipeWhereInput> {

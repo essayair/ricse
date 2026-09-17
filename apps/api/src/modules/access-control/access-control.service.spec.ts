@@ -199,7 +199,16 @@ describe('AccessControlService', () => {
       name: '跨单元用户',
       role: 'USER',
       company: { id: 'internal-company', type: 'INTERNAL', partnerId: 'partner-internal' },
-      businessUnits: [],
+      businessUnits: [
+        {
+          status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          businessUnitId: 'bu-yumen', businessUnit: { status: 'ACTIVE' },
+        },
+        {
+          status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          businessUnitId: 'bu-longyou', businessUnit: { status: 'ACTIVE' },
+        },
+      ],
       roleAssignments: [
         {
           id: 'approval-yumen', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
@@ -216,8 +225,84 @@ describe('AccessControlService', () => {
       ],
     } as any);
 
-    await expect(service.getContractScope('scoped-user', 'contract.approve')).resolves.toEqual({ businessUnitId: { in: ['bu-yumen'] } });
-    await expect(service.getContractScope('scoped-user', 'contract.view')).resolves.toEqual({ businessUnitId: { in: ['bu-longyou'] } });
+    await expect(service.getContractScope('scoped-user', 'contract.approve')).resolves.toEqual({
+      AND: [
+        { businessUnitId: { in: ['bu-yumen', 'bu-longyou'] } },
+        { businessUnitId: { in: ['bu-yumen'] } },
+      ],
+    });
+    await expect(service.getContractScope('scoped-user', 'contract.view')).resolves.toEqual({
+      AND: [
+        { businessUnitId: { in: ['bu-yumen', 'bu-longyou'] } },
+        { businessUnitId: { in: ['bu-longyou'] } },
+      ],
+    });
+  });
+
+  it('内部普通账号的全部范围仍以有效业务单元归属为上限', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'all-user', username: 'all-user', name: '全范围用户', role: 'USER',
+      company: { id: 'internal-company', type: 'INTERNAL', partnerId: 'partner-internal' },
+      businessUnits: [
+        {
+          status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          businessUnitId: 'bu-yumen', businessUnit: { status: 'ACTIVE' },
+        },
+        {
+          status: 'DISABLED', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          businessUnitId: 'bu-disabled', businessUnit: { status: 'ACTIVE' },
+        },
+      ],
+      roleAssignments: [{
+        id: 'all-scope', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+        scopeType: 'ALL',
+        role: { code: 'RISK_MANAGER', status: 'ACTIVE', permissions: [{ permission: { code: 'contract.view' } }] },
+        scopes: [],
+      }],
+    } as any);
+
+    await expect(service.getContractScope('all-user')).resolves.toEqual({
+      businessUnitId: { in: ['bu-yumen'] },
+    });
+  });
+
+  it('内部普通账号没有有效业务单元归属时拒绝业务数据访问', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'no-unit-user', username: 'no-unit-user', name: '无归属用户', role: 'USER',
+      company: { id: 'internal-company', type: 'INTERNAL', partnerId: 'partner-internal' },
+      businessUnits: [],
+      roleAssignments: [{
+        id: 'all-scope', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+        scopeType: 'ALL',
+        role: { code: 'USER', status: 'ACTIVE', permissions: [{ permission: { code: 'contract.view' } }] },
+        scopes: [],
+      }],
+    } as any);
+
+    await expect(service.getContractScope('no-unit-user')).resolves.toEqual({
+      id: { equals: '__NO_ACCESS__' },
+    });
+  });
+
+  it('生产任务的全部范围同样受有效业务单元归属限制', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'production-user', username: 'production-user', name: '生产用户', role: 'PRODUCTION_MANAGER',
+      company: { id: 'internal-company', type: 'INTERNAL', partnerId: 'partner-internal' },
+      businessUnits: [{
+        status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+        businessUnitId: 'bu-yumen', businessUnit: { status: 'ACTIVE' },
+      }],
+      roleAssignments: [{
+        id: 'production-all', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+        scopeType: 'ALL',
+        role: { code: 'PRODUCTION_MANAGER', status: 'ACTIVE', permissions: [{ permission: { code: 'production.view' } }] },
+        scopes: [],
+      }],
+    } as any);
+
+    await expect(service.getProductionTaskScope('production-user')).resolves.toEqual({
+      businessUnitId: { in: ['bu-yumen'] },
+    });
   });
 
   it('保存外部企业授权时强制锁定为所属企业范围', async () => {

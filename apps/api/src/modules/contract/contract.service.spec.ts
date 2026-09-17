@@ -365,6 +365,7 @@ describe('ContractService', () => {
           status: 'ACTIVE',
           companyId: 'company-1',
           employee: { departmentId: 'dept-1' },
+          businessUnits: [{ businessUnitId: 'bu-1' }],
         },
         scopes: [],
       }] as any);
@@ -413,6 +414,7 @@ describe('ContractService', () => {
         user: {
           id: 'approver-yumen', name: '玉门负责人', username: 'yumen_owner', status: 'ACTIVE',
           companyId: 'management-company-1', employee: { departmentId: 'dept-1' },
+          businessUnits: [{ businessUnitId: 'bu-yumen' }],
         },
         scopes: [{ targetType: 'BUSINESS_UNIT', targetId: 'bu-yumen' }],
       }] as any);
@@ -423,6 +425,39 @@ describe('ContractService', () => {
           nodes: [expect.objectContaining({ assigneeCount: 1 })],
         }),
       );
+    });
+
+    it('审批角色为全部范围但未加入合同业务单元时不能成为审批人', async () => {
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        businessUnitId: 'bu-yumen',
+      } as any);
+      prisma.businessUnit.findFirst.mockResolvedValue({
+        id: 'bu-yumen', companyId: 'management-company-1',
+      } as any);
+      prisma.approvalFlow.findUnique.mockResolvedValue({
+        id: 'flow-1', name: '采购合同审批流', status: 'ACTIVE', amountThreshold: null,
+        nodes: [{
+          id: 'node-1', nodeName: '风控/财务经理', step: 1,
+          roleId: 'role-risk', approvalMode: 'ANY', scopeType: 'ALL', condition: 'ALWAYS',
+          role: {
+            id: 'role-risk', code: 'RISK_MANAGER', name: '风控/财务经理', status: 'ACTIVE',
+            permissions: [{ permission: { code: 'contract.approve' } }],
+          },
+        }],
+      } as any);
+      prisma.userRoleAssignment.findMany.mockResolvedValue([{
+        scopeType: 'ALL',
+        user: {
+          id: 'approver-longyou', name: '龙游风控', username: 'risk_longyou', status: 'ACTIVE',
+          companyId: 'management-company-1', employee: { departmentId: 'dept-risk' },
+          businessUnits: [{ businessUnitId: 'bu-longyou' }],
+        },
+        scopes: [],
+      }] as any);
+
+      await expect(service.getApprovalReadiness('test-id'))
+        .rejects.toThrow('审批节点“风控/财务经理”在当前合同范围内没有有效的“风控/财务经理”人员');
     });
 
     it('历史草稿缺少业务部门时使用创建人所属部门解析审批人', async () => {
@@ -473,6 +508,7 @@ describe('ContractService', () => {
           status: 'ACTIVE',
           companyId: 'company-1',
           employee: { departmentId: 'dept-1' },
+          businessUnits: [{ businessUnitId: 'bu-1' }],
         },
         scopes: [],
       }] as any);
@@ -555,6 +591,54 @@ describe('ContractService', () => {
       await expect(service.getApprovalReadiness('test-id'))
         .rejects.toThrow('审批节点“业务主管”在当前合同范围内没有有效的“业务主管”人员');
     });
+
+    it('系统管理员提交时以管理员兜底缺少人员的审批节点', async () => {
+      prisma.contract.findFirst.mockResolvedValue({
+        ...mockContract,
+        status: 'DRAFT',
+        type: 'PURCHASE',
+        totalAmount: '100000',
+        companyId: 'company-1',
+      } as any);
+      prisma.approvalFlow.findUnique.mockResolvedValue({
+        id: 'flow-1',
+        name: '采购合同审批流',
+        status: 'ACTIVE',
+        amountThreshold: null,
+        nodes: [{
+          id: 'node-1',
+          nodeName: '业务责任人',
+          step: 1,
+          roleId: 'role-owner',
+          approvalMode: 'ANY',
+          scopeType: 'BUSINESS_UNIT',
+          condition: 'ALWAYS',
+          role: {
+            id: 'role-owner',
+            code: 'BUSINESS_OWNER',
+            name: '业务责任人',
+            status: 'ACTIVE',
+            permissions: [{ permission: { code: 'contract.approve' } }],
+          },
+        }],
+      } as any);
+      prisma.userRoleAssignment.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{
+          user: { id: 'user-1', username: 'admin', name: '系统管理员' },
+        }] as any);
+
+      await expect(service.getApprovalReadiness('test-id', 'user-1')).resolves.toEqual(
+        expect.objectContaining({
+          ready: true,
+          nodes: [expect.objectContaining({
+            nodeName: '业务责任人',
+            assigneeCount: 1,
+            assignees: [{ id: 'user-1', username: 'admin', name: '系统管理员' }],
+          })],
+        }),
+      );
+    });
   });
 
   describe('状态机 — validateTransition', () => {
@@ -587,6 +671,7 @@ describe('ContractService', () => {
             status: 'ACTIVE',
             companyId: 'company-1',
             employee: { departmentId: 'dept-business' },
+            businessUnits: [{ businessUnitId: 'bu-1' }],
           },
           scopes: [],
         }] as any)
@@ -599,6 +684,7 @@ describe('ContractService', () => {
             status: 'ACTIVE',
             companyId: 'company-1',
             employee: { departmentId: 'dept-leadership' },
+            businessUnits: [{ businessUnitId: 'bu-1' }],
           },
           scopes: [],
         }] as any);

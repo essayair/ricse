@@ -33,15 +33,16 @@ export function detectAttachmentMimeType(buffer: Buffer): AttachmentMimeType | n
     && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
     && buffer.subarray(8, 12).toString('ascii') === 'WEBP'
   ) return 'image/webp';
-  if (buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-') return 'application/pdf';
+  // PDF 规范允许文件头前出现少量兼容字节；只在前 1024 字节内查找，兼顾真实文件与伪装文件拦截。
+  if (buffer.subarray(0, Math.min(buffer.length, 1024)).includes(Buffer.from('%PDF-'))) return 'application/pdf';
   return null;
 }
 
-export function prepareAttachmentUpload(file: Express.Multer.File) {
+export function prepareAttachmentUpload(file: Express.Multer.File, requestedName?: string) {
   const mimeType = detectAttachmentMimeType(file.buffer);
   if (!mimeType) return null;
 
-  const receivedName = normalizeUploadFilename(file.originalname || '').trim().slice(0, 255);
+  const receivedName = normalizeUploadFilename(requestedName?.trim() || file.originalname || '').trim().slice(0, 255);
   const receivedExtension = receivedName.toLowerCase().split('.').pop() || '';
   const extensionMatches = MIME_BY_EXTENSION[receivedExtension] === mimeType;
   const baseName = (receivedName || '微信图片')

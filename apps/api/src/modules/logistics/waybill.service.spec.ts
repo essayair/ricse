@@ -27,6 +27,7 @@ describe('WaybillService', () => {
   };
   const weighTicketService = {
     ensureTaskForWaybill: jest.fn().mockResolvedValue({ id: 'weigh-task-1' }),
+    ensurePrimaryTicketForWaybill: jest.fn().mockResolvedValue({ id: 'ticket-1' }),
     syncTaskForWaybill: jest.fn().mockResolvedValue({ id: 'weigh-task-1' }),
     voidTaskForWaybill: jest.fn().mockResolvedValue({ id: 'weigh-task-1' }),
   };
@@ -270,6 +271,31 @@ describe('WaybillService', () => {
 
     expect(inventoryService.ensurePendingReceiptForWaybill).toHaveBeenCalledWith('waybill-purchase', 'user-1');
     expect(qualityService.ensureTaskForWaybill).toHaveBeenCalledWith('waybill-purchase', 'user-1');
+    expect(weighTicketService.ensurePrimaryTicketForWaybill).toHaveBeenCalledWith('waybill-purchase', 'user-1');
+  });
+
+  it('销售运单确定车辆后自动生成我方发货待过磅单', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue({
+      ...notice,
+      type: 'SALES',
+      mode: 'DIRECT',
+    } as any);
+    prisma.waybill.create.mockResolvedValue({
+      id: 'waybill-sales', waybillNo: 'WB-20260717-0002',
+      plateNo: '甘A12345', vehicleId: null,
+      dispatchNotice: { type: 'SALES', mode: 'DIRECT' },
+    } as any);
+
+    await service.create({
+      dispatchNoticeId: notice.id,
+      plateNo: '甘A12345',
+      driverName: '张师傅',
+      driverPhone: '13800000000',
+      lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+    }, 'user-1');
+
+    expect(weighTicketService.ensureTaskForWaybill).toHaveBeenCalledWith('waybill-sales', 'user-1');
+    expect(weighTicketService.ensurePrimaryTicketForWaybill).toHaveBeenCalledWith('waybill-sales', 'user-1');
   });
 
   it('确认签收前必须上传物流收货附件', async () => {

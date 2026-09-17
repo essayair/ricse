@@ -155,7 +155,7 @@ export default function CreateOrderPage() {
                 {contract.type === 'BILATERAL' && <p className="mt-1 text-xs text-muted-foreground">双边合同需选择本次生成采购端或销售端执行批次</p>}
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">计划履约日期</label>
+                <label className="mb-1 block text-sm font-medium">{type === 'PURCHASE' ? '计划发货日期（供应商发货）' : '计划发货日期（我方发货）'}</label>
                 <Input type="date" value={plannedDate} onChange={event => setPlannedDate(event.target.value)} />
               </div>
               <div>

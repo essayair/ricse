@@ -59,8 +59,8 @@ export default function WeighbridgePage() {
 
   return <div className="space-y-6">
     <div className="flex items-center justify-between gap-4">
-      <div><h1 className="text-2xl font-bold">磅单管理</h1><p className="mt-1 text-sm text-muted-foreground">统一管理过磅任务、现场影像、发货称重、收货称重、磅单和执行口径</p></div>
-      <Button onClick={() => router.push('/dashboard/weighbridge/create')}><Plus className="mr-1 h-4 w-4" />新建称重磅单</Button>
+      <div><h1 className="text-2xl font-bold">磅单管理</h1><p className="mt-1 text-sm text-muted-foreground">我方发货/收货首张磅单按业务节点自动生成；外部凭证和复磅在此登记，每个运单至少一张有效磅单</p></div>
+      <Button onClick={() => router.push('/dashboard/weighbridge/create')}><Plus className="mr-1 h-4 w-4" />登记外部/追加磅单</Button>
     </div>
     <div className="grid gap-3 sm:grid-cols-4">
       <Summary label="过磅任务" value={items.length} />

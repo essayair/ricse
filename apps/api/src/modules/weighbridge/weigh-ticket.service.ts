@@ -191,10 +191,41 @@ export class WeighTicketService {
     let status = 'PENDING_WEIGHING';
     if (waybill.status === 'CANCELLED') status = 'VOIDED';
     else if (waybill.weighTickets.some(item => item.status === 'REVIEWED' && item.abnormal)) status = 'EXCEPTION';
-    else if (waybill.weightSelections.length || waybill.weighTickets.some(item => item.status === 'REVIEWED')) status = 'COMPLETED';
-    else if (waybill.weighTickets.some(item => item.status === 'COMPLETED')) status = 'PENDING_CONFIRMATION';
+    else if (waybill.weightSelections.length) status = 'COMPLETED';
+    else if (waybill.weighTickets.some(item => ['COMPLETED', 'REVIEWED'].includes(item.status))) status = 'PENDING_CONFIRMATION';
     else if (waybill.weighTickets.length) status = 'IN_PROGRESS';
     return this.prisma.weighTask.update({ where: { id: task.id }, data: { status } });
+  }
+
+  /**
+   * 为我方可控称重节点幂等生成首张待过磅单。
+   * 销售在发货前生成我方发货磅单；采购仅在车辆到达后生成我方收货磅单。
+   * 供应商发货、客户收货和第三方复磅仍由业务人员按实际凭证登记。
+   */
+  async ensurePrimaryTicketForWaybill(waybillId: string, userId: string) {
+    const waybill = await this.prisma.waybill.findFirst({
+      where: { id: waybillId, deletedAt: null },
+      select: {
+        id: true, status: true, vehicleId: true, plateNo: true,
+        dispatchNotice: { select: { type: true } },
+      },
+    });
+    if (!waybill || (!waybill.vehicleId && !waybill.plateNo) || waybill.status === 'CANCELLED') return null;
+
+    const isPurchase = waybill.dispatchNotice.type === 'PURCHASE';
+    if (isPurchase && !['ARRIVED', 'SIGNED'].includes(waybill.status)) return null;
+    const weighingStage = isPurchase ? 'RECEIVING' : 'SHIPPING';
+    const existing = await this.prisma.weighTicket.findFirst({
+      where: { waybillId, weighingStage, deletedAt: null },
+      orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
+    });
+    if (existing) return existing;
+
+    return this.create({
+      waybillId,
+      weighingStage,
+      remarks: `系统根据物流运单自动生成我方${isPurchase ? '收货' : '发货'}待过磅单`,
+    }, userId, { systemGenerated: true });
   }
 
   async voidTaskForWaybill(waybillId: string, userId: string) {
@@ -244,9 +275,17 @@ export class WeighTicketService {
     });
   }
 
-  async create(dto: CreateWeighTicketDto, userId: string) {
-    await this.accessControl.assertPermission(userId, 'quality.manage');
-    const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
+  async create(
+    dto: CreateWeighTicketDto,
+    userId: string,
+    options: { systemGenerated?: boolean } = {},
+  ) {
+    if (!options.systemGenerated) {
+      await this.accessControl.assertPermission(userId, 'quality.manage');
+    }
+    const scope = options.systemGenerated
+      ? {}
+      : await this.accessControl.getWaybillScope(userId, 'quality.manage');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: dto.waybillId, deletedAt: null, AND: [scope] },
       include: {
@@ -869,11 +908,19 @@ export class WeighTicketService {
     });
     const quantity = Number(ticket.netWeight || 0);
     if (quantity <= 0) return;
-    if (ticket.weighingStage !== 'SHIPPING') return;
     const current = await this.prisma.waybillWeightSelection.findFirst({
       where: { waybillId: ticket.waybillId, purpose: { in: SELECTION_PURPOSES }, isCurrent: true },
     });
-    if (!current) {
+    if (current) return;
+    const activeTicketCount = await this.prisma.weighTicket.count({
+      where: {
+        waybillId: ticket.waybillId,
+        deletedAt: null,
+        status: { not: 'VOIDED' },
+      },
+    });
+    // 只有这一张有效业务磅单时直接作为入出库与结算口径；存在多张时由业务人员明确选择。
+    if (activeTicketCount === 1) {
       await this.setEffectiveSelection(ticket.waybillId, ticket.id, quantity, undefined, userId, false);
     }
   }

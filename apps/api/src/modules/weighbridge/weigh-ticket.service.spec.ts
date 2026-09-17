@@ -90,6 +90,91 @@ describe('WeighTicketService', () => {
       .rejects.toThrow('物流运单到达后才能创建或关联收货称重磅单');
   });
 
+  it('采购运单确认到达后自动生成我方收货待过磅单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue(waybill as any);
+    prisma.weighTicket.findFirst.mockResolvedValue(null);
+    prisma.weighTicket.create.mockResolvedValue({
+      ...ticket, status: 'PENDING', direction: 'INBOUND', weighingStage: 'RECEIVING',
+    } as any);
+
+    await service.ensurePrimaryTicketForWaybill(waybill.id, 'user-1');
+
+    expect(accessControl.assertPermission).not.toHaveBeenCalled();
+    expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        waybillId: waybill.id,
+        direction: 'INBOUND',
+        weighingStage: 'RECEIVING',
+        remarks: '系统根据物流运单自动生成我方收货待过磅单',
+      }),
+    }));
+  });
+
+  it('采购运单到达前只生成过磅任务而不提前生成收货磅单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ ...waybill, status: 'IN_TRANSIT' } as any);
+
+    await expect(service.ensurePrimaryTicketForWaybill(waybill.id, 'user-1')).resolves.toBeNull();
+
+    expect(prisma.weighTicket.create).not.toHaveBeenCalled();
+  });
+
+  it('销售运单确定车辆后自动生成我方发货待过磅单且重复调用不重复创建', async () => {
+    const salesWaybill = {
+      ...waybill,
+      status: 'PENDING',
+      dispatchNotice: {
+        type: 'SALES',
+        order: {
+          contract: {
+            type: 'SALES', seller: { name: '客户' },
+            buyer: null, signingPartner: { name: '我方单位' },
+          },
+        },
+      },
+    };
+    prisma.waybill.findFirst.mockResolvedValue(salesWaybill as any);
+    prisma.weighTicket.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'ticket-auto', weighingStage: 'SHIPPING' } as any);
+    prisma.weighTicket.create.mockResolvedValue({
+      ...ticket, id: 'ticket-auto', status: 'PENDING', direction: 'OUTBOUND', weighingStage: 'SHIPPING',
+    } as any);
+
+    await service.ensurePrimaryTicketForWaybill(waybill.id, 'user-1');
+    await service.ensurePrimaryTicketForWaybill(waybill.id, 'user-1');
+
+    expect(prisma.weighTicket.create).toHaveBeenCalledTimes(1);
+    expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        direction: 'OUTBOUND',
+        weighingStage: 'SHIPPING',
+        remarks: '系统根据物流运单自动生成我方发货待过磅单',
+      }),
+    }));
+  });
+
+  it.each([
+    [[], 'PENDING_CONFIRMATION'],
+    [[{ id: 'selection-1' }], 'COMPLETED'],
+  ])('已复核磅单的执行口径为 %j 时过磅任务状态为 %s', async (weightSelections, expectedStatus) => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: waybill.id, status: 'ARRIVED', vehicleId: null, plateNo: '甘A12345', totalQuantity: 100,
+    } as any);
+    prisma.weighTask.findUnique.mockResolvedValue({ id: 'task-1', plannedQuantity: 100, status: 'IN_PROGRESS' } as any);
+    prisma.waybill.findUnique.mockResolvedValue({
+      status: 'ARRIVED',
+      weighTickets: [{ status: 'REVIEWED', abnormal: false }],
+      weightSelections,
+    } as any);
+    prisma.weighTask.update.mockResolvedValue({ id: 'task-1', status: expectedStatus } as any);
+
+    await service.syncTaskForWaybill(waybill.id, 'user-1');
+
+    expect(prisma.weighTask.update).toHaveBeenCalledWith({
+      where: { id: 'task-1' }, data: { status: expectedStatus },
+    });
+  });
+
   it('销售运单允许在发运前创建出库磅单', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       ...waybill,
@@ -322,5 +407,32 @@ describe('WeighTicketService', () => {
 
     await expect(service.selectEffectiveTicket(waybill.id, ticket.id, undefined, 'user-1'))
       .rejects.toThrow('更换库存与结算执行磅单必须填写变更原因');
+  });
+
+  it('运单只有一张未作废磅单时自动选为入出库与结算口径', async () => {
+    prisma.weighTicket.findUniqueOrThrow.mockResolvedValue({
+      id: ticket.id,
+      waybillId: waybill.id,
+      weighingStage: 'RECEIVING',
+      netWeight: 100,
+      waybill: { dispatchNotice: { type: 'PURCHASE' } },
+    } as any);
+    prisma.waybillWeightSelection.findFirst.mockResolvedValue(null);
+    prisma.weighTicket.count.mockResolvedValue(1);
+    prisma.waybillWeightSelection.findMany.mockResolvedValue([]);
+    prisma.waybillWeightSelection.create
+      .mockResolvedValueOnce({ id: 'selection-inventory' } as any)
+      .mockResolvedValueOnce({ id: 'selection-settlement' } as any);
+    prisma.inboundReceipt.findMany.mockResolvedValue([]);
+
+    await (service as any).applyDefaultSelections(ticket.id, 'user-1');
+
+    expect(prisma.waybillWeightSelection.create).toHaveBeenCalledTimes(2);
+    expect(prisma.waybillWeightSelection.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      data: expect.objectContaining({ purpose: 'INVENTORY', weighTicketId: ticket.id, quantity: 100 }),
+    }));
+    expect(prisma.waybillWeightSelection.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      data: expect.objectContaining({ purpose: 'SETTLEMENT', weighTicketId: ticket.id, quantity: 100 }),
+    }));
   });
 });

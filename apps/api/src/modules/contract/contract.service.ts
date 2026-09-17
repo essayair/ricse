@@ -717,7 +717,7 @@ export class ContractService {
         ) {
           throw new ForbiddenException('外部企业只能提交本企业作为交易参与方的合同');
         }
-        const plan = await this.resolveApprovalPlan(tx, contract);
+        const plan = await this.resolveApprovalPlan(tx, contract, { allowAdminFallback: access.isAdmin });
         approvalScope = {
           companyId: plan.companyId,
           departmentId: plan.departmentId,
@@ -754,8 +754,10 @@ export class ContractService {
 
   async getApprovalReadiness(id: string, userId?: string) {
     let scope: Prisma.ContractWhereInput = {};
+    let allowAdminFallback = false;
     if (userId) {
-      await this.accessControl.assertPermission(userId, 'contract.submit');
+      const access = await this.accessControl.assertPermission(userId, 'contract.submit');
+      allowAdminFallback = access.isAdmin;
       scope = await this.accessControl.getContractScope(userId, 'contract.submit');
     }
     const contract = await this.prisma.contract.findFirst({
@@ -788,7 +790,7 @@ export class ContractService {
     }
 
     await this.validateContractForSubmission(this.prisma, contract);
-    const plan = await this.resolveApprovalPlan(this.prisma, contract);
+    const plan = await this.resolveApprovalPlan(this.prisma, contract, { allowAdminFallback });
     return {
       ready: true,
       flowId: plan.flowId,
@@ -809,6 +811,7 @@ export class ContractService {
   private async resolveApprovalPlan(
     client: Prisma.TransactionClient | PrismaService,
     contract: ApprovalContractContext,
+    options: { allowAdminFallback?: boolean } = {},
   ) {
     const flow = await client.approvalFlow.findUnique({
       where: { contractType: contract.type },
@@ -920,12 +923,13 @@ export class ContractService {
         throw new BadRequestException(`审批节点“${node.nodeName}”需要合同业务单元，请编辑合同并选择业务单元`);
       }
 
+      const assignmentNow = new Date();
       const assignments = await client.userRoleAssignment.findMany({
         where: {
           roleId: node.roleId,
           status: 'ACTIVE',
-          effectiveAt: { lte: new Date() },
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          effectiveAt: { lte: assignmentNow },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: assignmentNow } }],
           user: { status: 'ACTIVE' },
         },
         include: {
@@ -937,6 +941,15 @@ export class ContractService {
               status: true,
               companyId: true,
               employee: { select: { departmentId: true } },
+              businessUnits: {
+                where: {
+                  status: 'ACTIVE',
+                  effectiveAt: { lte: assignmentNow },
+                  OR: [{ expiresAt: null }, { expiresAt: { gt: assignmentNow } }],
+                  businessUnit: { status: 'ACTIVE' },
+                },
+                select: { businessUnitId: true },
+              },
             },
           },
           scopes: true,
@@ -944,7 +957,11 @@ export class ContractService {
       });
 
       const coversNodeScope = (assignment: typeof assignments[number]) => {
-        if (node.scopeType === 'ALL' || assignment.scopeType === 'ALL') return true;
+        // 业务单元归属是内部普通账号的最高边界；角色范围只能在归属内继续收窄。
+        if (businessUnitId && !(assignment.user.businessUnits || []).some(
+          (membership) => membership.businessUnitId === businessUnitId,
+        )) return false;
+        if (assignment.scopeType === 'ALL') return true;
         const companyScopeIds = assignment.scopes
           .filter((item) => item.targetType === 'COMPANY')
           .map((item) => item.targetId);
@@ -985,6 +1002,9 @@ export class ContractService {
         if (assignment.scopeType === 'SPECIFIED_COMPANIES') {
           return companyScopeIds.includes(companyId!);
         }
+        if (assignment.scopeType === 'BUSINESS_UNIT') {
+          return businessUnitId !== null && businessUnitScopeIds.includes(businessUnitId);
+        }
         if (assignment.scopeType === 'DEPARTMENT') {
           return assignment.user.employee?.departmentId === departmentId
             || departmentScopeIds.includes(departmentId!);
@@ -1001,7 +1021,7 @@ export class ContractService {
         return false;
       };
 
-      const members = Array.from(
+      let members = Array.from(
         new Map(
           assignments
             .filter(coversNodeScope)
@@ -1012,6 +1032,26 @@ export class ContractService {
             }]),
         ).values(),
       );
+      // 系统管理员具有所有审批节点的应急处理能力。普通用户提交时仍要求
+      // 各业务单元完整配置节点人员；仅管理员提交且节点确实无人时启用兜底，
+      // 避免初始化或测试阶段因尚未完成岗位配置而无法建立审批任务。
+      if (members.length === 0 && options.allowAdminFallback) {
+        const adminAssignments = await client.userRoleAssignment.findMany({
+          where: {
+            status: 'ACTIVE',
+            effectiveAt: { lte: assignmentNow },
+            OR: [{ expiresAt: null }, { expiresAt: { gt: assignmentNow } }],
+            role: { code: 'ADMIN', status: 'ACTIVE' },
+            user: { status: 'ACTIVE' },
+          },
+          select: {
+            user: { select: { id: true, username: true, name: true } },
+          },
+        });
+        members = Array.from(
+          new Map(adminAssignments.map((assignment) => [assignment.user.id, assignment.user])).values(),
+        );
+      }
       if (members.length === 0) {
         throw new BadRequestException(
           `审批节点“${node.nodeName}”在当前合同范围内没有有效的“${node.role.name}”人员`,

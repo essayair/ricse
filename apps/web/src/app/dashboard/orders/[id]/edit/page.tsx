@@ -108,7 +108,7 @@ export default function EditOrderPage() {
       <Card className="space-y-5 p-6">
         <div><label className="mb-1 block text-sm font-medium">执行批次名称 *</label><Input maxLength={100} value={name} onChange={event => setName(event.target.value)} /></div>
         <div className="grid gap-4 md:grid-cols-2">
-          <div><label className="mb-1 block text-sm font-medium">计划履约日期</label><Input type="date" value={plannedDate} onChange={event => setPlannedDate(event.target.value)} /></div>
+          <div><label className="mb-1 block text-sm font-medium">{order.type === 'PURCHASE' ? '计划发货日期（供应商发货）' : '计划发货日期（我方发货）'}</label><Input type="date" value={plannedDate} onChange={event => setPlannedDate(event.target.value)} /></div>
           <div><label className="mb-1 block text-sm font-medium">交货地点</label><Input value={deliveryLocation} onChange={event => setDeliveryLocation(event.target.value)} /></div>
         </div>
         <div className="overflow-hidden rounded-lg border">

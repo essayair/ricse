@@ -140,7 +140,7 @@ export default function OrdersPage() {
                 <th className="w-72 whitespace-nowrap px-4 py-3 font-medium">{type === 'PURCHASE' ? '采购主体 / 供应商' : type === 'SALES' ? '销售主体 / 客户' : '业务主体 / 交易对手'}</th>
                 <th className="w-56 whitespace-nowrap px-4 py-3 font-medium">标的 / 数量</th>
                 <th className="w-40 whitespace-nowrap px-4 py-3 text-right font-medium">金额</th>
-                <th className="w-64 whitespace-nowrap px-4 py-3 font-medium">{type === 'PURCHASE' ? '计划到货 / 收货地点' : type === 'SALES' ? '计划发货 / 交付地点' : '计划日期 / 交付地点'}</th>
+                <th className="w-64 whitespace-nowrap px-4 py-3 font-medium">{type === 'PURCHASE' ? '计划发货 / 收货地点' : type === 'SALES' ? '计划发货 / 交付地点' : '计划发货 / 收发货地点'}</th>
                 <th className="w-56 whitespace-nowrap px-4 py-3 font-medium">下游执行</th>
                 <th className="w-52 whitespace-nowrap px-4 py-3 font-medium">状态 / 创建人</th>
                 <th className="w-20 whitespace-nowrap px-4 py-3 font-medium">操作</th>
