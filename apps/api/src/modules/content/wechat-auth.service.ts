@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService } from '../common/users.service';
 import { WechatTokenService } from '../common/wechat-token.service';
+import { WechatPhoneDto } from './dto/content.dto';
 
 @Injectable()
 export class WechatAuthService {
@@ -74,6 +75,11 @@ export class WechatAuthService {
         avatarUrl: identity.avatarUrl,
         phone: identity.phone,
         phoneVerified: Boolean(identity.phoneVerifiedAt),
+        consent: identity.consentedAt ? {
+          serviceAgreementVersion: identity.serviceAgreementVersion,
+          privacyPolicyVersion: identity.privacyPolicyVersion,
+          consentedAt: identity.consentedAt,
+        } : null,
         status: identity.status,
         lastLogin: identity.lastLogin,
       },
@@ -116,7 +122,7 @@ export class WechatAuthService {
     return this.getMe(openId);
   }
 
-  async bindVerifiedPhone(openId: string, code: string) {
+  async bindVerifiedPhone(openId: string, dto: WechatPhoneDto) {
     await this.assertActiveIdentity(openId);
     const accessToken = await this.getWechatAccessToken();
     const response = await fetch(
@@ -124,7 +130,7 @@ export class WechatAuthService {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: dto.code }),
         signal: AbortSignal.timeout(10_000),
       },
     );
@@ -138,7 +144,13 @@ export class WechatAuthService {
     }
     await this.prisma.wechatIdentity.update({
       where: { openId },
-      data: { phone: String(phone), phoneVerifiedAt: new Date() },
+      data: {
+        phone: String(phone),
+        phoneVerifiedAt: new Date(),
+        serviceAgreementVersion: dto.serviceAgreementVersion,
+        privacyPolicyVersion: dto.privacyPolicyVersion,
+        consentedAt: new Date(),
+      },
     });
     return this.getMe(openId);
   }

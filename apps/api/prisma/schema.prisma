@@ -2365,20 +2365,23 @@ model ContentJob {
 }
 
 model WechatIdentity {
-  id              String    @id @default(cuid())
-  openId          String    @unique
-  unionId         String?
-  nickName        String?
-  avatarUrl       String?
-  phone           String?
-  phoneVerifiedAt DateTime?
-  source          String    @default("WECHAT_MINI_PROGRAM")
-  status          String    @default("ACTIVE") // ACTIVE | DISABLED
-  lastLogin       DateTime  @default(now())
-  linkedUserId    String?   @unique
-  linkedAt        DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                      String    @id @default(cuid())
+  openId                  String    @unique
+  unionId                 String?
+  nickName                String?
+  avatarUrl               String?
+  phone                   String?
+  phoneVerifiedAt         DateTime?
+  serviceAgreementVersion String?
+  privacyPolicyVersion    String?
+  consentedAt             DateTime?
+  source                  String    @default("WECHAT_MINI_PROGRAM")
+  status                  String    @default("ACTIVE") // ACTIVE | DISABLED
+  lastLogin               DateTime  @default(now())
+  linkedUserId            String?   @unique
+  linkedAt                DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   linkedUser  User?                  @relation("WechatLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
   bindingLogs WechatAccountBinding[]

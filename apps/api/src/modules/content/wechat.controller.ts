@@ -34,6 +34,6 @@ export class WechatController {
   ) {
     const openId = this.auth.verifyBearer(authorization);
     await this.rate.assert('wechat-phone', `${openId}:${ip || ''}`, 10, 3600);
-    return this.auth.bindVerifiedPhone(openId, dto.code);
+    return this.auth.bindVerifiedPhone(openId, dto);
   }
 }

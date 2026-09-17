@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import {
+  Equals,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
@@ -182,4 +184,7 @@ export class UpdateWechatProfileDto {
 
 export class WechatPhoneDto {
   @IsString() @MaxLength(200) code: string;
+  @IsBoolean() @Equals(true, { message: '获取手机号前必须同意用户服务协议和隐私政策' }) accepted: boolean;
+  @IsString() @MaxLength(30) serviceAgreementVersion: string;
+  @IsString() @MaxLength(30) privacyPolicyVersion: string;
 }
