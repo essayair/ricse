@@ -556,6 +556,50 @@ export class AccessControlService {
     return { receipt: await this.getInboundReceiptScope(userId, permissionCode) };
   }
 
+  /**
+   * 物流合同/结算单没有部门或业务单元维度，只按我方签约/委托主体（companyId）收口；
+   * 外部企业账号不参与运费合同与结算，直接拒绝。
+   */
+  private async resolveLogisticsCompanyIds(userId: string, permissionCode: string) {
+    const context = await this.getContext(userId);
+    if (context.isAdmin) return { isAdmin: true as const, isExternal: false as const, companyIds: [] as string[] };
+    if (context.isExternal) return { isAdmin: false as const, isExternal: true as const, companyIds: [] as string[] };
+
+    const permissionAssignments = context.assignments.filter((assignment) =>
+      assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
+    );
+    const selfCompanyId = context.user.company?.id;
+    const companyIds = new Set<string>();
+    for (const assignment of permissionAssignments) {
+      if (
+        selfCompanyId
+        && ['ALL', 'COMPANY', 'BUSINESS_UNIT', 'SELF', 'DEPARTMENT', 'DEPARTMENT_AND_CHILDREN'].includes(assignment.scopeType)
+      ) {
+        companyIds.add(selfCompanyId);
+      }
+      if (assignment.scopeType === 'SPECIFIED_COMPANIES') {
+        assignment.scopes
+          .filter((scope) => scope.targetType === 'COMPANY')
+          .forEach((scope) => companyIds.add(scope.targetId));
+      }
+    }
+    return { isAdmin: false as const, isExternal: false as const, companyIds: [...companyIds] };
+  }
+
+  async getLogisticsContractScope(userId: string, permissionCode = 'logistics.contract.view'): Promise<Prisma.LogisticsContractWhereInput> {
+    const resolved = await this.resolveLogisticsCompanyIds(userId, permissionCode);
+    if (resolved.isAdmin) return {};
+    if (resolved.isExternal || resolved.companyIds.length === 0) return this.noAccess();
+    return { companyId: { in: resolved.companyIds } };
+  }
+
+  async getLogisticsSettlementScope(userId: string, permissionCode = 'logistics.settlement.view'): Promise<Prisma.LogisticsSettlementWhereInput> {
+    const resolved = await this.resolveLogisticsCompanyIds(userId, permissionCode);
+    if (resolved.isAdmin) return {};
+    if (resolved.isExternal || resolved.companyIds.length === 0) return this.noAccess();
+    return { payerCompanyId: { in: resolved.companyIds } };
+  }
+
   async getInventoryLotScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.InventoryLotWhereInput> {
     return {
       OR: [

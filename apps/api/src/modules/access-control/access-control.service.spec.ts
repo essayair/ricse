@@ -352,4 +352,90 @@ describe('AccessControlService', () => {
       }],
     });
   });
+
+  describe('物流合同与结算数据范围', () => {
+    it('内部管理员不受公司范围限制', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'admin', role: 'ADMIN',
+        company: { id: 'internal-company', type: 'INTERNAL' },
+        roleAssignments: [{
+          id: 'assignment-admin', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          scopeType: 'ALL',
+          role: { code: 'ADMIN', status: 'ACTIVE', permissions: [] },
+          scopes: [],
+        }],
+      } as any);
+
+      await expect(service.getLogisticsContractScope('admin')).resolves.toEqual({});
+      await expect(service.getLogisticsSettlementScope('admin')).resolves.toEqual({});
+    });
+
+    it('外部企业账号没有物流合同与结算数据范围', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'external-user', role: 'USER',
+        company: { id: 'external-company', type: 'EXTERNAL', partnerId: 'partner-1' },
+        roleAssignments: [{
+          id: 'assignment-1', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          scopeType: 'COMPANY',
+          role: { code: 'USER', status: 'ACTIVE', permissions: [{ permission: { code: 'logistics.contract.view' } }] },
+          scopes: [],
+        }],
+      } as any);
+
+      await expect(service.getLogisticsContractScope('external-user')).resolves.toEqual({
+        id: { equals: '__NO_ACCESS__' },
+      });
+    });
+
+    it('COMPANY 范围按本企业 companyId 收口', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'logistics-user', role: 'USER',
+        company: { id: 'internal-company', type: 'INTERNAL' },
+        roleAssignments: [{
+          id: 'assignment-1', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          scopeType: 'COMPANY',
+          role: { code: 'LOGISTICS_OPERATOR', status: 'ACTIVE', permissions: [{ permission: { code: 'logistics.contract.view' } }] },
+          scopes: [],
+        }],
+      } as any);
+
+      await expect(service.getLogisticsContractScope('logistics-user')).resolves.toEqual({
+        companyId: { in: ['internal-company'] },
+      });
+    });
+
+    it('SPECIFIED_COMPANIES 范围按角色配置的目标企业收口', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'finance-user', role: 'USER',
+        company: { id: 'internal-company', type: 'INTERNAL' },
+        roleAssignments: [{
+          id: 'assignment-1', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          scopeType: 'SPECIFIED_COMPANIES',
+          role: { code: 'FINANCE_SPECIALIST', status: 'ACTIVE', permissions: [{ permission: { code: 'logistics.settlement.view' } }] },
+          scopes: [{ targetType: 'COMPANY', targetId: 'other-company' }],
+        }],
+      } as any);
+
+      await expect(service.getLogisticsSettlementScope('finance-user', 'logistics.settlement.view')).resolves.toEqual({
+        payerCompanyId: { in: ['other-company'] },
+      });
+    });
+
+    it('没有对应权限的角色分配时拒绝访问', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'no-permission-user', role: 'USER',
+        company: { id: 'internal-company', type: 'INTERNAL' },
+        roleAssignments: [{
+          id: 'assignment-1', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
+          scopeType: 'COMPANY',
+          role: { code: 'USER', status: 'ACTIVE', permissions: [{ permission: { code: 'contract.view' } }] },
+          scopes: [],
+        }],
+      } as any);
+
+      await expect(service.getLogisticsContractScope('no-permission-user')).resolves.toEqual({
+        id: { equals: '__NO_ACCESS__' },
+      });
+    });
+  });
 });

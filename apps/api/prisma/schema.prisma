@@ -25,48 +25,53 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company                      Company?                  @relation(fields: [companyId], references: [id])
-  employee                     Employee?                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  company                      Company?                     @relation(fields: [companyId], references: [id])
+  employee                     Employee?                    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   businessUnits                UserBusinessUnit[]
   roleAssignments              UserRoleAssignment[]
-  wechatIdentity               WechatIdentity?           @relation("WechatLinkedUser")
-  wechatBindingTargets         WechatAccountBinding[]    @relation("WechatBindingTarget")
-  operatedWechatBindings       WechatAccountBinding[]    @relation("WechatBindingOperator")
-  createdContracts             Contract[]                @relation("ContractCreator")
-  createdPartners              Partner[]                 @relation("PartnerCreator")
-  approvalTasks                Approval[]                @relation("ApprovalAssignee")
-  actedApprovals               Approval[]                @relation("ApprovalActor")
-  createdOrders                Order[]                   @relation("OrderCreator")
-  createdDispatchNotices       DispatchNotice[]          @relation("DispatchNoticeCreator")
-  createdWaybills              Waybill[]                 @relation("WaybillCreator")
-  createdWeighTasks            WeighTask[]               @relation("WeighTaskCreator")
-  createdWeighTickets          WeighTicket[]             @relation("WeighTicketCreator")
-  reviewedWeighTickets         WeighTicket[]             @relation("WeighTicketReviewer")
-  weighTicketSelections        WaybillWeightSelection[]  @relation("WaybillWeightSelector")
-  weighRecords                 WeighRecord[]             @relation("WeighRecordOperator")
-  createdQualityInspections    QualityInspection[]       @relation("QualityInspectionCreator")
-  confirmedQualityInspections  QualityInspection[]       @relation("QualityInspectionConfirmer")
-  createdQualityTasks          QualityTask[]             @relation("QualityTaskCreator")
-  createdQualitySamples        QualitySample[]           @relation("QualitySampleCreator")
-  handledQualityTasks          QualityTask[]             @relation("QualityTaskHandler")
-  decidedQualityTasks          QualityTask[]             @relation("QualityTaskDecider")
+  wechatIdentity               WechatIdentity?              @relation("WechatLinkedUser")
+  wechatBindingTargets         WechatAccountBinding[]       @relation("WechatBindingTarget")
+  operatedWechatBindings       WechatAccountBinding[]       @relation("WechatBindingOperator")
+  createdContracts             Contract[]                   @relation("ContractCreator")
+  createdPartners              Partner[]                    @relation("PartnerCreator")
+  approvalTasks                Approval[]                   @relation("ApprovalAssignee")
+  actedApprovals               Approval[]                   @relation("ApprovalActor")
+  createdOrders                Order[]                      @relation("OrderCreator")
+  createdDispatchNotices       DispatchNotice[]             @relation("DispatchNoticeCreator")
+  createdWaybills              Waybill[]                    @relation("WaybillCreator")
+  createdWeighTasks            WeighTask[]                  @relation("WeighTaskCreator")
+  createdWeighTickets          WeighTicket[]                @relation("WeighTicketCreator")
+  reviewedWeighTickets         WeighTicket[]                @relation("WeighTicketReviewer")
+  weighTicketSelections        WaybillWeightSelection[]     @relation("WaybillWeightSelector")
+  weighRecords                 WeighRecord[]                @relation("WeighRecordOperator")
+  createdQualityInspections    QualityInspection[]          @relation("QualityInspectionCreator")
+  confirmedQualityInspections  QualityInspection[]          @relation("QualityInspectionConfirmer")
+  createdQualityTasks          QualityTask[]                @relation("QualityTaskCreator")
+  createdQualitySamples        QualitySample[]              @relation("QualitySampleCreator")
+  handledQualityTasks          QualityTask[]                @relation("QualityTaskHandler")
+  decidedQualityTasks          QualityTask[]                @relation("QualityTaskDecider")
   qualityMethodPreferences     QualityMethodPreference[]
-  uploadedAttachments          Attachment[]              @relation("AttachmentUploader")
-  createdInboundReceipts       InboundReceipt[]          @relation("InboundReceiptCreator")
-  createdBusinessInbounds      BusinessInbound[]         @relation("BusinessInboundCreator")
-  createdOutboundOrders        OutboundOrder[]           @relation("OutboundOrderCreator")
-  createdOutboundReceipts      OutboundReceipt[]         @relation("OutboundReceiptCreator")
-  createdSalesOutbounds        SalesOutbound[]           @relation("SalesOutboundCreator")
-  inventoryLedgerEntries       InventoryLedger[]         @relation("InventoryLedgerCreator")
-  createdInventoryReversals    InventoryReversal[]       @relation("InventoryReversalCreator")
-  approvedInventoryReversals   InventoryReversal[]       @relation("InventoryReversalApprover")
-  postedInventoryReversals     InventoryReversal[]       @relation("InventoryReversalPoster")
-  createdProductionRecipes     ProductionRecipe[]        @relation("ProductionRecipeCreator")
-  createdProductionTasks       ProductionTask[]          @relation("ProductionTaskCreator")
-  createdProductionCompletions ProductionCompletion[]    @relation("ProductionCompletionCreator")
-  qualityConfirmedCompletions  ProductionCompletion[]    @relation("ProductionCompletionQualityConfirmer")
-  postedProductionCompletions  ProductionCompletion[]    @relation("ProductionCompletionPoster")
+  uploadedAttachments          Attachment[]                 @relation("AttachmentUploader")
+  createdInboundReceipts       InboundReceipt[]             @relation("InboundReceiptCreator")
+  createdBusinessInbounds      BusinessInbound[]            @relation("BusinessInboundCreator")
+  createdOutboundOrders        OutboundOrder[]              @relation("OutboundOrderCreator")
+  createdOutboundReceipts      OutboundReceipt[]            @relation("OutboundReceiptCreator")
+  createdSalesOutbounds        SalesOutbound[]              @relation("SalesOutboundCreator")
+  inventoryLedgerEntries       InventoryLedger[]            @relation("InventoryLedgerCreator")
+  createdInventoryReversals    InventoryReversal[]          @relation("InventoryReversalCreator")
+  approvedInventoryReversals   InventoryReversal[]          @relation("InventoryReversalApprover")
+  postedInventoryReversals     InventoryReversal[]          @relation("InventoryReversalPoster")
+  createdProductionRecipes     ProductionRecipe[]           @relation("ProductionRecipeCreator")
+  createdProductionTasks       ProductionTask[]             @relation("ProductionTaskCreator")
+  createdProductionCompletions ProductionCompletion[]       @relation("ProductionCompletionCreator")
+  qualityConfirmedCompletions  ProductionCompletion[]       @relation("ProductionCompletionQualityConfirmer")
+  postedProductionCompletions  ProductionCompletion[]       @relation("ProductionCompletionPoster")
   businessOperationLogs        BusinessOperationLog[]
+  createdLogisticsContracts    LogisticsContract[]          @relation("LogisticsContractCreator")
+  createdLogisticsPriceTerms   LogisticsContractPriceTerm[] @relation("LogisticsContractPriceTermCreator")
+  createdLogisticsSettlements  LogisticsSettlement[]        @relation("LogisticsSettlementCreator")
+  preparedLogisticsSettlements LogisticsSettlement[]        @relation("LogisticsSettlementPreparer")
+  reviewedLogisticsSettlements LogisticsSettlement[]        @relation("LogisticsSettlementReviewer")
 
   @@map("users")
 }
@@ -105,15 +110,17 @@ model Company {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  parent        Company?               @relation("CompanyTree", fields: [parentId], references: [id])
-  children      Company[]              @relation("CompanyTree")
-  partner       Partner?               @relation("CompanyPartner", fields: [partnerId], references: [id])
-  departments   Department[]
-  employees     Employee[]
-  users         User[]
-  contracts     Contract[]
-  bgMappings    BusinessGroupCompany[]
-  businessUnits BusinessUnit[]
+  parent               Company?               @relation("CompanyTree", fields: [parentId], references: [id])
+  children             Company[]              @relation("CompanyTree")
+  partner              Partner?               @relation("CompanyPartner", fields: [partnerId], references: [id])
+  departments          Department[]
+  employees            Employee[]
+  users                User[]
+  contracts            Contract[]
+  bgMappings           BusinessGroupCompany[]
+  businessUnits        BusinessUnit[]
+  logisticsContracts   LogisticsContract[]
+  logisticsSettlements LogisticsSettlement[]
 
   @@map("companies")
 }
@@ -391,6 +398,7 @@ model Partner {
   warehouses              Warehouse[]
   serviceOrganizations    ServiceOrganization[]
   carrierWaybills         Waybill[]             @relation("WaybillCarrierPartner")
+  logisticsContracts      LogisticsContract[]   @relation("LogisticsContractCarrier")
   institutionInspections  QualityInspection[]   @relation("QualityInstitutionPartner")
   ownedBusinessInbounds   BusinessInbound[]     @relation("BusinessInboundOwner")
   ownedInventoryLots      InventoryLot[]        @relation("InventoryLotOwner")
@@ -1078,19 +1086,20 @@ model Waybill {
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
 
-  dispatchNotice   DispatchNotice           @relation(fields: [dispatchNoticeId], references: [id])
-  vehicle          Vehicle?                 @relation(fields: [vehicleId], references: [id])
-  driver           Driver?                  @relation(fields: [driverId], references: [id])
-  carrierPartner   Partner?                 @relation("WaybillCarrierPartner", fields: [carrierPartnerId], references: [id])
-  creator          User                     @relation("WaybillCreator", fields: [createdBy], references: [id])
-  lineItems        WaybillLineItem[]
-  weighTickets     WeighTicket[]
-  weightSelections WaybillWeightSelection[]
-  attachments      Attachment[]
-  inboundReceipts  InboundReceipt[]
-  outboundReceipts OutboundReceipt[]
-  qualityTask      QualityTask?
-  weighTask        WeighTask?
+  dispatchNotice           DispatchNotice            @relation(fields: [dispatchNoticeId], references: [id])
+  vehicle                  Vehicle?                  @relation(fields: [vehicleId], references: [id])
+  driver                   Driver?                   @relation(fields: [driverId], references: [id])
+  carrierPartner           Partner?                  @relation("WaybillCarrierPartner", fields: [carrierPartnerId], references: [id])
+  creator                  User                      @relation("WaybillCreator", fields: [createdBy], references: [id])
+  lineItems                WaybillLineItem[]
+  weighTickets             WeighTicket[]
+  weightSelections         WaybillWeightSelection[]
+  attachments              Attachment[]
+  inboundReceipts          InboundReceipt[]
+  outboundReceipts         OutboundReceipt[]
+  qualityTask              QualityTask?
+  weighTask                WeighTask?
+  logisticsSettlementLines LogisticsSettlementLine[]
 
   @@unique([creationBatchId, creationRowId])
   @@index([waybillNo])
@@ -1231,6 +1240,112 @@ model WaybillWeightSelection {
   @@index([weighTicketId])
   @@index([selectedBy])
   @@map("waybill_weight_selections")
+}
+
+/// 物流合同；仅用于有长期约定价的承运方，承运方需关联有效物流承运商服务档案
+model LogisticsContract {
+  id               String    @id @default(cuid())
+  contractNo       String    @unique
+  carrierPartnerId String
+  companyId        String?
+  status           String    @default("DRAFT") // DRAFT | ACTIVE | EXPIRED | TERMINATED
+  settlementBasis  String    @default("NET_WEIGHT") // NET_WEIGHT | GROSS_WEIGHT | TRIP
+  signedAt         DateTime?
+  effectiveAt      DateTime?
+  expireAt         DateTime?
+  remarks          String?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  carrierPartner Partner                      @relation("LogisticsContractCarrier", fields: [carrierPartnerId], references: [id])
+  company        Company?                     @relation(fields: [companyId], references: [id])
+  creator        User                         @relation("LogisticsContractCreator", fields: [createdBy], references: [id])
+  priceTerms     LogisticsContractPriceTerm[]
+
+  @@index([carrierPartnerId])
+  @@index([companyId])
+  @@index([status])
+  @@map("logistics_contracts")
+}
+
+/// 物流合同运价条款；按路线维度分生效期管理，不区分货物品类
+model LogisticsContractPriceTerm {
+  id                  String    @id @default(cuid())
+  contractId          String
+  originLocation      String
+  destinationLocation String
+  unitPrice           Decimal   @db.Decimal(15, 2) // 元/吨，含税
+  effectiveAt         DateTime
+  expiresAt           DateTime?
+  createdBy           String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  contract        LogisticsContract         @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  creator         User                      @relation("LogisticsContractPriceTermCreator", fields: [createdBy], references: [id])
+  settlementLines LogisticsSettlementLine[]
+
+  @@index([contractId, originLocation, destinationLocation])
+  @@map("logistics_contract_price_terms")
+}
+
+/// 物流结算单（运费结算，结算对象为承运方，区别于面向合同买卖双方的应收应付结算）
+model LogisticsSettlement {
+  id               String    @id @default(cuid())
+  settlementNo     String    @unique
+  payerCompanyId   String
+  periodStart      DateTime
+  periodEnd        DateTime
+  status           String    @default("DRAFT") // DRAFT | SUBMITTED | REVIEWED | VOIDED
+  preparedBy       String
+  preparedAt       DateTime?
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  totalGrossWeight Decimal   @default(0) @db.Decimal(15, 3)
+  totalNetWeight   Decimal   @default(0) @db.Decimal(15, 3)
+  totalAmount      Decimal   @default(0) @db.Decimal(15, 2)
+  remarks          String?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  payerCompany Company                   @relation(fields: [payerCompanyId], references: [id])
+  preparer     User                      @relation("LogisticsSettlementPreparer", fields: [preparedBy], references: [id])
+  reviewer     User?                     @relation("LogisticsSettlementReviewer", fields: [reviewedBy], references: [id])
+  creator      User                      @relation("LogisticsSettlementCreator", fields: [createdBy], references: [id])
+  lines        LogisticsSettlementLine[]
+
+  @@index([payerCompanyId])
+  @@index([status])
+  @@map("logistics_settlements")
+}
+
+/// 物流结算单明细；一车（一张已签收运单）一行，重量快照自运单结算执行磅单口径
+model LogisticsSettlementLine {
+  id                  String   @id @default(cuid())
+  settlementId        String
+  waybillId           String
+  netWeight           Decimal  @db.Decimal(15, 3)
+  unitPrice           Decimal? @db.Decimal(15, 2) // MANUAL 来源在提交前允许为空，待手工填写
+  priceSource         String // CONTRACT | MANUAL | CONTRACT_OVERRIDDEN
+  contractPriceTermId String?
+  contractUnitPrice   Decimal? @db.Decimal(15, 2) // priceSource=CONTRACT_OVERRIDDEN 时保留原合同单价，供审计对比
+  overrideReason      String?
+  amount              Decimal? @db.Decimal(15, 2) // unitPrice 为空时同步为空
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  settlement        LogisticsSettlement         @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  waybill           Waybill                     @relation(fields: [waybillId], references: [id])
+  contractPriceTerm LogisticsContractPriceTerm? @relation(fields: [contractPriceTermId], references: [id])
+
+  @@index([settlementId])
+  @@index([waybillId])
+  @@index([contractPriceTermId])
+  @@map("logistics_settlement_lines")
 }
 
 model WeighRecord {
