@@ -48,23 +48,32 @@ export class LogisticsSettlementService {
     originLocation: string | null;
     destinationLocation: string | null;
     signedAt: Date | null;
-  }) {
+  }, payerCompanyId: string) {
     if (!waybill.carrierPartnerId || !waybill.originLocation || !waybill.destinationLocation) return null;
     const referenceDate = waybill.signedAt ?? new Date();
-    const contract = await this.prisma.logisticsContract.findFirst({
-      where: { carrierPartnerId: waybill.carrierPartnerId, status: 'ACTIVE' },
-    });
-    if (!contract) return null;
-    return this.prisma.logisticsContractPriceTerm.findFirst({
+    const findTerm = (companyId: string | null) => this.prisma.logisticsContractPriceTerm.findFirst({
       where: {
-        contractId: contract.id,
-        originLocation: waybill.originLocation,
-        destinationLocation: waybill.destinationLocation,
+        originLocation: waybill.originLocation!,
+        destinationLocation: waybill.destinationLocation!,
         effectiveAt: { lte: referenceDate },
         OR: [{ expiresAt: null }, { expiresAt: { gt: referenceDate } }],
+        contract: {
+          is: {
+            carrierPartnerId: waybill.carrierPartnerId!,
+            companyId,
+            status: 'ACTIVE',
+            AND: [
+              { OR: [{ effectiveAt: null }, { effectiveAt: { lte: referenceDate } }] },
+              { OR: [{ expireAt: null }, { expireAt: { gt: referenceDate } }] },
+            ],
+          },
+        },
       },
       orderBy: { effectiveAt: 'desc' },
     });
+
+    // 优先匹配当前结算主体签订的合同；没有时才允许使用未指定主体的通用合同。
+    return (await findTerm(payerCompanyId)) ?? findTerm(null);
   }
 
   async listCandidateWaybills(query: { periodStart: string; periodEnd: string }, userId: string) {
@@ -149,7 +158,7 @@ export class LogisticsSettlementService {
       totalGrossWeight += Number(selection.weighTicket?.grossWeight ?? 0);
       totalNetWeight += netWeight;
 
-      const term = await this.resolvePriceTerm(waybill);
+      const term = await this.resolvePriceTerm(waybill, payerCompanyId);
       if (term) {
         const amount = netWeight * Number(term.unitPrice);
         totalAmount += amount;

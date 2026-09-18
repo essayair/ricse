@@ -36,6 +36,8 @@ describe('LogisticsSettlementService', () => {
     service = module.get(LogisticsSettlementService);
     prisma.logisticsSettlement.count.mockResolvedValue(0);
     prisma.logisticsSettlementLine.findMany.mockResolvedValue([]);
+    prisma.logisticsContractPriceTerm.findFirst.mockReset();
+    prisma.logisticsContractPriceTerm.findFirst.mockResolvedValue(null);
   });
 
   describe('listCandidateWaybills', () => {
@@ -49,7 +51,6 @@ describe('LogisticsSettlementService', () => {
     it('匹配到生效合同运价时按合同价自动生成明细', async () => {
       prisma.waybill.findMany.mockResolvedValue([waybillBase] as any);
       prisma.logisticsSettlementLine.findMany.mockResolvedValueOnce([]);
-      prisma.logisticsContract.findFirst.mockResolvedValue({ id: 'lc-1', status: 'ACTIVE' } as any);
       prisma.logisticsContractPriceTerm.findFirst.mockResolvedValue({ id: 'term-1', unitPrice: 106.5 } as any);
       prisma.logisticsSettlement.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'settlement-1', ...data }) as any);
 
@@ -69,12 +70,46 @@ describe('LogisticsSettlementService', () => {
         }),
       }));
       expect(result.id).toBe('settlement-1');
+      expect(prisma.logisticsContractPriceTerm.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          originLocation: '额济纳',
+          destinationLocation: '玉门',
+          contract: { is: expect.objectContaining({ carrierPartnerId: 'carrier-1', companyId: 'company-1', status: 'ACTIVE' }) },
+        }),
+      }));
+    });
+
+    it('我方主体没有专属合同价时使用通用合同价', async () => {
+      prisma.waybill.findMany.mockResolvedValue([waybillBase] as any);
+      prisma.logisticsSettlementLine.findMany.mockResolvedValueOnce([]);
+      prisma.logisticsContractPriceTerm.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'term-common', unitPrice: 98 } as any);
+      prisma.logisticsSettlement.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'settlement-1', ...data }) as any);
+
+      await service.create({
+        payerCompanyId: 'company-1', periodStart: '2026-07-01', periodEnd: '2026-07-31',
+        lines: [{ waybillId: 'waybill-1' }],
+      }, 'user-1');
+
+      expect(prisma.logisticsContractPriceTerm.findFirst).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        where: expect.objectContaining({
+          contract: { is: expect.objectContaining({ companyId: null }) },
+        }),
+      }));
+      expect(prisma.logisticsSettlement.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          totalAmount: 104.06 * 98,
+          lines: { createMany: { data: [expect.objectContaining({
+            priceSource: 'CONTRACT', contractPriceTermId: 'term-common', unitPrice: 98,
+          })] } },
+        }),
+      }));
     });
 
     it('没有匹配合同价时使用手工单价生成 MANUAL 明细', async () => {
       prisma.waybill.findMany.mockResolvedValue([waybillBase] as any);
       prisma.logisticsSettlementLine.findMany.mockResolvedValueOnce([]);
-      prisma.logisticsContract.findFirst.mockResolvedValue(null);
       prisma.logisticsSettlement.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'settlement-1', ...data }) as any);
 
       await service.create({
@@ -94,7 +129,6 @@ describe('LogisticsSettlementService', () => {
     it('没有匹配合同价也没有手工单价时明细单价和金额为空', async () => {
       prisma.waybill.findMany.mockResolvedValue([waybillBase] as any);
       prisma.logisticsSettlementLine.findMany.mockResolvedValueOnce([]);
-      prisma.logisticsContract.findFirst.mockResolvedValue(null);
       prisma.logisticsSettlement.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'settlement-1', ...data }) as any);
 
       await service.create({

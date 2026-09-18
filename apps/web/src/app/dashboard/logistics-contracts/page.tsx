@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Plus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
@@ -25,6 +26,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function LogisticsContractsPage() {
+  const searchParams = useSearchParams();
+  const carrierPartnerId = searchParams.get('carrierPartnerId') || '';
+  const carrierName = searchParams.get('carrierName') || '';
   const [items, setItems] = useState<ContractItem[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -36,12 +40,13 @@ export default function LogisticsContractsPage() {
       const query = new URLSearchParams();
       if (search.trim()) query.set('search', search.trim());
       if (status) query.set('status', status);
+      if (carrierPartnerId) query.set('carrierPartnerId', carrierPartnerId);
       const result = await api.get<ContractItem[]>(`/logistics-contracts?${query}`);
       setItems(result || []);
     } catch (error: any) { alert(error.message); }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [carrierPartnerId]);
 
   return (
     <div className="space-y-6">
@@ -68,6 +73,12 @@ export default function LogisticsContractsPage() {
           {Object.entries(STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <Button variant="outline" onClick={() => void load()}>查询</Button>
+        {carrierPartnerId && (
+          <div className="flex h-10 items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm">
+            <span>承运方：{carrierName || '已筛选'}</span>
+            <Link href="/dashboard/logistics-contracts" className="text-primary hover:underline">清除</Link>
+          </div>
+        )}
       </div>
 
       <Card className="overflow-hidden">

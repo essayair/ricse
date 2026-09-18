@@ -314,7 +314,10 @@ describe('WaybillService', () => {
         id: 'waybill-1', status: 'ARRIVED', attachments: [{ id: 'attachment-1', category }],
         outboundReceipts: [], dispatchNotice: { id: notice.id, type: 'PURCHASE', status: 'IN_PROGRESS' },
         weighTickets: [{ status: 'REVIEWED', netWeight: 10 }],
-        weightSelections: [{ purpose: 'INVENTORY' }, { purpose: 'SETTLEMENT' }],
+        weightSelections: [
+          { purpose: 'INVENTORY', weighTicketId: 'ticket-1' },
+          { purpose: 'SETTLEMENT', weighTicketId: 'ticket-1' },
+        ],
       } as any);
       prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
       prisma.waybill.update.mockResolvedValue({ id: 'waybill-1', status: 'SIGNED' } as any);
@@ -322,6 +325,25 @@ describe('WaybillService', () => {
       await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1')).resolves.toEqual(expect.objectContaining({ status: 'SIGNED' }));
     },
   );
+
+  it('库存与结算执行磅单不一致时不允许确认签收', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1', status: 'ARRIVED',
+      attachments: [{ id: 'attachment-1', category: 'RECEIPT_DOCUMENT' }],
+      outboundReceipts: [], dispatchNotice: { id: notice.id, type: 'PURCHASE', status: 'IN_PROGRESS' },
+      weighTickets: [
+        { id: 'ticket-1', status: 'REVIEWED', netWeight: 10 },
+        { id: 'ticket-2', status: 'REVIEWED', netWeight: 9.8 },
+      ],
+      weightSelections: [
+        { purpose: 'INVENTORY', weighTicketId: 'ticket-1' },
+        { purpose: 'SETTLEMENT', weighTicketId: 'ticket-2' },
+      ],
+    } as any);
+
+    await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1'))
+      .rejects.toThrow('库存与结算执行磅单不一致，请先统一选择执行口径');
+  });
 
   it('新增物流收货附件必须使用明确分类', async () => {
     await expect(service.createAttachment({

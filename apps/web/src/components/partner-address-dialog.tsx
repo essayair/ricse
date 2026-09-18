@@ -8,6 +8,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { ChinaRegionSelect } from '@/components/china-region-select';
+import { WandSparkles } from 'lucide-react';
+import { recognizePartnerAddress } from '@/lib/address-recognition';
 
 export interface PartnerAddress {
   id: string;
@@ -41,6 +43,8 @@ export function PartnerAddressDialog({
 }) {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [recognitionText, setRecognitionText] = useState('');
+  const [recognitionResult, setRecognitionResult] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -50,9 +54,27 @@ export function PartnerAddressDialog({
       contactPerson: initial.contactPerson, contactPhone: initial.contactPhone,
       isDefault: initial.isDefault, remark: initial.remark || '',
     } : EMPTY);
+    setRecognitionText('');
+    setRecognitionResult('');
   }, [open, initial]);
 
   const set = (key: keyof typeof EMPTY, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
+  const recognize = () => {
+    if (!recognitionText.trim()) return setRecognitionResult('请先粘贴完整的收发货信息');
+    const result = recognizePartnerAddress(recognitionText);
+    if (!result.recognizedFields.length) return setRecognitionResult('未识别到有效信息，请检查文字后重试或手工填写');
+    setForm(current => ({
+      ...current,
+      addressName: result.addressName || current.addressName,
+      province: result.province || current.province,
+      city: result.city || current.city,
+      district: result.district || current.district,
+      detailAddress: result.detailAddress || current.detailAddress,
+      contactPerson: result.contactPerson || current.contactPerson,
+      contactPhone: result.contactPhone || current.contactPhone,
+    }));
+    setRecognitionResult(`已识别：${result.recognizedFields.join('、')}。请核对后保存。`);
+  };
   const save = async () => {
     const required = [form.addressName, form.province, form.city, form.district, form.detailAddress, form.contactPerson, form.contactPhone];
     if (required.some(value => !String(value).trim())) return alert('请完整填写地址简称、省、市、区县、详细地址、联系人和联系方式');
@@ -74,6 +96,14 @@ export function PartnerAddressDialog({
         <DialogDescription>该地址可在采购、销售和直拨执行通知中快速选择，实际单据仍允许修改。</DialogDescription>
       </DialogHeader>
       <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-lg border bg-muted/30 p-4 md:col-span-2">
+          <div className="mb-2 flex items-start gap-2">
+            <WandSparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <div><div className="text-sm font-medium">收发货信息自动识别</div><p className="mt-0.5 text-xs text-muted-foreground">粘贴微信、短信或文档中的整段地址，系统自动拆分省市区县、详细地址、联系人和联系方式。</p></div>
+          </div>
+          <textarea className="min-h-24 w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" value={recognitionText} onChange={event => setRecognitionText(event.target.value)} placeholder={'例如：收货人：张三 13800138000\n收货地址：甘肃省兰州市城关区雁南路18号某某园区'} />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{recognitionResult || '识别结果只用于辅助填入，不会自动保存。'}</span><Button type="button" size="sm" variant="outline" onClick={recognize}><WandSparkles className="mr-1.5 h-3.5 w-3.5" />识别并填入</Button></div>
+        </div>
         <Field label="地址简称 *"><Input value={form.addressName} onChange={e => set('addressName', e.target.value)} placeholder="例如：甘肃厂区" /></Field>
         <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={form.isDefault} disabled={Boolean(initial?.isDefault)} onChange={e => set('isDefault', e.target.checked)} />{initial?.isDefault ? '当前默认地址（更换时请设置其他地址）' : '设为默认地址'}</label>
         <div className="md:col-span-2"><ChinaRegionSelect value={{ province: form.province, city: form.city, district: form.district }} onChange={region => setForm(current => ({ ...current, ...region }))} /></div>

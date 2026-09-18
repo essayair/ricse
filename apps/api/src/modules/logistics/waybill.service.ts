@@ -596,11 +596,15 @@ export class WaybillService {
       if (validTickets.length === 0) {
         throw new BadRequestException('确认签收前必须至少完成并复核一张有效磅单');
       }
-      const purposes = new Set((waybill.weightSelections || []).map(selection => selection.purpose));
-      if (!purposes.has('INVENTORY') || !purposes.has('SETTLEMENT')) {
+      const inventorySelection = (waybill.weightSelections || []).find(selection => selection.purpose === 'INVENTORY');
+      const settlementSelection = (waybill.weightSelections || []).find(selection => selection.purpose === 'SETTLEMENT');
+      if (!inventorySelection || !settlementSelection) {
         throw new BadRequestException(validTickets.length > 1
           ? '存在多张有效磅单，请先选择库存与结算统一执行磅单'
           : '请先将唯一有效磅单确认为库存与结算执行口径');
+      }
+      if (inventorySelection.weighTicketId !== settlementSelection.weighTicketId) {
+        throw new BadRequestException('库存与结算执行磅单不一致，请先统一选择执行口径');
       }
     }
     const updated = await this.prisma.$transaction(async tx => {

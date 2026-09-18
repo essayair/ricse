@@ -49,9 +49,9 @@ const NAV_ITEMS: NavGroup[] = [
     children: [
       { href: '/dashboard/dispatch', label: '调度看板' },
       { href: '/dashboard/waybills', label: '运单管理' },
-      { href: '/dashboard/logistics-contracts', label: '物流合同' },
-      { href: '/dashboard/logistics-settlements', label: '运费结算单' },
       { href: '/dashboard/logistics-reconciliation', label: '物流对账' },
+      { href: '/dashboard/logistics-settlements', label: '运费结算单' },
+      { href: '/dashboard/logistics-contracts', label: '物流合同' },
     ],
   },
   {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,13 @@ interface SettlementLine {
   amount: string | null;
   priceSource: 'CONTRACT' | 'MANUAL' | 'CONTRACT_OVERRIDDEN';
   overrideReason: string | null;
+  contractPriceTerm: {
+    id: string;
+    contractId: string;
+    unitPrice: string;
+    originLocation: string;
+    destinationLocation: string;
+  } | null;
   waybill: {
     id: string; waybillNo: string; plateNo: string | null; signedAt: string | null;
     originLocation: string | null; destinationLocation: string | null; carrierName: string | null;
@@ -54,6 +62,7 @@ export default function LogisticsSettlementDetailPage() {
   const [editingLine, setEditingLine] = useState<string | null>(null);
   const [priceInput, setPriceInput] = useState('');
   const [reasonInput, setReasonInput] = useState('');
+  const [canViewContract, setCanViewContract] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -63,7 +72,15 @@ export default function LogisticsSettlementDetailPage() {
     } catch (error: any) { alert(error.message); }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, [id]);
+  useEffect(() => {
+    void load();
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}') as { role?: string; permissions?: string[] };
+      setCanViewContract(user.role === 'ADMIN' || (user.permissions || []).includes('logistics.contract.view'));
+    } catch {
+      setCanViewContract(false);
+    }
+  }, [id]);
 
   const startEdit = (line: SettlementLine) => {
     setEditingLine(line.id);
@@ -158,6 +175,14 @@ export default function LogisticsSettlementDetailPage() {
                   <td className="p-3">{line.amount ?? '—'}</td>
                   <td className="p-3">
                     <div>{PRICE_SOURCE_LABEL[line.priceSource]}</div>
+                    {canViewContract && line.contractPriceTerm && (
+                      <Link
+                        href={`/dashboard/logistics-contracts/${line.contractPriceTerm.contractId}`}
+                        className="mt-1 inline-block text-xs text-primary hover:underline"
+                      >
+                        查看物流合同
+                      </Link>
+                    )}
                     {editingLine === line.id && (line.priceSource === 'CONTRACT' || line.priceSource === 'CONTRACT_OVERRIDDEN') && (
                       <Input className="mt-1 w-48" placeholder="调整原因（必填）" value={reasonInput} onChange={(e) => setReasonInput(e.target.value)} />
                     )}
