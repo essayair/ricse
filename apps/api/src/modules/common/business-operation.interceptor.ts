@@ -61,6 +61,13 @@ export class BusinessOperationInterceptor implements NestInterceptor {
 
     return next.handle().pipe(mergeMap(async (response) => {
       if (method === 'GET' && business.isDetail && business.businessId && response && typeof response === 'object') {
+        const isAdmin = request.user?.role === 'ADMIN' || request.user?.roles?.includes('ADMIN');
+        // 操作记录属于后台审计信息。普通业务用户即使有单据详情权限，
+        // 也不能通过详情接口取得操作人员和操作时间。
+        if (!isAdmin) {
+          const { operationLogs: _hiddenOperationLogs, ...safeResponse } = response as Record<string, unknown>;
+          return safeResponse;
+        }
         const operationLogs = await this.findOperationLogs(business.businessType, business.businessId);
         if (!operationLogs.some((item) => item.action === 'CREATE') && (response as any).createdAt) {
           const creatorId = (response as any).createdBy || (response as any).creator?.id;

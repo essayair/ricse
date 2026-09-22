@@ -5,6 +5,7 @@ import { OrgService } from './org.service';
 import { CurrentUser } from '../common/current-user.decorator';
 import { PermissionGuard } from '../common/permission.guard';
 import { RequirePermission } from '../common/require-permission.decorator';
+import { AdminGuard } from '../common/admin.guard';
 
 @ApiTags('组织数据')
 @ApiBearerAuth()
@@ -122,6 +123,7 @@ export class OrgController {
   }
 
   @Get('employees/:id/operation-logs')
+  @UseGuards(AdminGuard)
   @RequirePermission('organization.view')
   @ApiOperation({ summary: '员工档案操作记录' })
   findEmployeeOperationLogs(@Param('id') id: string) {

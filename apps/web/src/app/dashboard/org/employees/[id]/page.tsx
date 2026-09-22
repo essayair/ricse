@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, User, Building2, Layers, Phone, Mail, Briefcase, Key, Eye, EyeOff, Save, Check, X, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
+import { BusinessOperationHistory, type BusinessOperationLog } from '@/components/business-operation-history';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
@@ -25,8 +26,6 @@ interface CompanyOption { id: string; code: string; name: string; status: string
 interface DepartmentOption { id: string; name: string; companyId: string }
 interface RoleOption { id: string; code: string; name: string; status: string }
 interface BusinessUnitOption { id: string; code: string; name: string; companyId: string; status: string }
-interface OperationLog { id: string; actionLabel: string; createdAt: string; operator?: { name: string; username: string }; details?: { changedFields?: string[] } }
-
 export default function EmployeeDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -39,7 +38,7 @@ export default function EmployeeDetailPage() {
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [businessUnits, setBusinessUnits] = useState<BusinessUnitOption[]>([]);
-  const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
+  const [operationLogs, setOperationLogs] = useState<BusinessOperationLog[]>([]);
   const [selectedRole, setSelectedRole] = useState('USER');
   const [selectedBusinessUnitIds, setSelectedBusinessUnitIds] = useState<string[]>([]);
   const [defaultBusinessUnitId, setDefaultBusinessUnitId] = useState('');
@@ -69,7 +68,7 @@ export default function EmployeeDetailPage() {
   useEffect(() => {
     Promise.all([
       api.get<EmployeeDetail>(`/org/employees/${id}`),
-      api.get<OperationLog[]>(`/org/employees/${id}/operation-logs`).catch(() => []),
+      api.get<BusinessOperationLog[]>(`/org/employees/${id}/operation-logs`).catch(() => []),
     ])
       .then(([employee, logs]) => { setEmp(employee); setOperationLogs(Array.isArray(logs) ? logs : []); })
       .catch(() => setError('加载员工信息失败'))
@@ -128,7 +127,7 @@ export default function EmployeeDetailPage() {
         email: profileForm.email.trim(),
       });
       setEmp(updated);
-      api.get<OperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
+      api.get<BusinessOperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
       setEditingProfile(false);
       setProfileMsg('员工信息已保存');
     } catch (e: any) {
@@ -145,7 +144,7 @@ export default function EmployeeDetailPage() {
     try {
       await api.patch(`/users/${emp.user.id}`, { status });
       setEmp({ ...emp, user: { ...emp.user, status } });
-      api.get<OperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
+      api.get<BusinessOperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
     } catch (e: any) {
       setPwdMsg(e.message || '账号状态修改失败');
     }
@@ -161,7 +160,7 @@ export default function EmployeeDetailPage() {
       setEditingUsername(false);
       setUsernameMsg('');
       api.get<EmployeeDetail>(`/org/employees/${id}`).then(setEmp).catch(() => {});
-      api.get<OperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
+      api.get<BusinessOperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
     } catch (e: any) { setUsernameMsg(e.message || '修改失败'); }
   };
 
@@ -203,7 +202,7 @@ export default function EmployeeDetailPage() {
       setPwdMsg(emp?.user?.id ? '密码重置成功' : '账号开通成功');
       // Reload
       api.get<EmployeeDetail>(`/org/employees/${id}`).then(setEmp).catch(() => {});
-      api.get<OperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
+      api.get<BusinessOperationLog[]>(`/org/employees/${id}/operation-logs`).then(setOperationLogs).catch(() => {});
     } catch (e: any) { setPwdMsg(e.message || '操作失败'); }
     finally { setPwdLoading(false); }
   };
@@ -585,19 +584,7 @@ export default function EmployeeDetailPage() {
           )}
         </Card>
       </div>
-      <Card className="p-6">
-        <h2 className="mb-4 text-lg font-semibold">档案操作记录</h2>
-        {operationLogs.length === 0 ? <p className="text-sm text-muted-foreground">暂无操作记录</p> : (
-          <div className="divide-y">
-            {operationLogs.map((log) => (
-              <div key={log.id} className="flex items-start justify-between gap-4 py-3 text-sm">
-                <div><span className="font-medium">{log.actionLabel}</span><span className="ml-2 text-muted-foreground">{log.operator?.name || log.operator?.username || '系统管理员'}</span></div>
-                <span className="shrink-0 text-xs text-muted-foreground">{new Date(log.createdAt).toLocaleString('zh-CN')}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      <BusinessOperationHistory logs={operationLogs} />
     </div>
   );
 }

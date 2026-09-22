@@ -5,6 +5,7 @@ import { UsersService } from './users.service';
 import { PermissionGuard } from './permission.guard';
 import { RequirePermission } from './require-permission.decorator';
 import { CurrentUser } from './current-user.decorator';
+import { AdminGuard } from './admin.guard';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 
@@ -39,6 +40,7 @@ export class UsersController {
   }
 
   @Get(':id/operation-logs')
+  @UseGuards(AdminGuard)
   @ApiOperation({ summary: '用户账号操作记录' })
   findOperationLogs(@Param('id') id: string) {
     return this.usersService.findOperationLogs(id);

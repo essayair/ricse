@@ -37,7 +37,7 @@ describe('BusinessOperationInterceptor', () => {
     });
   });
 
-  it('合同详情在原权限校验完成后附加操作记录', async () => {
+  it('系统管理员查看合同详情时附加操作记录', async () => {
     const createdAt = new Date();
     prisma.businessOperationLog.findMany.mockResolvedValue([{
       id: 'log-1', action: 'CREATE', actionLabel: '创建合同', details: null, createdAt,
@@ -45,13 +45,24 @@ describe('BusinessOperationInterceptor', () => {
     }] as any);
 
     const result: any = await lastValueFrom(interceptor.intercept(executionContext({
-      method: 'GET', path: '/api/v1/contracts/contract-1', user: { id: 'user-1' },
+      method: 'GET', path: '/api/v1/contracts/contract-1', user: { id: 'user-1', role: 'ADMIN', roles: ['ADMIN'] },
     }), handler({ id: 'contract-1', title: '采购合同' })));
 
     expect(result.operationLogs).toHaveLength(1);
     expect(prisma.businessOperationLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { businessType: 'CONTRACT', businessId: 'contract-1' },
     }));
+  });
+
+  it('普通业务用户查看合同详情时不返回操作记录', async () => {
+    const response = { id: 'contract-1', title: '采购合同', operationLogs: [{ id: 'should-be-hidden' }] };
+    const result: any = await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'GET', path: '/api/v1/contracts/contract-1', user: { id: 'user-2', role: 'USER', roles: ['USER'] },
+    }), handler(response)));
+
+    expect(result).toEqual({ id: 'contract-1', title: '采购合同' });
+    expect(result.operationLogs).toBeUndefined();
+    expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
   });
 
   it('合同表单选项不会被误判为合同详情', async () => {
