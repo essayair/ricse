@@ -28,12 +28,14 @@ const ROOT_TYPES: Record<string, string> = {
   'inbound-receipts': 'INBOUND_RECEIPT',
   'outbound-receipts': 'OUTBOUND_RECEIPT',
   'inventory-reversals': 'INVENTORY_REVERSAL',
+  'financial-settlements': 'FINANCIAL_SETTLEMENT',
 };
 
 const STATIC_SEGMENTS = new Set([
   'form-options', 'business-unit-options', 'attachments', 'contracts', 'orders', 'dispatch-notices', 'waybills',
   'availability', 'traceability', 'eligible-waybills', 'eligible-sources', 'eligible-lots',
   'eligible-weigh-tickets', 'batch', 'management-files', 'samples', 'sample-attachments',
+  'options', 'funds', 'allocations', 'ledger', 'payment-requests',
 ]);
 
 const STATUS_LABELS: Record<string, string> = {
@@ -136,6 +138,12 @@ export class BusinessOperationInterceptor implements NestInterceptor {
 
   private resolveOperationTarget(business: BusinessContext, response: unknown): BusinessContext {
     const result = response as any;
+    if (result?.transactionNo) {
+      return { businessType: 'FUND_TRANSACTION', businessId: result.id };
+    }
+    if (result?.requestNo) {
+      return { businessType: 'PAYMENT_REQUEST', businessId: result.id };
+    }
     if (business.businessType === 'OUTBOUND_RECEIPT' && result?.outboundOrderId) {
       return { businessType: 'OUTBOUND_ORDER', businessId: result.outboundOrderId };
     }
@@ -192,6 +200,16 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     const rootIndex = segments.findIndex((segment) => ROOT_TYPES[segment]);
     if (rootIndex < 0) return null;
     const root = segments[rootIndex];
+    if (root === 'financial-settlements' && ['payment-requests', 'funds'].includes(segments[rootIndex + 1])) {
+      const section = segments[rootIndex + 1];
+      const nestedId = segments[rootIndex + 2];
+      return {
+        businessType: section === 'payment-requests' ? 'PAYMENT_REQUEST' : 'FUND_TRANSACTION',
+        businessId: nestedId,
+        isCreate: method === 'POST' && !nestedId,
+        isDetail: method === 'GET' && !!nestedId && segments.length === rootIndex + 3,
+      };
+    }
     if (root === 'outbound-receipts' && segments[rootIndex + 1] === 'orders') {
       const outboundOrderId = segments[rootIndex + 2];
       return {
@@ -205,7 +223,7 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     return {
       businessType: ROOT_TYPES[root],
       businessId: hasBusinessId ? candidateId : undefined,
-      isCreate: method === 'POST' && !candidateId,
+      isCreate: method === 'POST' && !hasBusinessId,
       isDetail: method === 'GET' && hasBusinessId && segments.length === rootIndex + 2,
     };
   }
@@ -221,9 +239,16 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     if (path.endsWith('/records') || path.endsWith('/records/batch')) return { code: 'WEIGH', label: '新增称重记录' };
     if (path.endsWith('/effective-records')) return { code: 'SELECT_WEIGHT', label: '选择有效称重记录' };
     if (path.endsWith('/settlement')) return { code: 'SETTLEMENT', label: '更新结算重量口径' };
+    if (path.endsWith('/allocate')) return { code: 'ALLOCATE', label: '核销资金流水' };
+    if (path.endsWith('/reverse')) return { code: 'REVERSE_ALLOCATION', label: '撤销资金核销' };
+    if (path.endsWith('/void')) return { code: 'VOID', label: '作废业务单据' };
     if (path.endsWith('/acceptance-quality')) return { code: 'QUALITY_SELECT', label: '选择验收入库质检口径' };
     if (path.endsWith('/refresh-reservation')) return { code: 'RESERVE_REFRESH', label: '刷新库存预占' };
     if (path.endsWith('/confirm')) return { code: 'CONFIRM', label: '确认业务单据' };
+    if (path.endsWith('/claim')) return { code: 'CLAIM', label: '认领收款' };
+    if (path.endsWith('/approve')) return { code: 'APPROVE', label: '批准付款申请' };
+    if (path.endsWith('/reject')) return { code: 'REJECT', label: '驳回付款申请' };
+    if (path.endsWith('/execute')) return { code: 'EXECUTE_PAYMENT', label: '执行付款' };
     if (path.endsWith('/submit')) return { code: 'SUBMIT', label: '提交业务单据' };
     if (path.endsWith('/review')) return { code: 'REVIEW', label: '审核业务单据' };
     if (path.endsWith('/variance')) return { code: 'VARIANCE', label: '处理数量差异' };

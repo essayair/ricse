@@ -245,6 +245,26 @@ export class ContractService {
     }
   }
 
+  /**
+   * 合同行的物料名称必须以物料主数据为准，不能依赖前端传入的展示文本。
+   * 这样可以避免只保存 materialId 后，ID 被逐级复制到批次、通知、运单和出入库单。
+   */
+  private async normalizeMaterialNames<T extends { materialId: string; materialName?: string }>(
+    lineItems: T[],
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Array<T & { materialName: string }>> {
+    if (!lineItems.length) return [];
+    const materialIds = [...new Set(lineItems.map((item) => item.materialId))];
+    const materials = await client.material.findMany({
+      where: { id: { in: materialIds }, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    const names = new Map(materials.map((material) => [material.id, material.name]));
+    const missingId = materialIds.find((materialId) => !names.has(materialId));
+    if (missingId) throw new BadRequestException('所选物料不存在或已被删除');
+    return lineItems.map((item) => ({ ...item, materialName: names.get(item.materialId)! }));
+  }
+
   private async validateContractForSubmission(
     client: Prisma.TransactionClient | PrismaService,
     contract: {
@@ -330,6 +350,7 @@ export class ContractService {
       ? null
       : await this.resolveBusinessUnit(userId, dto.businessUnitId, 'contract.create');
     const contractNo = await this.generateContractNo(dto.type);
+    const normalizedLineItems = await this.normalizeMaterialNames(dto.lineItems || []);
 
     try {
       return await this.prisma.contract.create({
@@ -367,7 +388,7 @@ export class ContractService {
           remarks: dto.remarks,
           createdBy: userId,
           lineItems: {
-            create: (dto.lineItems || []).map((item) => ({
+            create: normalizedLineItems.map((item) => ({
               materialId: item.materialId,
               materialName: item.materialName,
               quantity: item.quantity,
@@ -1178,11 +1199,12 @@ export class ContractService {
 
     return this.prisma.$transaction(async (tx) => {
       if (lineItems !== undefined) {
+        const normalizedLineItems = await this.normalizeMaterialNames(lineItems, tx);
         // 删旧 lineItems，重建
         await tx.contractLineItem.deleteMany({ where: { contractId: id } });
-        if (lineItems.length > 0) {
+        if (normalizedLineItems.length > 0) {
           await tx.contractLineItem.createMany({
-            data: lineItems.map((item) => ({
+            data: normalizedLineItems.map((item) => ({
               contractId: id,
               materialId: item.materialId,
               materialName: item.materialName,

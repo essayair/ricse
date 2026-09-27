@@ -82,11 +82,15 @@ const NAV_ITEMS: NavGroup[] = [
     ],
   },
   {
-    label: '结算中心',
+    label: '资金结算',
     icon: CircleDollarSign,
     children: [
-      { href: '/dashboard/settlement', label: '应收管理' },
+      { href: '/dashboard/receivables', label: '应收管理' },
+      { href: '/dashboard/receipts', label: '收款管理' },
       { href: '/dashboard/payables', label: '应付管理' },
+      { href: '/dashboard/payment-requests', label: '付款申请' },
+      { href: '/dashboard/payments', label: '付款管理' },
+      { href: '/dashboard/settlement-ledger', label: '结算台账' },
     ],
   },
 ];
@@ -171,7 +175,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href.startsWith('/dashboard/weighbridge') || href.startsWith('/dashboard/quality')) return 'quality.view';
     if (href.startsWith('/dashboard/inventory') || href.startsWith('/dashboard/inbound') || href.startsWith('/dashboard/outbound')) return 'inventory.view';
     if (href.startsWith('/dashboard/production')) return 'production.view';
-    if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/payables')) return 'settlement.view';
+    if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/receivables') || href.startsWith('/dashboard/receipts') || href.startsWith('/dashboard/payables') || href.startsWith('/dashboard/payment-requests') || href.startsWith('/dashboard/payments')) return 'settlement.view';
     if (href.startsWith('/dashboard/master-data') || href.startsWith('/dashboard/org')) return 'organization.view';
     return '';
   };
@@ -248,7 +252,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
           />
         ))}
 
-        {/* 影像监控是独立业务入口，位于结算中心之后；配置能力仍由 monitor.* 权限控制。 */}
+        {/* 影像监控是独立业务入口，位于资金结算之后；配置能力仍由 monitor.* 权限控制。 */}
         {canViewMonitor && (
           <SidebarIconItem
             icon={Video}

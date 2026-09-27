@@ -56,6 +56,7 @@ describe('ContractService', () => {
     accessControl.getContractScope.mockResolvedValue({});
     prisma.partner.findFirst.mockResolvedValue({ roles: ['SUPPLIER', 'CUSTOMER'] } as any);
     prisma.businessUnit.findFirst.mockResolvedValue({ id: 'bu-1', companyId: 'management-company-1' } as any);
+    prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '测试物料' }] as any);
     (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: PrismaService) => unknown) => callback(prisma));
 
     const module: TestingModule = await Test.createTestingModule({
@@ -166,6 +167,7 @@ describe('ContractService', () => {
           lineItems: {
             create: [expect.objectContaining({
               unitPrice: 500,
+              materialName: '测试物料',
               totalPrice: 50000,
               salesUnitPrice: 650,
               salesTotalPrice: 65000,

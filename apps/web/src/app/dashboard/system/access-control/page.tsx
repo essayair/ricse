@@ -73,7 +73,7 @@ const MODULE_LABELS: Record<string, string> = {
   MONITOR: '影像监控',
   INVENTORY: '库存管理',
   PRODUCTION: '生产管理',
-  SETTLEMENT: '结算中心',
+  SETTLEMENT: '资金结算',
   MASTER_DATA: '主数据',
   ORGANIZATION: '组织数据',
   SYSTEM: '系统管理',

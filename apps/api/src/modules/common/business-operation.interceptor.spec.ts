@@ -86,6 +86,37 @@ describe('BusinessOperationInterceptor', () => {
     expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
   });
 
+  it('结算台账保持数组结构，不会被误判为结算单详情', async () => {
+    const response = [{ id: 'contract-1:RECEIVABLE', contractNo: 'XS-001' }];
+    const result = await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'GET', path: '/api/v1/financial-settlements/ledger',
+      user: { id: 'user-1', role: 'ADMIN', roles: ['ADMIN'] },
+    }), handler(response)));
+
+    expect(result).toEqual(response);
+    expect(Array.isArray(result)).toBe(true);
+    expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
+  });
+
+  it('付款申请列表保持数组结构，付款申请详情按独立单据读取操作记录', async () => {
+    const list = [{ id: 'request-1', requestNo: 'FKSQ001' }];
+    const listResult = await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'GET', path: '/api/v1/financial-settlements/payment-requests',
+      user: { id: 'admin-1', role: 'ADMIN', roles: ['ADMIN'] },
+    }), handler(list)));
+    expect(listResult).toEqual(list);
+    expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
+
+    prisma.businessOperationLog.findMany.mockResolvedValue([]);
+    await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'GET', path: '/api/v1/financial-settlements/payment-requests/request-1',
+      user: { id: 'admin-1', role: 'ADMIN', roles: ['ADMIN'] },
+    }), handler({ id: 'request-1', requestNo: 'FKSQ001' })));
+    expect(prisma.businessOperationLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { businessType: 'PAYMENT_REQUEST', businessId: 'request-1' },
+    }));
+  });
+
   it('质检可选磅单列表不会被误判为机构报告详情', async () => {
     const response = [{ id: 'ticket-1', ticketNo: 'PD-001' }];
     const result = await lastValueFrom(interceptor.intercept(executionContext({
