@@ -239,6 +239,7 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     if (path.endsWith('/records') || path.endsWith('/records/batch')) return { code: 'WEIGH', label: '新增称重记录' };
     if (path.endsWith('/effective-records')) return { code: 'SELECT_WEIGHT', label: '选择有效称重记录' };
     if (path.endsWith('/settlement')) return { code: 'SETTLEMENT', label: '更新结算重量口径' };
+    if (path.endsWith('/print')) return { code: 'PRINT', label: '打印存档' };
     if (path.endsWith('/allocate')) return { code: 'ALLOCATE', label: '核销资金流水' };
     if (path.endsWith('/reverse')) return { code: 'REVERSE_ALLOCATION', label: '撤销资金核销' };
     if (path.endsWith('/void')) return { code: 'VOID', label: '作废业务单据' };
@@ -248,7 +249,7 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     if (path.endsWith('/claim')) return { code: 'CLAIM', label: '认领收款' };
     if (path.endsWith('/approve')) return { code: 'APPROVE', label: '批准付款申请' };
     if (path.endsWith('/reject')) return { code: 'REJECT', label: '驳回付款申请' };
-    if (path.endsWith('/execute')) return { code: 'EXECUTE_PAYMENT', label: '执行付款' };
+    if (path.endsWith('/execute')) return { code: 'EXECUTE_PAYMENT', label: '创建付款单' };
     if (path.endsWith('/submit')) return { code: 'SUBMIT', label: '提交业务单据' };
     if (path.endsWith('/review')) return { code: 'REVIEW', label: '审核业务单据' };
     if (path.endsWith('/variance')) return { code: 'VARIANCE', label: '处理数量差异' };

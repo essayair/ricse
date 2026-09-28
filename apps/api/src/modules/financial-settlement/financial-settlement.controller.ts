@@ -7,7 +7,7 @@ import { prepareAttachmentUpload } from '../common/attachment-upload';
 import { CurrentUser } from '../common/current-user.decorator';
 import {
   AllocateFundDto, CreateFinancialSettlementDto, CreateFundTransactionDto, CreatePaymentRequestDto,
-  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReverseAllocationDto,
+  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto,
 } from './dto/financial-settlement.dto';
 import { FinancialSettlementService } from './financial-settlement.service';
 
@@ -104,8 +104,8 @@ export class FinancialSettlementController {
   }
 
   @Post('payment-requests/:id/approve')
-  approvePaymentRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.service.approvePaymentRequest(id, userId);
+  approvePaymentRequest(@Param('id') id: string, @Body() dto: ReviewPaymentRequestDto, @CurrentUser('id') userId: string) {
+    return this.service.approvePaymentRequest(id, dto, userId);
   }
 
   @Post('payment-requests/:id/reject')
@@ -191,6 +191,11 @@ export class FinancialSettlementController {
   @Post(':id/confirm')
   confirm(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.confirm(id, userId);
+  }
+
+  @Post(':id/print')
+  print(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.recordPrint(id, userId);
   }
 
   @Post(':id/allocate')

@@ -81,6 +81,8 @@ model User {
   submittedPaymentRequests      PaymentRequest[]             @relation("PaymentRequestSubmitter")
   approvedPaymentRequests       PaymentRequest[]             @relation("PaymentRequestApprover")
   rejectedPaymentRequests       PaymentRequest[]             @relation("PaymentRequestRejecter")
+  paymentApprovalTasks          PaymentRequestApproval[]     @relation("PaymentRequestApprovalAssignee")
+  actedPaymentApprovals         PaymentRequestApproval[]     @relation("PaymentRequestApprovalActor")
   createdSettlementAllocations  SettlementAllocation[]       @relation("SettlementAllocationCreator")
   reversedSettlementAllocations SettlementAllocation[]       @relation("SettlementAllocationReverser")
 
@@ -1116,18 +1118,19 @@ model PaymentRequest {
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
-  contract           Contract             @relation(fields: [contractId], references: [id], onDelete: Restrict)
-  settlement         FinancialSettlement? @relation(fields: [settlementId], references: [id], onDelete: Restrict)
-  relatedTransaction FundTransaction?     @relation("PaymentRequestRefundSource", fields: [relatedTransactionId], references: [id], onDelete: Restrict)
-  businessUnit       BusinessUnit?        @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
-  legalEntity        Partner              @relation("PaymentRequestLegalEntity", fields: [legalEntityPartnerId], references: [id], onDelete: Restrict)
-  counterparty       Partner              @relation("PaymentRequestCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
-  creator            User                 @relation("PaymentRequestCreator", fields: [createdBy], references: [id], onDelete: Restrict)
-  submitter          User?                @relation("PaymentRequestSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
-  approver           User?                @relation("PaymentRequestApprover", fields: [approvedBy], references: [id], onDelete: Restrict)
-  rejecter           User?                @relation("PaymentRequestRejecter", fields: [rejectedBy], references: [id], onDelete: Restrict)
+  contract           Contract                 @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  settlement         FinancialSettlement?     @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  relatedTransaction FundTransaction?         @relation("PaymentRequestRefundSource", fields: [relatedTransactionId], references: [id], onDelete: Restrict)
+  businessUnit       BusinessUnit?            @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
+  legalEntity        Partner                  @relation("PaymentRequestLegalEntity", fields: [legalEntityPartnerId], references: [id], onDelete: Restrict)
+  counterparty       Partner                  @relation("PaymentRequestCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
+  creator            User                     @relation("PaymentRequestCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  submitter          User?                    @relation("PaymentRequestSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
+  approver           User?                    @relation("PaymentRequestApprover", fields: [approvedBy], references: [id], onDelete: Restrict)
+  rejecter           User?                    @relation("PaymentRequestRejecter", fields: [rejectedBy], references: [id], onDelete: Restrict)
   fundTransaction    FundTransaction?
   attachments        Attachment[]
+  approvals          PaymentRequestApproval[]
 
   @@index([status, requestedPayDate])
   @@index([contractId])
@@ -1135,6 +1138,35 @@ model PaymentRequest {
   @@index([relatedTransactionId])
   @@index([businessUnitId])
   @@map("payment_requests")
+}
+
+/// 付款申请审批任务。与合同审批任务分表保存，避免同一合同下多张付款申请的审批记录相互混淆。
+model PaymentRequestApproval {
+  id               String    @id @default(cuid())
+  paymentRequestId String
+  assigneeId       String
+  actedById        String?
+  nodeName         String    @default("付款申请审批")
+  roleCode         String?
+  roleName         String?
+  approvalMode     String    @default("ALL") // ALL | ANY
+  step             Int       @default(1)
+  round            Int       @default(1)
+  status           String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | OTHERS_APPROVED | OTHERS_REJECTED | CANCELLED
+  comment          String?
+  actedAt          DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  paymentRequest PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
+  assignee       User           @relation("PaymentRequestApprovalAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  actedBy        User?          @relation("PaymentRequestApprovalActor", fields: [actedById], references: [id], onDelete: Restrict)
+
+  @@index([paymentRequestId])
+  @@index([assigneeId])
+  @@index([actedById])
+  @@index([paymentRequestId, round, step])
+  @@map("payment_request_approvals")
 }
 
 /// 收付款与应收/应付之间的核销关系；支持一单多次核销、一笔资金核销多张单据。
@@ -2373,7 +2405,7 @@ model Approval {
 model ApprovalFlow {
   id              String   @id @default(cuid())
   name            String
-  contractType    String   @unique
+  contractType    String   @unique // PURCHASE | SALES | BILATERAL | PAYMENT_REQUEST（兼容历史字段名）
   amountThreshold Decimal? @db.Decimal(15, 2)
   status          String   @default("ACTIVE")
   createdAt       DateTime @default(now())

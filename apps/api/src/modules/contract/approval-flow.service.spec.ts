@@ -12,7 +12,7 @@ describe('ApprovalFlowService', () => {
   });
 
   it('审批节点可以绑定拥有合同审批权限的有效角色', async () => {
-    prisma.approvalFlowNode.findUnique.mockResolvedValue({ id: 'node-1' } as any);
+    prisma.approvalFlowNode.findUnique.mockResolvedValue({ id: 'node-1', flow: { contractType: 'PURCHASE' } } as any);
     prisma.role.findFirst.mockResolvedValue({
       id: 'role-business',
       code: 'BUSINESS_MANAGER',
@@ -42,7 +42,7 @@ describe('ApprovalFlowService', () => {
   });
 
   it('拒绝绑定没有合同审批权限的角色', async () => {
-    prisma.approvalFlowNode.findUnique.mockResolvedValue({ id: 'node-1' } as any);
+    prisma.approvalFlowNode.findUnique.mockResolvedValue({ id: 'node-1', flow: { contractType: 'PURCHASE' } } as any);
     prisma.role.findFirst.mockResolvedValue(null);
 
     await expect(service.updateNode('node-1', { roleId: 'role-user' }))
@@ -50,13 +50,31 @@ describe('ApprovalFlowService', () => {
     expect(prisma.approvalFlowNode.update).not.toHaveBeenCalled();
   });
 
+  it('付款申请节点只允许绑定拥有付款审批权限的角色', async () => {
+    prisma.approvalFlowNode.findUnique.mockResolvedValue({
+      id: 'node-payment', flow: { contractType: 'PAYMENT_REQUEST' },
+    } as any);
+    prisma.role.findFirst.mockResolvedValue({ id: 'role-risk', code: 'RISK_MANAGER', status: 'ACTIVE' } as any);
+    prisma.approvalFlowNode.update.mockResolvedValue({ id: 'node-payment', roleId: 'role-risk' } as any);
+
+    await service.updateNode('node-payment', { roleId: 'role-risk' });
+
+    expect(prisma.role.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'role-risk',
+        status: 'ACTIVE',
+        permissions: { some: { permission: { code: 'settlement.payment.approve' } } },
+      },
+    });
+  });
+
   it('拒绝无效的审批方式和人员范围', async () => {
-    prisma.approvalFlowNode.findUnique.mockResolvedValue({ id: 'node-1' } as any);
+    prisma.approvalFlowNode.findUnique.mockResolvedValue({ id: 'node-1', flow: { contractType: 'PURCHASE' } } as any);
 
     await expect(service.updateNode('node-1', { approvalMode: 'UNKNOWN' }))
       .rejects.toThrow('审批方式仅支持会签或或签');
     await expect(service.updateNode('node-1', { scopeType: 'WAREHOUSE' }))
-      .rejects.toThrow('人员范围仅支持合同业务单元、合同部门、合同企业或全平台');
+      .rejects.toThrow('人员范围仅支持业务单元、业务部门、所属企业或全平台');
   });
 
   it('节点不存在时拒绝修改', async () => {

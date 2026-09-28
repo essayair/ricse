@@ -211,6 +211,17 @@ function resolveOrganization(pathname: string, params?: BreadcrumbSearchParams):
 function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): BreadcrumbResult {
   if (pathname === '/dashboard') return { items: [{ label: '首页' }], supported: true };
 
+  if (/^\/dashboard\/settlements\/[^/]+\/print$/.test(pathname)) {
+    return {
+      items: withHome([
+        { label: '资金结算' },
+        { label: '结算单', href: '/dashboard/settlement-ledger' },
+        { label: '打印存档' },
+      ]),
+      supported: true,
+    };
+  }
+
   const masterData = resolveMasterData(pathname, params);
   if (masterData) return { items: masterData, supported: true };
   const organization = resolveOrganization(pathname, params);

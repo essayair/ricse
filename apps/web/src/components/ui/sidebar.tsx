@@ -86,6 +86,7 @@ export function Sidebar({
   const { open } = useSidebar();
   return (
     <aside
+      data-app-sidebar
       className={cn(
         'fixed left-0 top-0 z-40 flex h-screen flex-col border-r bg-sidebar transition-all duration-200',
         open ? 'w-64' : 'w-16',
@@ -409,6 +410,7 @@ export function SidebarInset({
   const { open } = useSidebar();
   return (
     <div
+      data-dashboard-shell
       className={cn(
         'flex min-h-screen flex-col transition-all duration-200',
         open ? 'ml-64' : 'ml-16',

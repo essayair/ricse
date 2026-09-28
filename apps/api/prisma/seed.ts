@@ -177,9 +177,10 @@ async function main() {
     }
   }
   const flowDefinitions = [
-    { contractType: 'PURCHASE', name: '采购合同四级审批流' },
-    { contractType: 'SALES', name: '销售合同四级审批流' },
-    { contractType: 'BILATERAL', name: '双边合同四级审批流' },
+    { contractType: 'PURCHASE', name: '采购合同四级审批流', paymentRequest: false },
+    { contractType: 'SALES', name: '销售合同四级审批流', paymentRequest: false },
+    { contractType: 'BILATERAL', name: '双边合同四级审批流', paymentRequest: false },
+    { contractType: 'PAYMENT_REQUEST', name: '付款申请审批流', paymentRequest: true },
   ];
   for (const definition of flowDefinitions) {
     const flow = await prisma.approvalFlow.upsert({
@@ -187,12 +188,17 @@ async function main() {
       update: { name: definition.name, amountThreshold: null, status: 'ACTIVE' },
       create: { name: definition.name, contractType: definition.contractType, amountThreshold: null, status: 'ACTIVE' },
     });
-    const nodes = [
-      { step: 1, nodeName: '运营经理', roleCode: 'BUSINESS_MANAGER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
-      { step: 2, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
-      { step: 3, nodeName: '业务责任人', roleCode: 'BUSINESS_OWNER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
-      { step: 4, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
-    ];
+    const nodes = definition.paymentRequest
+      ? [
+        { step: 1, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+        { step: 2, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      ]
+      : [
+        { step: 1, nodeName: '运营经理', roleCode: 'BUSINESS_MANAGER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+        { step: 2, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+        { step: 3, nodeName: '业务责任人', roleCode: 'BUSINESS_OWNER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+        { step: 4, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      ];
     for (const node of nodes) {
       const role = approvalRoleByCode.get(node.roleCode);
       if (!role) continue;

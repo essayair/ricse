@@ -75,7 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <SidebarProvider>
       <AppSidebar userRole={user.role} permissions={user.permissions || []} />
       <SidebarInset>
-        <header className="flex h-14 items-center gap-4 border-b bg-background px-6">
+        <header data-dashboard-header className="flex h-14 items-center gap-4 border-b bg-background px-6">
           <SidebarTrigger />
           <div className="min-w-0 flex-1">
             <Breadcrumbs />
@@ -107,7 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </DropdownMenu>
           </div>
         </header>
-        <main className="flex-1 p-6">{children}</main>
+        <main data-dashboard-main className="flex-1 p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

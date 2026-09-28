@@ -202,7 +202,6 @@ const TemporalInput = React.forwardRef<HTMLInputElement, TemporalInputProps>(
             onClick={openPanel}
             onFocus={(event) => {
               onFocus?.(event);
-              openPanel();
             }}
             onBlur={onBlur}
             onKeyDown={(event) => {
@@ -227,9 +226,10 @@ const TemporalInput = React.forwardRef<HTMLInputElement, TemporalInputProps>(
         {open && typeof document !== 'undefined' && createPortal(
           <div
             ref={panelRef}
+            data-temporal-panel="true"
             role="dialog"
             aria-label="日期时间选择"
-            className="fixed z-[100] rounded-lg border bg-popover p-3 text-popover-foreground shadow-xl"
+            className="pointer-events-auto fixed z-[100] rounded-lg border bg-popover p-3 text-popover-foreground shadow-xl"
             style={{ top: position.top, left: position.left, width: position.width }}
           >
             {type !== 'time' && (

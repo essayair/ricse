@@ -37,6 +37,15 @@ const flowDefinitions = [
       { step: 4, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
     ],
   },
+  {
+    contractType: 'PAYMENT_REQUEST',
+    name: '付款申请审批流',
+    amountThreshold: null,
+    nodes: [
+      { step: 1, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      { step: 2, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+    ],
+  },
 ];
 
 function adminPassword() {

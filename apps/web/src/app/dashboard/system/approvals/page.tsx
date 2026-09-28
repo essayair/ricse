@@ -48,6 +48,7 @@ const TYPE_LABEL: Record<string, string> = {
   PURCHASE: '采购合同',
   SALES: '销售合同',
   BILATERAL: '双边合同',
+  PAYMENT_REQUEST: '付款申请',
 };
 
 const CONDITION_LABEL: Record<string, string> = {
@@ -61,9 +62,9 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 const SCOPE_LABEL: Record<string, string> = {
-  BUSINESS_UNIT: '合同业务单元（事业部）',
-  DEPARTMENT: '合同业务部门',
-  COMPANY: '合同所属企业',
+  BUSINESS_UNIT: '业务单元（事业部）',
+  DEPARTMENT: '业务部门',
+  COMPANY: '所属企业',
   ALL: '全平台',
 };
 
@@ -85,7 +86,7 @@ export default function ApprovalFlowsPage() {
       setFlows(flowData || []);
       setRoles((roleData || []).filter((role) =>
         role.status === 'ACTIVE'
-        && role.permissions.some((entry) => entry.permission.code === 'contract.approve'),
+        && role.permissions.some((entry) => ['contract.approve', 'settlement.payment.approve'].includes(entry.permission.code)),
       ));
       setSelectedFlowId((current) =>
         current && flowData.some((flow) => flow.id === current)
@@ -114,6 +115,12 @@ export default function ApprovalFlowsPage() {
     () => flows.find((flow) => flow.id === selectedFlowId),
     [flows, selectedFlowId],
   );
+  const roleOptions = useMemo(() => {
+    const permissionCode = selectedFlow?.contractType === 'PAYMENT_REQUEST'
+      ? 'settlement.payment.approve'
+      : 'contract.approve';
+    return roles.filter((role) => role.permissions.some((entry) => entry.permission.code === permissionCode));
+  }, [roles, selectedFlow]);
 
   const updateFlow = async (
     flow: ApprovalFlow,
@@ -158,7 +165,7 @@ export default function ApprovalFlowsPage() {
       <div>
         <h1 className="text-2xl font-bold">审批流程</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          默认路径为运营经理 → 风控/财务经理 → 业务责任人 → 总经理；提交时按合同业务单元解析人员并生成审批快照。
+          合同和付款申请分别维护审批路径；单据提交时按当前配置解析审批人员，并生成不可追溯修改的审批任务快照。
         </p>
       </div>
 
@@ -171,7 +178,7 @@ export default function ApprovalFlowsPage() {
           <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-left">
-                <th className="px-3 py-3 font-medium">合同类型</th>
+                <th className="px-3 py-3 font-medium">业务类型</th>
                 <th className="px-3 py-3 font-medium">流程名称</th>
                 <th className="px-3 py-3 font-medium">流程状态</th>
                 <th className="px-3 py-3 font-medium">当前审批路径</th>
@@ -233,7 +240,7 @@ export default function ApprovalFlowsPage() {
             <div>
               <h2 className="font-semibold">{selectedFlow.name}—审批节点列表</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                默认采用或签：范围内任意一名有效角色成员通过即可进入下一级；业务单元节点只匹配合同所属事业部。
+                默认采用或签：范围内任意一名有效角色成员通过即可进入下一级；业务单元节点只匹配当前单据所属事业部。
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -267,7 +274,7 @@ export default function ApprovalFlowsPage() {
                         value={node.roleId}
                         onChange={(event) => void updateNode(node, { roleId: event.target.value })}
                       >
-                        {roles.map((role) => (
+                        {roleOptions.map((role) => (
                           <option key={role.id} value={role.id}>
                             {role.name}（{role.code}）
                           </option>
@@ -279,7 +286,7 @@ export default function ApprovalFlowsPage() {
                         {node.role?._count?.assignments || 0} 人
                       </span>
                       {(node.role?._count?.assignments || 0) === 0 && (
-                        <span className="mt-1 block text-xs text-destructive">提交合同前必须配置</span>
+                        <span className="mt-1 block text-xs text-destructive">提交单据前必须配置</span>
                       )}
                     </td>
                     <td className="px-3 py-3">
