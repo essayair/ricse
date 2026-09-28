@@ -15,6 +15,24 @@ describe('FinancialSettlementService payment approvals', () => {
     prisma.$transaction.mockImplementation(async (handler: any) => handler(prisma));
   });
 
+  it('读取结算详情时按默认账户和创建时间依次选择银行账户', async () => {
+    prisma.financialSettlement.findFirst.mockResolvedValue({ id: 'settlement-1' } as any);
+
+    await service.findOne('settlement-1', 'user-1');
+
+    expect(prisma.financialSettlement.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({
+        legalEntity: {
+          select: expect.objectContaining({
+            bankAccounts: expect.objectContaining({
+              orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+            }),
+          }),
+        },
+      }),
+    }));
+  });
+
   it('最后一个付款审批节点通过后才将申请置为已批准', async () => {
     prisma.paymentRequest.findFirst.mockResolvedValue({
       id: 'request-1', status: 'PENDING_APPROVAL', approvals: [],

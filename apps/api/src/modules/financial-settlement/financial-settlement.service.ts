@@ -34,7 +34,12 @@ const SETTLEMENT_INCLUDE = {
 const PRINT_PARTY_SELECT = {
   id: true, code: true, name: true, address: true, bizAddress: true, contactPerson: true, contactPhone: true,
   bankAccounts: {
-    where: { status: 'ACTIVE' }, orderBy: { isDefault: 'desc' as const, createdAt: 'asc' as const }, take: 1,
+    where: { status: 'ACTIVE' },
+    orderBy: [
+      { isDefault: 'desc' },
+      { createdAt: 'asc' },
+    ] as Prisma.BankAccountOrderByWithRelationInput[],
+    take: 1,
     select: { accountName: true, accountNo: true, bankName: true, currency: true },
   },
 } as const;
