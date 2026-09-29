@@ -48,16 +48,16 @@ export default function ProductionPage() {
     </div>
     <Card className="overflow-hidden">
       {!data.items.length ? <div className="p-12 text-center text-muted-foreground"><Factory className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无生产任务</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1680px] text-sm">
-        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务编号 / 名称</th><th className="p-3">生产方式</th><th className="p-3">业务单元（事业部）</th><th className="p-3">库存主体</th><th className="p-3">产出物料</th><th className="p-3">原料仓 → 成品仓</th><th className="p-3">加工服务商</th><th className="p-3 text-right">计划产量</th><th className="p-3 text-right">已入库</th><th className="p-3 text-right">实际收率</th><th className="p-3">来源</th><th className="p-3">状态</th><th className="p-3">创建时间</th></tr></thead>
+        <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务编号 / 名称</th><th className="p-3">生产方式</th><th className="p-3">业务单元（事业部）</th><th className="p-3">状态</th><th className="p-3">库存主体</th><th className="p-3">产出物料</th><th className="p-3">原料仓 → 成品仓</th><th className="p-3">加工服务商</th><th className="p-3 text-right">计划产量</th><th className="p-3 text-right">已入库</th><th className="p-3 text-right">实际收率</th><th className="p-3">来源</th><th className="p-3">创建时间</th></tr></thead>
         <tbody>{data.items.map((item: any) => <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/production/${item.id}`)}>
           <td className="p-3"><div className="font-mono font-medium text-primary">{item.taskNo}</div><div className="mt-1 max-w-56 truncate">{item.name}</div></td>
           <td className="p-3"><Badge variant="outline">{item.mode === 'OUTSOURCED' ? '委外加工' : '自营生产'}</Badge></td>
           <td className="p-3"><div>{item.businessUnit?.name || '未归属'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.businessUnit?.code || '-'}</div></td>
+          <td className="p-3"><StatusText status={item.status}>{PRODUCTION_STATUS[item.status] || item.status}</StatusText></td>
           <td className="p-3">{item.ownerPartner.name}</td><td className="p-3"><div>{item.outputMaterial.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.outputMaterial.code}</div></td>
           <td className="p-3">{item.sourceWarehouse.name} → {item.targetWarehouse.name}</td><td className="p-3">{item.processorOrganization?.partner?.name || '-'}</td>
           <td className="p-3 text-right">{quantity(item.plannedOutputQuantity)}</td><td className="p-3 text-right font-medium text-primary">{quantity(item.qualifiedQuantity)}</td><td className="p-3 text-right">{percent(item.actualYieldRate)}</td>
           <td className="p-3"><div>{item.sourceType === 'SALES_ORDER' ? '销售需求' : '手工创建'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.sourceOrderNo || '-'}</div></td>
-          <td className="p-3"><StatusText status={item.status}>{PRODUCTION_STATUS[item.status] || item.status}</StatusText></td>
           <td className="p-3 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</td>
         </tr>)}</tbody>
       </table></div>}

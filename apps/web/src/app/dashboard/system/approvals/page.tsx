@@ -256,11 +256,11 @@ export default function ApprovalFlowsPage() {
                   <th className="px-3 py-3 font-medium">审批顺序</th>
                   <th className="px-3 py-3 font-medium">节点名称</th>
                   <th className="px-3 py-3 font-medium">绑定审批角色</th>
+                  <th className="px-3 py-3 font-medium">节点状态</th>
                   <th className="px-3 py-3 font-medium">角色有效人数</th>
                   <th className="px-3 py-3 font-medium">审批方式</th>
                   <th className="px-3 py-3 font-medium">人员范围</th>
                   <th className="px-3 py-3 font-medium">启用条件</th>
-                  <th className="px-3 py-3 font-medium">节点状态</th>
                 </tr>
               </thead>
               <tbody>
@@ -280,6 +280,13 @@ export default function ApprovalFlowsPage() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="px-3 py-3">
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={node.enabled} onChange={(event) => void updateNode(node, { enabled: event.target.checked })} />
+                        {node.enabled ? '已启用' : '已停用'}
+                      </label>
+                      {saving === node.id && <span className="mt-1 block text-xs text-muted-foreground">保存中...</span>}
                     </td>
                     <td className="px-3 py-3">
                       <span className={(node.role?._count?.assignments || 0) === 0 ? 'font-medium text-destructive' : ''}>
@@ -313,19 +320,6 @@ export default function ApprovalFlowsPage() {
                     </td>
                     <td className="px-3 py-3">
                       {CONDITION_LABEL[node.condition] || node.condition}
-                    </td>
-                    <td className="px-3 py-3">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={node.enabled}
-                          onChange={(event) => void updateNode(node, { enabled: event.target.checked })}
-                        />
-                        {node.enabled ? '已启用' : '已停用'}
-                      </label>
-                      {saving === node.id && (
-                        <span className="mt-1 block text-xs text-muted-foreground">保存中...</span>
-                      )}
                     </td>
                   </tr>
                 ))}

@@ -14,7 +14,10 @@ const SETTLEMENT_INCLUDE = {
   counterparty: { select: { id: true, code: true, name: true } },
   creator: { select: { id: true, name: true, username: true } },
   confirmer: { select: { id: true, name: true, username: true } },
-  lines: { orderBy: { createdAt: 'asc' as const } },
+  lines: {
+    include: { order: { select: { id: true, status: true } } },
+    orderBy: { createdAt: 'asc' as const },
+  },
   allocations: {
     include: {
       fundTransaction: {
@@ -94,6 +97,9 @@ const PAYMENT_REQUEST_INCLUDE = {
 
 const ALLOCATABLE_STAGES = ['ADVANCE', 'PROGRESS', 'SETTLEMENT', 'FINAL', 'OTHER'];
 const REVERSE_STAGES = ['REFUND', 'GUARANTEE_RETURN'];
+// 结算申请不以履约完成为前提。预付款、发货款、到货款等都可能发生在不同执行阶段，
+// 但已取消批次不能继续形成新的应收/应付。
+const SETTLEABLE_ORDER_STATUSES = ['DRAFT', 'CONFIRMED', 'DISPATCHED', 'COMPLETED'];
 
 function money(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -213,12 +219,12 @@ export class FinancialSettlementService {
     const contract = await this.accessibleContract(contractId, direction, userId);
     const type = direction === 'PAYABLE' ? 'PURCHASE' : 'SALES';
     const orders = await this.prisma.order.findMany({
-      where: { contractId: contract.id, type, status: 'COMPLETED', deletedAt: null },
+      where: { contractId: contract.id, type, status: { in: SETTLEABLE_ORDER_STATUSES }, deletedAt: null },
       include: {
         lineItems: { select: { quantity: true, unit: true, unitPrice: true, totalPrice: true } },
         settlementLines: { where: { settlement: { status: { not: 'VOIDED' }, deletedAt: null } }, select: { quantity: true, totalAmount: true } },
       },
-      orderBy: { completedAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
     return orders.map((order) => {
       const totalQuantity = quantity(order.lineItems.reduce((sum, line) => sum + Number(line.quantity), 0));
@@ -289,17 +295,21 @@ export class FinancialSettlementService {
     const lineCreates: Prisma.FinancialSettlementLineCreateWithoutSettlementInput[] = [];
 
     if (dto.settlementScope === 'BATCH') {
-      if (!dto.lines?.length) throw new BadRequestException('按执行批次结算时至少选择一个已完成批次');
+      if (!dto.lines?.length) throw new BadRequestException('按执行批次结算时至少选择一个可结算批次');
       const ids = [...new Set(dto.lines.map((line) => line.orderId))];
       if (ids.length !== dto.lines.length) throw new BadRequestException('同一个执行批次不能重复选择');
       const orders = await this.prisma.order.findMany({
-        where: { id: { in: ids }, contractId: contract.id, type: dto.direction === 'PAYABLE' ? 'PURCHASE' : 'SALES', status: 'COMPLETED', deletedAt: null },
+        where: {
+          id: { in: ids }, contractId: contract.id,
+          type: dto.direction === 'PAYABLE' ? 'PURCHASE' : 'SALES',
+          status: { in: SETTLEABLE_ORDER_STATUSES }, deletedAt: null,
+        },
         include: {
           lineItems: true,
           settlementLines: { where: { settlement: { status: { not: 'VOIDED' }, deletedAt: null } }, select: { quantity: true, totalAmount: true } },
         },
       });
-      if (orders.length !== ids.length) throw new BadRequestException('存在不属于本合同或尚未完成的执行批次');
+      if (orders.length !== ids.length) throw new BadRequestException('存在不属于本合同、已取消或不可结算的执行批次');
       for (const input of dto.lines) {
         const order = orders.find((item) => item.id === input.orderId)!;
         const totalOrderQty = quantity(order.lineItems.reduce((sum, item) => sum + Number(item.quantity), 0));
@@ -559,6 +569,14 @@ export class FinancialSettlementService {
     const scope = await this.accessControl.getContractScope(userId, permission);
     const item = await this.prisma.paymentRequest.findFirst({ where: { id, contract: scope }, include: PAYMENT_REQUEST_INCLUDE });
     if (!item) throw new NotFoundException('付款申请不存在或无权访问');
+    return item;
+  }
+
+  async recordPaymentRequestPrint(id: string, userId: string) {
+    const item = await this.findPaymentRequest(id, userId);
+    if (!['APPROVED', 'PAID'].includes(item.status)) {
+      throw new BadRequestException('付款申请审批完成后才能打印存档');
+    }
     return item;
   }
 

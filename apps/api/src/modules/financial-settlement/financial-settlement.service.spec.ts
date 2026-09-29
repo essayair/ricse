@@ -33,6 +33,35 @@ describe('FinancialSettlementService payment approvals', () => {
     }));
   });
 
+  it('执行批次未完成时仍可作为结算候选，但排除已取消批次', async () => {
+    prisma.contract.findFirst.mockResolvedValue({
+      id: 'contract-1', type: 'PURCHASE', sellerId: 'supplier-1', buyerId: 'internal-1',
+      signingPartnerId: 'internal-1', lineItems: [],
+    } as any);
+    prisma.order.findMany.mockResolvedValue([{
+      id: 'order-1', orderNo: 'CGDD001', name: '首批预付款', status: 'CONFIRMED',
+      totalAmount: 100000, createdAt: new Date(), lineItems: [{ quantity: 100, unit: 'TON' }], settlementLines: [],
+    }] as any);
+
+    await expect(service.orderOptions('contract-1', 'PAYABLE', 'user-1')).resolves.toMatchObject([
+      { id: 'order-1', status: 'CONFIRMED', quantity: 100, remainingAmount: 100000 },
+    ]);
+    expect(prisma.order.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        contractId: 'contract-1', type: 'PURCHASE',
+        status: { in: ['DRAFT', 'CONFIRMED', 'DISPATCHED', 'COMPLETED'] },
+      }),
+    }));
+  });
+
+  it('仅允许打印已审批或已创建付款单的付款申请', async () => {
+    prisma.paymentRequest.findFirst.mockResolvedValue({ id: 'request-1', status: 'APPROVED' } as any);
+    await expect(service.recordPaymentRequestPrint('request-1', 'user-1')).resolves.toMatchObject({ id: 'request-1' });
+
+    prisma.paymentRequest.findFirst.mockResolvedValue({ id: 'request-2', status: 'PENDING_APPROVAL' } as any);
+    await expect(service.recordPaymentRequestPrint('request-2', 'user-1')).rejects.toThrow('付款申请审批完成后才能打印存档');
+  });
+
   it('最后一个付款审批节点通过后才将申请置为已批准', async () => {
     prisma.paymentRequest.findFirst.mockResolvedValue({
       id: 'request-1', status: 'PENDING_APPROVAL', approvals: [],

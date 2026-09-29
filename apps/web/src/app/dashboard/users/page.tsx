@@ -189,9 +189,8 @@ export default function UserManagementPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1150px] text-sm">
             <thead><tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-              <th className="px-4 py-3">个人用户</th><th className="px-4 py-3">手机号</th><th className="px-4 py-3">微信标识</th>
-              <th className="px-4 py-3">关联企业/员工</th><th className="px-4 py-3">后台账号/角色</th><th className="px-4 py-3">最近登录</th>
-              <th className="px-4 py-3">状态</th><th className="px-4 py-3">操作</th>
+              <th className="px-4 py-3">个人用户</th><th className="px-4 py-3">手机号</th><th className="px-4 py-3">微信标识</th><th className="px-4 py-3">状态</th>
+              <th className="px-4 py-3">关联企业/员工</th><th className="px-4 py-3">后台账号/角色</th><th className="px-4 py-3">最近登录</th><th className="px-4 py-3">操作</th>
             </tr></thead>
             <tbody>
               {loading && data.list.length === 0 ? <tr><td colSpan={8} className="p-10 text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />加载中</td></tr>
@@ -201,10 +200,10 @@ export default function UserManagementPage() {
                       <td className="px-4 py-3"><button className="text-left font-medium hover:text-primary hover:underline" onClick={() => void openDetail(user.id)}>{user.nickName || '未授权昵称'}</button><div className="mt-1 text-xs text-muted-foreground">注册 {formatDate(user.createdAt)}</div></td>
                       <td className="px-4 py-3">{user.phone || '—'}{user.phoneVerifiedAt && <div className="mt-1 text-xs text-green-600">微信已验证</div>}</td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{user.openIdMasked}</td>
+                      <td className="px-4 py-3"><StatusText status={user.status}>{user.status === 'ACTIVE' ? '正常' : '禁用'}</StatusText></td>
                       <td className="px-4 py-3">{user.linkedUser?.company ? <><div>{user.linkedUser.company.code} {user.linkedUser.company.name}</div><div className="mt-1 text-xs text-muted-foreground">{user.linkedUser.employee?.name || '—'} · {user.linkedUser.employee?.department?.name || '未分部门'}</div></> : '—'}</td>
                       <td className="px-4 py-3">{user.linkedUser ? <><div className="font-mono">{user.linkedUser.username}</div><div className="mt-1 flex flex-wrap gap-1">{user.linkedUser.roleAssignments?.map((item) => <Badge key={item.role.code} variant="outline" className="text-[10px]">{item.role.name}</Badge>)}</div></> : <StatusText status="UNBOUND">未关联</StatusText>}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(user.lastLogin)}</td>
-                      <td className="px-4 py-3"><StatusText status={user.status}>{user.status === 'ACTIVE' ? '正常' : '禁用'}</StatusText></td>
                       <td className="px-4 py-3"><div className="flex flex-wrap gap-x-3 gap-y-2">
                         <button className="text-xs text-primary hover:underline" onClick={() => void openBinding(user)}>{user.linkedUser ? '重新关联' : '关联账号'}</button>
                         {user.linkedUser && <button className="text-xs text-destructive hover:underline" onClick={() => void unbind(user)}>解除关联</button>}

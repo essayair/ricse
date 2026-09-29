@@ -222,6 +222,52 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     };
   }
 
+  if (/^\/dashboard\/settlements\/[^/]+$/.test(pathname)) {
+    return {
+      items: withHome([
+        { label: '资金结算' },
+        { label: '结算台账', href: '/dashboard/settlement-ledger' },
+        { label: '结算单详情' },
+      ]),
+      supported: true,
+    };
+  }
+
+  if (/^\/dashboard\/payment-requests\/[^/]+\/print$/.test(pathname)) {
+    const requestId = pathname.split('/')[3];
+    return {
+      items: withHome([
+        { label: '资金结算' },
+        { label: '付款申请', href: '/dashboard/payment-requests' },
+        { label: '付款申请详情', href: `/dashboard/payment-requests/${requestId}` },
+        { label: '打印存档' },
+      ]),
+      supported: true,
+    };
+  }
+
+  if (/^\/dashboard\/payment-requests\/[^/]+$/.test(pathname)) {
+    return {
+      items: withHome([
+        { label: '资金结算' },
+        { label: '付款申请', href: '/dashboard/payment-requests' },
+        { label: '付款申请详情' },
+      ]),
+      supported: true,
+    };
+  }
+
+  if (/^\/dashboard\/funds\/[^/]+$/.test(pathname)) {
+    return {
+      items: withHome([
+        { label: '资金结算' },
+        { label: '收付款管理', href: '/dashboard/payments' },
+        { label: '资金单详情' },
+      ]),
+      supported: true,
+    };
+  }
+
   const masterData = resolveMasterData(pathname, params);
   if (masterData) return { items: masterData, supported: true };
   const organization = resolveOrganization(pathname, params);

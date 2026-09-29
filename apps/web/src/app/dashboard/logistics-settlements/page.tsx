@@ -75,11 +75,11 @@ export default function LogisticsSettlementsPage() {
                   <th className="p-3">结算单号</th>
                   <th className="p-3">货主方</th>
                   <th className="p-3">结算周期</th>
+                  <th className="p-3">状态</th>
                   <th className="p-3">车次</th>
                   <th className="p-3">净重合计</th>
                   <th className="p-3">金额合计</th>
                   <th className="p-3">制表人</th>
-                  <th className="p-3">状态</th>
                   <th className="p-3">操作</th>
                 </tr>
               </thead>
@@ -89,11 +89,11 @@ export default function LogisticsSettlementsPage() {
                     <td className="p-3 font-mono">{item.settlementNo}</td>
                     <td className="p-3">{item.payerCompany.name}</td>
                     <td className="p-3 text-xs text-muted-foreground">{item.periodStart.slice(0, 10)} ~ {item.periodEnd.slice(0, 10)}</td>
+                    <td className="p-3"><StatusText status={item.status}>{STATUS_LABEL[item.status] || item.status}</StatusText></td>
                     <td className="p-3">{item.lines.length}</td>
                     <td className="p-3">{item.totalNetWeight}</td>
                     <td className="p-3">{item.totalAmount}</td>
                     <td className="p-3">{item.preparer.name}</td>
-                    <td className="p-3"><StatusText status={item.status}>{STATUS_LABEL[item.status] || item.status}</StatusText></td>
                     <td className="p-3">
                       <Link href={`/dashboard/logistics-settlements/${item.id}`}>
                         <Button size="sm" variant="ghost">详情</Button>

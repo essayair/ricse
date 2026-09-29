@@ -389,7 +389,7 @@ function MasterDataPageInner() {
         {/* 合作伙伴 */}
         {tab === 'partners' && (
           <DataTable
-            headers={['编码 / 信用代码', '企业名称', '合作伙伴角色', '省市', '法人', '联系人 / 电话', '类别', '纳税评级', '授信额度', '状态', '操作']}
+            headers={['编码 / 信用代码', '企业名称', '合作伙伴角色', '状态', '省市', '法人', '联系人 / 电话', '类别', '纳税评级', '授信额度', '操作']}
             rows={partners.map((p) => {
               const catCfg = p.category ? CATEGORY_CONFIG[p.category] : null;
               const creditNum = p.creditLimit ? parseFloat(p.creditLimit) : 0;
@@ -400,6 +400,7 @@ function MasterDataPageInner() {
                   {p.shortName && <div className="text-xs text-muted-foreground">{p.shortName}</div>}
                 </div>,
                 <RoleBadges key="r" roles={p.roles} isInternal={p.isInternal} />,
+                <StatusBadge key="s" status={p.status} />,
                 <div key="loc" className="flex items-center gap-1 text-xs text-muted-foreground">
                   {(p.province || p.city) ? (
                     <><MapPin className="h-3 w-3" />{p.province?.replace('省','').replace('市','')} {p.city?.replace('市','')}</>
@@ -416,7 +417,6 @@ function MasterDataPageInner() {
                 creditNum > 0
                   ? <span key="cl" className="font-mono text-sm">¥{(creditNum / 10000).toFixed(0)}万</span>
                   : <span key="cl2" className="text-muted-foreground text-xs">—</span>,
-                <StatusBadge key="s" status={p.status} />,
                 <div key="ops" className="flex gap-1.5">
                   <Link href={`/dashboard/master-data/partners/${p.id}`}>
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button>
@@ -434,16 +434,16 @@ function MasterDataPageInner() {
         {/* 商品物料 */}
         {tab === 'materials' && (
           <DataTable
-            headers={['业务编码 / 标准编码', '商品名称 / 形态', '参考类型 / 包装', '商品分类', '核心规格', '单位', '质检模板', '状态', '操作']}
+            headers={['业务编码 / 标准编码', '商品名称 / 形态', '参考类型 / 包装', '状态', '商品分类', '核心规格', '单位', '质检模板', '操作']}
             rows={materials.map((m) => [
               <div key="c"><div className="font-mono text-xs">{m.code}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.standardCommodity?.code || '历史物料'}</div></div>,
               <div key="n"><Link href={`/dashboard/master-data/materials/${m.id}`} className="font-medium hover:text-primary hover:underline">{m.standardCommodity?.name || m.name}</Link><div className="mt-1 max-w-56 truncate text-xs text-muted-foreground">{m.commodityForm || '未设置形态'}</div></div>,
               <div key="rt"><div className="text-xs">{MATERIAL_REFERENCE_LABELS[m.referenceType] || m.referenceType || '贸易商品'}</div><div className="mt-1 text-xs text-muted-foreground">{m.packageType || '未设置包装'}</div></div>,
+              <StatusBadge key="s" status={m.status} />,
               <Badge key="cat" variant="outline" className="text-xs">{m.category?.name || '-'}</Badge>,
               <div key="g"><div className="text-xs">{m.grade || '-'}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.internalCode || '无内部编码'}</div></div>,
               unitLabel(m.unit),
               <span key="qc" className="text-xs text-muted-foreground">{m.qcTemplate || '—'}</span>,
-              <StatusBadge key="s" status={m.status} />,
               <div key="ops" className="flex gap-1.5">
                 <Link href={`/dashboard/master-data/materials/${m.id}`}>
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button>
@@ -467,7 +467,7 @@ function MasterDataPageInner() {
         {/* 仓库管理 */}
         {tab === 'warehouses' && (
           <DataTable
-            headers={['编码', '名称 / 权属方', '类型', '仓管员 / 电话', '地址', '状态', '操作']}
+            headers={['编码', '名称 / 权属方', '类型', '状态', '仓管员 / 电话', '地址', '操作']}
             rows={warehouses.map((w) => [
               <span key="c" className="font-mono text-xs">{w.code}</span>,
               <div key="n">
@@ -475,9 +475,9 @@ function MasterDataPageInner() {
                 {w.partner && <div className="text-xs text-muted-foreground">{w.partner.name}</div>}
               </div>,
               <Badge key="t" variant="outline" className="text-xs">{w.type === 'SELF' ? '自有' : '租赁'}</Badge>,
+              <StatusBadge key="s" status={w.status} />,
               <div key="mgr"><div>{w.manager || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{w.managerPhone || '无联系电话'}</div></div>,
               w.address || '-',
-              <StatusBadge key="s" status={w.status} />,
               <div key="ops" className="flex gap-1.5">
                 <Link href={`/dashboard/master-data/warehouses/${w.id}/edit`}>
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">编辑</Button>
@@ -498,18 +498,18 @@ function MasterDataPageInner() {
         {/* 车辆管理 */}
         {tab === 'vehicles' && (
           <DataTable
-            headers={['车牌号', '车型 / 品牌', '核定载重 / 皮重', '定位设备', '所属承运商 / 车主', '关联司机', '运行 / 档案状态', '引用运单', '操作']}
+            headers={['车牌号', '车型 / 品牌', '核定载重 / 皮重', '运行 / 档案状态', '定位设备', '所属承运商 / 车主', '关联司机', '引用运单', '操作']}
             rows={vehicles.map((v) => [
               <Link key="p" href={`/dashboard/master-data/vehicles/${v.id}`} className="font-mono font-medium text-primary hover:underline">{v.plateNo}</Link>,
               <div key="vt"><div>{VEHICLE_TYPE[v.vehicleType] || v.vehicleType}</div><div className="mt-1 text-xs text-muted-foreground">{v.brand || '未设置品牌'}</div></div>,
               <div key="l"><div>{Number(v.loadCapacity).toFixed(2)} 吨</div><div className="mt-1 text-xs text-muted-foreground">皮重 {v.tareWeight ? `${Number(v.tareWeight).toFixed(2)} 吨` : '—'}</div></div>,
+              <div key="status"><StatusText status={v.operationStatus}>{v.operationStatus === 'IN_TRANSIT' ? '在途' : '空闲'}</StatusText><div className="mt-1"><StatusBadge status={v.status} /></div></div>,
               <div key="dev"><div>{v.deviceType === 'BEIDOU' ? '北斗' : v.deviceType === 'GPS' ? 'GPS' : '未绑定'}</div><div className="mt-1 text-xs text-muted-foreground">{v.deviceNo || '—'}</div></div>,
               <div key="o">
                 <div><Badge variant="outline" className="text-xs mr-1">{v.ownerType === 'SELF' ? '自有' : '外协'}</Badge>{v.owner?.name && <span className="text-xs text-muted-foreground">{v.owner.name}</span>}</div>
                 {v.ownerName && <div className="mt-1 text-xs text-muted-foreground">车主：{v.ownerName}{v.ownerPhone ? ` · ${v.ownerPhone}` : ''}</div>}
               </div>,
               <div key="drv">{v.drivers.length ? v.drivers.map(link => <div key={link.id} className="whitespace-nowrap"><span>{link.driver.name}</span><span className="ml-1 text-xs text-muted-foreground">{link.role === 'PRIMARY' ? '主驾' : '副驾'} · {link.driver.phone}</span></div>) : <span className="text-muted-foreground">未关联</span>}</div>,
-              <div key="status"><StatusText status={v.operationStatus}>{v.operationStatus === 'IN_TRANSIT' ? '在途' : '空闲'}</StatusText><div className="mt-1"><StatusBadge status={v.status} /></div></div>,
               <span key="refs" className="font-mono text-xs">{v._count?.waybills || 0}</span>,
               <div key="ops" className="flex gap-1.5">
                 <Link href={`/dashboard/master-data/vehicles/${v.id}`}><Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button></Link>

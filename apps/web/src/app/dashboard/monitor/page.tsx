@@ -231,13 +231,13 @@ export default function MonitorPage() {
                 <thead className="border-b bg-muted/50 text-left text-muted-foreground">
                   <tr>
                     <th className="p-3">点位</th><th className="p-3">分组</th><th className="p-3">设备序列号</th>
-                    <th className="p-3">通道</th><th className="p-3">用途</th><th className="p-3">云台</th>
-                    <th className="p-3">验证码</th><th className="p-3">在线</th><th className="p-3">状态</th><th className="p-3">操作</th>
+                    <th className="p-3">在线 / 状态</th><th className="p-3">通道</th><th className="p-3">用途</th><th className="p-3">云台</th>
+                    <th className="p-3">验证码</th><th className="p-3">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {!visibleCameras.length && (
-                    <tr><td colSpan={10} className="p-12 text-center text-muted-foreground">暂无监控点位</td></tr>
+                    <tr><td colSpan={9} className="p-12 text-center text-muted-foreground">暂无监控点位</td></tr>
                   )}
                   {visibleCameras.map((item) => (
                     <tr key={item.id} className="border-b last:border-0">
@@ -245,20 +245,16 @@ export default function MonitorPage() {
                         <div className="font-mono text-xs text-muted-foreground">{item.code}</div></td>
                       <td className="p-3">{item.site.name}</td>
                       <td className="p-3 font-mono text-xs">{item.deviceSerial}</td>
-                      <td className="p-3">{item.channelNo}</td>
-                      <td className="p-3">{item.purpose ? PURPOSES[item.purpose] || item.purpose : '-'}</td>
-                      <td className="p-3">{item.ptzSupport ? <Badge variant="secondary">支持</Badge> : '-'}</td>
-                      <td className="p-3">{item.verifyCodeConfigured ? '已配置' : <span className="text-warning">未配置</span>}</td>
                       <td className="p-3">
                         {item.online
                           ? <span className="flex items-center gap-1 text-success"><Wifi className="h-3.5 w-3.5" />在线</span>
                           : <span className="flex items-center gap-1 text-muted-foreground"><WifiOff className="h-3.5 w-3.5" />离线</span>}
+                        <div className="mt-1"><StatusText status={item.status}>{item.status === 'ACTIVE' ? '启用' : '停用'}</StatusText></div>
                       </td>
-                      <td className="p-3">
-                        <StatusText status={item.status}>
-                          {item.status === 'ACTIVE' ? '启用' : '停用'}
-                        </StatusText>
-                      </td>
+                      <td className="p-3">{item.channelNo}</td>
+                      <td className="p-3">{item.purpose ? PURPOSES[item.purpose] || item.purpose : '-'}</td>
+                      <td className="p-3">{item.ptzSupport ? <Badge variant="secondary">支持</Badge> : '-'}</td>
+                      <td className="p-3">{item.verifyCodeConfigured ? '已配置' : <span className="text-warning">未配置</span>}</td>
                       <td className="p-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" onClick={() => setPreview(item)}><Video className="h-3.5 w-3.5" /></Button>

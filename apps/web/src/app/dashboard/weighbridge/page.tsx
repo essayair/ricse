@@ -78,7 +78,7 @@ export default function WeighbridgePage() {
     {!items.length ? <Card><div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无磅单信息</div></Card> : <Card className="overflow-hidden">
       <div className="overflow-x-auto"><table className="min-w-[1500px] w-full text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>
-          <th className="px-4 py-3">序号</th><th className="px-4 py-3">任务 / 物流运单</th><th className="px-4 py-3">业务类型</th><th className="px-4 py-3">执行批次 / 通知</th><th className="px-4 py-3">车牌 / 司机</th><th className="px-4 py-3">货物</th><th className="px-4 py-3 text-right">计划数量（吨）</th><th className="px-4 py-3">发货称重</th><th className="px-4 py-3">收货称重</th><th className="px-4 py-3">库存与结算执行磅单</th><th className="px-4 py-3">状态</th><th className="px-4 py-3"></th>
+          <th className="px-4 py-3">序号</th><th className="px-4 py-3">任务 / 物流运单</th><th className="px-4 py-3">业务类型</th><th className="px-4 py-3">状态</th><th className="px-4 py-3">执行批次 / 通知</th><th className="px-4 py-3">车牌 / 司机</th><th className="px-4 py-3">货物</th><th className="px-4 py-3 text-right">计划数量（吨）</th><th className="px-4 py-3">发货称重</th><th className="px-4 py-3">收货称重</th><th className="px-4 py-3">库存与结算执行磅单</th><th className="px-4 py-3"></th>
         </tr></thead>
         <tbody>{items.map((item, index) => {
           const shipping = stageTickets(item, 'SHIPPING');
@@ -89,6 +89,7 @@ export default function WeighbridgePage() {
             <td className="px-4 py-4 text-center">{index + 1}</td>
             <td className="px-4 py-4"><div className="font-mono font-medium text-primary">{item.weighTask.taskNo}</div><div className="mt-1 font-mono text-xs">{item.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.originLocation || '-'} → {item.destinationLocation || '-'}</div></td>
             <td className="px-4 py-4"><BusinessDirectionBadge type={item.dispatchNotice.type} /></td>
+            <td className="px-4 py-4"><StatusText status={item.weighTask.status}>{state.label}</StatusText>{item.weighTickets.some(ticket => ticket.abnormal) && <Badge className="ml-2" variant="destructive">异常</Badge>}</td>
             <td className="px-4 py-4"><div className="font-medium">{item.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.noticeNo}</div></td>
             <td className="px-4 py-4"><div>{item.plateNo || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.driverName || '待补录司机'}</div></td>
             <td className="max-w-56 px-4 py-4"><div className="truncate" title={materialNames(item)}>{materialNames(item)}</div></td>
@@ -96,7 +97,6 @@ export default function WeighbridgePage() {
             <td className="px-4 py-4"><StageSummary tickets={shipping} /></td>
             <td className="px-4 py-4"><StageSummary tickets={receiving} /></td>
             <td className="px-4 py-4">{effective ? <div><div className="font-mono font-medium text-primary">{effective.weighTicket.ticketNo}</div><div className="mt-1 text-xs text-muted-foreground">{stageName(item, effective.weighTicket.weighingStage)} · {number(effective.quantity)} 吨</div></div> : <span className="text-amber-700">尚未确定</span>}</td>
-            <td className="px-4 py-4"><StatusText status={item.weighTask.status}>{state.label}</StatusText>{item.weighTickets.some(ticket => ticket.abnormal) && <Badge className="ml-2" variant="destructive">异常</Badge>}</td>
             <td className="px-4 py-4"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
           </tr>;
         })}</tbody>

@@ -441,8 +441,8 @@ export default function PartnerDetailPage() {
             <Button size="sm" onClick={() => { setEditingAddress(null); setAddressDialog(true); }}><Plus className="mr-1 h-4 w-4" />新增地址</Button>
           </div>
           {!p.businessAddresses?.length ? <div className="p-12 text-center text-sm text-muted-foreground"><MapPinned className="mx-auto mb-2 h-8 w-8 opacity-30" />暂无收发货地址</div> : <div className="overflow-x-auto"><table className="min-w-[1000px] w-full text-sm">
-            <thead className="border-b bg-muted/50"><tr><th className="px-4 py-3 text-left">地址简称</th><th className="px-4 py-3 text-left">完整地址</th><th className="px-4 py-3 text-left">联系人</th><th className="px-4 py-3 text-left">联系方式</th><th className="px-4 py-3 text-left">默认</th><th className="px-4 py-3 text-left">状态</th><th className="px-4 py-3 text-right">操作</th></tr></thead>
-            <tbody>{p.businessAddresses.map(address => <tr key={address.id} className="border-b"><td className="px-4 py-3 font-medium">{address.addressName}</td><td className="max-w-md px-4 py-3 text-muted-foreground">{address.fullAddress}</td><td className="px-4 py-3">{address.contactPerson}</td><td className="px-4 py-3">{address.contactPhone}</td><td className="px-4 py-3">{address.isDefault ? <Badge variant="secondary">默认</Badge> : '—'}</td><td className="px-4 py-3"><StatusText status={address.status}>{address.status === 'ACTIVE' ? '启用' : '停用'}</StatusText></td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => { setEditingAddress(address); setAddressDialog(true); }}><Pencil className="mr-1 h-3.5 w-3.5" />编辑</Button>{!address.isDefault && <Button size="sm" variant="outline" onClick={async () => { try { await api.patch(`/partners/addresses/${address.id}`, { status: address.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }); await fetchPartner(); } catch (error: any) { alert(error.message); } }}>{address.status === 'ACTIVE' ? '停用' : '启用'}</Button>}{address.status === 'ACTIVE' && !address.isDefault && <Button size="sm" variant="outline" onClick={async () => { try { await api.patch(`/partners/addresses/${address.id}`, { isDefault: true }); await fetchPartner(); } catch (error: any) { alert(error.message); } }}>设为默认</Button>}</div></td></tr>)}</tbody>
+            <thead className="border-b bg-muted/50"><tr><th className="px-4 py-3 text-left">地址简称</th><th className="px-4 py-3 text-left">完整地址</th><th className="px-4 py-3 text-left">联系人</th><th className="px-4 py-3 text-left">状态</th><th className="px-4 py-3 text-left">联系方式</th><th className="px-4 py-3 text-left">默认</th><th className="px-4 py-3 text-right">操作</th></tr></thead>
+            <tbody>{p.businessAddresses.map(address => <tr key={address.id} className="border-b"><td className="px-4 py-3 font-medium">{address.addressName}</td><td className="max-w-md px-4 py-3 text-muted-foreground">{address.fullAddress}</td><td className="px-4 py-3">{address.contactPerson}</td><td className="px-4 py-3"><StatusText status={address.status}>{address.status === 'ACTIVE' ? '启用' : '停用'}</StatusText></td><td className="px-4 py-3">{address.contactPhone}</td><td className="px-4 py-3">{address.isDefault ? <Badge variant="secondary">默认</Badge> : '—'}</td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => { setEditingAddress(address); setAddressDialog(true); }}><Pencil className="mr-1 h-3.5 w-3.5" />编辑</Button>{!address.isDefault && <Button size="sm" variant="outline" onClick={async () => { try { await api.patch(`/partners/addresses/${address.id}`, { status: address.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }); await fetchPartner(); } catch (error: any) { alert(error.message); } }}>{address.status === 'ACTIVE' ? '停用' : '启用'}</Button>}{address.status === 'ACTIVE' && !address.isDefault && <Button size="sm" variant="outline" onClick={async () => { try { await api.patch(`/partners/addresses/${address.id}`, { isDefault: true }); await fetchPartner(); } catch (error: any) { alert(error.message); } }}>设为默认</Button>}</div></td></tr>)}</tbody>
           </table></div>}
         </Card>
       )}
@@ -500,10 +500,10 @@ export default function PartnerDetailPage() {
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">车牌号</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">车型</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">品牌</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">载重（吨）</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">驾驶员</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">电话</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
                 </tr>
               </thead>
               <tbody>
@@ -512,14 +512,10 @@ export default function PartnerDetailPage() {
                     <td className="px-4 py-3 font-mono font-medium">{v.plateNo}</td>
                     <td className="px-4 py-3">{VEHICLE_TYPE[v.vehicleType] || v.vehicleType}</td>
                     <td className="px-4 py-3 text-muted-foreground">{v.brand || '—'}</td>
+                    <td className="px-4 py-3"><StatusText status={v.status}>{v.status === 'ACTIVE' ? '运营中' : v.status === 'MAINTENANCE' ? '维修中' : '退役'}</StatusText></td>
                     <td className="px-4 py-3 text-right font-mono">{Number(v.loadCapacity).toFixed(1)}</td>
                     <td className="px-4 py-3">{v.driverName || '—'}</td>
                     <td className="px-4 py-3 text-muted-foreground">{v.driverPhone || '—'}</td>
-                    <td className="px-4 py-3">
-                      <StatusText status={v.status}>
-                        {v.status === 'ACTIVE' ? '运营中' : v.status === 'MAINTENANCE' ? '维修中' : '退役'}
-                      </StatusText>
-                    </td>
                   </tr>
                 ))}
               </tbody>

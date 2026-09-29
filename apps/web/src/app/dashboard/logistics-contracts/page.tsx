@@ -94,9 +94,9 @@ export default function LogisticsContractsPage() {
                   <th className="p-3">合同号</th>
                   <th className="p-3">承运方</th>
                   <th className="p-3">结算方式</th>
+                  <th className="p-3">状态</th>
                   <th className="p-3">生效期</th>
                   <th className="p-3">当前运价条款数</th>
-                  <th className="p-3">状态</th>
                   <th className="p-3">操作</th>
                 </tr>
               </thead>
@@ -109,11 +109,11 @@ export default function LogisticsContractsPage() {
                       <div className="mt-1 text-xs text-muted-foreground">{item.carrierPartner.code}</div>
                     </td>
                     <td className="p-3">{item.settlementBasis === 'NET_WEIGHT' ? '按净重' : item.settlementBasis === 'GROSS_WEIGHT' ? '按毛重' : '按车次'}</td>
+                    <td className="p-3"><StatusText status={item.status}>{STATUS_LABEL[item.status] || item.status}</StatusText></td>
                     <td className="p-3 text-xs text-muted-foreground">
                       {item.effectiveAt ? item.effectiveAt.slice(0, 10) : '—'} ~ {item.expireAt ? item.expireAt.slice(0, 10) : '不限'}
                     </td>
                     <td className="p-3">{item.priceTerms.filter((term) => !term.expiresAt).length} 条当前生效</td>
-                    <td className="p-3"><StatusText status={item.status}>{STATUS_LABEL[item.status] || item.status}</StatusText></td>
                     <td className="p-3">
                       <Link href={`/dashboard/logistics-contracts/${item.id}`}>
                         <Button size="sm" variant="ghost">详情</Button>

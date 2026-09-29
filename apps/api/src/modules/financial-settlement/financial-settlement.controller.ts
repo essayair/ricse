@@ -98,6 +98,11 @@ export class FinancialSettlementController {
     return this.service.findPaymentRequest(id, userId);
   }
 
+  @Post('payment-requests/:id/print')
+  printPaymentRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.recordPaymentRequestPrint(id, userId);
+  }
+
   @Post('payment-requests/:id/submit')
   submitPaymentRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.submitPaymentRequest(id, userId);

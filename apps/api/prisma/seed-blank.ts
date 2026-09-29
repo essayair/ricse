@@ -39,11 +39,12 @@ const flowDefinitions = [
   },
   {
     contractType: 'PAYMENT_REQUEST',
-    name: '付款申请审批流',
+    name: '付款申请三级审批流',
     amountThreshold: null,
     nodes: [
       { step: 1, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
-      { step: 2, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      { step: 2, nodeName: '业务责任人', roleCode: 'BUSINESS_OWNER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 3, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
     ],
   },
 ];

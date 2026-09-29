@@ -48,10 +48,10 @@ export default function OutboundPage() {
       {!items.length ? <div className="p-12 text-center text-muted-foreground"><PackageMinus className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无出库管理单；销售发货通知下达后将自动生成</div> :
         <div className="overflow-x-auto"><table className="w-full min-w-[1450px] text-sm">
           <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>
-            <th className="p-3">管理单 / 当前阶段</th><th className="p-3">销售发货通知</th><th className="p-3">合同 / 执行批次</th>
+            <th className="p-3">管理单 / 当前阶段</th><th className="p-3">销售发货通知</th><th className="p-3">合同 / 执行批次</th><th className="p-3">状态</th>
             <th className="p-3">发货仓库</th><th className="p-3">物料</th><th className="p-3 text-right">通知数量</th>
             <th className="p-3 text-right">待出库冻结</th><th className="p-3 text-right">库存缺口</th><th className="p-3 text-right">实际出库</th>
-            <th className="p-3">物流 / 磅单</th><th className="p-3">状态</th><th className="p-3">生成时间</th>
+            <th className="p-3">物流 / 磅单</th><th className="p-3">生成时间</th>
           </tr></thead>
           <tbody>{items.map(item => {
             const waybills = item.dispatchNotice.waybills || [];
@@ -60,13 +60,13 @@ export default function OutboundPage() {
               <td className="p-3"><div className="flex items-center gap-2"><span className="font-mono font-medium text-primary">{item.orderNo}</span><Badge variant="outline">{item.dispatchNotice.mode === 'DIRECT' ? '直拨' : '常规'}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{item.stageLabel}</div></td>
               <td className="p-3 font-mono text-xs">{item.dispatchNotice.noticeNo}</td>
               <td className="max-w-56 p-3"><div>{item.dispatchNotice.order.contract.contractNo}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.order.name}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.businessUnit?.name || '未归属业务单元'}</div></td>
+              <td className="p-3"><StatusText status={item.status} tone={Number(item.shortageQuantity) > 0 ? 'destructive' : undefined}>{STATUS[item.status] || item.status}</StatusText></td>
               <td className="p-3">{item.warehouse?.name || '直拨，不经过我方仓库'}</td>
               <td className="p-3">{item.lineItems.map((line: any) => line.materialName || line.materialId).join('、')}</td>
               <td className="p-3 text-right">{weight(item.plannedQuantity)}</td><td className="p-3 text-right text-primary">{item.dispatchNotice.mode === 'DIRECT' ? '-' : weight(item.reservedQuantity)}</td>
               <td className={`p-3 text-right ${Number(item.shortageQuantity) > 0 ? 'font-medium text-destructive' : ''}`}>{item.dispatchNotice.mode === 'DIRECT' ? '-' : weight(item.shortageQuantity)}</td>
               <td className="p-3 text-right font-medium">{weight(item.actualQuantity)}</td>
               <td className="p-3"><div>{waybills.length} 个车次</div><div className="mt-1 text-xs text-muted-foreground">{tickets.length} 张磅单</div></td>
-              <td className="p-3"><StatusText status={item.status} tone={Number(item.shortageQuantity) > 0 ? 'destructive' : undefined}>{STATUS[item.status] || item.status}</StatusText></td>
               <td className="p-3 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</td>
             </tr>;
           })}</tbody>

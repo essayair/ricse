@@ -138,11 +138,11 @@ export default function OrdersPage() {
                 <th className="w-72 whitespace-nowrap px-4 py-3 font-medium">执行批次名称 / 编号</th>
                 <th className="w-60 whitespace-nowrap px-4 py-3 font-medium">关联合同</th>
                 <th className="w-72 whitespace-nowrap px-4 py-3 font-medium">{type === 'PURCHASE' ? '采购主体 / 供应商' : type === 'SALES' ? '销售主体 / 客户' : '业务主体 / 交易对手'}</th>
+                <th className="w-52 whitespace-nowrap px-4 py-3 font-medium">状态 / 创建人</th>
                 <th className="w-56 whitespace-nowrap px-4 py-3 font-medium">标的 / 数量</th>
                 <th className="w-40 whitespace-nowrap px-4 py-3 text-right font-medium">金额</th>
                 <th className="w-64 whitespace-nowrap px-4 py-3 font-medium">{type === 'PURCHASE' ? '计划发货 / 收货地点' : type === 'SALES' ? '计划发货 / 交付地点' : '计划发货 / 收发货地点'}</th>
                 <th className="w-56 whitespace-nowrap px-4 py-3 font-medium">下游执行</th>
-                <th className="w-52 whitespace-nowrap px-4 py-3 font-medium">状态 / 创建人</th>
                 <th className="w-20 whitespace-nowrap px-4 py-3 font-medium">操作</th>
               </tr>
             </thead>
@@ -161,11 +161,11 @@ export default function OrdersPage() {
                     <div className="truncate text-xs text-muted-foreground" title={order.contract.title}>{order.contract.title}</div>
                   </td>
                   <td className="px-4 py-3"><div className="truncate" title={order.contract.signingPartner?.name || '-'}><span className={`mr-1 text-xs ${businessDirectionStyle(order.type).text}`}>{order.type === 'PURCHASE' ? '采购主体' : '销售主体'}：</span>{order.contract.signingPartner?.name || '-'}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={order.type === 'PURCHASE' ? order.contract.seller?.name || '-' : order.contract.buyer?.name || order.contract.seller?.name || '-'}><span className={businessDirectionStyle(order.type).text}>{order.type === 'PURCHASE' ? '供应商' : '客户'}：</span>{order.type === 'PURCHASE' ? order.contract.seller?.name || '-' : order.contract.buyer?.name || order.contract.seller?.name || '-'}</div></td>
+                  <td className="whitespace-nowrap px-4 py-3"><StatusText status={order.status}>{STATUS_MAP[order.status]?.label || order.status}</StatusText><div className="mt-1 text-xs text-muted-foreground">{order.creator?.name || '-'} · {formatDate(order.createdAt)}</div></td>
                   <td className="px-4 py-3"><div className="truncate" title={order.lineItems?.[0]?.materialName || '-'}>{order.lineItems?.[0]?.materialName || '-'}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={orderQuantity(order.lineItems)}>{orderQuantity(order.lineItems)}</div></td>
                   <td className="whitespace-nowrap px-4 py-3 text-right font-mono">¥{Number(order.totalAmount).toLocaleString()}</td>
                   <td className="px-4 py-3"><div className="whitespace-nowrap">{formatDate(order.plannedDate)}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={order.deliveryLocation || '未设置交付地点'}>{order.deliveryLocation || '未设置交付地点'}</div></td>
                   <td className="whitespace-nowrap px-4 py-3"><div>{order.dispatchNotices?.length || 0} 个执行通知</div><div className="mt-1 text-xs text-muted-foreground">{waybillCount(order)} 个物流运单</div></td>
-                  <td className="whitespace-nowrap px-4 py-3"><StatusText status={order.status}>{STATUS_MAP[order.status]?.label || order.status}</StatusText><div className="mt-1 text-xs text-muted-foreground">{order.creator?.name || '-'} · {formatDate(order.createdAt)}</div></td>
                   <td className="px-4 py-3">
                     {['DRAFT', 'CANCELLED'].includes(order.status) ? (
                       <button className="rounded p-1 text-destructive hover:bg-destructive/10" onClick={event => { event.stopPropagation(); void remove(order.id); }}>

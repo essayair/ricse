@@ -82,12 +82,12 @@ export default function InventoryReversalListPage() {
                   <th className="p-3">冲销单 / 创建时间</th>
                   <th className="p-3">类型</th>
                   <th className="p-3">原业务单</th>
+                  <th className="p-3">状态</th>
                   <th className="p-3">物料 / 仓库</th>
                   <th className="p-3 text-right">冲销数量</th>
                   <th className="p-3">冲销原因</th>
                   <th className="p-3">申请人</th>
                   <th className="p-3">审批人</th>
-                  <th className="p-3">状态</th>
                 </tr>
               </thead>
               <tbody>
@@ -105,6 +105,7 @@ export default function InventoryReversalListPage() {
                       </td>
                       <td className="p-3">{item.type === 'INBOUND' ? '入库冲销' : '出库冲销'}</td>
                       <td className="p-3 font-mono text-xs">{item.type === 'INBOUND' ? source?.inboundNo : source?.outboundNo}</td>
+                      <td className="p-3"><StatusText status={item.status}>{STATUS[item.status]}</StatusText></td>
                       <td className="p-3">
                         <div>{source?.materialName}</div>
                         <div className="mt-1 text-xs text-muted-foreground">{source?.warehouse?.name}</div>
@@ -113,7 +114,6 @@ export default function InventoryReversalListPage() {
                       <td className="max-w-64 p-3"><div className="truncate">{item.reason}</div></td>
                       <td className="p-3">{item.creator.name}</td>
                       <td className="p-3">{item.approver?.name || '-'}</td>
-                      <td className="p-3"><StatusText status={item.status}>{STATUS[item.status]}</StatusText></td>
                     </tr>
                   );
                 })}

@@ -132,6 +132,21 @@ describe('BusinessOperationInterceptor', () => {
     });
   });
 
+  it('付款申请打印存档动作记录到对应付款申请', async () => {
+    prisma.businessOperationLog.create.mockResolvedValue({} as any);
+
+    await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'POST', path: '/api/v1/financial-settlements/payment-requests/request-1/print', body: {}, user: { id: 'user-1' },
+    }), handler({ id: 'request-1', requestNo: 'FKSQ001', status: 'APPROVED' })));
+
+    expect(prisma.businessOperationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        businessType: 'PAYMENT_REQUEST', businessId: 'request-1',
+        action: 'PRINT', actionLabel: '打印存档', operatorId: 'user-1',
+      }),
+    });
+  });
+
   it('质检可选磅单列表不会被误判为机构报告详情', async () => {
     const response = [{ id: 'ticket-1', ticketNo: 'PD-001' }];
     const result = await lastValueFrom(interceptor.intercept(executionContext({
