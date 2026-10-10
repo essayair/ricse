@@ -15,6 +15,7 @@ import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -511,7 +512,7 @@ export default function ContractDetailPage() {
 
   const handleDelete = async () => {
     const statusLabel = contract?.status === 'DRAFT' ? '草稿' : '已作废合同';
-    if (!window.confirm(`确定删除${statusLabel}“${contract?.contractNo || ''}”吗？删除后将不再出现在合同列表中。`)) return;
+    if (!await confirmAction(`确定删除${statusLabel}“${contract?.contractNo || ''}”吗？删除后将不再出现在合同列表中。`)) return;
     try {
       await api.delete(`/contracts/${params.id}`);
       router.push('/dashboard/contracts');
@@ -520,13 +521,13 @@ export default function ContractDetailPage() {
     }
   };
 
-  const handleActionClick = (action: typeof pendingAction) => {
+  const handleActionClick = async (action: typeof pendingAction) => {
     if (!action) return;
     if (PROTECTED_STATUS_ACTIONS.has(action.next)) {
       setProtectedAction(action);
       return;
     }
-    if (action.next === 'VOIDED' && !window.confirm('确定作废此合同吗？作废后不能恢复，如需删除还必须由系统管理员操作。')) {
+    if (action.next === 'VOIDED' && !await confirmAction('确定作废此合同吗？作废后不能恢复，如需删除还必须由系统管理员操作。')) {
       return;
     }
     if (action.needsComment) {

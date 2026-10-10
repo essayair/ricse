@@ -29,11 +29,12 @@ export class DriverController {
     @Query('serviceOrganizationId') serviceOrganizationId?: string,
     @Query('carrierPartnerId') carrierPartnerId?: string,
     @Query('internal') internal?: string,
+    @Query('fleetId') fleetId?: string,
   ) {
     return this.service.findAll({
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
-      status, search, serviceOrganizationId, carrierPartnerId,
+      status, search, serviceOrganizationId, carrierPartnerId, fleetId,
       internal: internal === undefined ? undefined : internal === 'true',
     });
   }

@@ -10,6 +10,7 @@ import { unitLabel } from '@/lib/unit';
 import { BusinessDirectionBadge } from '@/components/business-direction';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 interface OrderDetail {
   id: string;
@@ -61,7 +62,7 @@ export default function OrderDetailPage() {
   useEffect(() => { void load(); }, [id]);
 
   const transition = async (status: string, label: string) => {
-    if (!confirm(`确定${label}？`)) return;
+    if (!await confirmAction(`确定${label}？`, { title: `${label}确认` })) return;
     setActing(true);
     try {
       setOrder(await api.patch(`/orders/${id}/status`, { status }));

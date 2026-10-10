@@ -300,6 +300,15 @@ export class MobileWorkspaceController {
     return this.waybillService.assign(id, data, userId);
   }
 
+  @Patch('waybills/:id/carrier')
+  bindWaybillCarrier(
+    @Param('id') id: string,
+    @Body('carrierPartnerId') carrierPartnerId: string | null,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.waybillService.bindCarrier(id, carrierPartnerId || null, userId);
+  }
+
   @Post('weigh-tickets/:id/records')
   addWeighRecord(@Param('id') id: string, @Body() dto: CreateWeighRecordDto, @CurrentUser('id') userId: string) {
     return this.weighService.addRecord(id, dto, userId);

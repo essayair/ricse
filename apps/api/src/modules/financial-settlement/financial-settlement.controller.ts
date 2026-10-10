@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
@@ -6,17 +6,22 @@ import { FileService } from '../common/file.service';
 import { prepareAttachmentUpload } from '../common/attachment-upload';
 import { CurrentUser } from '../common/current-user.decorator';
 import {
-  AllocateFundDto, CreateFinancialSettlementDto, CreateFundTransactionDto, CreatePaymentRequestDto,
-  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto,
+  AllocateFundDto, ClaimFundDto, CreateFinancialSettlementDto, CreateFundTransactionDto, CreatePaymentRequestDto,
+  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto, UpdatePaymentRequestDto,
 } from './dto/financial-settlement.dto';
 import { FinancialSettlementService } from './financial-settlement.service';
+import { PaymentVoucherRecognitionService } from './payment-voucher-recognition.service';
 
 @ApiTags('采购销售资金结算')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
 @Controller('financial-settlements')
 export class FinancialSettlementController {
-  constructor(private readonly service: FinancialSettlementService, private readonly fileService: FileService) {}
+  constructor(
+    private readonly service: FinancialSettlementService,
+    private readonly fileService: FileService,
+    private readonly paymentVoucherRecognition: PaymentVoucherRecognitionService,
+  ) {}
 
   @Get('options/contracts')
   contractOptions(@CurrentUser('id') userId: string, @Query('direction') direction: string) {
@@ -30,6 +35,11 @@ export class FinancialSettlementController {
     @Query('direction') direction: string,
   ) {
     return this.service.orderOptions(contractId, direction, userId);
+  }
+
+  @Get('options/receipt-registration')
+  receiptRegistrationOptions(@CurrentUser('id') userId: string) {
+    return this.service.receiptRegistrationOptions(userId);
   }
 
   @Get('funds')
@@ -63,8 +73,8 @@ export class FinancialSettlementController {
   }
 
   @Post('funds/:id/claim')
-  claimFund(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.service.claimFund(id, userId);
+  claimFund(@Param('id') id: string, @Body() dto: ClaimFundDto, @CurrentUser('id') userId: string) {
+    return this.service.claimFund(id, dto, userId);
   }
 
   @Post('funds/:id/confirm')
@@ -93,6 +103,17 @@ export class FinancialSettlementController {
     return this.service.createPaymentRequest(dto, userId);
   }
 
+  @Patch('payment-requests/:id')
+  updatePaymentRequest(@Param('id') id: string, @Body() dto: UpdatePaymentRequestDto, @CurrentUser('id') userId: string) {
+    return this.service.updatePaymentRequest(id, dto, userId);
+  }
+
+  @Delete('payment-requests/:id')
+  @HttpCode(204)
+  deletePaymentRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.deletePaymentRequest(id, userId);
+  }
+
   @Get('payment-requests/:id')
   paymentRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.findPaymentRequest(id, userId);
@@ -108,6 +129,16 @@ export class FinancialSettlementController {
     return this.service.submitPaymentRequest(id, userId);
   }
 
+  @Post('payment-requests/:id/business-confirm')
+  confirmPaymentRequestBusiness(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.confirmPaymentRequestBusiness(id, userId);
+  }
+
+  @Post('payment-requests/:id/return-to-business')
+  returnPaymentRequestToBusiness(@Param('id') id: string, @Body() dto: RejectPaymentRequestDto, @CurrentUser('id') userId: string) {
+    return this.service.returnPaymentRequestToBusiness(id, dto, userId);
+  }
+
   @Post('payment-requests/:id/approve')
   approvePaymentRequest(@Param('id') id: string, @Body() dto: ReviewPaymentRequestDto, @CurrentUser('id') userId: string) {
     return this.service.approvePaymentRequest(id, dto, userId);
@@ -121,6 +152,43 @@ export class FinancialSettlementController {
   @Post('payment-requests/:id/execute')
   executePaymentRequest(@Param('id') id: string, @Body() dto: ExecutePaymentRequestDto, @CurrentUser('id') userId: string) {
     return this.service.executePaymentRequest(id, dto, userId);
+  }
+
+  @Post('payment-requests/:id/execute-with-voucher')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async executePaymentRequestWithVoucher(
+    @Param('id') id: string,
+    @Body() dto: ExecutePaymentRequestDto,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!file) throw new BadRequestException('请上传付款凭证');
+    const prepared = prepareAttachmentUpload(file);
+    if (!prepared) throw new BadRequestException('付款凭证格式不支持，仅支持 JPG、PNG、WEBP、PDF');
+    const uploaded = await this.fileService.upload(file.buffer, prepared.originalName, prepared.mimeType);
+    try {
+      return await this.service.executePaymentRequest(id, dto, userId, {
+        fileName: uploaded.fileName,
+        originalName: prepared.originalName,
+        mimeType: prepared.mimeType,
+        size: uploaded.size,
+      });
+    } catch (error) {
+      try { await this.fileService.delete(uploaded.fileName); } catch {}
+      throw error;
+    }
+  }
+
+  @Post('payment-vouchers/recognize')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async recognizePaymentVoucher(@UploadedFile() file: Express.Multer.File, @CurrentUser('id') userId: string) {
+    await this.service.assertPaymentExecutionPermission(userId);
+    if (!file) throw new BadRequestException('请选择付款凭证');
+    const prepared = prepareAttachmentUpload(file);
+    if (!prepared) throw new BadRequestException('付款凭证格式不支持，仅支持 JPG、PNG、WEBP、PDF');
+    return this.paymentVoucherRecognition.recognize(file.buffer, prepared.mimeType);
   }
 
   @Post('payment-requests/:id/void')

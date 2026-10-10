@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save, Loader2, Lock, Upload, X, Eye, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 /* ── Constants ── */
 
@@ -89,9 +90,9 @@ export default function PartnerEditPage() {
     const isFirst = bankAccounts.length === 0;
     setBankAccounts((prev) => [...prev, { id: `new-${Date.now()}`, accountName: '', accountNo: '', bankName: '', bankCode: '', accountType: 'GENERAL', isDefault: isFirst, _new: true }]);
   };
-  const removeBankAccount = (idx: number) => {
+  const removeBankAccount = async (idx: number) => {
     const acct = bankAccounts[idx];
-    if (!acct._new && !confirm('确定删除此银行账户？')) return;
+    if (!acct._new && !await confirmAction('确定删除此银行账户？')) return;
     // For existing accounts, delete via API
     if (!acct._new) {
       api.delete(`/partners/bank-accounts/${acct.id}`).catch(() => {});
@@ -147,7 +148,7 @@ export default function PartnerEditPage() {
   };
 
   const deleteAttachment = async (attId: string) => {
-    if (!confirm('确定删除此附件？')) return;
+    if (!await confirmAction('确定删除此附件？')) return;
     try {
       await api.delete(`/partners/attachments/${attId}`);
       setAttachments((prev) => prev.filter((a) => a.id !== attId));
@@ -163,7 +164,7 @@ export default function PartnerEditPage() {
   };
 
   const renameAttachment = async (attachment: AttItem) => {
-    const originalName = prompt('请输入新的附件名称', attachment.originalName)?.trim();
+    const originalName = (await promptAction('请输入新的附件名称', attachment.originalName))?.trim();
     if (!originalName || originalName === attachment.originalName) return;
     try {
       const updated = await api.patch<AttItem>(`/partners/attachments/${attachment.id}/name`, { originalName });

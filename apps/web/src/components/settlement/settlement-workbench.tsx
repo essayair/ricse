@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 type Direction = 'RECEIVABLE' | 'PAYABLE';
 type BusinessType = 'PURCHASE' | 'SALES';
@@ -76,7 +77,7 @@ const fieldClass = 'h-10 w-full rounded-md border bg-background px-3 text-sm';
 export function SettlementWorkbench({ direction, standalone = false }: { direction: Direction; standalone?: boolean }) {
   const receivable = direction === 'RECEIVABLE';
   const businessType: BusinessType = receivable ? 'SALES' : 'PURCHASE';
-  const title = receivable ? '应收管理' : '应付管理';
+  const title = receivable ? '应收款计划' : '应付结算单';
   const cashLabel = receivable ? '收款' : '付款';
   const dueDateLabel = receivable ? '约定收款到期日' : '约定付款到期日';
   const accent = receivable ? 'text-blue-600' : 'text-orange-600';
@@ -203,7 +204,7 @@ export function SettlementWorkbench({ direction, standalone = false }: { directi
   };
 
   const settlementAction = async (item: Settlement, name: 'confirm' | 'void') => {
-    if (name === 'void' && !confirm(`确定作废结算单 ${item.settlementNo} 吗？`)) return;
+    if (name === 'void' && !await confirmAction(`确定作废结算单 ${item.settlementNo} 吗？`)) return;
     setBusy(true);
     try { await api.post(`/financial-settlements/${item.id}/${name}`); setSelected(null); await load(); }
     catch (error: any) { alert(error.message); }
@@ -211,7 +212,7 @@ export function SettlementWorkbench({ direction, standalone = false }: { directi
   };
 
   const voidFund = async (fund: Fund) => {
-    if (!confirm(`确定作废资金流水 ${fund.transactionNo} 吗？`)) return;
+    if (!await confirmAction(`确定作废资金流水 ${fund.transactionNo} 吗？`)) return;
     try { await api.post(`/financial-settlements/funds/${fund.id}/void`); await load(); } catch (error: any) { alert(error.message); }
   };
 
@@ -230,7 +231,7 @@ export function SettlementWorkbench({ direction, standalone = false }: { directi
   };
 
   const reverseAllocation = async (entry: Allocation) => {
-    const reason = prompt('请输入撤销核销原因'); if (!reason?.trim()) return;
+    const reason = await promptAction('请输入撤销核销原因'); if (!reason?.trim()) return;
     try { await api.post(`/financial-settlements/allocations/${entry.id}/reverse`, { reason: reason.trim() }); const id = selected?.id; await load(); if (id) setSelected(await api.get<Settlement>(`/financial-settlements/${id}`)); }
     catch (error: any) { alert(error.message); }
   };

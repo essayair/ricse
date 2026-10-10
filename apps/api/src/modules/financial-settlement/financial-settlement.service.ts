@@ -3,8 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import {
-  AllocateFundDto, CreateFinancialSettlementDto, CreateFundTransactionDto, CreatePaymentRequestDto,
-  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto,
+  AllocateFundDto, ClaimFundDto, CreateFinancialSettlementDto, CreateFundTransactionDto, CreatePaymentRequestDto,
+  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto, UpdatePaymentRequestDto,
 } from './dto/financial-settlement.dto';
 
 const SETTLEMENT_INCLUDE = {
@@ -47,6 +47,10 @@ const PRINT_PARTY_SELECT = {
   },
 } as const;
 
+const BANK_ACCOUNT_SELECT = {
+  id: true, accountName: true, accountNo: true, bankName: true, bankCode: true, currency: true, isDefault: true,
+} as const;
+
 const SETTLEMENT_DETAIL_INCLUDE = {
   ...SETTLEMENT_INCLUDE,
   legalEntity: { select: PRINT_PARTY_SELECT },
@@ -67,20 +71,48 @@ const FUND_INCLUDE = {
     include: { settlement: { select: { id: true, settlementNo: true, direction: true, totalAmount: true } } },
     orderBy: { createdAt: 'desc' as const },
   },
+  claims: {
+    where: { status: { not: 'REVERSED' } },
+    include: {
+      contract: { select: { id: true, contractNo: true, title: true } },
+      order: { select: { id: true, orderNo: true, name: true, status: true } },
+      businessUnit: { select: { id: true, code: true, name: true } },
+      counterparty: { select: { id: true, code: true, name: true } },
+      creator: { select: { id: true, name: true, username: true } },
+      confirmer: { select: { id: true, name: true, username: true } },
+    },
+    orderBy: { createdAt: 'asc' as const },
+  },
 } as const;
 
 const PAYMENT_REQUEST_INCLUDE = {
   contract: { select: { id: true, contractNo: true, title: true, type: true, companyId: true, departmentId: true, businessUnitId: true } },
   settlement: { select: { id: true, settlementNo: true, totalAmount: true, settledAmount: true, status: true } },
+  order: { select: { id: true, orderNo: true, name: true, status: true, totalAmount: true } },
   relatedTransaction: { select: { id: true, transactionNo: true, paymentStage: true, amount: true, allocatedAmount: true, refundedAmount: true } },
   businessUnit: { select: { id: true, code: true, name: true } },
-  legalEntity: { select: { id: true, code: true, name: true } },
-  counterparty: { select: { id: true, code: true, name: true } },
+  legalEntity: {
+    select: {
+      id: true, code: true, name: true,
+      bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }] as Prisma.BankAccountOrderByWithRelationInput[], select: BANK_ACCOUNT_SELECT },
+    },
+  },
+  counterparty: {
+    select: {
+      id: true, code: true, name: true,
+      bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }] as Prisma.BankAccountOrderByWithRelationInput[], select: BANK_ACCOUNT_SELECT },
+    },
+  },
   creator: { select: { id: true, name: true, username: true } },
+  businessConfirmer: { select: { id: true, name: true, username: true } },
   submitter: { select: { id: true, name: true, username: true } },
   approver: { select: { id: true, name: true, username: true } },
   rejecter: { select: { id: true, name: true, username: true } },
-  fundTransaction: { select: { id: true, transactionNo: true, status: true, occurredAt: true, bankReference: true } },
+  fundTransactions: {
+    where: { status: { not: 'VOIDED' } },
+    select: { id: true, transactionNo: true, status: true, amount: true, occurredAt: true, bankReference: true },
+    orderBy: { occurredAt: 'desc' as const },
+  },
   attachments: { orderBy: { createdAt: 'desc' as const } },
   approvals: {
     include: {
@@ -115,12 +147,24 @@ function businessDate(value: Date) {
   }).format(value);
 }
 
+function normalizedBankAccount(value?: string | null) {
+  return (value || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+function normalizedPartyName(value?: string | null) {
+  return (value || '').replace(/[\s（）()·,，.。]/g, '').toLowerCase();
+}
+
 @Injectable()
 export class FinancialSettlementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
   ) {}
+
+  async assertPaymentExecutionPermission(userId: string) {
+    await this.accessControl.assertPermission(userId, 'settlement.payment.execute');
+  }
 
   private async nextNo(prefix: string, table: 'settlement' | 'fund' | 'paymentRequest') {
     const now = new Date();
@@ -163,9 +207,9 @@ export class FinancialSettlementService {
     const contract = await this.prisma.contract.findFirst({
       where: { id: contractId, deletedAt: null, AND: [scope] },
       include: {
-        seller: { select: { id: true, code: true, name: true } },
-        buyer: { select: { id: true, code: true, name: true } },
-        signingPartner: { select: { id: true, code: true, name: true } },
+        seller: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
+        buyer: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
+        signingPartner: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
         businessUnit: { select: { id: true, code: true, name: true } },
         lineItems: { select: { quantity: true, unit: true, totalPrice: true, salesTotalPrice: true } },
       },
@@ -183,15 +227,19 @@ export class FinancialSettlementService {
     const contracts = await this.prisma.contract.findMany({
       where: { deletedAt: null, type: { in: types }, status: { in: ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'] }, AND: [scope] },
       include: {
-        seller: { select: { id: true, code: true, name: true } },
-        buyer: { select: { id: true, code: true, name: true } },
-        signingPartner: { select: { id: true, code: true, name: true } },
+        seller: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
+        buyer: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
+        signingPartner: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
         businessUnit: { select: { id: true, code: true, name: true } },
         lineItems: { select: { quantity: true, unit: true, totalPrice: true, salesTotalPrice: true } },
         financialSettlements: { where: { direction, status: { not: 'VOIDED' }, deletedAt: null }, select: { totalAmount: true } },
         fundTransactions: {
           where: { businessType: direction === 'PAYABLE' ? 'PURCHASE' : 'SALES', status: { not: 'VOIDED' } },
           select: { paymentStage: true, direction: true, amount: true, allocatedAmount: true, refundedAmount: true },
+        },
+        paymentRequests: {
+          where: { status: { in: ['DRAFT', 'BUSINESS_CONFIRMED', 'PENDING_APPROVAL', 'APPROVED', 'PAID'] } },
+          select: { amount: true },
         },
       },
       orderBy: { createdAt: 'desc' }, take: 300,
@@ -205,11 +253,14 @@ export class FinancialSettlementService {
       const advances = contract.fundTransactions
         .filter((item) => item.paymentStage === 'ADVANCE' && item.direction === (direction === 'PAYABLE' ? 'PAYMENT' : 'RECEIPT'))
         .reduce((sum, item) => sum + Number(item.amount) - Number(item.allocatedAmount) - Number(item.refundedAmount), 0);
+      const plannedPaymentAmount = money(contract.paymentRequests.reduce((sum, item) => sum + Number(item.amount), 0));
       return {
         id: contract.id, contractNo: contract.contractNo, title: contract.title, type: contract.type,
         amount, settledTotal, remainingSettleable: money(Math.max(0, amount - settledTotal)), advanceBalance: money(advances),
         quantity: contract.lineItems.reduce((sum, line) => sum + Number(line.quantity), 0),
         unit: units.length === 1 ? units[0] : undefined,
+        plannedPaymentAmount,
+        remainingPaymentAmount: money(Math.max(0, amount - plannedPaymentAmount)),
         signingPartner: contract.signingPartner, counterparty, businessUnit: contract.businessUnit,
       };
     }).filter((item) => item.signingPartner && item.counterparty && item.businessUnit);
@@ -239,6 +290,21 @@ export class FinancialSettlementService {
         remainingAmount: money(Math.max(0, Number(order.totalAmount) - settledAmount)),
       };
     }).filter((order) => order.remainingAmount > 0 || order.remainingQuantity > 0);
+  }
+
+  async receiptRegistrationOptions(userId: string) {
+    await this.accessControl.assertPermission(userId, 'settlement.receipt.register');
+    return this.prisma.partner.findMany({
+      where: { isInternal: true, status: 'ACTIVE', deletedAt: null },
+      select: {
+        id: true, code: true, name: true,
+        bankAccounts: {
+          where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+          select: { id: true, accountName: true, accountNo: true, bankName: true, bankCode: true, currency: true, isDefault: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
   }
 
   async findAll(query: { direction?: string; status?: string; search?: string }, userId: string) {
@@ -395,18 +461,51 @@ export class FinancialSettlementService {
   }
 
   async listFunds(query: { businessType?: string; direction?: string; contractId?: string }, userId: string) {
-    await this.accessControl.assertPermission(userId, 'settlement.view');
+    const context = await this.accessControl.assertPermission(userId, 'settlement.view');
     const contractScope = await this.accessControl.getContractScope(userId, 'settlement.view');
+    const canSeeUnclaimed = context.isAdmin || context.permissions.some((code) => [
+      'settlement.receipt.register', 'settlement.receipt.claim', 'settlement.fund.confirm',
+    ].includes(code));
+    // FundTransaction.contract is nullable. Prisma treats an empty nested relation
+    // filter (`contract: {}`) differently from an unrestricted top-level filter.
+    // Administrators receive an empty contract scope, so embedding it here used to
+    // hide every directly-linked payment order. Keep unrestricted access at the
+    // FundTransaction level, and only build relation filters for scoped users.
+    const accessScope: Prisma.FundTransactionWhereInput = context.isAdmin ? {} : {
+      OR: [
+        { contract: { is: contractScope } },
+        { claims: { some: { contract: contractScope, status: { not: 'REVERSED' } } } },
+        ...(canSeeUnclaimed ? [{ direction: 'RECEIPT', contractId: null }] : []),
+      ],
+    };
     return this.prisma.fundTransaction.findMany({
-      where: { contract: contractScope, ...(query.businessType ? { businessType: query.businessType } : {}), ...(query.direction ? { direction: query.direction } : {}), ...(query.contractId ? { contractId: query.contractId } : {}) },
+      where: {
+        AND: [accessScope],
+        ...(query.businessType ? { businessType: query.businessType } : {}),
+        ...(query.direction ? { direction: query.direction } : {}),
+        ...(query.contractId ? { OR: [{ contractId: query.contractId }, { claims: { some: { contractId: query.contractId, status: { not: 'REVERSED' } } } }] } : {}),
+      },
       include: FUND_INCLUDE, orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
   async findFund(id: string, userId: string) {
-    await this.accessControl.assertPermission(userId, 'settlement.view');
+    const context = await this.accessControl.assertPermission(userId, 'settlement.view');
     const scope = await this.accessControl.getContractScope(userId, 'settlement.view');
-    const item = await this.prisma.fundTransaction.findFirst({ where: { id, contract: scope }, include: FUND_INCLUDE });
+    const canSeeUnclaimed = context.isAdmin || context.permissions.some((code) => [
+      'settlement.receipt.register', 'settlement.receipt.claim', 'settlement.fund.confirm',
+    ].includes(code));
+    const item = await this.prisma.fundTransaction.findFirst({
+      where: context.isAdmin ? { id } : {
+        id,
+        OR: [
+          { contract: { is: scope } },
+          { claims: { some: { contract: scope, status: { not: 'REVERSED' } } } },
+          ...(canSeeUnclaimed ? [{ direction: 'RECEIPT', contractId: null }] : []),
+        ],
+      },
+      include: FUND_INCLUDE,
+    });
     if (!item) throw new NotFoundException('资金单不存在或无权访问');
     return item;
   }
@@ -529,11 +628,12 @@ export class FinancialSettlementService {
       if (!fund) throw new NotFoundException('资金单不存在');
       const permission = fund.direction === 'RECEIPT' ? 'settlement.receipt.register' : 'settlement.payment.execute';
       await this.accessControl.assertPermission(userId, permission);
-      const scope = await this.accessControl.getContractScope(userId, permission);
-      const accessible = await this.prisma.fundTransaction.findFirst({ where: { id: target.fundTransactionId, contract: scope }, select: { id: true } });
-      if (!accessible) throw new NotFoundException('资金单不存在或无权访问');
+      await this.findFund(target.fundTransactionId, userId);
     } else if (target.paymentRequestId) {
-      await this.findPaymentRequest(target.paymentRequestId, userId, 'settlement.payment.apply');
+      const request = await this.findPaymentRequest(target.paymentRequestId, userId);
+      const permission = request.status === 'BUSINESS_CONFIRMED' ? 'settlement.payment.submit' : 'settlement.payment.apply';
+      await this.accessControl.assertPermission(userId, permission);
+      if (!['DRAFT', 'REJECTED', 'BUSINESS_CONFIRMED'].includes(request.status)) throw new BadRequestException('已进入审批或付款阶段，不能继续上传申请附件');
     } else {
       throw new BadRequestException('附件缺少关联单据');
     }
@@ -542,11 +642,11 @@ export class FinancialSettlementService {
 
   async findDocumentAttachment(id: string, userId: string) {
     await this.accessControl.assertPermission(userId, 'settlement.view');
-    const scope = await this.accessControl.getContractScope(userId, 'settlement.view');
-    const attachment = await this.prisma.attachment.findFirst({
-      where: { id, OR: [{ fundTransaction: { contract: scope } }, { paymentRequest: { contract: scope } }] },
-    });
+    const attachment = await this.prisma.attachment.findUnique({ where: { id } });
     if (!attachment) throw new NotFoundException('附件不存在或无权访问');
+    if (attachment.fundTransactionId) await this.findFund(attachment.fundTransactionId, userId);
+    if (attachment.paymentRequestId) await this.findPaymentRequest(attachment.paymentRequestId, userId);
+    if (!attachment.fundTransactionId && !attachment.paymentRequestId) throw new NotFoundException('附件不存在或无权访问');
     return attachment;
   }
 
@@ -554,11 +654,13 @@ export class FinancialSettlementService {
     const attachment = await this.findDocumentAttachment(id, userId);
     if (attachment.fundTransactionId) {
       const fund = await this.prisma.fundTransaction.findUnique({ where: { id: attachment.fundTransactionId }, select: { direction: true, status: true } });
-      if (!fund || !['PENDING_CLAIM', 'PENDING_CONFIRMATION'].includes(fund.status)) throw new BadRequestException('已确认资金单的附件不能删除');
+      if (!fund || !['PENDING_CLAIM', 'PARTIALLY_CLAIMED', 'PENDING_CONFIRMATION'].includes(fund.status)) throw new BadRequestException('已确认资金单的附件不能删除');
       await this.accessControl.assertPermission(userId, fund.direction === 'RECEIPT' ? 'settlement.receipt.register' : 'settlement.payment.execute');
     } else if (attachment.paymentRequestId) {
-      const request = await this.findPaymentRequest(attachment.paymentRequestId, userId, 'settlement.payment.apply');
-      if (!['DRAFT', 'REJECTED'].includes(request.status)) throw new BadRequestException('已提交付款申请的附件不能删除');
+      const request = await this.findPaymentRequest(attachment.paymentRequestId, userId);
+      const permission = request.status === 'BUSINESS_CONFIRMED' ? 'settlement.payment.submit' : 'settlement.payment.apply';
+      await this.accessControl.assertPermission(userId, permission);
+      if (!['DRAFT', 'REJECTED', 'BUSINESS_CONFIRMED'].includes(request.status)) throw new BadRequestException('已提交审批的付款申请附件不能删除');
     }
     await this.prisma.attachment.delete({ where: { id } });
     return attachment;
@@ -574,7 +676,7 @@ export class FinancialSettlementService {
 
   async recordPaymentRequestPrint(id: string, userId: string) {
     const item = await this.findPaymentRequest(id, userId);
-    if (!['APPROVED', 'PAID'].includes(item.status)) {
+    if (!['APPROVED', 'PARTIALLY_PAID', 'PAID'].includes(item.status)) {
       throw new BadRequestException('付款申请审批完成后才能打印存档');
     }
     return item;
@@ -590,6 +692,17 @@ export class FinancialSettlementService {
     if (!contract.signingPartnerId || !contract.businessUnitId) throw new BadRequestException('合同缺少我方签约主体或业务单元');
     const counterpartyId = this.counterpartyId(contract, settlementDirection);
     if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方');
+    let order: { id: string } | null = null;
+    if (dto.orderId) {
+      order = await this.prisma.order.findFirst({
+        where: {
+          id: dto.orderId, contractId: contract.id,
+          type: dto.businessType, status: { not: 'CANCELLED' }, deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!order) throw new BadRequestException('执行批次不存在、已取消或不属于当前合同');
+    }
     let settlement: { id: string; totalAmount: Prisma.Decimal; settledAmount: Prisma.Decimal; status: string } | null = null;
     if (dto.settlementId) {
       if (dto.businessType !== 'PURCHASE') throw new BadRequestException('客户退款不关联应付结算单，请选择原收款单');
@@ -599,7 +712,7 @@ export class FinancialSettlementService {
       });
       if (!settlement) throw new BadRequestException('应付结算单不存在、已结清或不属于当前合同');
       const active = await this.prisma.paymentRequest.aggregate({
-        where: { settlementId: settlement.id, status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'] } }, _sum: { amount: true },
+        where: { settlementId: settlement.id, status: { in: ['DRAFT', 'BUSINESS_CONFIRMED', 'PENDING_APPROVAL', 'APPROVED'] } }, _sum: { amount: true },
       });
       const available = money(Number(settlement.totalAmount) - Number(settlement.settledAmount) - Number(active._sum.amount || 0));
       if (dto.amount > available) throw new BadRequestException(`付款申请金额超过应付结算单可申请余额 ${available.toFixed(2)} 元`);
@@ -618,7 +731,7 @@ export class FinancialSettlementService {
       if (dto.paymentStage === 'GUARANTEE_RETURN' && relatedTransaction.paymentStage !== 'GUARANTEE') throw new BadRequestException('保证金退回必须关联原保证金收款单');
       if (dto.paymentStage === 'REFUND' && relatedTransaction.paymentStage === 'GUARANTEE') throw new BadRequestException('退还保证金请使用保证金退回类型');
       const pending = await this.prisma.paymentRequest.aggregate({
-        where: { relatedTransactionId: relatedTransaction.id, status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'] } },
+        where: { relatedTransactionId: relatedTransaction.id, status: { in: ['DRAFT', 'BUSINESS_CONFIRMED', 'PENDING_APPROVAL', 'APPROVED'] } },
         _sum: { amount: true },
       });
       const refundable = money(Number(relatedTransaction.amount) - Number(relatedTransaction.allocatedAmount) - Number(relatedTransaction.refundedAmount) - Number(pending._sum.amount || 0));
@@ -629,13 +742,141 @@ export class FinancialSettlementService {
     return this.prisma.paymentRequest.create({
       data: {
         requestNo, businessType: dto.businessType, paymentStage: dto.paymentStage, paymentMethod: dto.paymentMethod,
-        contractId: contract.id, settlementId: settlement?.id, relatedTransactionId: relatedTransaction?.id, businessUnitId: contract.businessUnitId,
+        contractId: contract.id, orderId: order?.id, settlementId: settlement?.id, relatedTransactionId: relatedTransaction?.id, businessUnitId: contract.businessUnitId,
         legalEntityPartnerId: contract.signingPartnerId, counterpartyId, amount: dto.amount,
         requestedPayDate: dto.requestedPayDate ? new Date(dto.requestedPayDate) : null,
-        ourBankAccount: dto.ourBankAccount?.trim(), counterpartyBankAccount: dto.counterpartyBankAccount?.trim(),
+        ourBankAccount: dto.ourBankAccount?.trim(), ourBankAccountName: dto.ourBankAccountName?.trim(),
+        ourBankName: dto.ourBankName?.trim(), ourBankCode: dto.ourBankCode?.trim(),
+        counterpartyBankAccount: dto.counterpartyBankAccount?.trim(), counterpartyBankAccountName: dto.counterpartyBankAccountName?.trim(),
+        counterpartyBankName: dto.counterpartyBankName?.trim(), counterpartyBankCode: dto.counterpartyBankCode?.trim(),
         actualPayeeName: dto.actualPayeeName?.trim() || counterparty?.name,
         isThirdParty: !!dto.isThirdParty, thirdPartyReason: dto.thirdPartyReason?.trim(),
         purpose: dto.purpose?.trim(), remarks: dto.remarks?.trim(), createdBy: userId,
+      },
+      include: PAYMENT_REQUEST_INCLUDE,
+    });
+  }
+
+  async updatePaymentRequest(id: string, dto: UpdatePaymentRequestDto, userId: string) {
+    const access = await this.accessControl.assertPermission(userId, 'settlement.payment.apply');
+    const current = await this.findPaymentRequest(id, userId, 'settlement.payment.apply');
+    if (!['DRAFT', 'REJECTED'].includes(current.status)) throw new BadRequestException('只有草稿或已驳回的付款申请可以修改');
+    if (!access.isAdmin && current.createdBy !== userId) throw new ForbiddenException('只能修改本人创建的付款申请草稿');
+    const reverse = REVERSE_STAGES.includes(dto.paymentStage);
+    if (dto.businessType === 'PURCHASE' && reverse) throw new BadRequestException('供应商退款属于收款，应在收款管理中登记');
+    if (dto.businessType === 'SALES' && !reverse) throw new BadRequestException('销售正常货款属于收款；只有客户退款或保证金退回需要付款申请');
+    if (dto.isThirdParty && !dto.thirdPartyReason?.trim()) throw new BadRequestException('第三方收款必须填写原因');
+    const direction = this.directionForBusinessType(dto.businessType);
+    const contract = await this.accessibleContract(dto.contractId, direction, userId, 'settlement.payment.apply');
+    if (!contract.signingPartnerId || !contract.businessUnitId) throw new BadRequestException('合同缺少我方签约主体或业务单元');
+    const counterpartyId = this.counterpartyId(contract, direction);
+    if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方');
+    let orderId: string | null = null;
+    if (dto.orderId) {
+      const order = await this.prisma.order.findFirst({
+        where: { id: dto.orderId, contractId: contract.id, type: dto.businessType, status: { not: 'CANCELLED' }, deletedAt: null },
+        select: { id: true },
+      });
+      if (!order) throw new BadRequestException('执行批次不存在、已取消或不属于当前合同');
+      orderId = order.id;
+    }
+    let settlementId: string | null = null;
+    if (dto.settlementId) {
+      if (dto.businessType !== 'PURCHASE') throw new BadRequestException('客户退款不关联应付结算单，请选择原收款单');
+      const settlement = await this.prisma.financialSettlement.findFirst({
+        where: { id: dto.settlementId, contractId: contract.id, direction: 'PAYABLE', status: { in: ['CONFIRMED', 'PARTIALLY_SETTLED'] }, deletedAt: null },
+        select: { id: true, totalAmount: true, settledAmount: true },
+      });
+      if (!settlement) throw new BadRequestException('应付结算单不存在、已结清或不属于当前合同');
+      const active = await this.prisma.paymentRequest.aggregate({
+        where: { id: { not: id }, settlementId: settlement.id, status: { in: ['DRAFT', 'BUSINESS_CONFIRMED', 'PENDING_APPROVAL', 'APPROVED'] } },
+        _sum: { amount: true },
+      });
+      const available = money(Number(settlement.totalAmount) - Number(settlement.settledAmount) - Number(active._sum.amount || 0));
+      if (dto.amount > available) throw new BadRequestException(`付款申请金额超过应付结算单可申请余额 ${available.toFixed(2)} 元`);
+      settlementId = settlement.id;
+    }
+    let relatedTransactionId: string | null = null;
+    if (dto.businessType === 'SALES') {
+      if (!dto.relatedTransactionId) throw new BadRequestException('客户退款或保证金退回必须选择原收款单');
+      const related = await this.prisma.fundTransaction.findFirst({
+        where: {
+          id: dto.relatedTransactionId, contractId: contract.id, businessType: 'SALES', direction: 'RECEIPT',
+          status: { in: ['CONFIRMED', 'PARTIALLY_ALLOCATED', 'ALLOCATED'] },
+        },
+        select: { id: true, amount: true, allocatedAmount: true, refundedAmount: true, paymentStage: true },
+      });
+      if (!related) throw new BadRequestException('原收款单不存在、尚未确认或与当前合同不一致');
+      if (dto.paymentStage === 'GUARANTEE_RETURN' && related.paymentStage !== 'GUARANTEE') throw new BadRequestException('保证金退回必须关联原保证金收款单');
+      if (dto.paymentStage === 'REFUND' && related.paymentStage === 'GUARANTEE') throw new BadRequestException('退还保证金请使用保证金退回类型');
+      const pending = await this.prisma.paymentRequest.aggregate({
+        where: { id: { not: id }, relatedTransactionId: related.id, status: { in: ['DRAFT', 'BUSINESS_CONFIRMED', 'PENDING_APPROVAL', 'APPROVED'] } },
+        _sum: { amount: true },
+      });
+      const refundable = money(Number(related.amount) - Number(related.allocatedAmount) - Number(related.refundedAmount) - Number(pending._sum.amount || 0));
+      if (dto.amount > refundable) throw new BadRequestException(`退款申请金额超过原收款单可退余额 ${refundable.toFixed(2)} 元；已核销部分请先撤销核销`);
+      relatedTransactionId = related.id;
+    }
+    const counterparty = counterpartyId === contract.sellerId ? contract.seller : contract.buyer;
+    await this.prisma.paymentRequestApproval.updateMany({
+      where: { paymentRequestId: id, status: { in: ['PENDING', 'WAITING'] } }, data: { status: 'CANCELLED' },
+    });
+    return this.prisma.paymentRequest.update({
+      where: { id },
+      data: {
+        businessType: dto.businessType, paymentStage: dto.paymentStage, paymentMethod: dto.paymentMethod,
+        contractId: contract.id, orderId, settlementId, relatedTransactionId,
+        businessUnitId: contract.businessUnitId, legalEntityPartnerId: contract.signingPartnerId, counterpartyId,
+        amount: dto.amount, requestedPayDate: dto.requestedPayDate ? new Date(dto.requestedPayDate) : null,
+        ourBankAccount: dto.ourBankAccount?.trim() || null, ourBankAccountName: dto.ourBankAccountName?.trim() || null,
+        ourBankName: dto.ourBankName?.trim() || null, ourBankCode: dto.ourBankCode?.trim() || null,
+        counterpartyBankAccount: dto.counterpartyBankAccount?.trim() || null,
+        counterpartyBankAccountName: dto.counterpartyBankAccountName?.trim() || null,
+        counterpartyBankName: dto.counterpartyBankName?.trim() || null, counterpartyBankCode: dto.counterpartyBankCode?.trim() || null,
+        actualPayeeName: dto.actualPayeeName?.trim() || counterparty?.name,
+        isThirdParty: !!dto.isThirdParty, thirdPartyReason: dto.thirdPartyReason?.trim() || null,
+        purpose: dto.purpose?.trim() || null, remarks: dto.remarks?.trim() || null,
+        status: 'DRAFT', businessConfirmedBy: null, businessConfirmedAt: null,
+        submittedBy: null, submittedAt: null, approvedBy: null, approvedAt: null,
+        rejectedBy: null, rejectedAt: null, rejectionReason: null,
+      },
+      include: PAYMENT_REQUEST_INCLUDE,
+    });
+  }
+
+  async deletePaymentRequest(id: string, userId: string) {
+    const access = await this.accessControl.assertPermission(userId, 'settlement.payment.apply');
+    const item = await this.findPaymentRequest(id, userId, 'settlement.payment.apply');
+    if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿付款申请可以删除');
+    if (!access.isAdmin && item.createdBy !== userId) throw new ForbiddenException('只能删除本人创建的付款申请草稿');
+    await this.prisma.paymentRequest.delete({ where: { id } });
+  }
+
+  async confirmPaymentRequestBusiness(id: string, userId: string) {
+    const access = await this.accessControl.assertPermission(userId, 'settlement.payment.apply');
+    const item = await this.findPaymentRequest(id, userId, 'settlement.payment.apply');
+    if (!['DRAFT', 'REJECTED'].includes(item.status)) throw new BadRequestException('只有草稿或已驳回的付款申请可以确认业务资料');
+    if (!access.isAdmin && item.createdBy !== userId) throw new ForbiddenException('只能确认本人创建的付款申请');
+    return this.prisma.paymentRequest.update({
+      where: { id },
+      data: {
+        status: 'BUSINESS_CONFIRMED', businessConfirmedBy: userId, businessConfirmedAt: new Date(),
+        rejectedBy: null, rejectedAt: null, rejectionReason: null,
+      },
+      include: PAYMENT_REQUEST_INCLUDE,
+    });
+  }
+
+  async returnPaymentRequestToBusiness(id: string, dto: RejectPaymentRequestDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'settlement.payment.submit');
+    if (!dto.reason.trim()) throw new BadRequestException('请填写退回原因');
+    const item = await this.findPaymentRequest(id, userId);
+    if (item.status !== 'BUSINESS_CONFIRMED') throw new BadRequestException('只有待财务提交的付款申请可以退回业务完善');
+    return this.prisma.paymentRequest.update({
+      where: { id },
+      data: {
+        status: 'DRAFT', businessConfirmedBy: null, businessConfirmedAt: null,
+        rejectedBy: userId, rejectedAt: new Date(), rejectionReason: dto.reason.trim(),
       },
       include: PAYMENT_REQUEST_INCLUDE,
     });
@@ -794,9 +1035,9 @@ export class FinancialSettlementService {
   }
 
   async submitPaymentRequest(id: string, userId: string) {
-    const access = await this.accessControl.assertPermission(userId, 'settlement.payment.apply');
-    const item = await this.findPaymentRequest(id, userId, 'settlement.payment.apply');
-    if (!['DRAFT', 'REJECTED'].includes(item.status)) throw new BadRequestException('只有草稿或已驳回的付款申请可以提交');
+    const access = await this.accessControl.assertPermission(userId, 'settlement.payment.submit');
+    const item = await this.findPaymentRequest(id, userId);
+    if (item.status !== 'BUSINESS_CONFIRMED') throw new BadRequestException('业务人员确认资料后，财务才能提交审批');
     if (item.isThirdParty && !item.thirdPartyReason?.trim()) throw new BadRequestException('第三方收款必须填写原因');
     const plan = await this.resolvePaymentApprovalPlan(this.prisma, item, access.isAdmin);
     return this.prisma.$transaction(async (tx) => {
@@ -898,7 +1139,7 @@ export class FinancialSettlementService {
 
   async voidPaymentRequest(id: string, userId: string) {
     const item = await this.findPaymentRequest(id, userId, 'settlement.payment.apply');
-    if (item.status === 'PAID') throw new BadRequestException('已经创建付款单的申请不能作废，请按资金冲销流程处理');
+    if (['PARTIALLY_PAID', 'PAID'].includes(item.status)) throw new BadRequestException('已经创建付款单的申请不能作废，请按资金冲销流程处理');
     if (item.status === 'VOIDED') throw new BadRequestException('付款申请已作废');
     return this.prisma.$transaction(async (tx) => {
       await tx.paymentRequestApproval.updateMany({
@@ -909,18 +1150,72 @@ export class FinancialSettlementService {
     });
   }
 
-  async executePaymentRequest(id: string, dto: ExecutePaymentRequestDto, userId: string) {
+  async executePaymentRequest(
+    id: string,
+    dto: ExecutePaymentRequestDto,
+    userId: string,
+    voucher?: { fileName: string; originalName: string; mimeType: string; size: number },
+  ) {
     const request = await this.findPaymentRequest(id, userId, 'settlement.payment.execute');
-    if (request.status !== 'APPROVED') throw new BadRequestException('只有已批准付款申请可以创建付款单');
-    if (request.fundTransaction) throw new BadRequestException('该付款申请已经生成付款单');
+    if (!['APPROVED', 'PARTIALLY_PAID'].includes(request.status)) throw new BadRequestException('只有已批准且尚未付清的付款申请可以创建付款单');
+    if (!voucher) throw new BadRequestException('请从付款单创建页面上传付款凭证后再提交');
+    const paidAmount = money(request.fundTransactions.reduce((sum, item) => sum + Number(item.amount), 0));
+    const remainingAmount = money(Number(request.amount) - paidAmount);
+    if (remainingAmount <= 0) throw new BadRequestException('该付款申请已经全部创建付款单');
+    const actualAmount = money(Number(dto.amount));
+    if (!Number.isFinite(actualAmount) || actualAmount <= 0) throw new BadRequestException('请填写实际付款金额');
+    if (actualAmount > remainingAmount) throw new BadRequestException(`实际付款金额超过申请剩余待付金额 ${remainingAmount.toFixed(2)} 元`);
+    if (!dto.bankReference?.trim()) throw new BadRequestException('请填写银行电子回单号或交易流水号');
+    if (!dto.ourBankAccount?.trim() || !dto.counterpartyBankAccount?.trim()) throw new BadRequestException('请填写付款账号和收款账号');
+    if (!dto.ourBankAccountName?.trim() || !dto.counterpartyBankAccountName?.trim()) throw new BadRequestException('请填写付款户名和收款户名');
+    if (!dto.ourBankName?.trim() || !dto.counterpartyBankName?.trim()) throw new BadRequestException('请填写付款开户行和收款开户行');
+    if (!dto.purpose?.trim()) throw new BadRequestException('请填写付款用途');
     if (dto.isThirdParty !== undefined && dto.isThirdParty !== request.isThirdParty) throw new BadRequestException('实际收款方性质与审批内容不一致，请重新发起付款申请');
-    if (dto.actualPayeeName?.trim() && dto.actualPayeeName.trim() !== request.actualPayeeName) throw new BadRequestException('实际收款方与审批内容不一致，请重新发起付款申请');
-    if (dto.bankReference?.trim()) {
-      const duplicate = await this.prisma.fundTransaction.findFirst({
-        where: { direction: 'PAYMENT', bankReference: dto.bankReference.trim(), amount: request.amount, status: { not: 'VOIDED' } },
-      });
-      if (duplicate) throw new BadRequestException(`银行流水可能重复，已存在 ${duplicate.transactionNo}`);
+    const payerAccount = normalizedBankAccount(dto.ourBankAccount);
+    const payeeAccount = normalizedBankAccount(dto.counterpartyBankAccount);
+    const plannedPayerAccount = normalizedBankAccount(request.ourBankAccount);
+    const plannedPayeeAccount = normalizedBankAccount(request.counterpartyBankAccount);
+    const payerSameParty = request.legalEntity.bankAccounts.some(item => normalizedBankAccount(item.accountNo) === payerAccount);
+    const payeeSameParty = request.counterparty.bankAccounts.some(item => normalizedBankAccount(item.accountNo) === payeeAccount);
+    const payerDiffers = Boolean(plannedPayerAccount && payerAccount !== plannedPayerAccount);
+    const payeeDiffers = Boolean(plannedPayeeAccount && payeeAccount !== plannedPayeeAccount);
+    if ((payerDiffers || payeeDiffers) && !dto.bankAccountDifferenceReason?.trim()) {
+      throw new BadRequestException('实际银行账户与付款申请不一致，请填写账户差异说明');
     }
+    const unknownAccounts = [
+      !payerSameParty ? { account: payerAccount, expectedPartnerId: request.legalEntityPartnerId, side: '付款' } : null,
+      !payeeSameParty ? { account: payeeAccount, expectedPartnerId: request.counterpartyId, side: '收款' } : null,
+    ].filter((item): item is { account: string; expectedPartnerId: string; side: string } => Boolean(item?.account));
+    if (unknownAccounts.length) {
+      const registeredAccounts = await this.prisma.bankAccount.findMany({
+        where: { status: 'ACTIVE' }, select: { accountNo: true, partnerId: true, partner: { select: { name: true } } },
+      });
+      for (const unknown of unknownAccounts) {
+        const owner = registeredAccounts.find(item => normalizedBankAccount(item.accountNo) === unknown.account);
+        if (owner && owner.partnerId !== unknown.expectedPartnerId) {
+          throw new BadRequestException(`${unknown.side}账号已登记在其他企业“${owner.partner.name}”名下，不能创建付款单`);
+        }
+      }
+    }
+    const payerNames = [request.legalEntity.name, ...request.legalEntity.bankAccounts.map(item => item.accountName)].map(normalizedPartyName);
+    const payeeNames = [request.actualPayeeName || request.counterparty.name, request.counterparty.name, ...request.counterparty.bankAccounts.map(item => item.accountName)].map(normalizedPartyName);
+    if (!payerSameParty && dto.actualPayerName?.trim() && !payerNames.includes(normalizedPartyName(dto.actualPayerName))) {
+      throw new BadRequestException('凭证付款户名与我方付款主体不一致，请核对凭证');
+    }
+    if (!payeeSameParty && dto.actualPayeeName?.trim() && !payeeNames.includes(normalizedPartyName(dto.actualPayeeName))) {
+      throw new BadRequestException('凭证收款户名与审批确认的收款方不一致，请重新发起付款申请');
+    }
+    const duplicate = await this.prisma.fundTransaction.findFirst({
+      where: { direction: 'PAYMENT', bankReference: dto.bankReference.trim(), status: { not: 'VOIDED' } },
+    });
+    if (duplicate) throw new BadRequestException(`电子回单号或银行流水号重复，已存在 ${duplicate.transactionNo}`);
+    const compositeDuplicate = await this.prisma.fundTransaction.findFirst({
+      where: {
+        direction: 'PAYMENT', amount: actualAmount, occurredAt: new Date(dto.occurredAt),
+        ourBankAccount: dto.ourBankAccount.trim(), counterpartyBankAccount: dto.counterpartyBankAccount.trim(), status: { not: 'VOIDED' },
+      },
+    });
+    if (compositeDuplicate) throw new BadRequestException(`付款账户、收款账户、金额和付款时间与 ${compositeDuplicate.transactionNo} 相同，请确认是否重复登记`);
     const transactionNo = await this.nextNo('FK', 'fund');
     return this.prisma.$transaction(async (tx) => {
       const fund = await tx.fundTransaction.create({
@@ -928,17 +1223,30 @@ export class FinancialSettlementService {
           transactionNo, direction: 'PAYMENT', category: request.paymentStage === 'ADVANCE' ? 'ADVANCE' : REVERSE_STAGES.includes(request.paymentStage) ? 'REFUND' : 'NORMAL',
           businessType: request.businessType, paymentStage: request.paymentStage, paymentMethod: request.paymentMethod,
           contractId: request.contractId, legalEntityPartnerId: request.legalEntityPartnerId, counterpartyId: request.counterpartyId,
-          status: 'PENDING_CONFIRMATION', amount: request.amount, occurredAt: new Date(dto.occurredAt),
+          status: 'PENDING_CONFIRMATION', amount: actualAmount, occurredAt: new Date(dto.occurredAt),
           bankReference: dto.bankReference?.trim(), ourBankAccount: dto.ourBankAccount?.trim() || request.ourBankAccount,
+          ourBankAccountName: dto.ourBankAccountName?.trim() || request.ourBankAccountName,
+          ourBankName: dto.ourBankName?.trim() || request.ourBankName, ourBankCode: dto.ourBankCode?.trim() || request.ourBankCode,
           counterpartyBankAccount: dto.counterpartyBankAccount?.trim() || request.counterpartyBankAccount,
-          actualPayerName: request.legalEntity.name, actualPayeeName: request.actualPayeeName || request.counterparty.name,
+          counterpartyBankAccountName: dto.counterpartyBankAccountName?.trim() || request.counterpartyBankAccountName,
+          counterpartyBankName: dto.counterpartyBankName?.trim() || request.counterpartyBankName,
+          counterpartyBankCode: dto.counterpartyBankCode?.trim() || request.counterpartyBankCode,
+          currency: dto.currency || 'CNY', paymentPurpose: dto.purpose?.trim(),
+          actualPayerName: dto.actualPayerName?.trim() || request.legalEntity.name,
+          actualPayeeName: dto.actualPayeeName?.trim() || request.actualPayeeName || request.counterparty.name,
           isThirdParty: request.isThirdParty, thirdPartyReason: request.thirdPartyReason,
+          bankAccountDifferenceReason: dto.bankAccountDifferenceReason?.trim(),
+          recognitionProvider: dto.recognitionProvider?.trim(), recognitionRawText: dto.recognitionRawText?.trim(),
           instrumentNo: dto.instrumentNo?.trim(), instrumentDueDate: dto.instrumentDueDate ? new Date(dto.instrumentDueDate) : null,
           relatedTransactionId: request.relatedTransactionId, paymentRequestId: request.id, remarks: dto.remarks?.trim(), createdBy: userId,
+          attachments: { create: { ...voucher, category: 'BANK_RECEIPT', sourceType: 'WEB_UPLOAD', uploadedBy: userId } },
         },
         include: FUND_INCLUDE,
       });
-      await tx.paymentRequest.update({ where: { id }, data: { status: 'PAID' } });
+      await tx.paymentRequest.update({
+        where: { id },
+        data: { status: actualAmount >= remainingAmount ? 'PAID' : 'PARTIALLY_PAID' },
+      });
       return fund;
     });
   }
@@ -949,11 +1257,21 @@ export class FinancialSettlementService {
     const baseDirection = dto.businessType === 'PURCHASE' ? 'PAYMENT' : 'RECEIPT';
     const direction = reverse ? (baseDirection === 'PAYMENT' ? 'RECEIPT' : 'PAYMENT') : baseDirection;
     if (direction === 'PAYMENT') throw new BadRequestException('实际付款必须从已审批的付款申请执行');
-    const contract = await this.accessibleContract(dto.contractId, settlementDirection, userId, 'settlement.receipt.register');
-    if (!contract.signingPartnerId) throw new BadRequestException('合同缺少我方签约主体，不能登记资金');
-    const counterpartyId = this.counterpartyId(contract, settlementDirection);
-    if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方，不能登记资金');
+    await this.accessControl.assertPermission(userId, 'settlement.receipt.register');
+    const contract = dto.contractId
+      ? await this.accessibleContract(dto.contractId, settlementDirection, userId, 'settlement.receipt.register')
+      : null;
+    if (reverse && !contract) throw new BadRequestException('退款或保证金退回必须先选择原合同和资金流水');
+    const legalEntityPartnerId = contract?.signingPartnerId || dto.legalEntityPartnerId;
+    if (!legalEntityPartnerId) throw new BadRequestException('请选择实际到账的我方收款主体');
+    const legalEntity = await this.prisma.partner.findFirst({
+      where: { id: legalEntityPartnerId, isInternal: true, status: 'ACTIVE', deletedAt: null }, select: { id: true, name: true },
+    });
+    if (!legalEntity) throw new BadRequestException('我方收款主体不存在或已停用');
+    const counterpartyId = contract ? this.counterpartyId(contract, settlementDirection) : null;
+    if (contract && !counterpartyId) throw new BadRequestException('合同缺少交易对手方，不能登记资金');
     if (dto.isThirdParty && !dto.thirdPartyReason?.trim()) throw new BadRequestException('第三方收付款必须填写原因');
+    if (!contract && !dto.actualPayerName?.trim()) throw new BadRequestException('未关联合同时必须填写银行流水中的实际付款方');
     if (dto.bankReference?.trim()) {
       const duplicate = await this.prisma.fundTransaction.findFirst({
         where: {
@@ -967,7 +1285,7 @@ export class FinancialSettlementService {
     if (reverse) {
       if (!dto.relatedTransactionId) throw new BadRequestException('退款或保证金退回必须选择原资金流水');
       original = await this.prisma.fundTransaction.findFirst({
-        where: { id: dto.relatedTransactionId, contractId: contract.id, businessType: dto.businessType, direction: baseDirection, status: { not: 'VOIDED' } },
+        where: { id: dto.relatedTransactionId, contractId: contract!.id, businessType: dto.businessType, direction: baseDirection, status: { not: 'VOIDED' } },
         select: { id: true, amount: true, allocatedAmount: true, refundedAmount: true, paymentStage: true },
       });
       if (!original) throw new BadRequestException('原资金流水不存在或与当前合同不一致');
@@ -978,18 +1296,20 @@ export class FinancialSettlementService {
     }
     const transactionNo = await this.nextNo(direction === 'RECEIPT' ? 'SK' : 'FK', 'fund');
     const category = dto.paymentStage === 'ADVANCE' ? 'ADVANCE' : reverse ? 'REFUND' : 'NORMAL';
-    const legalEntityName = contract.signingPartner?.name || '';
-    const counterparty = counterpartyId === contract.sellerId ? contract.seller : contract.buyer;
+    const counterparty = contract && counterpartyId === contract.sellerId ? contract.seller : contract?.buyer;
     return this.prisma.fundTransaction.create({
       data: {
         transactionNo, direction, category, businessType: dto.businessType, paymentStage: dto.paymentStage,
-        paymentMethod: dto.paymentMethod, contractId: contract.id, legalEntityPartnerId: contract.signingPartnerId, counterpartyId,
+        paymentMethod: dto.paymentMethod, contractId: contract?.id, legalEntityPartnerId, counterpartyId,
         status: 'PENDING_CLAIM', amount: dto.amount, occurredAt: new Date(dto.occurredAt), relatedTransactionId: original?.id,
         bankReference: dto.bankReference?.trim(), ourBankAccount: dto.ourBankAccount?.trim(),
-        counterpartyBankAccount: dto.counterpartyBankAccount?.trim(), instrumentNo: dto.instrumentNo?.trim(),
+        ourBankAccountName: dto.ourBankAccountName?.trim(), ourBankName: dto.ourBankName?.trim(), ourBankCode: dto.ourBankCode?.trim(),
+        counterpartyBankAccount: dto.counterpartyBankAccount?.trim(), counterpartyBankAccountName: dto.counterpartyBankAccountName?.trim(),
+        counterpartyBankName: dto.counterpartyBankName?.trim(), counterpartyBankCode: dto.counterpartyBankCode?.trim(),
+        instrumentNo: dto.instrumentNo?.trim(),
         instrumentDueDate: dto.instrumentDueDate ? new Date(dto.instrumentDueDate) : null,
         actualPayerName: dto.actualPayerName?.trim() || counterparty?.name,
-        actualPayeeName: dto.actualPayeeName?.trim() || legalEntityName,
+        actualPayeeName: dto.actualPayeeName?.trim() || legalEntity.name,
         isThirdParty: !!dto.isThirdParty, thirdPartyReason: dto.thirdPartyReason?.trim(),
         remarks: dto.remarks?.trim(), createdBy: userId,
       },
@@ -997,24 +1317,61 @@ export class FinancialSettlementService {
     });
   }
 
-  async claimFund(id: string, userId: string) {
+  async claimFund(id: string, dto: ClaimFundDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'settlement.receipt.claim');
     const scope = await this.accessControl.getContractScope(userId, 'settlement.receipt.claim');
-    const fund = await this.prisma.fundTransaction.findFirst({ where: { id, direction: 'RECEIPT', status: 'PENDING_CLAIM', contract: scope } });
+    const fund = await this.prisma.fundTransaction.findFirst({
+      where: { id, direction: 'RECEIPT', status: { in: ['PENDING_CLAIM', 'PARTIALLY_CLAIMED'] } },
+      include: { claims: { where: { status: { not: 'REVERSED' } } } },
+    });
     if (!fund) throw new NotFoundException('待认领收款不存在或不在当前数据权限范围内');
-    return this.prisma.fundTransaction.update({
-      where: { id }, data: { status: 'PENDING_CONFIRMATION', claimedBy: userId, claimedAt: new Date() }, include: FUND_INCLUDE,
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: dto.contractId, deletedAt: null, type: { in: ['SALES', 'BILATERAL'] }, AND: [scope] },
+      include: { seller: true, buyer: true, signingPartner: true },
+    });
+    if (!contract || !contract.signingPartnerId) throw new BadRequestException('销售合同不存在、未生效或不在当前数据权限范围内');
+    if (contract.signingPartnerId !== fund.legalEntityPartnerId) throw new BadRequestException('合同的我方签约主体与实际收款账户主体不一致');
+    const counterpartyId = this.counterpartyId(contract, 'RECEIVABLE');
+    if (!counterpartyId) throw new BadRequestException('合同缺少客户信息');
+    if (dto.orderId) {
+      const order = await this.prisma.order.findFirst({ where: { id: dto.orderId, contractId: contract.id, type: 'SALES', status: { not: 'CANCELLED' }, deletedAt: null } });
+      if (!order) throw new BadRequestException('执行批次不存在、已取消或不属于当前合同');
+    }
+    const claimedAmount = money(fund.claims.reduce((sum, claim) => sum + Number(claim.amount), 0));
+    const available = money(Number(fund.amount) - claimedAmount);
+    if (dto.amount > available) throw new BadRequestException(`本次认领金额超过待认领余额 ${available.toFixed(2)} 元`);
+    const after = money(claimedAmount + dto.amount);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.fundClaim.create({
+        data: {
+          fundTransactionId: id, contractId: contract.id, orderId: dto.orderId,
+          businessUnitId: contract.businessUnitId, counterpartyId, paymentStage: dto.paymentStage,
+          amount: dto.amount, remarks: dto.remarks?.trim(), createdBy: userId,
+        },
+      });
+      return tx.fundTransaction.update({
+        where: { id },
+        data: {
+          status: after >= Number(fund.amount) ? 'PENDING_CONFIRMATION' : 'PARTIALLY_CLAIMED',
+          claimedBy: userId, claimedAt: new Date(),
+        },
+        include: FUND_INCLUDE,
+      });
     });
   }
 
   async confirmFund(id: string, userId: string) {
     await this.accessControl.assertPermission(userId, 'settlement.fund.confirm');
-    const scope = await this.accessControl.getContractScope(userId, 'settlement.fund.confirm');
     const fund = await this.prisma.fundTransaction.findFirst({
-      where: { id, status: 'PENDING_CONFIRMATION', contract: scope }, include: { relatedTransaction: true, attachments: { select: { id: true } } },
+      where: { id, status: 'PENDING_CONFIRMATION' },
+      include: { relatedTransaction: true, attachments: { select: { id: true } }, claims: { where: { status: { not: 'REVERSED' } } } },
     });
     if (!fund) throw new NotFoundException('待确认资金单不存在或不在当前数据权限范围内');
     if (!fund.attachments.length) throw new BadRequestException('财务确认前请先上传银行回单或资金凭证');
+    if (fund.direction === 'RECEIPT') {
+      const claimed = money(fund.claims.reduce((sum, claim) => sum + Number(claim.amount), 0));
+      if (claimed !== money(Number(fund.amount))) throw new BadRequestException('收款金额尚未全部认领，不能进行财务确认');
+    }
     return this.prisma.$transaction(async (tx) => {
       if (fund.relatedTransaction) {
         const consumed = money(Number(fund.relatedTransaction.allocatedAmount) + Number(fund.relatedTransaction.refundedAmount) + Number(fund.amount));
@@ -1027,6 +1384,12 @@ export class FinancialSettlementService {
           },
         });
       }
+      if (fund.direction === 'RECEIPT') {
+        await tx.fundClaim.updateMany({
+          where: { fundTransactionId: id, status: 'PENDING_CONFIRMATION' },
+          data: { status: 'CONFIRMED', confirmedBy: userId, confirmedAt: new Date() },
+        });
+      }
       return tx.fundTransaction.update({
         where: { id }, data: { status: 'CONFIRMED', confirmedBy: userId, confirmedAt: new Date() }, include: FUND_INCLUDE,
       });
@@ -1036,13 +1399,36 @@ export class FinancialSettlementService {
   async allocate(id: string, dto: AllocateFundDto, userId: string) {
     const settlement = await this.findOne(id, userId, 'settlement.allocate');
     if (!['CONFIRMED', 'PARTIALLY_SETTLED'].includes(settlement.status)) throw new BadRequestException('只有已确认且未结清的结算单可以核销');
+    const access = await this.accessControl.assertPermission(userId, 'settlement.allocate');
     const contractScope = await this.accessControl.getContractScope(userId, 'settlement.allocate');
-    const fund = await this.prisma.fundTransaction.findFirst({ where: { id: dto.fundTransactionId, status: { in: ['CONFIRMED', 'PARTIALLY_ALLOCATED'] }, contract: contractScope } });
+    const fund = await this.prisma.fundTransaction.findFirst({
+      where: {
+        id: dto.fundTransactionId, status: { in: ['CONFIRMED', 'PARTIALLY_ALLOCATED'] },
+        ...(access.isAdmin ? {} : {
+          OR: [
+            { contract: { is: contractScope } },
+            { claims: { some: { contract: contractScope, status: 'CONFIRMED' } } },
+          ],
+        }),
+      },
+      include: {
+        claims: { where: { status: 'CONFIRMED' } },
+        allocations: { where: { reversedAt: null }, include: { settlement: { select: { contractId: true } } } },
+      },
+    });
     if (!fund) throw new NotFoundException('资金流水不存在或无权访问');
     if (!ALLOCATABLE_STAGES.includes(fund.paymentStage)) throw new BadRequestException('退款、保证金及保证金退回不能核销贸易结算单');
     const expectedDirection = settlement.direction === 'RECEIVABLE' ? 'RECEIPT' : 'PAYMENT';
     if (fund.direction !== expectedDirection) throw new BadRequestException('资金收付方向与结算单不一致');
-    if (fund.contractId !== settlement.contractId || fund.legalEntityPartnerId !== settlement.legalEntityPartnerId || fund.counterpartyId !== settlement.counterpartyId) throw new BadRequestException('资金流水的合同、法律主体或交易对手与结算单不一致');
+    if (fund.legalEntityPartnerId !== settlement.legalEntityPartnerId) throw new BadRequestException('资金流水的法律主体与结算单不一致');
+    if (fund.direction === 'PAYMENT') {
+      if (fund.contractId !== settlement.contractId || fund.counterpartyId !== settlement.counterpartyId) throw new BadRequestException('付款单的合同或交易对手与结算单不一致');
+    } else {
+      const claimedForContract = money(fund.claims.filter((claim) => claim.contractId === settlement.contractId && claim.counterpartyId === settlement.counterpartyId).reduce((sum, claim) => sum + Number(claim.amount), 0));
+      const allocatedForContract = money(fund.allocations.filter((entry) => entry.settlement.contractId === settlement.contractId).reduce((sum, entry) => sum + Number(entry.amount), 0));
+      if (claimedForContract <= 0) throw new BadRequestException('该收款单尚未认领到当前合同');
+      if (dto.amount > money(claimedForContract - allocatedForContract)) throw new BadRequestException('核销金额超过当前合同已确认的收款认领金额');
+    }
     const remainingSettlement = money(Number(settlement.totalAmount) - Number(settlement.settledAmount));
     const remainingFund = money(Number(fund.amount) - Number(fund.allocatedAmount) - Number(fund.refundedAmount));
     if (dto.amount > remainingSettlement || dto.amount > remainingFund) throw new BadRequestException('核销金额超过结算单未结金额或资金可用余额');
@@ -1084,12 +1470,13 @@ export class FinancialSettlementService {
 
   async voidFund(id: string, userId: string) {
     await this.accessControl.assertPermission(userId, 'settlement.reverse');
-    const contractScope = await this.accessControl.getContractScope(userId, 'settlement.reverse');
-    const fund = await this.prisma.fundTransaction.findFirst({ where: { id, contract: contractScope }, include: { allocations: true, reverseTransactions: true } });
+    await this.findFund(id, userId);
+    const fund = await this.prisma.fundTransaction.findUnique({ where: { id }, include: { allocations: true, reverseTransactions: true, claims: true } });
     if (!fund) throw new NotFoundException('资金流水不存在或无权访问');
     if (fund.status === 'VOIDED') throw new BadRequestException('资金流水已作废');
     if (fund.allocations.some((entry) => !entry.reversedAt) || Number(fund.allocatedAmount) > 0) throw new BadRequestException('资金流水已有有效核销记录，不能直接作废');
     if (fund.reverseTransactions.some((entry) => entry.status !== 'VOIDED') || Number(fund.refundedAmount) > 0) throw new BadRequestException('资金流水已有退款或退回记录，不能直接作废');
+    if (fund.claims.some((entry) => entry.status === 'CONFIRMED')) throw new BadRequestException('收款单已有财务确认的认领明细，不能直接作废');
     if (fund.relatedTransactionId && fund.confirmedAt) {
       const original = await this.prisma.fundTransaction.findUnique({ where: { id: fund.relatedTransactionId } });
       if (!original) throw new BadRequestException('原资金流水不存在，不能作废退回流水');
@@ -1105,8 +1492,27 @@ export class FinancialSettlementService {
         }),
         this.prisma.fundTransaction.update({ where: { id }, data: { status: 'VOIDED' } }),
       ]);
+      if (fund.paymentRequestId) await this.refreshPaymentRequestPaymentStatus(fund.paymentRequestId);
       return this.prisma.fundTransaction.findUnique({ where: { id }, include: FUND_INCLUDE });
     }
-    return this.prisma.fundTransaction.update({ where: { id }, data: { status: 'VOIDED' }, include: FUND_INCLUDE });
+    await this.prisma.fundTransaction.update({ where: { id }, data: { status: 'VOIDED' } });
+    if (fund.paymentRequestId) await this.refreshPaymentRequestPaymentStatus(fund.paymentRequestId);
+    return this.prisma.fundTransaction.findUnique({ where: { id }, include: FUND_INCLUDE });
+  }
+
+  private async refreshPaymentRequestPaymentStatus(paymentRequestId: string) {
+    const request = await this.prisma.paymentRequest.findUnique({
+      where: { id: paymentRequestId },
+      select: {
+        amount: true,
+        fundTransactions: { where: { status: { not: 'VOIDED' } }, select: { amount: true } },
+      },
+    });
+    if (!request) return;
+    const paid = money(request.fundTransactions.reduce((sum, item) => sum + Number(item.amount), 0));
+    await this.prisma.paymentRequest.update({
+      where: { id: paymentRequestId },
+      data: { status: paid <= 0 ? 'APPROVED' : paid >= Number(request.amount) ? 'PAID' : 'PARTIALLY_PAID' },
+    });
   }
 }

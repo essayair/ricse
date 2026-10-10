@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Camera, KeyRound, Pencil, Plus, RefreshCw, Trash2, Video, Wifi, WifiOff } from 'lucide-react';
 import { api } from '@/lib/api';
+import { confirmAction } from '@/lib/system-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -119,13 +120,13 @@ export default function MonitorPage() {
     status: item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
   }));
 
-  const removeCamera = (item: CameraItem) => {
-    if (!window.confirm(`确认删除点位「${item.name}」？删除后官网和大屏将不再展示该画面。`)) return;
+  const removeCamera = async (item: CameraItem) => {
+    if (!await confirmAction(`确认删除点位「${item.name}」？删除后官网和大屏将不再展示该画面。`)) return;
     void run(() => api.delete(`/monitor/cameras/${item.id}`));
   };
 
-  const removeSite = (item: Site) => {
-    if (!window.confirm(`确认删除分组「${item.name}」？`)) return;
+  const removeSite = async (item: Site) => {
+    if (!await confirmAction(`确认删除分组「${item.name}」？`)) return;
     void run(() => api.delete(`/monitor/sites/${item.id}`));
   };
 

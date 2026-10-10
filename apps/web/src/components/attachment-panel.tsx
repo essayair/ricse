@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { confirmAction } from '@/lib/system-dialog';
 
 export interface BusinessAttachment {
   id: string;
@@ -77,7 +78,7 @@ export function AttachmentPanel({
   };
 
   const remove = async (id: string) => {
-    if (!confirm('确定删除此附件？')) return;
+    if (!await confirmAction('确定删除此附件？')) return;
     try {
       await api.delete(`${attachmentPath}/${id}`);
       await onChanged();

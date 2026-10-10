@@ -12,6 +12,7 @@ import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-pan
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 interface WeighRecord {
   id: string;
@@ -216,7 +217,7 @@ export default function WeighTicketDetailPage() {
     if (!newWaybillId) return alert('请选择新的物流运单');
     const option = waybillOptions.find(value => value.id === newWaybillId);
     const hasSameStage = option?.weighTickets?.some((value: any) => value.weighingStage === ticket?.weighingStage);
-    const additionReason = hasSameStage ? prompt('目标运单同一称重节点已有磅单，请填写追加原因')?.trim() : '';
+    const additionReason = hasSameStage ? (await promptAction('目标运单同一称重节点已有磅单，请填写追加原因'))?.trim() : '';
     if (hasSameStage && !additionReason) return;
     setSaving(true);
     try {
@@ -306,7 +307,7 @@ export default function WeighTicketDetailPage() {
   const transition = async (status: string) => {
     const label = status === 'COMPLETED' ? '完成称重' : status === 'REVIEWED' ? '复核通过' : '作废';
     if (status === 'REVIEWED' && ticket?.abnormal && !reviewRemark.trim()) return alert('异常磅单复核必须填写处理意见');
-    if (!confirm(`确定${label}当前磅单？`)) return;
+    if (!await confirmAction(`确定${label}当前磅单？`, { title: `${label}磅单确认` })) return;
     setSaving(true);
     try {
       applyTicket(await api.patch<WeighTicket>(`/weigh-tickets/${id}/status`, { status, reviewRemark: reviewRemark || undefined }));

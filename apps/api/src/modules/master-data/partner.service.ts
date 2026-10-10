@@ -400,9 +400,7 @@ export class PartnerService {
   }
 
   private async validateVehicleOwner(ownerType: string, ownerId?: string | null) {
-    if (ownerType === 'OUTSOURCED' && !ownerId) {
-      throw new BadRequestException('外协车辆必须选择所属物流承运商');
-    }
+    // 外部车辆允许暂不绑定承运商，作为社会运力使用；最终开票承运商可在运单结算前补充。
     if (!ownerId) return null;
     const owner = await this.prisma.partner.findFirst({
       where: { id: ownerId, status: 'ACTIVE', deletedAt: null },
@@ -438,6 +436,8 @@ export class PartnerService {
     });
     if (records.length !== ids.length) throw new BadRequestException('关联司机不存在或已停用');
     for (const driver of records) {
+      // 无承运商司机（社会运力专用）不做归属一致性校验，可以关联任意车辆。
+      if (!driver.serviceOrganization) continue;
       if (ownerType === 'OUTSOURCED' && driver.serviceOrganization.partnerId !== ownerId) {
         throw new BadRequestException('外协车辆只能关联所属物流承运商的司机');
       }

@@ -86,10 +86,7 @@ const NAV_ITEMS: NavGroup[] = [
     icon: CircleDollarSign,
     children: [
       { href: '/dashboard/receivables', label: '应收管理' },
-      { href: '/dashboard/receipts', label: '收款管理' },
-      { href: '/dashboard/payables', label: '应付管理' },
-      { href: '/dashboard/payment-requests', label: '付款申请' },
-      { href: '/dashboard/payments', label: '付款管理' },
+      { href: '/dashboard/payment-requests', label: '应付管理' },
       { href: '/dashboard/settlement-ledger', label: '结算台账' },
     ],
   },
@@ -101,12 +98,12 @@ const BASE_ITEMS: NavGroup[] = [
     icon: Box,
     children: [
       { href: '/dashboard/master-data?tab=partners', label: '合作伙伴' },
-      { href: '/dashboard/master-data/service-organizations', label: '服务生态' },
+      { href: '/dashboard/master-data?tab=service-organizations', label: '服务生态' },
       { href: '/dashboard/master-data?tab=materials', label: '物料品类' },
       { href: '/dashboard/master-data?tab=warehouses', label: '仓库库位' },
-      { href: '/dashboard/master-data?tab=vehicles', label: '车辆管理' },
+      { href: '/dashboard/master-data?tab=vehicles', label: '运力管理' },
       { href: '/dashboard/master-data?tab=price', label: '价格基准' },
-      { href: '/dashboard/master-data/quality-standards', label: '质检标准' },
+      { href: '/dashboard/master-data?tab=quality-standards', label: '质检标准' },
     ],
   },
   {
@@ -192,6 +189,10 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href === '/dashboard') return pathname === '/dashboard';
     const [base, qs] = href.split('?');
 
+    // 资金结算的三级功能放在页面顶部切换，侧边栏继续高亮所属二级模块。
+    if (base === '/dashboard/receivables' && pathname === '/dashboard/receipts') return true;
+    if (base === '/dashboard/payment-requests' && pathname === '/dashboard/payments') return true;
+
     // 必须先确认当前路径属于该菜单；否则相同长度的其他路径可能被生产管理的特殊规则误判。
     if (pathname !== base && !pathname.startsWith(base + '/')) return false;
 
@@ -199,9 +200,6 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
       const child = pathname.slice(`${base}/`.length);
       return pathname === base || child === 'new' || (!!child && !child.includes('/') && !['recipes', 'ledger'].includes(child));
     }
-
-    // 服务生态下的分类由页面内标签切换，侧边导航始终保持选中。
-    if (base === '/dashboard/master-data/service-organizations') return true;
 
     // Nav item has query params (e.g. ?tab=suppliers) → match them exactly
     if (qs) {

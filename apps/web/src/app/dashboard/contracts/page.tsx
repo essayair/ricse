@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
 import { BusinessDirectionBadge, businessDirectionStyle } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 interface Contract {
   id: string;
@@ -93,7 +94,7 @@ export default function ContractsPage() {
       return;
     }
     const statusLabel = contract.status === 'DRAFT' ? '草稿' : '已作废合同';
-    if (!confirm(`确定删除${statusLabel}“${contract.contractNo}”吗？删除后将不再出现在合同列表中。`)) return;
+    if (!await confirmAction(`确定删除${statusLabel}“${contract.contractNo}”吗？删除后将不再出现在合同列表中。`)) return;
     try {
       await api.delete(`/contracts/${contract.id}`);
       fetchContracts();

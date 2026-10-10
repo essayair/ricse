@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { formatDateTimeToSecond } from '@/lib/date-time';
 import { BusinessDirectionBadge } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 interface Ticket {
   id: string; ticketNo: string; status: string; weighingStage: string; sequence: number; isSupplementary: boolean;
@@ -60,10 +61,10 @@ export default function WeighbridgeManagementDetailPage() {
     const basisLabel = effectiveWeightLabel(item.dispatchNotice.type);
     let reason: string | undefined;
     if (currentSelection(item)) {
-      reason = prompt(`请输入更换${basisLabel}的原因`)?.trim() || undefined;
+      reason = (await promptAction(`请输入更换${basisLabel}的原因`))?.trim() || undefined;
       if (!reason) return;
     }
-    if (!confirm(`确定将 ${ticket.ticketNo} 选为${basisLabel}？该净重将同步用于库存执行与结算。`)) return;
+    if (!await confirmAction(`确定将 ${ticket.ticketNo} 选为${basisLabel}？该净重将同步用于库存执行与结算。`, { title: `${basisLabel}确认` })) return;
     try {
       await api.patch(`/weigh-tickets/waybills/${item.id}/effective-ticket`, { weighTicketId: ticket.id, reason });
       await load();

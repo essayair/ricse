@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { confirmAction } from '@/lib/system-dialog';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -102,7 +103,7 @@ export default function LogisticsSettlementDetailPage() {
   };
 
   const doAction = async (action: 'submit' | 'review' | 'void', confirmText?: string) => {
-    if (confirmText && !confirm(confirmText)) return;
+    if (confirmText && !await confirmAction(confirmText, { title: '物流结算操作确认' })) return;
     setBusy(true);
     try { await api.post(`/logistics-settlements/${id}/${action}`); await load(); }
     catch (error: any) { alert(error.message); }

@@ -85,15 +85,15 @@ export default function CarrierDriversPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/master-data/service-organizations?type=LOGISTICS_CARRIER')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">司机管理</h1><p className="mt-1 text-sm text-muted-foreground">{organization ? `${organization.code} · ${organization.partner.name}` : '加载中...'}</p></div></div>
+      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/master-data?tab=service-organizations&type=LOGISTICS_CARRIER')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">司机管理</h1><p className="mt-1 text-sm text-muted-foreground">{organization ? `${organization.code} · ${organization.partner.name}` : '加载中...'}</p></div></div>
       <Button onClick={() => { reset(); setShowForm(true); }}><Plus className="mr-1 h-4 w-4" />新增司机</Button>
     </div>
 
     {showForm && <Card className="space-y-4 p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">{editingId ? '编辑司机档案' : '新增司机档案'}</h2><Button variant="ghost" size="sm" onClick={reset}>取消</Button></div><div className="grid gap-4 md:grid-cols-3">
       <Field label="司机姓名 *"><Input value={form.name} maxLength={50} onChange={e => set('name', e.target.value)} /></Field>
-      <Field label="手机号 *"><Input inputMode="numeric" maxLength={11} value={form.phone} onChange={e => set('phone', e.target.value.replace(/\D/g, '').slice(0, 11))} /></Field>
-      <Field label="身份证号"><Input maxLength={18} value={form.idCardNo} onChange={e => set('idCardNo', e.target.value)} /></Field>
-      <Field label="驾驶证号"><Input maxLength={50} value={form.licenseNo} onChange={e => set('licenseNo', e.target.value)} /></Field>
+      <Field label="手机号 *"><Input inputMode="numeric" maxLength={11} value={form.phone} onChange={e => set('phone', e.target.value.replace(/\D/g, '').slice(0, 11))} /><p className="mt-1 text-xs text-muted-foreground">全平台唯一，用于识别同一名司机。</p></Field>
+      <Field label="身份证号"><Input maxLength={18} value={form.idCardNo} onChange={e => set('idCardNo', e.target.value.toUpperCase())} /><p className="mt-1 text-xs text-muted-foreground">填写后全平台唯一。</p></Field>
+      <Field label="驾驶证号"><Input maxLength={50} value={form.licenseNo} onChange={e => set('licenseNo', e.target.value.toUpperCase())} /><p className="mt-1 text-xs text-muted-foreground">填写后全平台唯一。</p></Field>
       <Field label="准驾车型"><Input maxLength={20} value={form.licenseClass} onChange={e => set('licenseClass', e.target.value)} placeholder="如：A2、B2" /></Field>
       <Field label="驾驶证有效期"><Input type="date" value={form.licenseExpiry} onChange={e => set('licenseExpiry', e.target.value)} /></Field>
       <Field label="状态"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.status} onChange={e => set('status', e.target.value)}><option value="ACTIVE">启用</option><option value="INACTIVE">停用</option></select></Field>

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 const STATUS: Record<string, string> = {
   DRAFT: '草稿',
@@ -54,7 +55,7 @@ export default function InventoryReversalDetailPage() {
       cancel: '确认取消该库存冲销单？',
       post: '确认冲销过账并生成反向库存台账？该操作不能直接撤回。',
     };
-    if (!confirm(prompts[type])) return;
+    if (!await confirmAction(prompts[type], { title: type === 'submit' ? '提交冲销审批确认' : '库存冲销确认' })) return;
     setSaving(true);
     try {
       const result = type === 'post'
@@ -69,7 +70,7 @@ export default function InventoryReversalDetailPage() {
   };
 
   const review = async (action: 'APPROVE' | 'REJECT') => {
-    const comment = prompt(action === 'APPROVE' ? '请输入审批意见（可选）' : '请输入驳回原因（必填）');
+    const comment = await promptAction(action === 'APPROVE' ? '请输入审批意见（可选）' : '请输入驳回原因（必填）');
     if (comment === null || (action === 'REJECT' && !comment.trim())) return;
     setSaving(true);
     try {
@@ -98,7 +99,7 @@ export default function InventoryReversalDetailPage() {
   };
 
   const removeAttachment = async (attachment: any) => {
-    if (!confirm(`确认删除附件“${attachment.originalName}”？`)) return;
+    if (!await confirmAction(`确认删除附件“${attachment.originalName}”？`)) return;
     try {
       await api.delete(`/inventory-reversals/attachments/${attachment.id}`);
       await load();

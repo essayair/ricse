@@ -45,6 +45,18 @@ describe('LogisticsSettlementService', () => {
       await expect(service.listCandidateWaybills({ periodStart: '2026-07-31', periodEnd: '2026-07-01' }, 'user-1'))
         .rejects.toThrow('结算周期结束日期必须晚于开始日期');
     });
+
+    it('未绑定开票承运商的运单标记 carrierPending 但不剔除', async () => {
+      prisma.waybill.findMany.mockResolvedValue([
+        { ...waybillBase, id: 'waybill-pending', carrierPartnerId: null },
+        { ...waybillBase, id: 'waybill-ready' },
+      ] as any);
+      const result = await service.listCandidateWaybills({ periodStart: '2026-07-01', periodEnd: '2026-07-31' }, 'user-1');
+      expect(result).toEqual([
+        expect.objectContaining({ id: 'waybill-pending', carrierPending: true }),
+        expect.objectContaining({ id: 'waybill-ready', carrierPending: false }),
+      ]);
+    });
   });
 
   describe('create', () => {
@@ -152,6 +164,14 @@ describe('LogisticsSettlementService', () => {
         payerCompanyId: 'company-1', periodStart: '2026-07-01', periodEnd: '2026-07-31',
         lines: [{ waybillId: 'waybill-1' }],
       }, 'user-1')).rejects.toThrow('尚未签收，不能加入结算单');
+    });
+
+    it('社会运力运单未绑定开票承运商时拒绝加入结算单', async () => {
+      prisma.waybill.findMany.mockResolvedValue([{ ...waybillBase, carrierPartnerId: null }] as any);
+      await expect(service.create({
+        payerCompanyId: 'company-1', periodStart: '2026-07-01', periodEnd: '2026-07-31',
+        lines: [{ waybillId: 'waybill-1' }],
+      }, 'user-1')).rejects.toThrow('尚未确定开票承运商，不能加入结算单');
     });
 
     it('同一张运单不能在同一次请求中重复加入', async () => {

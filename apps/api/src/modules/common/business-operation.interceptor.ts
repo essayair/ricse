@@ -39,13 +39,13 @@ const STATIC_SEGMENTS = new Set([
 ]);
 
 const STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿', PENDING_APPROVAL: '待审批', APPROVED: '已审批', REJECTED: '已驳回',
+  DRAFT: '草稿', BUSINESS_CONFIRMED: '待财务提交', PENDING_APPROVAL: '待审批', APPROVED: '已审批', REJECTED: '已驳回',
   EXECUTING: '执行中', COMPLETED: '已完成', CLOSED: '已关闭', VOIDED: '已作废',
   CANCELLED: '已取消', CONFIRMED: '已确认', DISPATCHED: '已发运', ISSUED: '已下达',
   IN_PROGRESS: '执行中', PENDING: '待处理', WEIGHING: '称重中', RECEIVED: '已收货',
   READY: '待放行', VARIANCE_PENDING: '待差异处理', IN_TRANSIT: '运输中', ARRIVED: '已到达',
   SIGNED: '已签收', REVIEWED: '已复核', POSTED: '已过账', RELEASED: '已下达',
-  MATERIAL_PREPARED: '已备料', PENDING_QC: '待质检', PARTIAL_COMPLETED: '部分完工',
+  MATERIAL_PREPARED: '已备料', PENDING_QC: '待质检', PARTIAL_COMPLETED: '部分完工', PARTIALLY_CLAIMED: '部分认领',
 };
 
 @Injectable()
@@ -249,7 +249,7 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     if (path.endsWith('/claim')) return { code: 'CLAIM', label: '认领收款' };
     if (path.endsWith('/approve')) return { code: 'APPROVE', label: '批准付款申请' };
     if (path.endsWith('/reject')) return { code: 'REJECT', label: '驳回付款申请' };
-    if (path.endsWith('/execute')) return { code: 'EXECUTE_PAYMENT', label: '创建付款单' };
+    if (path.endsWith('/execute') || path.endsWith('/execute-with-voucher')) return { code: 'EXECUTE_PAYMENT', label: '上传付款凭证并创建付款单' };
     if (path.endsWith('/submit')) return { code: 'SUBMIT', label: '提交业务单据' };
     if (path.endsWith('/review')) return { code: 'REVIEW', label: '审核业务单据' };
     if (path.endsWith('/variance')) return { code: 'VARIANCE', label: '处理数量差异' };

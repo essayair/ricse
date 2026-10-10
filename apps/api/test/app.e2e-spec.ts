@@ -5,9 +5,20 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 
+/**
+ * 这套 e2e 测试跑在本地开发数据库上（没有单独的测试库），因此绝不做
+ * 整表 deleteMany —— 那会清空种子账号、审批角色和其他正在进行中的工作。
+ * 所有在这里创建的数据都带 E2E_RUN 标记并记录 ID，在 afterAll 里精确按
+ * ID 删除，不触碰任何既有数据。
+ */
 describe('RICSE API (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  const RUN = `E2E${Date.now()}`;
+  // 内部合作伙伴编码要求恰好 6 位字母数字且全局唯一，不能直接用 RUN；
+  // 两处用到内部合作伙伴的 describe 块各自要一个独立的码，否则会撞唯一约束。
+  const INTERNAL_CODE = Date.now().toString().slice(-6);
+  const INTERNAL_CODE_2 = (Date.now() + 1).toString().slice(-6);
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -16,7 +27,7 @@ describe('RICSE API (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ transform: true }));
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -26,226 +37,591 @@ describe('RICSE API (e2e)', () => {
     await app.close();
   });
 
-  beforeEach(async () => {
-    // Clean data in dependency order
-    await prisma.approval.deleteMany();
-    await prisma.contractLineItem.deleteMany();
-    await prisma.contract.deleteMany();
-    await prisma.supplier.deleteMany();
-    await prisma.material.deleteMany();
-    await prisma.warehouse.deleteMany();
-    await prisma.user.deleteMany();
-  });
-
   describe('Auth', () => {
-    const testUser = { username: 'testuser', password: 'test123', name: '测试用户', role: 'USER' };
+    const username = `${RUN}_user`;
+    const password = 'test12345';
+    let userId: string;
 
-    beforeEach(async () => {
-      const hashed = await bcrypt.hash(testUser.password, 10);
-      await prisma.user.create({
-        data: { ...testUser, password: hashed },
+    beforeAll(async () => {
+      const hashed = await bcrypt.hash(password, 10);
+      const user = await prisma.user.create({
+        data: { username, password: hashed, name: 'E2E 临时账号', role: 'USER' },
       });
+      userId = user.id;
     });
 
-    it('POST /auth/login — 成功登录并返回 JWT', async () => {
+    afterAll(async () => {
+      await prisma.user.delete({ where: { id: userId } }).catch(() => undefined);
+    });
+
+    it('POST /auth/login — 成功登录并返回 token', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ username: testUser.username, password: testUser.password })
+        .send({ username, password })
         .expect(201);
 
       expect(res.body).toHaveProperty('token');
       expect(res.body).toHaveProperty('refreshToken');
-      expect(res.body.token).not.toBe('placeholder-jwt-token');
-      expect(res.body.username).toBe(testUser.username);
-      expect(res.body.name).toBe(testUser.name);
+      expect(res.body.username).toBe(username);
+      // 没有任何有效角色分配时，权限列表必须是空数组，不能回落成"默认有权限"。
+      expect(res.body.permissions).toEqual([]);
     });
 
     it('POST /auth/login — 密码错误', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ username: testUser.username, password: 'wrong' })
+        .send({ username, password: 'wrong-password' })
         .expect(401);
 
-      expect(res.body.message).toBe('用户名或密码错误');
+      expect(res.body.message).toBe('用户名、手机号或密码错误');
     });
 
     it('POST /auth/login — 用户不存在', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ username: 'nonexistent', password: 'test123' })
+        .send({ username: `${RUN}_nonexistent`, password: 'whatever123' })
         .expect(401);
 
-      expect(res.body.message).toBe('用户名或密码错误');
+      expect(res.body.message).toBe('用户名、手机号或密码错误');
     });
 
-    it('GET /auth/profile — 需要 JWT', async () => {
-      // Without token
-      await request(app.getHttpServer())
-        .get('/api/v1/auth/profile')
-        .expect(401);
+    it('GET /auth/profile — 未带 token 拒绝，带 token 返回本人信息', async () => {
+      await request(app.getHttpServer()).get('/api/v1/auth/profile').expect(401);
 
-      // Login first
       const loginRes = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ username: testUser.username, password: testUser.password });
-      const token = loginRes.body.token;
+        .send({ username, password });
 
       const res = await request(app.getHttpServer())
         .get('/api/v1/auth/profile')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Authorization', `Bearer ${loginRes.body.token}`)
         .expect(200);
 
-      expect(res.body.username).toBe(testUser.username);
+      expect(res.body.username).toBe(username);
     });
   });
 
-  describe('Contracts', () => {
+  /**
+   * 以下两组都需要 master_data.manage / contract.* 权限，这些权限完全由
+   * UserRoleAssignment 真实角色分配决定（AccessControlService.getContext
+   * 只读角色分配表，不读 User.role 字段），所以不手工拼装权限，直接登录
+   * 种子数据里的 admin 账号——这也顺带验证了种子数据本身没坏。
+   */
+  describe('业务主数据与合同（以种子 admin 账号登录）', () => {
     let adminToken: string;
-    let supplierId: string;
-    let materialId: string;
+    const createdPartnerIds: string[] = [];
+    const createdCategoryIds: string[] = [];
+    const createdMaterialIds: string[] = [];
+    const createdWarehouseIds: string[] = [];
+    const createdContractIds: string[] = [];
 
-    beforeEach(async () => {
-      // Create admin user
-      const hashed = await bcrypt.hash('admin123', 10);
-      await prisma.user.create({
-        data: { username: 'admin', password: hashed, name: '管理员', role: 'ADMIN' },
-      });
-
-      // Create test master data
-      const supplier = await prisma.supplier.create({
-        data: { code: 'SUP-TEST', name: '测试供应商' },
-      });
-      supplierId = supplier.id;
-
-      const material = await prisma.material.create({
-        data: { code: 'MAT-TEST', name: '测试物料', category: '测试', unit: 'TON' },
-      });
-      materialId = material.id;
-
-      // Login to get token
+    beforeAll(async () => {
+      const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin123';
       const loginRes = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: adminPassword })
+        .expect(201);
       adminToken = loginRes.body.token;
+      expect(loginRes.body.permissions).toEqual(
+        expect.arrayContaining(['master_data.manage', 'contract.create', 'contract.approve']),
+      );
     });
 
-    it('POST /contracts — 创建合同', async () => {
+    afterAll(async () => {
+      // ContractLineItem/Approval 对 Contract 是 onDelete: Restrict，不会随合同级联删除，
+      // 必须先清掉子表才能物理删除测试合同；否则合同（进而物料/分类）会一直卡着删不掉。
+      if (createdContractIds.length) {
+        await prisma.contractLineItem.deleteMany({ where: { contractId: { in: createdContractIds } } });
+        await prisma.approval.deleteMany({ where: { contractId: { in: createdContractIds } } });
+      }
+      for (const id of createdContractIds) {
+        await prisma.contract.delete({ where: { id } }).catch(() => undefined);
+      }
+      // 建物料时后台会自动生成一条平台标准商品（standardCommodityId），物料分类
+      // 又被标准商品引用，所以要按 物料 → 标准商品 → 分类 的顺序倒着删。
+      const standardCommodityIds: string[] = [];
+      for (const id of createdMaterialIds) {
+        const material = await prisma.material.findUnique({ where: { id }, select: { standardCommodityId: true } });
+        if (material?.standardCommodityId) standardCommodityIds.push(material.standardCommodityId);
+        await prisma.material.delete({ where: { id } }).catch(() => undefined);
+      }
+      for (const id of standardCommodityIds) {
+        await prisma.standardCommodity.delete({ where: { id } }).catch(() => undefined);
+      }
+      for (const id of createdCategoryIds) {
+        await prisma.materialCategory.delete({ where: { id } }).catch(() => undefined);
+      }
+      for (const id of createdWarehouseIds) {
+        await prisma.warehouse.delete({ where: { id } }).catch(() => undefined);
+      }
+      for (const id of createdPartnerIds) {
+        await prisma.partner.delete({ where: { id } }).catch(() => undefined);
+      }
+    });
+
+    it('POST /partners — 创建供应商合作伙伴', async () => {
       const res = await request(app.getHttpServer())
-        .post('/api/v1/contracts')
+        .post('/api/v1/partners')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({
-          title: 'E2E 测试合同',
-          type: 'PURCHASE',
-          supplierId,
-          totalAmount: 100000,
-          lineItems: [{ materialId, materialName: '测试物料', quantity: 100, unit: 'TON', unitPrice: 1000 }],
-        })
+        .send({ name: `${RUN}-测试供应商`, roles: ['SUPPLIER'] })
         .expect(201);
 
       expect(res.body).toHaveProperty('id');
-      expect(res.body.contractNo).toMatch(/^PO-/);
-      expect(res.body.status).toBe('DRAFT');
-      expect(res.body.lineItems).toHaveLength(1);
+      expect(res.body.roles).toContain('SUPPLIER');
+      createdPartnerIds.push(res.body.id);
     });
 
-    it('GET /contracts — 合同列表', async () => {
-      await prisma.contract.create({
-        data: { contractNo: 'PO-TEST', title: '列表测试', type: 'PURCHASE', supplierId, totalAmount: 50000, createdBy: 'admin' },
-      });
-
-      const res = await request(app.getHttpServer())
-        .get('/api/v1/contracts')
+    it('POST /master-data/material-categories + /materials — 创建物料分类与物料', async () => {
+      const category = await request(app.getHttpServer())
+        .post('/api/v1/master-data/material-categories')
         .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200);
+        .send({ name: `${RUN}-测试分类` })
+        .expect(201);
+      createdCategoryIds.push(category.body.id);
 
-      expect(res.body.items).toHaveLength(1);
-      expect(res.body.pagination).toHaveProperty('total');
+      const material = await request(app.getHttpServer())
+        .post('/api/v1/master-data/materials')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          categoryId: category.body.id,
+          baseName: '萤石',
+          commodityForm: '精粉',
+          coreSpecName: 'CaF₂',
+          coreSpecOperator: 'GTE',
+          coreSpecValue: '97',
+          coreSpecUnit: '%',
+          packageType: 'BULK',
+          unit: 'TON',
+        })
+        .expect(201);
+
+      expect(material.body).toHaveProperty('id');
+      expect(material.body.code).toMatch(/^(TRD|RAW|SFG|FGD)/);
+      createdMaterialIds.push(material.body.id);
     });
 
-    describe('状态机', () => {
-      let contractId: string;
+    it('POST /master-data/warehouses — 创建仓库', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/master-data/warehouses')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ code: `${RUN}-WH`, name: `${RUN}-测试仓库` })
+        .expect(201);
 
-      beforeEach(async () => {
-        const c = await prisma.contract.create({
-          data: { contractNo: 'PO-SM', title: '状态机测试', type: 'PURCHASE', supplierId, totalAmount: 50000, createdBy: 'admin' },
+      expect(res.body.name).toBe(`${RUN}-测试仓库`);
+      createdWarehouseIds.push(res.body.id);
+    });
+
+    describe('合同创建与状态流转', () => {
+      let sellerId: string;
+      let signingPartnerId: string;
+      let materialId: string;
+
+      beforeAll(async () => {
+        const seller = await request(app.getHttpServer())
+          .post('/api/v1/partners')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ name: `${RUN}-合同测试供应商`, roles: ['SUPPLIER'] });
+        sellerId = seller.body.id;
+        createdPartnerIds.push(sellerId);
+
+        // 提交审批前必须有我方签约主体；内部合作伙伴要求显式指定编码。
+        const signingPartner = await request(app.getHttpServer())
+          .post('/api/v1/partners')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ name: `${RUN}-我方签约主体`, isInternal: true, code: INTERNAL_CODE, roles: ['CUSTOMER'] });
+        signingPartnerId = signingPartner.body.id;
+        createdPartnerIds.push(signingPartnerId);
+
+        const category = await request(app.getHttpServer())
+          .post('/api/v1/master-data/material-categories')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ name: `${RUN}-合同测试分类` });
+        createdCategoryIds.push(category.body.id);
+
+        const material = await request(app.getHttpServer())
+          .post('/api/v1/master-data/materials')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            categoryId: category.body.id,
+            baseName: '萤石',
+            commodityForm: '精粉',
+            coreSpecName: 'CaF₂',
+            coreSpecOperator: 'GTE',
+            coreSpecValue: '95',
+            coreSpecUnit: '%',
+            packageType: 'BULK',
+            unit: 'TON',
+          });
+        materialId = material.body.id;
+        createdMaterialIds.push(materialId);
+      });
+
+      it('POST /contracts — 创建采购合同草稿', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/contracts')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            title: `${RUN}-采购合同`,
+            type: 'PURCHASE',
+            sellerId,
+            signingPartnerId,
+            totalAmount: 100000,
+            lineItems: [{ materialId, quantity: 100, unit: 'TON', unitPrice: 1000 }],
+          })
+          .expect(201);
+
+        expect(res.body.contractNo).toMatch(/^CG/);
+        expect(res.body.status).toBe('DRAFT');
+        expect(res.body.lineItems).toHaveLength(1);
+        createdContractIds.push(res.body.id);
+      });
+
+      it('GET /contracts — 合同列表能查到刚创建的草稿', async () => {
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/contracts')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .query({ search: `${RUN}-采购合同` })
+          .expect(200);
+
+        expect(res.body.items.length).toBeGreaterThanOrEqual(1);
+        expect(res.body.pagination).toHaveProperty('total');
+        expect(res.body.items[0].title).toBe(`${RUN}-采购合同`);
+      });
+
+      describe('状态机', () => {
+        let contractId: string;
+
+        beforeEach(async () => {
+          const res = await request(app.getHttpServer())
+            .post('/api/v1/contracts')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+              title: `${RUN}-状态机测试`,
+              type: 'PURCHASE',
+              sellerId,
+              signingPartnerId,
+              totalAmount: 50000,
+              lineItems: [{ materialId, quantity: 50, unit: 'TON', unitPrice: 1000 }],
+            });
+          contractId = res.body.id;
+          createdContractIds.push(contractId);
         });
-        contractId = c.id;
-      });
 
-      it('DRAFT → PENDING_APPROVAL', async () => {
-        const res = await request(app.getHttpServer())
-          .patch(`/api/v1/contracts/${contractId}/status`)
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ status: 'PENDING_APPROVAL' })
-          .expect(200);
-        expect(res.body.status).toBe('PENDING_APPROVAL');
-      });
+        it('DRAFT → PENDING_APPROVAL（种子数据已配置四级或签审批流）', async () => {
+          const res = await request(app.getHttpServer())
+            .patch(`/api/v1/contracts/${contractId}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'PENDING_APPROVAL' })
+            .expect(200);
+          expect(res.body.status).toBe('PENDING_APPROVAL');
+        });
 
-      it('DRAFT → VOIDED', async () => {
-        const res = await request(app.getHttpServer())
-          .patch(`/api/v1/contracts/${contractId}/status`)
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ status: 'VOIDED' })
-          .expect(200);
-        expect(res.body.status).toBe('VOIDED');
-      });
+        it('DRAFT → VOIDED', async () => {
+          const res = await request(app.getHttpServer())
+            .patch(`/api/v1/contracts/${contractId}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'VOIDED' })
+            .expect(200);
+          expect(res.body.status).toBe('VOIDED');
+        });
 
-      it('DRAFT → COMPLETED — 非法跳转', async () => {
-        await request(app.getHttpServer())
-          .patch(`/api/v1/contracts/${contractId}/status`)
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ status: 'COMPLETED' })
-          .expect(400);
+        it('DRAFT → COMPLETED — 非法跳转必须拒绝', async () => {
+          await request(app.getHttpServer())
+            .patch(`/api/v1/contracts/${contractId}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'COMPLETED' })
+            .expect(400);
+        });
       });
     });
   });
 
-  describe('Master Data', () => {
-    let authToken: string;
+  /**
+   * 合同 → 执行批次 → 执行通知 → 物流运单 这条主链路。
+   * 执行批次必须从「已通过」的合同建立，所以这里要真的走完四级或签审批
+   * （而不是像上面那组测试一样只提交到待审批就停），再继续往下游建单。
+   */
+  describe('执行链路：合同审批 → 执行批次 → 执行通知 → 物流运单', () => {
+    let adminToken: string;
+    const approverTokens: Record<string, string> = {};
+    const createdPartnerIds: string[] = [];
+    const createdCategoryIds: string[] = [];
+    const createdMaterialIds: string[] = [];
+    let contractId: string;
+    let orderId: string;
+    let noticeId: string;
+    let waybillId: string;
 
-    beforeEach(async () => {
-      const hashed = await bcrypt.hash('test123', 10);
-      await prisma.user.create({
-        data: { username: 'e2euser', password: hashed, name: 'E2E 用户', role: 'USER' },
-      });
-
-      const loginRes = await request(app.getHttpServer())
+    beforeAll(async () => {
+      const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin123';
+      const adminLogin = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ username: 'e2euser', password: 'test123' });
-      authToken = loginRes.body.token;
-    });
-
-    it('CRUD 供应商', async () => {
-      const created = await request(app.getHttpServer())
-        .post('/api/v1/master-data/suppliers')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ code: 'SUP-CRUD', name: 'CRUD 供应商', contactPerson: '测试', contactPhone: '13800000000' })
+        .send({ username: 'admin', password: adminPassword })
         .expect(201);
-      expect(created.body.name).toBe('CRUD 供应商');
+      adminToken = adminLogin.body.token;
 
-      const list = await request(app.getHttpServer())
-        .get('/api/v1/master-data/suppliers')
-        .set('Authorization', `Bearer ${authToken}`)
-        .expect(200);
-      expect(list.body.items.length).toBeGreaterThanOrEqual(1);
-    });
+      // 四级或签审批链的种子账号，密码与 admin 不同（见 prisma/seed.ts）。
+      const approverPassword = process.env.SEED_APPROVER_PASSWORD || 'approver123';
+      for (const username of ['business_manager', 'risk_manager', 'business_owner', 'general_manager']) {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .send({ username, password: approverPassword })
+          .expect(201);
+        approverTokens[username] = res.body.token;
+      }
 
-    it('CRUD 物料', async () => {
-      const created = await request(app.getHttpServer())
+      const signingPartner = await request(app.getHttpServer())
+        .post('/api/v1/partners')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: `${RUN}-执行链路签约主体`, isInternal: true, code: INTERNAL_CODE_2, roles: ['CUSTOMER'] });
+      createdPartnerIds.push(signingPartner.body.id);
+
+      const seller = await request(app.getHttpServer())
+        .post('/api/v1/partners')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: `${RUN}-执行链路供应商`, roles: ['SUPPLIER'] });
+      createdPartnerIds.push(seller.body.id);
+
+      const category = await request(app.getHttpServer())
+        .post('/api/v1/master-data/material-categories')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: `${RUN}-执行链路分类` });
+      createdCategoryIds.push(category.body.id);
+
+      const material = await request(app.getHttpServer())
         .post('/api/v1/master-data/materials')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ code: 'MAT-CRUD', name: 'CRUD 物料', category: '测试', unit: 'TON' })
-        .expect(201);
-      expect(created.body.name).toBe('CRUD 物料');
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          categoryId: category.body.id,
+          baseName: '萤石',
+          commodityForm: '精粉',
+          coreSpecName: 'CaF₂',
+          coreSpecOperator: 'GTE',
+          coreSpecValue: '92',
+          coreSpecUnit: '%',
+          packageType: 'BULK',
+          unit: 'TON',
+        });
+      createdMaterialIds.push(material.body.id);
+
+      const contract = await request(app.getHttpServer())
+        .post('/api/v1/contracts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: `${RUN}-执行链路合同`,
+          type: 'PURCHASE',
+          sellerId: seller.body.id,
+          signingPartnerId: signingPartner.body.id,
+          totalAmount: 20000,
+          lineItems: [{ materialId: material.body.id, quantity: 20, unit: 'TON', unitPrice: 1000 }],
+        });
+      contractId = contract.body.id;
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/contracts/${contractId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'PENDING_APPROVAL' })
+        .expect(200);
+
+      // 按步骤顺序走完四级或签：业务主管(运营经理)→风控/财务经理→业务责任人→总经理。
+      for (const username of ['business_manager', 'risk_manager', 'business_owner', 'general_manager']) {
+        await request(app.getHttpServer())
+          .patch(`/api/v1/contracts/${contractId}/status`)
+          .set('Authorization', `Bearer ${approverTokens[username]}`)
+          .send({ status: 'APPROVED', comment: 'e2e 自动化审批通过' })
+          .expect(200);
+      }
+
+      const check = await request(app.getHttpServer())
+        .get(`/api/v1/contracts/${contractId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(check.body.status).toBe('APPROVED');
     });
 
-    it('CRUD 仓库', async () => {
-      const created = await request(app.getHttpServer())
-        .post('/api/v1/master-data/warehouses')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ code: 'WH-CRUD', name: 'CRUD 仓库', address: '测试地址' })
+    afterAll(async () => {
+      // 依赖顺序（深→浅）：称重记录/磅单/过磅任务/质检任务/物流入库单 都挂在 Waybill 下；
+      // Waybill 挂在 DispatchNotice 下；DispatchNotice 挂在 Order 下；Order 挂在 Contract 下。
+      const waybillIds = waybillId ? [waybillId] : [];
+      await prisma.weighRecord.deleteMany({ where: { weighTicket: { waybillId: { in: waybillIds } } } });
+      await prisma.weighTicket.deleteMany({ where: { waybillId: { in: waybillIds } } });
+      await prisma.weighTask.deleteMany({ where: { waybillId: { in: waybillIds } } });
+      await prisma.qualityTask.deleteMany({ where: { waybillId: { in: waybillIds } } });
+      const inbounds = await prisma.inboundReceipt.findMany({ where: { waybillId: { in: waybillIds } }, select: { id: true } });
+      await prisma.businessInbound.deleteMany({ where: { receiptId: { in: inbounds.map((i) => i.id) } } });
+      await prisma.inboundReceipt.deleteMany({ where: { id: { in: inbounds.map((i) => i.id) } } });
+      await prisma.waybillLineItem.deleteMany({ where: { waybillId: { in: waybillIds } } });
+      for (const id of waybillIds) await prisma.waybill.delete({ where: { id } }).catch(() => undefined);
+
+      if (noticeId) {
+        await prisma.dispatchNoticeLineItem.deleteMany({ where: { dispatchNoticeId: noticeId } });
+        await prisma.dispatchNotice.delete({ where: { id: noticeId } }).catch(() => undefined);
+      }
+      if (orderId) {
+        await prisma.orderLineItem.deleteMany({ where: { orderId } });
+        await prisma.order.delete({ where: { id: orderId } }).catch(() => undefined);
+      }
+      if (contractId) {
+        await prisma.contractLineItem.deleteMany({ where: { contractId } });
+        await prisma.approval.deleteMany({ where: { contractId } });
+        await prisma.contract.delete({ where: { id: contractId } }).catch(() => undefined);
+      }
+      for (const id of createdMaterialIds) {
+        const material = await prisma.material.findUnique({ where: { id }, select: { standardCommodityId: true } });
+        await prisma.material.delete({ where: { id } }).catch(() => undefined);
+        if (material?.standardCommodityId) {
+          await prisma.standardCommodity.delete({ where: { id: material.standardCommodityId } }).catch(() => undefined);
+        }
+      }
+      for (const id of createdCategoryIds) {
+        await prisma.materialCategory.delete({ where: { id } }).catch(() => undefined);
+      }
+      for (const id of createdPartnerIds) {
+        await prisma.partner.delete({ where: { id } }).catch(() => undefined);
+      }
+    });
+
+    it('合同通过四级或签后状态为 APPROVED（上面 beforeAll 已验证，这里只是显式留一条可读的断言）', () => {
+      expect(contractId).toBeTruthy();
+    });
+
+    it('POST /orders — 只能从已通过合同建立执行批次', async () => {
+      const contractDetail = await request(app.getHttpServer())
+        .get(`/api/v1/contracts/${contractId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      const lineItemId = contractDetail.body.lineItems[0].id;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/orders')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: `${RUN}-执行批次`,
+          contractId,
+          type: 'PURCHASE',
+          lineItems: [{ contractLineItemId: lineItemId, quantity: 10 }],
+        })
         .expect(201);
-      expect(created.body.name).toBe('CRUD 仓库');
+
+      expect(res.body.orderNo).toMatch(/^CGDD/);
+      expect(res.body.status).toBe('DRAFT');
+      orderId = res.body.id;
+    });
+
+    it('PATCH /orders/:id/status — 确认执行批次', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'CONFIRMED' })
+        .expect(200);
+      expect(res.body.status).toBe('CONFIRMED');
+    });
+
+    it('POST /dispatch-notices — 从已确认执行批次建立供应商发货指令', async () => {
+      const orderDetail = await request(app.getHttpServer())
+        .get(`/api/v1/orders/${orderId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      const orderLineItemId = orderDetail.body.lineItems[0].id;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/dispatch-notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          orderId,
+          originLocation: `${RUN}-发货地`,
+          destinationLocation: `${RUN}-收货地`,
+          lineItems: [{ orderLineItemId, quantity: 10 }],
+        })
+        .expect(201);
+
+      expect(res.body.noticeNo).toMatch(/^PI-/);
+      expect(res.body.status).toBe('DRAFT');
+      noticeId = res.body.id;
+    });
+
+    it('PATCH /dispatch-notices/:id/status — 下达通知', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/dispatch-notices/${noticeId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'ISSUED' })
+        .expect(200);
+      expect(res.body.status).toBe('ISSUED');
+    });
+
+    it('POST /waybills — 从已下达通知建立物流运单，执行批次自动转为执行中', async () => {
+      const noticeDetail = await request(app.getHttpServer())
+        .get(`/api/v1/dispatch-notices/${noticeId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      const noticeLineItemId = noticeDetail.body.lineItems[0].id;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/waybills')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          dispatchNoticeId: noticeId,
+          freightMode: 'SELF',
+          plateNo: `${RUN}-99999`,
+          driverName: `${RUN}-司机`,
+          driverPhone: '13900000000',
+          lineItems: [{ dispatchNoticeLineItemId: noticeLineItemId, quantity: 10 }],
+        })
+        .expect(201);
+
+      expect(res.body.waybillNo).toMatch(/^WB-/);
+      expect(res.body.status).toBe('PENDING');
+      waybillId = res.body.id;
+
+      const orderAfter = await request(app.getHttpServer())
+        .get(`/api/v1/orders/${orderId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(orderAfter.body.status).toBe('DISPATCHED');
+    });
+
+    it('PATCH /waybills/:id/status — 发运后自动生成待到货入库作业单', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/v1/waybills/${waybillId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'IN_TRANSIT' })
+        .expect(200);
+
+      const inbound = await prisma.inboundReceipt.findFirst({ where: { waybillId } });
+      expect(inbound).not.toBeNull();
+      expect(inbound?.status).toBe('PENDING');
+    });
+
+    it('PATCH /waybills/:id/status — 到达后自动生成过磅任务与质检任务', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/waybills/${waybillId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'ARRIVED' })
+        .expect(200);
+      expect(res.body.status).toBe('ARRIVED');
+
+      const weighTask = await prisma.weighTask.findUnique({ where: { waybillId } });
+      const qualityTask = await prisma.qualityTask.findUnique({ where: { waybillId } });
+      expect(weighTask).not.toBeNull();
+      expect(qualityTask).not.toBeNull();
+    });
+
+    it('POST /weigh-tickets/:id/records — 系统已自动生成待过磅单，可直接录入毛重/皮重', async () => {
+      const tickets = await request(app.getHttpServer())
+        .get('/api/v1/weigh-tickets')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .query({ waybillId });
+      const ticketId = tickets.body.items[0].id;
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/weigh-tickets/${ticketId}/records`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ weighingType: 'GROSS', weight: 42.0 })
+        .expect(201);
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/weigh-tickets/${ticketId}/records`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ weighingType: 'TARE', weight: 32.0 })
+        .expect(201);
+
+      // 10 吨净重与计划数量一致，不应触发磅差异常。
+      expect(Number(res.body.netWeight)).toBeCloseTo(10, 3);
+      expect(res.body.abnormal).toBe(false);
     });
   });
 });

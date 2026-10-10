@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 const STATUS: Record<string, string> = {
   PENDING: '作业中', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已作废',
@@ -99,7 +100,7 @@ export default function InboundDetail() {
       }
       setReceiptError('');
     }
-    if (!confirm(prompts[type])) return;
+    if (!await confirmAction(prompts[type], { title: type === 'confirm' ? '入库确认' : '入库操作确认' })) return;
     setSaving(true);
     try {
       if (type === 'confirm') await api.patch(`/inbound-receipts/${id}`, pendingPayload());
@@ -131,7 +132,7 @@ export default function InboundDetail() {
   };
 
   const removeAttachment = async (attachment: any) => {
-    if (!confirm(`确认删除附件“${attachment.originalName}”？`)) return;
+    if (!await confirmAction(`确认删除附件“${attachment.originalName}”？`)) return;
     try {
       await api.delete(`/inbound-receipts/attachments/${attachment.id}`);
       await load();
@@ -149,7 +150,7 @@ export default function InboundDetail() {
   };
 
   const selectAcceptanceQuality = async (qualityInspectionId: string) => {
-    if (!confirm('确认采用到货质检任务已经确定的执行口径报告？最终入库数量和扣减数据将同步更新。')) return;
+    if (!await confirmAction('确认采用到货质检任务已经确定的执行口径报告？最终入库数量和扣减数据将同步更新。', { title: '采用质检结果确认' })) return;
     setSaving(true);
     try {
       const result = await api.patch(`/inbound-receipts/${id}/acceptance-quality`, { qualityInspectionId });

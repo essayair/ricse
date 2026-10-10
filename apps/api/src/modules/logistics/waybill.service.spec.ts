@@ -380,6 +380,101 @@ describe('WaybillService', () => {
       .rejects.toThrow('必须先完成物流出库和库存扣减');
   });
 
+  it('社会运力运单不校验车辆和司机的归属一致性', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.vehicle.findFirst.mockResolvedValue({ id: 'vehicle-1', ownerType: 'OUTSOURCED', ownerId: 'carrier-other', plateNo: '甘A00001' } as any);
+    prisma.driver.findFirst.mockResolvedValue({ id: 'driver-1', name: '散户司机', phone: '13800000000', serviceOrganization: null } as any);
+    prisma.waybill.create.mockResolvedValue({ id: 'waybill-social', waybillNo: 'WB-20260717-0003' } as any);
+
+    await service.create({
+      dispatchNoticeId: notice.id,
+      freightMode: 'SOCIAL',
+      vehicleId: 'vehicle-1',
+      driverId: 'driver-1',
+      lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+    }, 'user-1');
+
+    expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ freightMode: 'SOCIAL', carrierPartnerId: null, carrierName: null }),
+    }));
+  });
+
+  it('车队绑定承运商后，队内车辆在第三方承运模式下直接可用', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.serviceOrganization.findFirst.mockResolvedValue({
+      id: 'org-1', partner: { id: 'carrier-1', name: 'XX物流' },
+    } as any);
+    prisma.vehicle.findFirst.mockResolvedValue({ id: 'vehicle-1', ownerType: 'OUTSOURCED', ownerId: 'carrier-other' } as any);
+    prisma.vehicleFleet.findFirst.mockResolvedValue({ id: 'link-1' } as any);
+    prisma.waybill.create.mockResolvedValue({ id: 'waybill-fleet', waybillNo: 'WB-20260717-0004' } as any);
+
+    await service.create({
+      dispatchNoticeId: notice.id,
+      freightMode: 'THIRD_PARTY',
+      carrierPartnerId: 'carrier-1',
+      vehicleId: 'vehicle-1',
+      lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+    }, 'user-1');
+
+    expect(prisma.vehicleFleet.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vehicleId: 'vehicle-1', fleet: { carrierPartnerId: 'carrier-1', status: 'ACTIVE', deletedAt: null } },
+    }));
+    expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ carrierPartnerId: 'carrier-1' }),
+    }));
+  });
+
+  it('车队绑定承运商后，队内司机在第三方承运模式下直接可用', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.serviceOrganization.findFirst.mockResolvedValue({
+      id: 'org-1', partner: { id: 'carrier-1', name: 'XX物流' },
+    } as any);
+    prisma.driver.findFirst.mockResolvedValue({
+      id: 'driver-1', name: '车队司机', phone: '13800000000',
+      serviceOrganization: { partnerId: 'carrier-other', partner: { isInternal: false } },
+    } as any);
+    prisma.driverFleet.findFirst.mockResolvedValue({ id: 'link-2' } as any);
+    prisma.waybill.create.mockResolvedValue({ id: 'waybill-fleet-driver', waybillNo: 'WB-20260717-0005' } as any);
+
+    await service.create({
+      dispatchNoticeId: notice.id,
+      freightMode: 'THIRD_PARTY',
+      carrierPartnerId: 'carrier-1',
+      driverId: 'driver-1',
+      lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+    }, 'user-1');
+
+    expect(prisma.driverFleet.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { driverId: 'driver-1', fleet: { carrierPartnerId: 'carrier-1', status: 'ACTIVE', deletedAt: null } },
+    }));
+    expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ carrierPartnerId: 'carrier-1' }),
+    }));
+  });
+
+  it('非社会运力运单不能通过单独绑定承运商接口修改', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: 'waybill-1', freightMode: 'THIRD_PARTY' } as any);
+    await expect(service.bindCarrier('waybill-1', 'carrier-1', 'user-1')).rejects.toThrow('仅社会运力运单支持单独绑定开票承运商');
+  });
+
+  it('社会运力运单可以在签收后补绑开票承运商', async () => {
+    prisma.waybill.findFirst
+      .mockResolvedValueOnce({ id: 'waybill-social', freightMode: 'SOCIAL', status: 'SIGNED' } as any)
+      .mockResolvedValueOnce({ id: 'waybill-social', freightMode: 'SOCIAL', status: 'SIGNED', carrierPartnerId: 'carrier-1', carrierName: 'XX物流' } as any);
+    prisma.serviceOrganization.findFirst.mockResolvedValue({
+      id: 'org-1', partner: { id: 'carrier-1', name: 'XX物流' },
+    } as any);
+    prisma.waybill.update.mockResolvedValue({ id: 'waybill-social' } as any);
+
+    const result = await service.bindCarrier('waybill-social', 'carrier-1', 'user-1');
+
+    expect(prisma.waybill.update).toHaveBeenCalledWith({
+      where: { id: 'waybill-social' },
+      data: { carrierPartnerId: 'carrier-1', carrierName: 'XX物流' },
+    });
+    expect(result.carrierPartnerId).toBe('carrier-1');
+  });
+
   it('取消未出库运单时同步取消自动生成的车次作业', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-sales',

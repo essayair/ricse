@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 interface Indicator { id: string; name: string; operator: string; standardValue: string | null; upperValue: string | null; fuseValue: string | null; unit: string; measuredValue: string | null; result: string }
 interface Attachment { id: string; originalName: string; mimeType: string; size: number; category: string; sourceType?: string | null; evidenceNode?: string | null; capturedAt?: string | null; watermarkText?: string | null; createdAt: string; uploader?: { name: string } | null }
@@ -114,10 +115,10 @@ export default function QualityTaskDetailPage() {
   const confirmReport = async (report: Report) => {
     let resolution: string | undefined;
     if (report.conclusion === 'FUSE') {
-      resolution = prompt('该报告判定为不合格（拒收），请填写处理方案')?.trim();
+      resolution = (await promptAction('该报告判定为不合格（拒收），请填写处理方案', '', { title: '填写不合格处理方案' }))?.trim();
       if (!resolution) return;
     }
-    if (!confirm(`确认检测机构【${report.institutionName}】的报告 ${report.reportNo} 有效？`)) return;
+    if (!await confirmAction(`确认检测机构【${report.institutionName}】的报告 ${report.reportNo} 有效？`, { title: '检测报告有效性确认' })) return;
     setSaving(true);
     try { await api.patch(`/quality-inspections/${report.id}/status`, { status: 'CONFIRMED', resolution }); await load(); }
     catch (error: any) { alert(error.message || '检测报告确认失败'); }
@@ -135,7 +136,7 @@ export default function QualityTaskDetailPage() {
     let message = `本次将依据 ${confirmed.length} 份有效检测报告形成最终结论“${CONCLUSION[selectedBasis.conclusion]}”，并以【${selectedBasis.institutionName} / ${selectedBasis.reportNo}】作为入库和结算执行口径。确认后将影响后续业务，是否继续？`;
     if (confirmed.length === 1) message = `当前仅有 1 份有效检测报告。确认后，该报告将单独作为本到货批次最终质检依据并影响入库及结算。请确认已核实合同约定、报告真实性和业务风险。是否继续？`;
     if (selectedBasis.conclusion === 'FUSE') message = `本次最终判定为“不合格（拒收）”。确认后将禁止货物入库并进入异常处理，请再次核对检测报告。是否继续？`;
-    if (!confirm(message)) return;
+    if (!await confirmAction(message, { title: '最终质检结论确认' })) return;
     setSaving(true);
     try {
       await api.patch(`/quality-tasks/${item.id}/finalize`, { conclusion: selectedBasis.conclusion, basisInspectionId: selectedBasis.id, reason: reason.trim() || undefined });
@@ -163,7 +164,7 @@ export default function QualityTaskDetailPage() {
   };
 
   const deleteReportAttachment = async (attachment: Attachment) => {
-    if (!confirm(`确认删除附件“${attachment.originalName}”？`)) return;
+    if (!await confirmAction(`确认删除附件“${attachment.originalName}”？`)) return;
     setSaving(true);
     try { await api.delete(`/quality-inspections/attachments/${attachment.id}`); await load(); }
     catch (error: any) { alert(error.message || '检测报告附件删除失败'); }
@@ -171,7 +172,7 @@ export default function QualityTaskDetailPage() {
   };
 
   const voidReport = async (report: Report) => {
-    if (!confirm(`确认作废检测报告 ${report.reportNo}？原报告会保留用于追溯，可重新添加正确报告。`)) return;
+    if (!await confirmAction(`确认作废检测报告 ${report.reportNo}？原报告会保留用于追溯，可重新添加正确报告。`)) return;
     setSaving(true);
     try { await api.patch(`/quality-inspections/${report.id}/status`, { status: 'VOIDED' }); await load(); }
     catch (error: any) { alert(error.message || '检测报告作废失败'); }
@@ -213,7 +214,7 @@ export default function QualityTaskDetailPage() {
   };
 
   const deleteSample = async (sample: Sample) => {
-    if (!confirm(`确认删除样品“${sample.sampleNo}”？已关联有效检测报告的样品不能删除。`)) return;
+    if (!await confirmAction(`确认删除样品“${sample.sampleNo}”？已关联有效检测报告的样品不能删除。`)) return;
     setSaving(true);
     try { await api.delete(`/quality-tasks/samples/${sample.id}`); await load(); }
     catch (error: any) { alert(error.message || '样品删除失败'); }
@@ -242,7 +243,7 @@ export default function QualityTaskDetailPage() {
   };
 
   const deleteTaskAttachment = async (attachment: Attachment) => {
-    if (!confirm(`确认删除现场影像“${attachment.originalName}”？`)) return;
+    if (!await confirmAction(`确认删除现场影像“${attachment.originalName}”？`)) return;
     setSaving(true);
     try { await api.delete(`/quality-tasks/attachments/${attachment.id}`); await load(); }
     catch (error: any) { alert(error.message || '现场影像删除失败'); }
@@ -270,7 +271,7 @@ export default function QualityTaskDetailPage() {
   };
 
   const deleteSampleAttachment = async (attachment: Attachment) => {
-    if (!confirm(`确认删除样品影像“${attachment.originalName}”？`)) return;
+    if (!await confirmAction(`确认删除样品影像“${attachment.originalName}”？`)) return;
     setSaving(true);
     try { await api.delete(`/quality-tasks/sample-attachments/${attachment.id}`); await load(); }
     catch (error: any) { alert(error.message || '样品影像删除失败'); }

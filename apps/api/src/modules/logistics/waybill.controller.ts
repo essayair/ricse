@@ -95,6 +95,11 @@ export class WaybillController {
     return this.service.updateStatus(id, status, userId);
   }
 
+  @Patch(':id/carrier')
+  bindCarrier(@Param('id') id: string, @Body('carrierPartnerId') carrierPartnerId: string | null, @CurrentUser('id') userId: string) {
+    return this.service.bindCarrier(id, carrierPartnerId || null, userId);
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.remove(id, userId);

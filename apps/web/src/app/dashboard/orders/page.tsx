@@ -10,6 +10,7 @@ import { ArrowDownToLine, ArrowUpFromLine, ChevronRight, Plus, Search, Trash2 } 
 import { unitLabel } from '@/lib/unit';
 import { BusinessDirectionBadge, businessDirectionFilterClass, businessDirectionStyle } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 interface Order {
   id: string;
@@ -76,7 +77,7 @@ export default function OrdersPage() {
   useEffect(() => { void load(); }, [search, status, type]);
 
   const remove = async (id: string) => {
-    if (!confirm('确定删除该执行批次？')) return;
+    if (!await confirmAction('确定删除该执行批次？')) return;
     try {
       await api.delete(`/orders/${id}`);
       await load();

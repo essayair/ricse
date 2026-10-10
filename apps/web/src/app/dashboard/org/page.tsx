@@ -10,6 +10,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Building2, Users, Layers, Network, Plus, Loader2, ChevronDown, ChevronRight, Trash2, Check, X, Pencil, ArrowUp, ArrowDown, GripVertical, Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
@@ -263,7 +264,7 @@ function OrgPageInner() {
   };
 
   const handleDeleteDept = async (deptId: string) => {
-    if (!confirm('确定删除该部门？')) return;
+    if (!await confirmAction('确定删除该部门？')) return;
     try {
       await api.delete(`/org/departments/${deptId}`);
       fetchAll();
@@ -393,7 +394,7 @@ function OrgPageInner() {
         : employee.status === 'RESIGNED'
           ? `确定将员工 ${employee.name} 设置为重新入职？${employee.user ? '\n原账号仍保持禁用，需要确认后单独启用。' : ''}`
           : `确定恢复员工 ${employee.name}？${employee.user ? '\n员工恢复后，账号仍需单独启用。' : ''}`;
-    if (!confirm(message)) return;
+    if (!await confirmAction(message, { title: '员工状态变更确认' })) return;
     try {
       await api.patch(`/org/employees/${employee.id}`, { status });
       await fetchAll();
@@ -445,7 +446,7 @@ function OrgPageInner() {
       <td className="px-4 py-2.5">
         <button onClick={async () => {
           const newStatus = u.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-          if (!confirm(newStatus === 'DISABLED'
+          if (!await confirmAction(newStatus === 'DISABLED'
             ? `确定禁用账号 ${u.username}？\n该账号现有登录将立即失效。`
             : `确定启用账号 ${u.username}？`)) return;
           try { await api.patch(`/users/${u.id}`, { status: newStatus }); fetchAll(); }
@@ -925,7 +926,7 @@ function OrgPageInner() {
                 <StatusText key="st" status={c.status}>{c.status === 'ACTIVE' ? '启用' : '停用'}</StatusText>,
                 c.isManagementEntity ? <span key="op" className="text-xs text-muted-foreground">管理主体锁定</span> : <button key="op" onClick={async () => {
                   const newStatus = c.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-                  if (!confirm(newStatus === 'DISABLED'
+                  if (!await confirmAction(newStatus === 'DISABLED'
                     ? `确定停用企业 ${c.name}？\n该企业下的后台账号将无法继续登录。`
                     : `确定启用企业 ${c.name}？`)) return;
                   try {
@@ -1113,7 +1114,7 @@ function OrgPageInner() {
                                           {!e.user && (
                                           <button
                                             onClick={async () => {
-                                              if (!confirm(`仅建档错误且尚未开通账号时才可删除。\n确定删除员工 ${e.name}？`)) return;
+                                              if (!await confirmAction(`仅建档错误且尚未开通账号时才可删除。\n确定删除员工 ${e.name}？`)) return;
                                               try { await api.delete(`/org/employees/${e.id}`); fetchAll(); }
                                               catch (err: any) { alert(err.message || '删除失败'); }
                                             }}

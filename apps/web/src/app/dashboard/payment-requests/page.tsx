@@ -1,3 +1,6 @@
 import { PaymentRequestWorkbench } from '@/components/settlement/payment-request-workbench';
+import { SettlementSectionTabs } from '@/components/settlement/settlement-section-tabs';
 
-export default function PaymentRequestsPage() { return <PaymentRequestWorkbench />; }
+export default function PaymentRequestsPage() {
+  return <div className="space-y-5"><SettlementSectionTabs section="payable"/><PaymentRequestWorkbench /></div>;
+}

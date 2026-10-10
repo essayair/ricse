@@ -15,6 +15,7 @@ interface CandidateWaybill {
   originLocation: string | null;
   destinationLocation: string | null;
   carrierName: string | null;
+  carrierPending: boolean;
   weightSelections: Array<{ quantity: string }>;
 }
 
@@ -117,18 +118,23 @@ export default function NewLogisticsSettlementPage() {
                 </thead>
                 <tbody>
                   {candidates.map((item) => (
-                    <tr key={item.id} className="border-b">
+                    <tr key={item.id} className={`border-b ${item.carrierPending ? 'bg-amber-50' : ''}`}>
                       <td className="p-3">
-                        <input type="checkbox" checked={!!selected[item.id]} onChange={() => toggle(item.id)} />
+                        <input type="checkbox" checked={!!selected[item.id]} disabled={item.carrierPending}
+                          onChange={() => toggle(item.id)} title={item.carrierPending ? '请先确定该运单的开票承运商' : undefined} />
                       </td>
                       <td className="p-3 font-mono">{item.waybillNo}</td>
                       <td className="p-3">{item.plateNo || '—'}</td>
                       <td className="p-3">{item.originLocation || '—'} → {item.destinationLocation || '—'}</td>
-                      <td className="p-3">{item.carrierName || '—'}</td>
+                      <td className="p-3">
+                        {item.carrierPending
+                          ? <span className="text-amber-700" title="社会运力运单尚未补绑开票承运商，请先到运单详情页完成绑定">请先确定该运单的开票承运商</span>
+                          : (item.carrierName || '—')}
+                      </td>
                       <td className="p-3 text-xs text-muted-foreground">{item.signedAt?.slice(0, 16).replace('T', ' ') || '—'}</td>
                       <td className="p-3">{item.weightSelections[0]?.quantity ?? '—'}</td>
                       <td className="p-3">
-                        <Input type="number" className="w-32" placeholder="留空则按合同价自动匹配"
+                        <Input type="number" className="w-32" placeholder="留空则按合同价自动匹配" disabled={item.carrierPending}
                           value={manualPrices[item.id] || ''}
                           onChange={(e) => setManualPrices((prev) => ({ ...prev, [item.id]: e.target.value }))} />
                       </td>

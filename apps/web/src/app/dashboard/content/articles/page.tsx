@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 const EMPTY = {
   type: 'NEWS', title: '', categoryId: '', summary: '', content: '', coverUrl: '', source: '', author: '', tags: '',
@@ -108,17 +109,17 @@ export default function ContentArticlesPage() {
   const changeStatus = async (item: any, next: string) => {
     let reviewNote: string | undefined;
     if (next === 'REJECTED') {
-      const reason = window.prompt(`请输入驳回“${item.title}”的审核意见：`);
+      const reason = await promptAction(`请输入驳回“${item.title}”的审核意见：`);
       if (reason === null) return;
       if (!reason.trim()) return alert('驳回时必须填写审核意见');
       reviewNote = reason.trim();
-    } else if (!window.confirm(next === 'PUBLISHED'
+    } else if (!await confirmAction(next === 'PUBLISHED'
       ? `确定审核通过并发布“${item.title}”吗？发布后官网和小程序将可以读取。`
       : `确定下线“${item.title}”吗？`)) return;
     try { await api.patch(`/content/articles/${item.id}/status`, { status: next, reviewNote }); load(); } catch (error: any) { alert(error.message); }
   };
   const remove = async (item: any) => {
-    if (!window.confirm(`确定删除“${item.title}”吗？`)) return;
+    if (!await confirmAction(`确定删除“${item.title}”吗？`)) return;
     try { await api.delete(`/content/articles/${item.id}`); load(); } catch (error: any) { alert(error.message); }
   };
   const createCategory = async () => {

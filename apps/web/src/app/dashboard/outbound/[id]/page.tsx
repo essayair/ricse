@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { waybillStatusLabel } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 const STATUS: Record<string, string> = {
   PENDING: '待称重/拣配', READY: '待放行', VARIANCE_PENDING: '待差异处理', POSTED: '已出库', CANCELLED: '已取消',
@@ -45,7 +46,7 @@ export default function OutboundOrderDetailPage() {
   };
 
   const release = async (receipt: any) => {
-    if (!confirm(`确认车辆 ${receipt.plateNo || receipt.waybill.waybillNo} 放行？系统将按实际重量扣减库存、生成销售出库单并将运单置为在途。`)) return;
+    if (!await confirmAction(`确认车辆 ${receipt.plateNo || receipt.waybill.waybillNo} 放行？系统将按实际重量扣减库存、生成销售出库单并将运单置为在途。`, { title: '车辆放行确认' })) return;
     setSaving(true);
     try {
       await api.post(`/outbound-receipts/${receipt.id}/post`, {});

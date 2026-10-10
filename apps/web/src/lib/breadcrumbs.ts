@@ -16,10 +16,12 @@ const HOME: BreadcrumbItem = { label: '首页', href: '/dashboard' };
 
 const MASTER_DATA_TABS: Record<string, string> = {
   partners: '合作伙伴',
-  materials: '商品物料',
-  warehouses: '仓库管理',
-  vehicles: '车辆管理',
+  'service-organizations': '服务生态',
+  materials: '物料品类',
+  warehouses: '仓库库位',
+  vehicles: '运力管理',
   price: '价格基准',
+  'quality-standards': '质检标准',
 };
 
 const ORGANIZATION_TABS: Record<string, string> = {
@@ -102,20 +104,14 @@ function resolveMasterData(pathname: string, params?: BreadcrumbSearchParams): B
     ]);
   }
 
+  // 服务生态列表已并入主数据顶部 Tab（?tab=service-organizations）；新建/编辑/司机管理仍是独立子页面。
   const serviceBase = '/dashboard/master-data/service-organizations';
-  if (pathname === serviceBase) {
-    const type = params?.get('type') || 'LOGISTICS_CARRIER';
-    return withHome([
-      root,
-      { label: '服务生态', href: serviceBase },
-      { label: SERVICE_ORGANIZATION_TYPES[type] || '物流承运商' },
-    ]);
-  }
+  const serviceList: BreadcrumbItem = { label: '服务生态', href: '/dashboard/master-data?tab=service-organizations' };
   if (pathname === `${serviceBase}/new`) {
     const type = params?.get('type') || 'LOGISTICS_CARRIER';
     return withHome([
       root,
-      { label: '服务生态', href: `${serviceBase}?type=${type}` },
+      serviceList,
       { label: `新建${SERVICE_ORGANIZATION_TYPES[type] || '服务组织'}` },
     ]);
   }
@@ -124,23 +120,23 @@ function resolveMasterData(pathname: string, params?: BreadcrumbSearchParams): B
     if (serviceMatch[2] === 'drivers') {
       return withHome([
         root,
-        { label: '服务生态', href: `${serviceBase}?type=LOGISTICS_CARRIER` },
+        serviceList,
         { label: '物流承运商' },
         { label: '司机管理' },
       ]);
     }
     return withHome([
       root,
-      { label: '服务生态', href: serviceBase },
+      serviceList,
       { label: '编辑服务组织' },
     ]);
   }
 
   const entityConfig: Record<string, { label: string; tab: string; detail: string; create: string; edit: string }> = {
     partners: { label: '合作伙伴', tab: 'partners', detail: '合作伙伴详情', create: '新增合作伙伴', edit: '编辑合作伙伴' },
-    materials: { label: '商品物料', tab: 'materials', detail: '商品物料详情', create: '新建商品物料', edit: '维护商品物料' },
-    warehouses: { label: '仓库管理', tab: 'warehouses', detail: '仓库详情', create: '新增仓库', edit: '编辑仓库' },
-    vehicles: { label: '车辆管理', tab: 'vehicles', detail: '车辆详情', create: '新建车辆', edit: '编辑车辆' },
+    materials: { label: '物料品类', tab: 'materials', detail: '商品物料详情', create: '新建商品物料', edit: '维护商品物料' },
+    warehouses: { label: '仓库库位', tab: 'warehouses', detail: '仓库详情', create: '新增仓库', edit: '编辑仓库' },
+    vehicles: { label: '运力管理', tab: 'vehicles', detail: '车辆详情', create: '新建车辆', edit: '编辑车辆' },
   };
   const entityMatch = pathname.match(/^\/dashboard\/master-data\/(partners|materials|warehouses|vehicles)\/([^/]+)(?:\/(edit))?$/);
   if (!entityMatch) return null;
@@ -238,7 +234,8 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     return {
       items: withHome([
         { label: '资金结算' },
-        { label: '付款申请', href: '/dashboard/payment-requests' },
+        { label: '应付管理' },
+        { label: '付款申请单', href: '/dashboard/payment-requests' },
         { label: '付款申请详情', href: `/dashboard/payment-requests/${requestId}` },
         { label: '打印存档' },
       ]),
@@ -250,18 +247,43 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     return {
       items: withHome([
         { label: '资金结算' },
-        { label: '付款申请', href: '/dashboard/payment-requests' },
+        { label: '应付管理' },
+        { label: '付款申请单', href: '/dashboard/payment-requests' },
         { label: '付款申请详情' },
       ]),
       supported: true,
     };
   }
 
-  if (/^\/dashboard\/funds\/[^/]+$/.test(pathname)) {
+  if (pathname === '/dashboard/payments/create') {
     return {
       items: withHome([
         { label: '资金结算' },
-        { label: '收付款管理', href: '/dashboard/payments' },
+        { label: '应付管理' },
+        { label: '付款单', href: '/dashboard/payments' },
+        { label: '创建付款单' },
+      ]),
+      supported: true,
+    };
+  }
+
+  if (/^\/dashboard\/funds\/[^/]+$/.test(pathname)) {
+    const direction = params?.get('direction');
+    const receipt = direction === 'RECEIPT';
+    const payment = direction === 'PAYMENT';
+    return {
+      items: withHome(receipt ? [
+        { label: '资金结算' },
+        { label: '应收管理' },
+        { label: '收款单', href: '/dashboard/receipts' },
+        { label: '收款单详情' },
+      ] : payment ? [
+        { label: '资金结算' },
+        { label: '应付管理' },
+        { label: '付款单', href: '/dashboard/payments' },
+        { label: '付款单详情' },
+      ] : [
+        { label: '资金结算' },
         { label: '资金单详情' },
       ]),
       supported: true,
@@ -288,11 +310,11 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     '/dashboard/inventory': [{ label: '库存管理' }, { label: '在库总览' }],
     '/dashboard/monitor': [{ label: '影像监控' }],
     '/dashboard/settlement': [{ label: '资金结算' }, { label: '应收管理' }],
-    '/dashboard/receivables': [{ label: '资金结算' }, { label: '应收管理' }],
-    '/dashboard/receipts': [{ label: '资金结算' }, { label: '收款管理' }],
+    '/dashboard/receivables': [{ label: '资金结算' }, { label: '应收管理' }, { label: '应收款计划' }],
+    '/dashboard/receipts': [{ label: '资金结算' }, { label: '应收管理' }, { label: '收款单' }],
     '/dashboard/payables': [{ label: '资金结算' }, { label: '应付管理' }],
-    '/dashboard/payment-requests': [{ label: '资金结算' }, { label: '付款申请' }],
-    '/dashboard/payments': [{ label: '资金结算' }, { label: '付款管理' }],
+    '/dashboard/payment-requests': [{ label: '资金结算' }, { label: '应付管理' }, { label: '付款申请单' }],
+    '/dashboard/payments': [{ label: '资金结算' }, { label: '应付管理' }, { label: '付款单' }],
     '/dashboard/settlement-ledger': [{ label: '资金结算' }, { label: '结算台账' }],
     '/dashboard/system/access-control': [{ label: '系统管理' }, { label: '用户与权限' }],
     '/dashboard/system/approvals': [{ label: '系统管理' }, { label: '审批流程' }],

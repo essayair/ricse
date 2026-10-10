@@ -1,3 +1,3 @@
-import { SettlementWorkbench } from '@/components/settlement/settlement-workbench';
+import { redirect } from 'next/navigation';
 
-export default function PayablesPage() { return <SettlementWorkbench direction="PAYABLE" standalone />; }
+export default function PayablesPage() { redirect('/dashboard/payment-requests'); }

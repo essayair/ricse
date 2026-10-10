@@ -31,11 +31,15 @@ describe('PartnerService 车辆管理', () => {
     })).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('外协车辆必须关联所属单位', async () => {
+  it('社会运力车辆可以暂不关联物流承运商', async () => {
     prisma.vehicle.findUnique.mockResolvedValue(null);
-    await expect(service.createVehicle({
+    prisma.vehicle.create.mockResolvedValue({ id: 'vehicle-social', plateNo: '浙A12345' } as any);
+    await service.createVehicle({
       plateNo: '浙A12345', vehicleType: 'TRUCK', loadCapacity: 32.5, ownerType: 'OUTSOURCED',
-    })).rejects.toBeInstanceOf(BadRequestException);
+    });
+    expect(prisma.vehicle.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ ownerType: 'OUTSOURCED', ownerId: null }),
+    }));
   });
 
   it('已有运单引用的车辆不能删除', async () => {

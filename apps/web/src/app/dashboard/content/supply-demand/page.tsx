@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { promptAction } from '@/lib/system-dialog';
 
 const EMPTY = { type: 'SUPPLY', productName: '', spec: '', quantity: '', priceText: '', region: '', description: '', contactName: '', contactPhone: '', company: '', status: 'PUBLISHED' };
 
@@ -28,7 +29,7 @@ export default function SupplyDemandPage() {
   useEffect(() => { load(); }, [load]);
 
   const review = async (id: string, next: string) => {
-    const reason = next === 'REJECTED' ? window.prompt('请输入驳回原因') : undefined;
+    const reason = next === 'REJECTED' ? await promptAction('请输入驳回原因') : undefined;
     if (next === 'REJECTED' && !reason) return;
     try { await api.patch(`/content/supply-demand/${id}/review`, { status: next, reason }); load(); } catch (e: any) { alert(e.message); }
   };

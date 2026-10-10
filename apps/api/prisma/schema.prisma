@@ -25,66 +25,69 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company                       Company?                     @relation(fields: [companyId], references: [id])
-  employee                      Employee?                    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  businessUnits                 UserBusinessUnit[]
-  roleAssignments               UserRoleAssignment[]
-  wechatIdentity                WechatIdentity?              @relation("WechatLinkedUser")
-  wechatBindingTargets          WechatAccountBinding[]       @relation("WechatBindingTarget")
-  operatedWechatBindings        WechatAccountBinding[]       @relation("WechatBindingOperator")
-  createdContracts              Contract[]                   @relation("ContractCreator")
-  createdPartners               Partner[]                    @relation("PartnerCreator")
-  approvalTasks                 Approval[]                   @relation("ApprovalAssignee")
-  actedApprovals                Approval[]                   @relation("ApprovalActor")
-  createdOrders                 Order[]                      @relation("OrderCreator")
-  createdDispatchNotices        DispatchNotice[]             @relation("DispatchNoticeCreator")
-  createdWaybills               Waybill[]                    @relation("WaybillCreator")
-  createdWeighTasks             WeighTask[]                  @relation("WeighTaskCreator")
-  createdWeighTickets           WeighTicket[]                @relation("WeighTicketCreator")
-  reviewedWeighTickets          WeighTicket[]                @relation("WeighTicketReviewer")
-  weighTicketSelections         WaybillWeightSelection[]     @relation("WaybillWeightSelector")
-  weighRecords                  WeighRecord[]                @relation("WeighRecordOperator")
-  createdQualityInspections     QualityInspection[]          @relation("QualityInspectionCreator")
-  confirmedQualityInspections   QualityInspection[]          @relation("QualityInspectionConfirmer")
-  createdQualityTasks           QualityTask[]                @relation("QualityTaskCreator")
-  createdQualitySamples         QualitySample[]              @relation("QualitySampleCreator")
-  handledQualityTasks           QualityTask[]                @relation("QualityTaskHandler")
-  decidedQualityTasks           QualityTask[]                @relation("QualityTaskDecider")
-  qualityMethodPreferences      QualityMethodPreference[]
-  uploadedAttachments           Attachment[]                 @relation("AttachmentUploader")
-  createdInboundReceipts        InboundReceipt[]             @relation("InboundReceiptCreator")
-  createdBusinessInbounds       BusinessInbound[]            @relation("BusinessInboundCreator")
-  createdOutboundOrders         OutboundOrder[]              @relation("OutboundOrderCreator")
-  createdOutboundReceipts       OutboundReceipt[]            @relation("OutboundReceiptCreator")
-  createdSalesOutbounds         SalesOutbound[]              @relation("SalesOutboundCreator")
-  inventoryLedgerEntries        InventoryLedger[]            @relation("InventoryLedgerCreator")
-  createdInventoryReversals     InventoryReversal[]          @relation("InventoryReversalCreator")
-  approvedInventoryReversals    InventoryReversal[]          @relation("InventoryReversalApprover")
-  postedInventoryReversals      InventoryReversal[]          @relation("InventoryReversalPoster")
-  createdProductionRecipes      ProductionRecipe[]           @relation("ProductionRecipeCreator")
-  createdProductionTasks        ProductionTask[]             @relation("ProductionTaskCreator")
-  createdProductionCompletions  ProductionCompletion[]       @relation("ProductionCompletionCreator")
-  qualityConfirmedCompletions   ProductionCompletion[]       @relation("ProductionCompletionQualityConfirmer")
-  postedProductionCompletions   ProductionCompletion[]       @relation("ProductionCompletionPoster")
-  businessOperationLogs         BusinessOperationLog[]
-  createdLogisticsContracts     LogisticsContract[]          @relation("LogisticsContractCreator")
-  createdLogisticsPriceTerms    LogisticsContractPriceTerm[] @relation("LogisticsContractPriceTermCreator")
-  createdLogisticsSettlements   LogisticsSettlement[]        @relation("LogisticsSettlementCreator")
-  preparedLogisticsSettlements  LogisticsSettlement[]        @relation("LogisticsSettlementPreparer")
-  reviewedLogisticsSettlements  LogisticsSettlement[]        @relation("LogisticsSettlementReviewer")
-  createdFinancialSettlements   FinancialSettlement[]        @relation("FinancialSettlementCreator")
-  confirmedFinancialSettlements FinancialSettlement[]        @relation("FinancialSettlementConfirmer")
-  createdFundTransactions       FundTransaction[]            @relation("FundTransactionCreator")
-  claimedFundTransactions       FundTransaction[]            @relation("FundTransactionClaimer")
-  confirmedFundTransactions     FundTransaction[]            @relation("FundTransactionConfirmer")
-  createdPaymentRequests        PaymentRequest[]             @relation("PaymentRequestCreator")
-  submittedPaymentRequests      PaymentRequest[]             @relation("PaymentRequestSubmitter")
-  approvedPaymentRequests       PaymentRequest[]             @relation("PaymentRequestApprover")
-  rejectedPaymentRequests       PaymentRequest[]             @relation("PaymentRequestRejecter")
-  paymentApprovalTasks          PaymentRequestApproval[]     @relation("PaymentRequestApprovalAssignee")
-  actedPaymentApprovals         PaymentRequestApproval[]     @relation("PaymentRequestApprovalActor")
-  createdSettlementAllocations  SettlementAllocation[]       @relation("SettlementAllocationCreator")
-  reversedSettlementAllocations SettlementAllocation[]       @relation("SettlementAllocationReverser")
+  company                          Company?                     @relation(fields: [companyId], references: [id])
+  employee                         Employee?                    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  businessUnits                    UserBusinessUnit[]
+  roleAssignments                  UserRoleAssignment[]
+  wechatIdentity                   WechatIdentity?              @relation("WechatLinkedUser")
+  wechatBindingTargets             WechatAccountBinding[]       @relation("WechatBindingTarget")
+  operatedWechatBindings           WechatAccountBinding[]       @relation("WechatBindingOperator")
+  createdContracts                 Contract[]                   @relation("ContractCreator")
+  createdPartners                  Partner[]                    @relation("PartnerCreator")
+  approvalTasks                    Approval[]                   @relation("ApprovalAssignee")
+  actedApprovals                   Approval[]                   @relation("ApprovalActor")
+  createdOrders                    Order[]                      @relation("OrderCreator")
+  createdDispatchNotices           DispatchNotice[]             @relation("DispatchNoticeCreator")
+  createdWaybills                  Waybill[]                    @relation("WaybillCreator")
+  createdWeighTasks                WeighTask[]                  @relation("WeighTaskCreator")
+  createdWeighTickets              WeighTicket[]                @relation("WeighTicketCreator")
+  reviewedWeighTickets             WeighTicket[]                @relation("WeighTicketReviewer")
+  weighTicketSelections            WaybillWeightSelection[]     @relation("WaybillWeightSelector")
+  weighRecords                     WeighRecord[]                @relation("WeighRecordOperator")
+  createdQualityInspections        QualityInspection[]          @relation("QualityInspectionCreator")
+  confirmedQualityInspections      QualityInspection[]          @relation("QualityInspectionConfirmer")
+  createdQualityTasks              QualityTask[]                @relation("QualityTaskCreator")
+  createdQualitySamples            QualitySample[]              @relation("QualitySampleCreator")
+  handledQualityTasks              QualityTask[]                @relation("QualityTaskHandler")
+  decidedQualityTasks              QualityTask[]                @relation("QualityTaskDecider")
+  qualityMethodPreferences         QualityMethodPreference[]
+  uploadedAttachments              Attachment[]                 @relation("AttachmentUploader")
+  createdInboundReceipts           InboundReceipt[]             @relation("InboundReceiptCreator")
+  createdBusinessInbounds          BusinessInbound[]            @relation("BusinessInboundCreator")
+  createdOutboundOrders            OutboundOrder[]              @relation("OutboundOrderCreator")
+  createdOutboundReceipts          OutboundReceipt[]            @relation("OutboundReceiptCreator")
+  createdSalesOutbounds            SalesOutbound[]              @relation("SalesOutboundCreator")
+  inventoryLedgerEntries           InventoryLedger[]            @relation("InventoryLedgerCreator")
+  createdInventoryReversals        InventoryReversal[]          @relation("InventoryReversalCreator")
+  approvedInventoryReversals       InventoryReversal[]          @relation("InventoryReversalApprover")
+  postedInventoryReversals         InventoryReversal[]          @relation("InventoryReversalPoster")
+  createdProductionRecipes         ProductionRecipe[]           @relation("ProductionRecipeCreator")
+  createdProductionTasks           ProductionTask[]             @relation("ProductionTaskCreator")
+  createdProductionCompletions     ProductionCompletion[]       @relation("ProductionCompletionCreator")
+  qualityConfirmedCompletions      ProductionCompletion[]       @relation("ProductionCompletionQualityConfirmer")
+  postedProductionCompletions      ProductionCompletion[]       @relation("ProductionCompletionPoster")
+  businessOperationLogs            BusinessOperationLog[]
+  createdLogisticsContracts        LogisticsContract[]          @relation("LogisticsContractCreator")
+  createdLogisticsPriceTerms       LogisticsContractPriceTerm[] @relation("LogisticsContractPriceTermCreator")
+  createdLogisticsSettlements      LogisticsSettlement[]        @relation("LogisticsSettlementCreator")
+  preparedLogisticsSettlements     LogisticsSettlement[]        @relation("LogisticsSettlementPreparer")
+  reviewedLogisticsSettlements     LogisticsSettlement[]        @relation("LogisticsSettlementReviewer")
+  createdFinancialSettlements      FinancialSettlement[]        @relation("FinancialSettlementCreator")
+  confirmedFinancialSettlements    FinancialSettlement[]        @relation("FinancialSettlementConfirmer")
+  createdFundTransactions          FundTransaction[]            @relation("FundTransactionCreator")
+  claimedFundTransactions          FundTransaction[]            @relation("FundTransactionClaimer")
+  confirmedFundTransactions        FundTransaction[]            @relation("FundTransactionConfirmer")
+  createdPaymentRequests           PaymentRequest[]             @relation("PaymentRequestCreator")
+  businessConfirmedPaymentRequests PaymentRequest[]             @relation("PaymentRequestBusinessConfirmer")
+  submittedPaymentRequests         PaymentRequest[]             @relation("PaymentRequestSubmitter")
+  approvedPaymentRequests          PaymentRequest[]             @relation("PaymentRequestApprover")
+  rejectedPaymentRequests          PaymentRequest[]             @relation("PaymentRequestRejecter")
+  paymentApprovalTasks             PaymentRequestApproval[]     @relation("PaymentRequestApprovalAssignee")
+  actedPaymentApprovals            PaymentRequestApproval[]     @relation("PaymentRequestApprovalActor")
+  createdSettlementAllocations     SettlementAllocation[]       @relation("SettlementAllocationCreator")
+  reversedSettlementAllocations    SettlementAllocation[]       @relation("SettlementAllocationReverser")
+  createdFundClaims                FundClaim[]                  @relation("FundClaimCreator")
+  confirmedFundClaims              FundClaim[]                  @relation("FundClaimConfirmer")
 
   @@map("users")
 }
@@ -231,6 +234,7 @@ model BusinessUnit {
   salesOutbounds       SalesOutbound[]
   financialSettlements FinancialSettlement[]
   paymentRequests      PaymentRequest[]
+  fundClaims           FundClaim[]
 
   @@index([companyId, status])
   @@index([parentId])
@@ -408,6 +412,7 @@ model Partner {
   contractsAsBuyer                   Contract[]            @relation("ContractBuyer")
   contractsAsSigningParty            Contract[]            @relation("ContractSigningPartner")
   vehicles                           Vehicle[]
+  fleets                             Fleet[]
   bankAccounts                       BankAccount[]
   businessAddresses                  PartnerAddress[]
   warehouses                         Warehouse[]
@@ -426,6 +431,7 @@ model Partner {
   fundTransactionsAsCounterparty     FundTransaction[]     @relation("FundTransactionCounterparty")
   paymentRequestsAsLegalEntity       PaymentRequest[]      @relation("PaymentRequestLegalEntity")
   paymentRequestsAsCounterparty      PaymentRequest[]      @relation("PaymentRequestCounterparty")
+  fundClaimsAsCounterparty           FundClaim[]           @relation("FundClaimCounterparty")
 
   @@unique([taxId, name])
   @@map("partners")
@@ -504,7 +510,7 @@ model ServiceOrganization {
 /// 司机档案；归属于物流承运商服务档案
 model Driver {
   id                    String    @id @default(cuid())
-  serviceOrganizationId String
+  serviceOrganizationId String? // 可选：无承运商司机仅能用于社会运力运单，或挂靠已绑定承运商的车队
   name                  String
   phone                 String
   idCardNo              String?
@@ -517,11 +523,12 @@ model Driver {
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime?
 
-  serviceOrganization ServiceOrganization @relation(fields: [serviceOrganizationId], references: [id])
+  serviceOrganization ServiceOrganization? @relation(fields: [serviceOrganizationId], references: [id])
   waybills            Waybill[]
   vehicleLinks        VehicleDriver[]
+  fleetLinks          DriverFleet[]
 
-  @@unique([serviceOrganizationId, phone])
+  // 有效档案的手机号、身份证号、驾驶证号全平台唯一；采用迁移中的部分唯一索引以兼容软删除。
   @@index([serviceOrganizationId, status])
   @@index([name])
   @@index([phone])
@@ -766,8 +773,8 @@ model Vehicle {
   annualInspectionExpiry    DateTime?
   compulsoryInsuranceExpiry DateTime?
   commercialInsuranceExpiry DateTime?
-  ownerId                   String? // 关联 Partner
-  ownerType                 String    @default("SELF") // SELF | OUTSOURCED
+  ownerId                   String? // 可选关联 Partner；社会运力在最终承运/开票主体未确定时留空
+  ownerType                 String    @default("SELF") // SELF | OUTSOURCED（OUTSOURCED + ownerId 为空表示社会运力）
   ownerName                 String?
   ownerPhone                String?
   driverName                String? // 兼容旧数据；新数据取主驾快照
@@ -781,9 +788,10 @@ model Vehicle {
   updatedAt                 DateTime  @updatedAt
   deletedAt                 DateTime?
 
-  owner    Partner?        @relation(fields: [ownerId], references: [id])
-  drivers  VehicleDriver[]
-  waybills Waybill[]
+  owner      Partner?        @relation(fields: [ownerId], references: [id])
+  drivers    VehicleDriver[]
+  waybills   Waybill[]
+  fleetLinks VehicleFleet[]
 
   @@index([ownerId])
   @@map("vehicles")
@@ -804,6 +812,62 @@ model VehicleDriver {
   @@unique([vehicleId, driverId])
   @@index([driverId])
   @@map("vehicle_drivers")
+}
+
+/// 车队：纯分组管理单元，不是 Partner 体系的一部分，不能升级为正式合作伙伴/服务生态档案。
+/// 可选绑定一个开票承运商，绑定后车队内全部司机/车辆业务层面视为挂靠该承运商
+/// （见 resolveCarrier 系列校验的车队继承分支），运单保存的仍是建单时刻的快照，不随车队后续改绑联动。
+model Fleet {
+  id               String    @id @default(cuid())
+  name             String // 车队名称/队长名称
+  contactPerson    String?
+  contactPhone     String?
+  carrierPartnerId String? // 挂靠的开票承运商，可随时改绑或清空
+  remark           String?
+  status           String    @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  carrierPartner Partner?       @relation(fields: [carrierPartnerId], references: [id])
+  driverLinks    DriverFleet[]
+  vehicleLinks   VehicleFleet[]
+
+  @@index([carrierPartnerId])
+  @@index([status])
+  @@map("fleets")
+}
+
+/// 司机与车队多对多：一个司机可加入多个车队，一个车队可以有多个司机
+model DriverFleet {
+  id        String   @id @default(cuid())
+  driverId  String
+  fleetId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  fleet  Fleet  @relation(fields: [fleetId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, fleetId])
+  @@index([fleetId])
+  @@map("driver_fleets")
+}
+
+/// 车辆与车队多对多：一辆车可加入多个车队，一个车队可以有多辆车
+model VehicleFleet {
+  id        String   @id @default(cuid())
+  vehicleId String
+  fleetId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  fleet   Fleet   @relation(fields: [fleetId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, fleetId])
+  @@index([fleetId])
+  @@map("vehicle_fleets")
 }
 
 /// 银行账户
@@ -921,6 +985,7 @@ model Contract {
   financialSettlements FinancialSettlement[]
   fundTransactions     FundTransaction[]
   paymentRequests      PaymentRequest[]
+  fundClaims           FundClaim[]
 
   @@unique([createdBy, clientRequestId])
   @@index([contractNo])
@@ -1027,44 +1092,55 @@ model FinancialSettlementLine {
 
 /// 实际收付款流水；category=ADVANCE 时代表预收/预付，待结算单确认后再进行核销。
 model FundTransaction {
-  id                      String    @id @default(cuid())
-  transactionNo           String    @unique
-  direction               String // RECEIPT | PAYMENT
-  category                String    @default("NORMAL") // NORMAL | ADVANCE | REFUND
-  businessType            String    @default("PURCHASE") // PURCHASE | SALES
-  paymentStage            String    @default("SETTLEMENT") // ADVANCE | PROGRESS | SETTLEMENT | FINAL | GUARANTEE | REFUND | GUARANTEE_RETURN | OTHER
-  paymentMethod           String    @default("BANK_TRANSFER") // BANK_TRANSFER | BANK_ACCEPTANCE | COMMERCIAL_ACCEPTANCE | LETTER_OF_CREDIT | FUNDING_PAYMENT | CASH | OTHER
-  contractId              String
-  legalEntityPartnerId    String
-  counterpartyId          String
-  status                  String    @default("PENDING_CONFIRMATION") // PENDING_CLAIM | PENDING_CONFIRMATION | CONFIRMED | PARTIALLY_ALLOCATED | ALLOCATED | VOIDED
-  amount                  Decimal   @db.Decimal(15, 2)
-  allocatedAmount         Decimal   @default(0) @db.Decimal(15, 2)
-  refundedAmount          Decimal   @default(0) @db.Decimal(15, 2)
-  occurredAt              DateTime
-  bankReference           String?
-  ourBankAccount          String?
-  counterpartyBankAccount String?
-  actualPayerName         String?
-  actualPayeeName         String?
-  isThirdParty            Boolean   @default(false)
-  thirdPartyReason        String?
-  instrumentNo            String?
-  instrumentDueDate       DateTime?
-  relatedTransactionId    String?
-  paymentRequestId        String?   @unique
-  remarks                 String?
-  claimedBy               String?
-  claimedAt               DateTime?
-  confirmedBy             String?
-  confirmedAt             DateTime?
-  createdBy               String
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  id                          String    @id @default(cuid())
+  transactionNo               String    @unique
+  direction                   String // RECEIPT | PAYMENT
+  category                    String    @default("NORMAL") // NORMAL | ADVANCE | REFUND
+  businessType                String    @default("PURCHASE") // PURCHASE | SALES
+  paymentStage                String    @default("SETTLEMENT") // ADVANCE | PROGRESS | SETTLEMENT | FINAL | GUARANTEE | REFUND | GUARANTEE_RETURN | OTHER
+  paymentMethod               String    @default("BANK_TRANSFER") // BANK_TRANSFER | BANK_ACCEPTANCE | COMMERCIAL_ACCEPTANCE | LETTER_OF_CREDIT | FUNDING_PAYMENT | CASH | OTHER
+  contractId                  String?
+  legalEntityPartnerId        String
+  counterpartyId              String?
+  status                      String    @default("PENDING_CONFIRMATION") // PENDING_CLAIM | PARTIALLY_CLAIMED | PENDING_CONFIRMATION | CONFIRMED | PARTIALLY_ALLOCATED | ALLOCATED | VOIDED
+  amount                      Decimal   @db.Decimal(15, 2)
+  allocatedAmount             Decimal   @default(0) @db.Decimal(15, 2)
+  refundedAmount              Decimal   @default(0) @db.Decimal(15, 2)
+  occurredAt                  DateTime
+  bankReference               String?
+  currency                    String    @default("CNY")
+  paymentPurpose              String?
+  ourBankAccount              String?
+  ourBankAccountName          String?
+  ourBankName                 String?
+  ourBankCode                 String?
+  counterpartyBankAccount     String?
+  counterpartyBankAccountName String?
+  counterpartyBankName        String?
+  counterpartyBankCode        String?
+  actualPayerName             String?
+  actualPayeeName             String?
+  isThirdParty                Boolean   @default(false)
+  thirdPartyReason            String?
+  bankAccountDifferenceReason String?
+  recognitionProvider         String?
+  recognitionRawText          String?
+  instrumentNo                String?
+  instrumentDueDate           DateTime?
+  relatedTransactionId        String?
+  paymentRequestId            String?
+  remarks                     String?
+  claimedBy                   String?
+  claimedAt                   DateTime?
+  confirmedBy                 String?
+  confirmedAt                 DateTime?
+  createdBy                   String
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
-  contract              Contract               @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  contract              Contract?              @relation(fields: [contractId], references: [id], onDelete: Restrict)
   legalEntity           Partner                @relation("FundTransactionLegalEntity", fields: [legalEntityPartnerId], references: [id], onDelete: Restrict)
-  counterparty          Partner                @relation("FundTransactionCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
+  counterparty          Partner?               @relation("FundTransactionCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
   creator               User                   @relation("FundTransactionCreator", fields: [createdBy], references: [id], onDelete: Restrict)
   claimer               User?                  @relation("FundTransactionClaimer", fields: [claimedBy], references: [id], onDelete: Restrict)
   confirmer             User?                  @relation("FundTransactionConfirmer", fields: [confirmedBy], references: [id], onDelete: Restrict)
@@ -1074,6 +1150,7 @@ model FundTransaction {
   refundPaymentRequests PaymentRequest[]       @relation("PaymentRequestRefundSource")
   paymentRequest        PaymentRequest?        @relation(fields: [paymentRequestId], references: [id], onDelete: Restrict)
   attachments           Attachment[]
+  claims                FundClaim[]
 
   @@index([direction, status])
   @@index([contractId])
@@ -1081,63 +1158,110 @@ model FundTransaction {
   @@index([counterpartyId])
   @@index([businessType, paymentStage])
   @@index([relatedTransactionId])
+  @@index([paymentRequestId])
   @@map("fund_transactions")
 }
 
 /// 付款申请是资金实际付出前的业务审批单。审批通过并由出纳执行后生成付款单。
 model PaymentRequest {
-  id                      String    @id @default(cuid())
-  requestNo               String    @unique
-  businessType            String    @default("PURCHASE") // PURCHASE | SALES
-  paymentStage            String    @default("SETTLEMENT")
-  paymentMethod           String    @default("BANK_TRANSFER")
-  contractId              String
-  settlementId            String?
-  relatedTransactionId    String?
-  businessUnitId          String?
-  legalEntityPartnerId    String
-  counterpartyId          String
-  status                  String    @default("DRAFT") // DRAFT | PENDING_APPROVAL | APPROVED | REJECTED | PAID | VOIDED
-  amount                  Decimal   @db.Decimal(15, 2)
-  requestedPayDate        DateTime?
-  ourBankAccount          String?
-  counterpartyBankAccount String?
-  actualPayeeName         String?
-  isThirdParty            Boolean   @default(false)
-  thirdPartyReason        String?
-  purpose                 String?
-  remarks                 String?
-  createdBy               String
-  submittedBy             String?
-  submittedAt             DateTime?
-  approvedBy              String?
-  approvedAt              DateTime?
-  rejectedBy              String?
-  rejectedAt              DateTime?
-  rejectionReason         String?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  id                          String    @id @default(cuid())
+  requestNo                   String    @unique
+  businessType                String    @default("PURCHASE") // PURCHASE | SALES
+  paymentStage                String    @default("SETTLEMENT")
+  paymentMethod               String    @default("BANK_TRANSFER")
+  contractId                  String
+  orderId                     String?
+  settlementId                String?
+  relatedTransactionId        String?
+  businessUnitId              String?
+  legalEntityPartnerId        String
+  counterpartyId              String
+  status                      String    @default("DRAFT") // DRAFT | BUSINESS_CONFIRMED | PENDING_APPROVAL | APPROVED | REJECTED | PAID | VOIDED
+  amount                      Decimal   @db.Decimal(15, 2)
+  requestedPayDate            DateTime?
+  ourBankAccount              String?
+  ourBankAccountName          String?
+  ourBankName                 String?
+  ourBankCode                 String?
+  counterpartyBankAccount     String?
+  counterpartyBankAccountName String?
+  counterpartyBankName        String?
+  counterpartyBankCode        String?
+  actualPayeeName             String?
+  isThirdParty                Boolean   @default(false)
+  thirdPartyReason            String?
+  purpose                     String?
+  remarks                     String?
+  createdBy                   String
+  businessConfirmedBy         String?
+  businessConfirmedAt         DateTime?
+  submittedBy                 String?
+  submittedAt                 DateTime?
+  approvedBy                  String?
+  approvedAt                  DateTime?
+  rejectedBy                  String?
+  rejectedAt                  DateTime?
+  rejectionReason             String?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
   contract           Contract                 @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  order              Order?                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   settlement         FinancialSettlement?     @relation(fields: [settlementId], references: [id], onDelete: Restrict)
   relatedTransaction FundTransaction?         @relation("PaymentRequestRefundSource", fields: [relatedTransactionId], references: [id], onDelete: Restrict)
   businessUnit       BusinessUnit?            @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
   legalEntity        Partner                  @relation("PaymentRequestLegalEntity", fields: [legalEntityPartnerId], references: [id], onDelete: Restrict)
   counterparty       Partner                  @relation("PaymentRequestCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
   creator            User                     @relation("PaymentRequestCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  businessConfirmer  User?                    @relation("PaymentRequestBusinessConfirmer", fields: [businessConfirmedBy], references: [id], onDelete: Restrict)
   submitter          User?                    @relation("PaymentRequestSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
   approver           User?                    @relation("PaymentRequestApprover", fields: [approvedBy], references: [id], onDelete: Restrict)
   rejecter           User?                    @relation("PaymentRequestRejecter", fields: [rejectedBy], references: [id], onDelete: Restrict)
-  fundTransaction    FundTransaction?
+  fundTransactions   FundTransaction[]
   attachments        Attachment[]
   approvals          PaymentRequestApproval[]
 
   @@index([status, requestedPayDate])
   @@index([contractId])
+  @@index([orderId])
   @@index([settlementId])
   @@index([relatedTransactionId])
   @@index([businessUnitId])
   @@map("payment_requests")
+}
+
+/// 到账认领明细。一笔收款可以拆分认领到多个合同或执行批次，全部认领后由财务统一确认。
+model FundClaim {
+  id                String    @id @default(cuid())
+  fundTransactionId String
+  contractId        String
+  orderId           String?
+  businessUnitId    String?
+  counterpartyId    String
+  paymentStage      String    @default("SETTLEMENT")
+  amount            Decimal   @db.Decimal(15, 2)
+  status            String    @default("PENDING_CONFIRMATION") // PENDING_CONFIRMATION | CONFIRMED | REVERSED
+  remarks           String?
+  createdBy         String
+  confirmedBy       String?
+  confirmedAt       DateTime?
+  reversedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  fundTransaction FundTransaction @relation(fields: [fundTransactionId], references: [id], onDelete: Cascade)
+  contract        Contract        @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  order           Order?          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  businessUnit    BusinessUnit?   @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
+  counterparty    Partner         @relation("FundClaimCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
+  creator         User            @relation("FundClaimCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  confirmer       User?           @relation("FundClaimConfirmer", fields: [confirmedBy], references: [id], onDelete: Restrict)
+
+  @@index([fundTransactionId, status])
+  @@index([contractId])
+  @@index([orderId])
+  @@index([businessUnitId])
+  @@map("fund_claims")
 }
 
 /// 付款申请审批任务。与合同审批任务分表保存，避免同一合同下多张付款申请的审批记录相互混淆。
@@ -1214,6 +1338,8 @@ model Order {
   lineItems       OrderLineItem[]
   dispatchNotices DispatchNotice[]
   settlementLines FinancialSettlementLine[]
+  paymentRequests PaymentRequest[]
+  fundClaims      FundClaim[]
 
   @@index([orderNo])
   @@index([contractId])
@@ -1325,7 +1451,7 @@ model Waybill {
   waybillNo           String    @unique
   dispatchNoticeId    String
   status              String    @default("PENDING") // PENDING | IN_TRANSIT | ARRIVED | SIGNED | CANCELLED
-  freightMode         String    @default("SELF") // SELF | THIRD_PARTY
+  freightMode         String    @default("SELF") // SELF | THIRD_PARTY | SOCIAL（社会运力：车辆/司机归属不校验，开票承运商可延迟绑定）
   vehicleId           String?
   driverId            String?
   carrierPartnerId    String?

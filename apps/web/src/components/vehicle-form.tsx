@@ -36,7 +36,7 @@ interface PartnerOption { id: string; code: string; name: string; isInternal: bo
 interface CarrierProfile { id: string; partnerId: string; partner: PartnerOption }
 interface DriverOption {
   id: string; name: string; phone: string; licenseClass: string | null; status: string;
-  serviceOrganization: { id: string; partnerId: string; partner: PartnerOption };
+  serviceOrganization: { id: string; partnerId: string; partner: PartnerOption } | null;
 }
 
 const EMPTY_VALUE: VehicleFormValue = {
@@ -83,10 +83,12 @@ export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, sho
       const selected = form.drivers.some(item => item.driverId === driver.id);
       if (driver.status !== 'ACTIVE' && !selected) return false;
       const ownerMatched = form.ownerType === 'SELF'
-        ? driver.serviceOrganization.partner.isInternal
-        : Boolean(form.ownerId) && driver.serviceOrganization.partnerId === form.ownerId;
+        ? Boolean(driver.serviceOrganization?.partner.isInternal)
+        : form.ownerId
+          ? !driver.serviceOrganization || driver.serviceOrganization.partnerId === form.ownerId
+          : !driver.serviceOrganization;
       if (!ownerMatched) return false;
-      return !keyword || selected || [driver.name, driver.phone, driver.licenseClass || '', driver.serviceOrganization.partner.name]
+      return !keyword || selected || [driver.name, driver.phone, driver.licenseClass || '', driver.serviceOrganization?.partner.name || '社会运力']
         .some(value => value.toLowerCase().includes(keyword));
     });
   }, [driverSearch, drivers, form.ownerId, form.ownerType]);
@@ -114,7 +116,6 @@ export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, sho
     if (!/^[\u4e00-\u9fa5][A-Z][A-Z0-9挂学警港澳]{5,6}$/.test(plateNo)) return alert('请输入正确的完整车牌号，例如：甘A12345');
     if (!form.loadCapacity || Number(form.loadCapacity) <= 0) return alert('核定载重必须大于 0');
     if (form.tareWeight && Number(form.tareWeight) < 0) return alert('整备质量不能小于 0');
-    if (form.ownerType === 'OUTSOURCED' && !form.ownerId) return alert('外协车辆必须选择所属物流承运商');
     if (form.ownerPhone && !/^1[3-9]\d{9}$/.test(form.ownerPhone)) return alert('车主手机号必须是11位有效手机号');
     if (form.deviceType !== 'NONE' && !form.deviceNo.trim()) return alert('绑定北斗或 GPS 设备时必须填写设备编号');
     setSubmitting(true);
@@ -145,21 +146,21 @@ export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, sho
     </Card>
 
     <Card className="space-y-5 p-6">
-      <SectionTitle>承运商 / 车主信息</SectionTitle>
+      <SectionTitle>运力归属 / 车主信息</SectionTitle>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Field label="归属类型" required><select className={SELECT_CLASS} value={form.ownerType} onChange={e => changeOwner(e.target.value)}><option value="SELF">自有车辆</option><option value="OUTSOURCED">外协车辆</option></select></Field>
-        <Field label={form.ownerType === 'SELF' ? '所属内部主体' : '归属物流承运商'} required={form.ownerType === 'OUTSOURCED'}><select className={SELECT_CLASS} value={form.ownerId} onChange={e => changeOwner(form.ownerType, e.target.value)}><option value="">{form.ownerType === 'SELF' ? '可不选择' : '请选择承运商'}</option>{ownerOptions.map(option => <option key={option.id} value={option.id}>{option.code} · {option.name}</option>)}</select></Field>
+        <Field label="归属类型" required><select className={SELECT_CLASS} value={form.ownerType} onChange={e => changeOwner(e.target.value)}><option value="SELF">自有车辆</option><option value="OUTSOURCED">外部车辆 / 社会运力</option></select></Field>
+        <Field label={form.ownerType === 'SELF' ? '所属内部主体' : '关联物流承运商（可选）'}><select className={SELECT_CLASS} value={form.ownerId} onChange={e => changeOwner(form.ownerType, e.target.value)}><option value="">{form.ownerType === 'SELF' ? '可不选择' : '暂不绑定（社会运力）'}</option>{ownerOptions.map(option => <option key={option.id} value={option.id}>{option.code} · {option.name}</option>)}</select>{form.ownerType === 'OUTSOURCED' && <Hint>运输执行时可以先使用车辆，最终开票承运商可在物流结算前确定。</Hint>}</Field>
         <Field label="实际车主姓名"><Input value={form.ownerName} maxLength={50} onChange={e => set('ownerName', e.target.value)} placeholder="可与司机不同" /></Field>
         <Field label="车主手机号"><Input inputMode="numeric" maxLength={11} value={form.ownerPhone} onChange={e => set('ownerPhone', e.target.value.replace(/\D/g, '').slice(0, 11))} /></Field>
       </div>
     </Card>
 
     <Card className="space-y-4 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">关联司机</h2><p className="mt-1 text-xs text-muted-foreground">一辆车可关联一名主驾和多名副驾；运单调度时仍可选择同一承运商的其他司机。</p></div><Link href="/dashboard/master-data/service-organizations?type=LOGISTICS_CARRIER" className="text-sm text-primary hover:underline">维护司机档案</Link></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">关联司机</h2><p className="mt-1 text-xs text-muted-foreground">一辆车可关联一名主驾和多名副驾；未绑定承运商时可选择无承运商的社会运力司机。</p></div><Link href="/dashboard/master-data?tab=vehicles&resource=driver" className="text-sm text-primary hover:underline">维护司机档案</Link></div>
       <div className="relative max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={driverSearch} onChange={e => setDriverSearch(e.target.value)} placeholder="搜索司机姓名、手机号、准驾车型" /></div>
-      {form.ownerType === 'OUTSOURCED' && !form.ownerId ? <div className="rounded-md bg-muted p-5 text-sm text-muted-foreground">请先选择归属物流承运商，再关联其司机。</div> : !eligibleDrivers.length ? <div className="rounded-md bg-muted p-5 text-sm text-muted-foreground">当前所属单位没有可关联司机，可先到服务生态维护司机档案。</div> : <div className="grid gap-3 md:grid-cols-2">{eligibleDrivers.map(driver => {
+      {!eligibleDrivers.length ? <div className="rounded-md bg-muted p-5 text-sm text-muted-foreground">当前没有可关联司机，可先到运力管理维护司机档案；车辆也可以暂不关联司机。</div> : <div className="grid gap-3 md:grid-cols-2">{eligibleDrivers.map(driver => {
         const link = form.drivers.find(item => item.driverId === driver.id);
-        return <div key={driver.id} className={`flex items-center gap-3 rounded-lg border p-3 ${link ? 'border-primary bg-primary/5' : ''}`}><input type="checkbox" checked={Boolean(link)} onChange={() => toggleDriver(driver.id)} /><UserRound className="h-5 w-5 text-muted-foreground" /><div className="min-w-0 flex-1"><div className="font-medium">{driver.name}{driver.status !== 'ACTIVE' && <span className="ml-2 text-xs text-amber-700">已停用，请解除关联</span>}</div><div className="truncate text-xs text-muted-foreground">{driver.phone} · {driver.licenseClass || '未填写准驾车型'} · {driver.serviceOrganization.partner.name}</div></div>{link && <select className="h-8 rounded-md border bg-background px-2 text-xs" value={link.role} onChange={e => setDriverRole(driver.id, e.target.value as 'PRIMARY' | 'SECONDARY')}><option value="PRIMARY">主驾</option><option value="SECONDARY">副驾</option></select>}</div>;
+        return <div key={driver.id} className={`flex items-center gap-3 rounded-lg border p-3 ${link ? 'border-primary bg-primary/5' : ''}`}><input type="checkbox" checked={Boolean(link)} onChange={() => toggleDriver(driver.id)} /><UserRound className="h-5 w-5 text-muted-foreground" /><div className="min-w-0 flex-1"><div className="font-medium">{driver.name}{driver.status !== 'ACTIVE' && <span className="ml-2 text-xs text-amber-700">已停用，请解除关联</span>}</div><div className="truncate text-xs text-muted-foreground">{driver.phone} · {driver.licenseClass || '未填写准驾车型'} · {driver.serviceOrganization?.partner.name || '无承运商（社会运力）'}</div></div>{link && <select className="h-8 rounded-md border bg-background px-2 text-xs" value={link.role} onChange={e => setDriverRole(driver.id, e.target.value as 'PRIMARY' | 'SECONDARY')}><option value="PRIMARY">主驾</option><option value="SECONDARY">副驾</option></select>}</div>;
       })}</div>}
     </Card>
 

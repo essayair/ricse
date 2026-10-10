@@ -3,11 +3,14 @@ import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, Matches, MaxLengt
 import { PartialType } from '@nestjs/swagger';
 
 const cleanText = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() || undefined : value;
+const cleanUpperText = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim().toUpperCase() || undefined : value;
 
 export class CreateDriverDto {
+  // 可选：不传表示无承运商司机（社会运力专用，或由所在车队继承承运商）。
+  // 不加 cleanText 转换，保留空字符串与未传字段的区别，供 update 时表达"显式解绑"。
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  serviceOrganizationId: string;
+  serviceOrganizationId?: string;
 
   @Transform(cleanText)
   @IsString()
@@ -20,12 +23,12 @@ export class CreateDriverDto {
   phone: string;
 
   @IsOptional()
-  @Transform(cleanText)
+  @Transform(cleanUpperText)
   @Matches(/^(\d{17}[\dXx])$/, { message: '身份证号格式不正确' })
   idCardNo?: string;
 
   @IsOptional()
-  @Transform(cleanText)
+  @Transform(cleanUpperText)
   @IsString()
   @MaxLength(50)
   licenseNo?: string;

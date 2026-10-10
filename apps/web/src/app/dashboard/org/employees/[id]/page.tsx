@@ -10,6 +10,7 @@ import { ArrowLeft, User, Building2, Layers, Phone, Mail, Briefcase, Key, Eye, E
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
 import { BusinessOperationHistory, type BusinessOperationLog } from '@/components/business-operation-history';
+import { confirmAction } from '@/lib/system-dialog';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 const EMPLOYEE_PHONE_PATTERN = /^1[3-9][0-9]{9}$/;
@@ -115,7 +116,7 @@ export default function EmployeeDetailPage() {
           : emp?.status === 'RESIGNED'
             ? `确定设置为重新入职？${emp?.user ? '\n原账号仍保持禁用，需要确认后单独启用。' : ''}`
             : '确定恢复该员工？';
-      if (!confirm(warning)) return;
+      if (!await confirmAction(warning, { title: '员工信息变更确认' })) return;
     }
     setProfileSaving(true);
     setProfileMsg('');
@@ -140,7 +141,7 @@ export default function EmployeeDetailPage() {
   const handleAccountStatus = async () => {
     if (!emp?.user) return;
     const status = emp.user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-    if (!confirm(status === 'DISABLED' ? '禁用后该账号现有登录将立即失效，确定继续？' : '确定启用该账号？')) return;
+    if (!await confirmAction(status === 'DISABLED' ? '禁用后该账号现有登录将立即失效，确定继续？' : '确定启用该账号？')) return;
     try {
       await api.patch(`/users/${emp.user.id}`, { status });
       setEmp({ ...emp, user: { ...emp.user, status } });

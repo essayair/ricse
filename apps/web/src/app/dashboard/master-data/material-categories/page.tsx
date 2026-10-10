@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { confirmAction } from '@/lib/system-dialog';
 
 interface Category {
   id: string;
@@ -95,7 +96,7 @@ export default function MaterialCategoriesPage() {
   };
 
   const remove = async (category: Category) => {
-    if (!window.confirm(`确定删除分类“${category.name}”吗？删除后不可恢复。`)) return;
+    if (!await confirmAction(`确定删除分类“${category.name}”吗？删除后不可恢复。`)) return;
     try {
       await api.delete(`/master-data/material-categories/${category.id}`);
       await load();

@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 export default function ProductionTaskDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,30 +60,33 @@ export default function ProductionTaskDetailPage() {
   };
   const recordQuantity = async (type: 'consume' | 'return', allocation: any) => {
     const remaining = Number(allocation.issuedQuantity) - Number(allocation.consumedQuantity) - Number(allocation.returnedQuantity);
-    const value = prompt(type === 'consume' ? `本次实际耗用数量（最多 ${remaining} 吨）` : `本次退回原料数量（最多 ${remaining} 吨）`, String(remaining));
+    const value = await promptAction(type === 'consume' ? `本次实际耗用数量（最多 ${remaining} 吨）` : `本次退回原料数量（最多 ${remaining} 吨）`, String(remaining));
     if (value === null || Number(value) <= 0) return;
     await act(`tasks/${id}/${type}`, 'post', { allocations: [{ allocationId: allocation.id, quantity: Number(value) }] });
   };
   const completion = async () => {
-    const value = prompt('请输入本次完工申报数量（吨）');
+    const value = await promptAction('请输入本次完工申报数量（吨）');
     if (value === null || Number(value) <= 0) return;
-    const remarks = prompt('本次完工备注（可不填）') || undefined;
+    const remarks = await promptAction('本次完工备注（可不填）') || undefined;
     await act(`tasks/${id}/completions`, 'post', { quantity: Number(value), remarks });
   };
   const quality = async (completionId: string, conclusion: 'PASS' | 'REWORK' | 'SCRAP') => {
-    const remark = conclusion === 'PASS' ? prompt('质量确认说明（可不填）') || undefined : prompt('请填写返工或报废原因');
+    const remark = conclusion === 'PASS' ? await promptAction('质量确认说明（可不填）') || undefined : await promptAction('请填写返工或报废原因');
     if (conclusion !== 'PASS' && !remark?.trim()) return alert('返工或报废必须填写原因');
     await act(`completions/${completionId}/quality`, 'patch', { conclusion, remark });
+  };
+  const confirmAndAct = async (message: string, path: string, method: 'post' | 'patch' = 'post') => {
+    if (await confirmAction(message)) await act(path, method);
   };
 
   if (!task) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
   const progress = Number(task.plannedOutputQuantity) > 0 ? Math.min(100, Number(task.qualifiedQuantity) / Number(task.plannedOutputQuantity) * 100) : 0;
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/production')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{task.taskNo}</h1><StatusText status={task.status}>{PRODUCTION_STATUS[task.status] || task.status}</StatusText><Badge variant="outline">{task.mode === 'OUTSOURCED' ? '委外加工' : '自营生产'}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{task.name} · {task.outputMaterial.name}</p></div></div><div className="flex flex-wrap gap-2">
-      {task.status === 'DRAFT' && <><Button variant="outline" disabled={saving} onClick={() => confirm('确认取消该任务草稿？') && void act(`tasks/${id}/cancel`, 'patch')}><XCircle className="mr-1 h-4 w-4" />取消</Button><Button disabled={saving} onClick={() => confirm('下达后即可预占原料库存，确认下达？') && void act(`tasks/${id}/release`, 'patch')}><Play className="mr-1 h-4 w-4" />下达任务</Button></>}
-      {task.status === 'MATERIAL_PREPARED' && <Button disabled={saving} onClick={() => confirm('领料将即时扣减原料库存并转入在制，确认操作？') && void act(`tasks/${id}/issue`)}><PackageCheck className="mr-1 h-4 w-4" />确认领料</Button>}
+      {task.status === 'DRAFT' && <><Button variant="outline" disabled={saving} onClick={() => void confirmAndAct('确认取消该任务草稿？', `tasks/${id}/cancel`, 'patch')}><XCircle className="mr-1 h-4 w-4" />取消</Button><Button disabled={saving} onClick={() => void confirmAndAct('下达后即可预占原料库存，确认下达？', `tasks/${id}/release`, 'patch')}><Play className="mr-1 h-4 w-4" />下达任务</Button></>}
+      {task.status === 'MATERIAL_PREPARED' && <Button disabled={saving} onClick={() => void confirmAndAct('领料将即时扣减原料库存并转入在制，确认操作？', `tasks/${id}/issue`)}><PackageCheck className="mr-1 h-4 w-4" />确认领料</Button>}
       {['IN_PROGRESS', 'PENDING_QC', 'PARTIAL_COMPLETED'].includes(task.status) && <Button disabled={saving} onClick={() => void completion()}><Factory className="mr-1 h-4 w-4" />完工申报</Button>}
-      {task.status === 'COMPLETED' && <Button disabled={saving} onClick={() => confirm('关闭前请确认所有余料已耗用或退回。确认关闭任务？') && void act(`tasks/${id}/close`, 'patch')}><CheckCircle2 className="mr-1 h-4 w-4" />关闭任务</Button>}
+      {task.status === 'COMPLETED' && <Button disabled={saving} onClick={() => void confirmAndAct('关闭前请确认所有余料已耗用或退回。确认关闭任务？', `tasks/${id}/close`, 'patch')}><CheckCircle2 className="mr-1 h-4 w-4" />关闭任务</Button>}
     </div></div>
 
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Summary label="计划产量" value={quantity(task.plannedOutputQuantity)} /><Summary label="合格入库" value={quantity(task.qualifiedQuantity)} /><Summary label="完成率" value={`${progress.toFixed(1)}%`} /><Summary label="实际收率" value={percent(task.actualYieldRate)} /><Summary label="损耗容差" value={`±${percent(task.lossToleranceRate)}`} /></div>
@@ -93,7 +97,7 @@ export default function ProductionTaskDetailPage() {
 
     {eligible.length > 0 && <Card className="space-y-4 p-6"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold">原料批次预占</h2><p className="mt-1 text-xs text-muted-foreground">可重复调整，确认领料后锁定；系统只展示当前主体、原料仓和对应物料的可用批次</p></div><div className="flex gap-2"><Button variant="outline" onClick={autoReserve}>按入库顺序分配</Button><Button disabled={saving} onClick={() => void reserve()}>保存预占</Button></div></div>{eligible.map((input: any) => <div key={input.taskInputId} className="rounded-md border"><div className="flex justify-between border-b bg-muted/30 p-3 text-sm"><span className="font-medium">{input.material.code} · {input.material.name}</span><span>计划 {quantity(input.plannedQuantity)}</span></div>{!input.lots.length ? <div className="p-4 text-sm text-destructive">暂无可用库存批次</div> : <div className="overflow-x-auto"><table className="w-full min-w-[750px] text-sm"><thead className="border-b text-left text-muted-foreground"><tr><th className="p-3">批次</th><th className="p-3">库存主体</th><th className="p-3">仓库</th><th className="p-3 text-right">可预占</th><th className="p-3 text-right">本任务预占</th></tr></thead><tbody>{input.lots.map((lot: any) => <tr key={lot.id} className="border-b"><td className="p-3 font-mono text-primary">{lot.lotNo}</td><td className="p-3">{lot.inventoryOwner?.name}</td><td className="p-3">{lot.warehouse.name}</td><td className="p-3 text-right">{quantity(lot.availableToReserve)}</td><td className="p-3"><Input className="ml-auto w-36 text-right" type="number" min="0" max={lot.availableToReserve} step="0.001" value={reservations[`${input.taskInputId}:${lot.id}`] || ''} onChange={event => setReservations(current => ({ ...current, [`${input.taskInputId}:${lot.id}`]: event.target.value }))} /></td></tr>)}</tbody></table></div>}</div>)}</Card>}
 
-    <Card className="overflow-hidden"><div className="border-b p-4"><h2 className="font-semibold">完工与质量入库</h2><p className="mt-1 text-xs text-muted-foreground">一次任务可多次完工；每次完工独立确认质量并形成一个产成品库存批次</p></div>{!task.completions.length ? <div className="p-10 text-center text-muted-foreground">暂无完工申报</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1200px] text-sm"><thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">完工单号</th><th className="p-3">产出物料</th><th className="p-3 text-right">数量</th><th className="p-3">状态 / 质量结论</th><th className="p-3">生产时间</th><th className="p-3">库存批次</th><th className="p-3">操作</th></tr></thead><tbody>{task.completions.map((item: any) => <tr key={item.id} className="border-b"><td className="p-3 font-mono text-primary">{item.completionNo}</td><td className="p-3">{task.outputMaterial.name}</td><td className="p-3 text-right">{quantity(item.quantity)}</td><td className="p-3"><StatusText status={item.status}>{COMPLETION_STATUS[item.status] || item.status}</StatusText><div className="mt-1 text-xs text-muted-foreground">{item.qualityConclusion === 'PASS' ? '质量合格' : item.qualityConclusion === 'REWORK' ? '需返工' : item.qualityConclusion === 'SCRAP' ? '已报废' : '质量待确认'}</div><div className="mt-1 text-xs text-muted-foreground">{item.qualityRemark || '-'}</div></td><td className="p-3">{formatDateTimeToSecond(item.producedAt)}</td><td className="p-3 font-mono">{item.inventoryLot?.lotNo || '-'}</td><td className="p-3"><div className="flex flex-wrap gap-1">{item.status === 'PENDING_QC' && <><Button size="sm" onClick={() => void quality(item.id, 'PASS')}>合格</Button><Button size="sm" variant="outline" onClick={() => void quality(item.id, 'REWORK')}>返工</Button><Button size="sm" variant="destructive" onClick={() => void quality(item.id, 'SCRAP')}>报废</Button></>}{item.status === 'READY_TO_POST' && <Button size="sm" onClick={() => confirm('确认将本次合格完工数量生成产成品库存批次？') && void act(`completions/${item.id}/post`)}>生产入库</Button>}</div></td></tr>)}</tbody></table></div>}</Card>
+    <Card className="overflow-hidden"><div className="border-b p-4"><h2 className="font-semibold">完工与质量入库</h2><p className="mt-1 text-xs text-muted-foreground">一次任务可多次完工；每次完工独立确认质量并形成一个产成品库存批次</p></div>{!task.completions.length ? <div className="p-10 text-center text-muted-foreground">暂无完工申报</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1200px] text-sm"><thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">完工单号</th><th className="p-3">产出物料</th><th className="p-3 text-right">数量</th><th className="p-3">状态 / 质量结论</th><th className="p-3">生产时间</th><th className="p-3">库存批次</th><th className="p-3">操作</th></tr></thead><tbody>{task.completions.map((item: any) => <tr key={item.id} className="border-b"><td className="p-3 font-mono text-primary">{item.completionNo}</td><td className="p-3">{task.outputMaterial.name}</td><td className="p-3 text-right">{quantity(item.quantity)}</td><td className="p-3"><StatusText status={item.status}>{COMPLETION_STATUS[item.status] || item.status}</StatusText><div className="mt-1 text-xs text-muted-foreground">{item.qualityConclusion === 'PASS' ? '质量合格' : item.qualityConclusion === 'REWORK' ? '需返工' : item.qualityConclusion === 'SCRAP' ? '已报废' : '质量待确认'}</div><div className="mt-1 text-xs text-muted-foreground">{item.qualityRemark || '-'}</div></td><td className="p-3">{formatDateTimeToSecond(item.producedAt)}</td><td className="p-3 font-mono">{item.inventoryLot?.lotNo || '-'}</td><td className="p-3"><div className="flex flex-wrap gap-1">{item.status === 'PENDING_QC' && <><Button size="sm" onClick={() => void quality(item.id, 'PASS')}>合格</Button><Button size="sm" variant="outline" onClick={() => void quality(item.id, 'REWORK')}>返工</Button><Button size="sm" variant="destructive" onClick={() => void quality(item.id, 'SCRAP')}>报废</Button></>}{item.status === 'READY_TO_POST' && <Button size="sm" onClick={() => void confirmAndAct('确认将本次合格完工数量生成产成品库存批次？', `completions/${item.id}/post`)}>生产入库</Button>}</div></td></tr>)}</tbody></table></div>}</Card>
     <BusinessOperationHistory logs={task.operationLogs} />
   </div>;
 }

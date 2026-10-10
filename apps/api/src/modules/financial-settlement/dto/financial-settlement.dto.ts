@@ -83,8 +83,13 @@ export class CreateFinancialSettlementDto {
 }
 
 export class CreateFundTransactionDto {
+  @IsOptional()
   @IsString()
-  contractId!: string;
+  contractId?: string;
+
+  @IsOptional()
+  @IsString()
+  legalEntityPartnerId?: string;
 
   @IsIn(['PURCHASE', 'SALES'])
   businessType!: string;
@@ -115,9 +120,17 @@ export class CreateFundTransactionDto {
   @IsString()
   ourBankAccount?: string;
 
+  @IsOptional() @IsString() ourBankAccountName?: string;
+  @IsOptional() @IsString() ourBankName?: string;
+  @IsOptional() @IsString() ourBankCode?: string;
+
   @IsOptional()
   @IsString()
   counterpartyBankAccount?: string;
+
+  @IsOptional() @IsString() counterpartyBankAccountName?: string;
+  @IsOptional() @IsString() counterpartyBankName?: string;
+  @IsOptional() @IsString() counterpartyBankCode?: string;
 
   @IsOptional()
   @IsString()
@@ -158,6 +171,10 @@ export class CreatePaymentRequestDto {
 
   @IsOptional()
   @IsString()
+  orderId?: string;
+
+  @IsOptional()
+  @IsString()
   relatedTransactionId?: string;
 
   @IsIn(['PURCHASE', 'SALES'])
@@ -182,9 +199,17 @@ export class CreatePaymentRequestDto {
   @IsString()
   ourBankAccount?: string;
 
+  @IsOptional() @IsString() ourBankAccountName?: string;
+  @IsOptional() @IsString() ourBankName?: string;
+  @IsOptional() @IsString() ourBankCode?: string;
+
   @IsOptional()
   @IsString()
   counterpartyBankAccount?: string;
+
+  @IsOptional() @IsString() counterpartyBankAccountName?: string;
+  @IsOptional() @IsString() counterpartyBankName?: string;
+  @IsOptional() @IsString() counterpartyBankCode?: string;
 
   @IsOptional()
   @IsString()
@@ -207,6 +232,29 @@ export class CreatePaymentRequestDto {
   remarks?: string;
 }
 
+export class UpdatePaymentRequestDto extends CreatePaymentRequestDto {}
+
+export class ClaimFundDto {
+  @IsString()
+  contractId!: string;
+
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+
+  @IsIn(['ADVANCE', 'PROGRESS', 'SETTLEMENT', 'FINAL', 'GUARANTEE', 'OTHER'])
+  paymentStage!: string;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+}
+
 export class ReviewPaymentRequestDto {
   @IsOptional()
   @IsString()
@@ -219,6 +267,11 @@ export class RejectPaymentRequestDto {
 }
 
 export class ExecutePaymentRequestDto {
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
   @IsDateString()
   occurredAt!: string;
 
@@ -227,16 +280,48 @@ export class ExecutePaymentRequestDto {
   bankReference?: string;
 
   @IsOptional()
+  @IsIn(['CNY', 'USD'])
+  currency?: string;
+
+  @IsOptional()
   @IsString()
   ourBankAccount?: string;
+
+  @IsOptional() @IsString() ourBankAccountName?: string;
+  @IsOptional() @IsString() ourBankName?: string;
+  @IsOptional() @IsString() ourBankCode?: string;
 
   @IsOptional()
   @IsString()
   counterpartyBankAccount?: string;
 
+  @IsOptional() @IsString() counterpartyBankAccountName?: string;
+  @IsOptional() @IsString() counterpartyBankName?: string;
+  @IsOptional() @IsString() counterpartyBankCode?: string;
+
   @IsOptional()
   @IsString()
   actualPayeeName?: string;
+
+  @IsOptional()
+  @IsString()
+  actualPayerName?: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+
+  @IsOptional()
+  @IsString()
+  bankAccountDifferenceReason?: string;
+
+  @IsOptional()
+  @IsString()
+  recognitionProvider?: string;
+
+  @IsOptional()
+  @IsString()
+  recognitionRawText?: string;
 
   @IsOptional()
   @IsBoolean()

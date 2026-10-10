@@ -65,7 +65,7 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
   const toggleMode = (mode: string) => setTransportModes(current =>
     current.includes(mode) ? current.filter(item => item !== mode) : [...current, mode],
   );
-  const back = () => router.push(`/dashboard/master-data/service-organizations?type=${organizationType}`);
+  const back = () => router.push(`/dashboard/master-data?tab=service-organizations&type=${organizationType}`);
 
   const submit = async () => {
     if (!form.partnerId) return alert('请选择关联合作伙伴');

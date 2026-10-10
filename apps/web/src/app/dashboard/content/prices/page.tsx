@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { promptAction } from '@/lib/system-dialog';
 
 const EMPTY = { productTypeId: '', businessDate: new Date().toISOString().slice(0, 10), region: '', marketName: '', spec: '', price: '', unit: '元/吨', changeAmount: '', source: 'MANUAL', remark: '' };
 const SOURCE_LABEL: Record<string, string> = { MANUAL: '手工', BAIINFO: '百川', BUSINESS_ANALYTIQ: 'Business Analytiq', FLUORSPAR_COM: 'fluorspar.com', IMPORT: '导入' };
@@ -31,9 +32,9 @@ export default function PricesPage() {
   useEffect(() => { void loadTypes(); }, []);
 
   const createType = async () => {
-    const name = window.prompt('请输入产品类型名称，例如：萤石粉');
+    const name = await promptAction('请输入产品类型名称，例如：萤石粉', '', { title: '新增产品类型' });
     if (!name) return;
-    const code = window.prompt('请输入唯一编码，例如：FLUORITE_97');
+    const code = await promptAction('请输入唯一编码，例如：FLUORITE_97', '', { title: '填写产品类型编码' });
     if (!code) return;
     try { await api.post('/content/product-types', { name, code, unit: '元/吨' }); loadTypes(); } catch (error: any) { alert(error.message); }
   };

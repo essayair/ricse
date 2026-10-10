@@ -10,6 +10,7 @@ import { unitLabel } from '@/lib/unit';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { BusinessDirectionBadge, waybillStatusLabel } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 interface Notice {
   id: string; noticeNo: string; type: string; mode: string; status: string; qualityRequired: boolean; totalQuantity: string;
@@ -30,7 +31,7 @@ export default function DispatchNoticeDetailPage() {
   const load = () => api.get<Notice>(`/dispatch-notices/${id}`).then(setNotice).catch(error => { alert(error.message); router.push('/dashboard/dispatch-notices'); });
   useEffect(() => { void load(); }, [id]);
   const transition = async (status: string, label: string) => {
-    if (!confirm(`确定${label}？`)) return;
+    if (!await confirmAction(`确定${label}？`, { title: `${label}确认` })) return;
     try { setNotice(await api.patch(`/dispatch-notices/${id}/status`, { status })); } catch (error: any) { alert(error.message); }
   };
   if (!notice) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;

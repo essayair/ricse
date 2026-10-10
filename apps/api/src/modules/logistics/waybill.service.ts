@@ -109,9 +109,7 @@ export class WaybillService {
     return Array.from({ length: amount }, (_, index) => `WB-${date}-${String(count + index + 1).padStart(4, '0')}`);
   }
 
-  private async resolveCarrier(freightMode?: string, carrierPartnerId?: string) {
-    if ((freightMode || 'SELF') !== 'THIRD_PARTY') return null;
-    if (!carrierPartnerId) throw new BadRequestException('第三方承运必须选择已维护的物流承运商');
+  private async requireCarrierPartner(carrierPartnerId: string) {
     const profile = await this.prisma.serviceOrganization.findFirst({
       where: {
         partnerId: carrierPartnerId,
@@ -126,23 +124,60 @@ export class WaybillService {
     return profile.partner;
   }
 
-  private validateVehicleAssignment(vehicle: { ownerType: string; ownerId: string | null }, freightMode: string, carrier: { id: string } | null) {
+  private async resolveCarrier(freightMode?: string, carrierPartnerId?: string) {
+    const mode = freightMode || 'SELF';
+    if (mode === 'THIRD_PARTY') {
+      if (!carrierPartnerId) throw new BadRequestException('第三方承运必须选择已维护的物流承运商');
+      return this.requireCarrierPartner(carrierPartnerId);
+    }
+    // 社会运力：开票承运商可以延迟绑定，创建时不强制要求。
+    if (mode === 'SOCIAL' && carrierPartnerId) return this.requireCarrierPartner(carrierPartnerId);
+    return null;
+  }
+
+  private async vehicleInheritsCarrier(vehicleId: string, carrierId: string) {
+    const link = await this.prisma.vehicleFleet.findFirst({
+      where: { vehicleId, fleet: { carrierPartnerId: carrierId, status: 'ACTIVE', deletedAt: null } },
+    });
+    return !!link;
+  }
+
+  private async driverInheritsCarrier(driverId: string, carrierId: string) {
+    const link = await this.prisma.driverFleet.findFirst({
+      where: { driverId, fleet: { carrierPartnerId: carrierId, status: 'ACTIVE', deletedAt: null } },
+    });
+    return !!link;
+  }
+
+  private async validateVehicleAssignment(vehicle: { id: string; ownerType: string; ownerId: string | null }, freightMode: string, carrier: { id: string } | null) {
+    // 社会运力：车辆归属不做一致性校验。
+    if (freightMode === 'SOCIAL') return;
     if (freightMode === 'SELF' && vehicle.ownerType !== 'SELF') {
       throw new BadRequestException('自有运力只能选择自有车辆');
     }
     if (freightMode === 'THIRD_PARTY') {
-      if (vehicle.ownerType !== 'OUTSOURCED') throw new BadRequestException('第三方承运只能选择外协车辆');
-      if (!carrier || vehicle.ownerId !== carrier.id) throw new BadRequestException('所选车辆不属于当前物流承运商');
+      if (!carrier) throw new BadRequestException('所选车辆不属于当前物流承运商');
+      if (vehicle.ownerType === 'OUTSOURCED' && vehicle.ownerId === carrier.id) return;
+      // 车队绑定承运商后，车队内车辆在业务层面继承该承运商关系。
+      if (await this.vehicleInheritsCarrier(vehicle.id, carrier.id)) return;
+      throw new BadRequestException('所选车辆不属于当前物流承运商');
     }
   }
 
-  private validateDriverAssignment(driver: {
-    serviceOrganization: { partnerId: string; partner: { isInternal: boolean } };
+  private async validateDriverAssignment(driver: {
+    id: string;
+    serviceOrganization: { partnerId: string; partner: { isInternal: boolean } } | null;
   }, freightMode: string, carrier: { id: string } | null) {
-    if (freightMode === 'SELF' && !driver.serviceOrganization.partner.isInternal) {
+    // 社会运力：司机归属不做一致性校验。
+    if (freightMode === 'SOCIAL') return;
+    if (freightMode === 'SELF' && !driver.serviceOrganization?.partner.isInternal) {
       throw new BadRequestException('自有运力只能选择内部物流服务商维护的司机');
     }
-    if (freightMode === 'THIRD_PARTY' && (!carrier || driver.serviceOrganization.partnerId !== carrier.id)) {
+    if (freightMode === 'THIRD_PARTY') {
+      if (!carrier) throw new BadRequestException('所选司机不属于当前物流承运商');
+      if (driver.serviceOrganization?.partnerId === carrier.id) return;
+      // 车队绑定承运商后，车队内司机在业务层面继承该承运商关系。
+      if (await this.driverInheritsCarrier(driver.id, carrier.id)) return;
       throw new BadRequestException('所选司机不属于当前物流承运商');
     }
   }
@@ -153,12 +188,15 @@ export class WaybillService {
         id: driverId,
         status: 'ACTIVE',
         deletedAt: null,
-        serviceOrganization: {
-          organizationType: 'LOGISTICS_CARRIER',
-          status: 'ACTIVE',
-          deletedAt: null,
-          partner: { status: 'ACTIVE', deletedAt: null },
-        },
+        OR: [
+          { serviceOrganizationId: null },
+          { serviceOrganization: {
+            organizationType: 'LOGISTICS_CARRIER',
+            status: 'ACTIVE',
+            deletedAt: null,
+            partner: { status: 'ACTIVE', deletedAt: null },
+          } },
+        ],
       },
       include: { serviceOrganization: { include: { partner: { select: { isInternal: true } } } } },
     });
@@ -185,12 +223,12 @@ export class WaybillService {
         where: { id: item.vehicleId, status: 'ACTIVE', deletedAt: null },
       });
       if (!vehicle) throw new BadRequestException(`第 ${rowNumber} 行所选车辆不存在或不可用`);
-      this.validateVehicleAssignment(vehicle, freightMode, carrier);
+      await this.validateVehicleAssignment(vehicle, freightMode, carrier);
     }
     let driver: any = null;
     if (item.driverId) {
       driver = await this.findAvailableDriver(item.driverId);
-      this.validateDriverAssignment(driver, freightMode, carrier);
+      await this.validateDriverAssignment(driver, freightMode, carrier);
     }
 
     const plateNo = (item.plateNo || vehicle?.plateNo || '').trim().toUpperCase();
@@ -298,12 +336,12 @@ export class WaybillService {
         where: { id: dto.vehicleId, status: 'ACTIVE', deletedAt: null },
       });
       if (!vehicle) throw new BadRequestException('所选车辆不存在或不可用');
-      this.validateVehicleAssignment(vehicle, freightMode, carrier);
+      await this.validateVehicleAssignment(vehicle, freightMode, carrier);
     }
     let driver: any = null;
     if (dto.driverId) {
       driver = await this.findAvailableDriver(dto.driverId);
-      this.validateDriverAssignment(driver, freightMode, carrier);
+      await this.validateDriverAssignment(driver, freightMode, carrier);
     }
     const sources = new Map(availability.lineItems.map(item => [item.dispatchNoticeLineItemId, item]));
     const seen = new Set<string>();
@@ -524,13 +562,13 @@ export class WaybillService {
         where: { id: vehicleId, status: 'ACTIVE', deletedAt: null },
       });
       if (!vehicle) throw new BadRequestException('所选车辆不存在或不可用');
-      this.validateVehicleAssignment(vehicle, freightMode, carrier);
+      await this.validateVehicleAssignment(vehicle, freightMode, carrier);
     }
     const driverId = data.driverId === undefined ? waybill.driverId : data.driverId;
     let driver: any = null;
     if (driverId) {
       driver = await this.findAvailableDriver(driverId);
-      this.validateDriverAssignment(driver, freightMode, carrier);
+      await this.validateDriverAssignment(driver, freightMode, carrier);
     }
     const updated = await this.prisma.waybill.update({
       where: { id },
@@ -555,6 +593,21 @@ export class WaybillService {
       }
     }
     return this.findOne(updated.id, userId, 'logistics.manage');
+  }
+
+  // 社会运力运单的开票承运商可以在价格谈妥、车辆已调度之后再绑定，
+  // 不受运单状态限制，也不修改车辆/司机调度信息或 freightMode。
+  async bindCarrier(id: string, carrierPartnerId: string | null, userId: string) {
+    const waybill = await this.findOne(id, userId, 'logistics.manage');
+    if (waybill.freightMode !== 'SOCIAL') {
+      throw new BadRequestException('仅社会运力运单支持单独绑定开票承运商');
+    }
+    const carrier = carrierPartnerId ? await this.requireCarrierPartner(carrierPartnerId) : null;
+    await this.prisma.waybill.update({
+      where: { id },
+      data: { carrierPartnerId: carrier?.id || null, carrierName: carrier?.name || null },
+    });
+    return this.findOne(id, userId, 'logistics.manage');
   }
 
   async updateStatus(id: string, status: string, userId: string) {

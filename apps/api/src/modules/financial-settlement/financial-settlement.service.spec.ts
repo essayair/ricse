@@ -33,6 +33,34 @@ describe('FinancialSettlementService payment approvals', () => {
     }));
   });
 
+  it('管理员读取付款单时不把空合同范围嵌入可空关系过滤', async () => {
+    accessControl.assertPermission.mockResolvedValue({ isAdmin: true, permissions: [] } as any);
+    accessControl.getContractScope.mockResolvedValue({} as any);
+    prisma.fundTransaction.findFirst.mockResolvedValue({ id: 'fund-1', direction: 'PAYMENT' } as any);
+
+    await expect(service.findFund('fund-1', 'admin')).resolves.toMatchObject({ id: 'fund-1' });
+
+    expect(prisma.fundTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'fund-1' },
+    }));
+  });
+
+  it('普通用户读取付款单时按合同权限范围过滤', async () => {
+    const scope = { businessUnitId: { in: ['business-unit-1'] } };
+    accessControl.assertPermission.mockResolvedValue({ isAdmin: false, permissions: ['settlement.view'] } as any);
+    accessControl.getContractScope.mockResolvedValue(scope as any);
+    prisma.fundTransaction.findFirst.mockResolvedValue({ id: 'fund-1', direction: 'PAYMENT' } as any);
+
+    await service.findFund('fund-1', 'user-1');
+
+    expect(prisma.fundTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 'fund-1',
+        OR: expect.arrayContaining([{ contract: { is: scope } }]),
+      }),
+    }));
+  });
+
   it('执行批次未完成时仍可作为结算候选，但排除已取消批次', async () => {
     prisma.contract.findFirst.mockResolvedValue({
       id: 'contract-1', type: 'PURCHASE', sellerId: 'supplier-1', buyerId: 'internal-1',

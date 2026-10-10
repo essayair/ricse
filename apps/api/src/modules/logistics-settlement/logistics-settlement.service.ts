@@ -83,7 +83,7 @@ export class LogisticsSettlementService {
     const periodEnd = new Date(query.periodEnd);
     if (periodEnd <= periodStart) throw new BadRequestException('结算周期结束日期必须晚于开始日期');
 
-    return this.prisma.waybill.findMany({
+    const items = await this.prisma.waybill.findMany({
       where: {
         AND: [
           scope,
@@ -103,6 +103,8 @@ export class LogisticsSettlementService {
       },
       orderBy: { signedAt: 'asc' },
     });
+    // 社会运力运单可能尚未补绑开票承运商：不剔除，交由前端在结算候选列表里禁用勾选并提示原因。
+    return items.map(item => ({ ...item, carrierPending: !item.carrierPartnerId }));
   }
 
   async create(dto: CreateLogisticsSettlementDto, userId: string) {
@@ -134,6 +136,10 @@ export class LogisticsSettlementService {
     const notSigned = waybills.find((item) => item.status !== 'SIGNED');
     if (notSigned) {
       throw new BadRequestException(`运单 ${notSigned.waybillNo} 尚未签收，不能加入结算单`);
+    }
+    const carrierPending = waybills.find((item) => !item.carrierPartnerId);
+    if (carrierPending) {
+      throw new BadRequestException(`运单 ${carrierPending.waybillNo} 尚未确定开票承运商，不能加入结算单`);
     }
 
     const alreadySettled = await this.prisma.logisticsSettlementLine.findMany({

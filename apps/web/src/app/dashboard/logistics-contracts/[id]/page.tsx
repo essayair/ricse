@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { confirmAction } from '@/lib/system-dialog';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -61,7 +62,7 @@ export default function LogisticsContractDetailPage() {
   useEffect(() => { void load(); }, [id]);
 
   const updateStatus = async (status: string) => {
-    if (!confirm(`确认${NEXT_STATUS_LABEL[status]}？`)) return;
+    if (!await confirmAction(`确认${NEXT_STATUS_LABEL[status]}？`, { title: `${NEXT_STATUS_LABEL[status]}确认` })) return;
     setBusy(true);
     try { await api.patch(`/logistics-contracts/${id}/status`, { status }); await load(); }
     catch (error: any) { alert(error.message); }

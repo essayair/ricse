@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 interface Fund { id: string; transactionNo: string; direction: string; paymentStage: string; amount: string; allocatedAmount: string; refundedAmount: string; status: string; occurredAt: string }
 interface Allocation { id: string; amount: string; reversedAt?: string | null; reversalReason?: string | null; fundTransaction: Fund; creator: { name: string }; reverser?: { name: string } | null }
@@ -69,7 +70,7 @@ export default function SettlementDetailPage() {
 
   const doAction = async (action: 'confirm' | 'void') => {
     if (!item) return;
-    if (action === 'void' && !confirm(`确定作废结算单 ${item.settlementNo} 吗？`)) return;
+    if (action === 'void' && !await confirmAction(`确定作废结算单 ${item.settlementNo} 吗？`)) return;
     setBusy(true);
     try { await api.post(`/financial-settlements/${item.id}/${action}`); await load(); }
     catch (error: any) { alert(error.message); }
@@ -90,7 +91,7 @@ export default function SettlementDetailPage() {
     finally { setBusy(false); }
   };
   const reverse = async (entry: Allocation) => {
-    const reason = prompt('请输入撤销核销原因');
+    const reason = await promptAction('请输入撤销核销原因');
     if (!reason?.trim()) return;
     setBusy(true);
     try { await api.post(`/financial-settlements/allocations/${entry.id}/reverse`, { reason: reason.trim() }); await load(); }

@@ -18,6 +18,9 @@ export class DriverService {
         partner: { select: { id: true, code: true, name: true, isInternal: true, status: true } },
       },
     },
+    fleetLinks: {
+      select: { fleet: { select: { id: true, name: true, carrierPartnerId: true } } },
+    },
     _count: {
       select: {
         waybills: { where: { deletedAt: null } },
@@ -41,21 +44,49 @@ export class DriverService {
     return carrier;
   }
 
-  private async assertUniquePhone(serviceOrganizationId: string, phone: string, excludeId?: string) {
-    const existing = await this.prisma.driver.findFirst({
-      where: { serviceOrganizationId, phone, deletedAt: null },
-      select: { id: true },
-    });
-    if (existing && existing.id !== excludeId) throw new ConflictException('该物流承运商下已存在相同手机号的司机');
+  private async assertUniqueIdentity(
+    identity: { phone: string; idCardNo?: string | null; licenseNo?: string | null },
+    excludeId?: string,
+  ) {
+    const base: Prisma.DriverWhereInput = {
+      deletedAt: null,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    };
+    const [phoneOwner, idCardOwner, licenseOwner] = await Promise.all([
+      this.prisma.driver.findFirst({ where: { ...base, phone: identity.phone }, select: { id: true } }),
+      identity.idCardNo
+        ? this.prisma.driver.findFirst({
+          where: { ...base, idCardNo: { equals: identity.idCardNo, mode: 'insensitive' } },
+          select: { id: true },
+        })
+        : null,
+      identity.licenseNo
+        ? this.prisma.driver.findFirst({
+          where: { ...base, licenseNo: { equals: identity.licenseNo, mode: 'insensitive' } },
+          select: { id: true },
+        })
+        : null,
+    ]);
+    if (phoneOwner) throw new ConflictException('该手机号已存在司机档案，请直接关联已有司机');
+    if (idCardOwner) throw new ConflictException('该身份证号已存在司机档案，请直接关联已有司机');
+    if (licenseOwner) throw new ConflictException('该驾驶证号已存在司机档案，请直接关联已有司机');
+  }
+
+  private uniqueConflict(error: Prisma.PrismaClientKnownRequestError) {
+    const target = String(error.meta?.target || '').toLowerCase();
+    if (target.includes('phone')) return new ConflictException('该手机号已存在司机档案，请直接关联已有司机');
+    if (target.includes('idcard')) return new ConflictException('该身份证号已存在司机档案，请直接关联已有司机');
+    if (target.includes('license')) return new ConflictException('该驾驶证号已存在司机档案，请直接关联已有司机');
+    return new ConflictException('司机手机号、身份证号或驾驶证号已存在');
   }
 
   async create(data: CreateDriverDto) {
-    await this.requireCarrier(data.serviceOrganizationId);
-    await this.assertUniquePhone(data.serviceOrganizationId, data.phone);
+    if (data.serviceOrganizationId) await this.requireCarrier(data.serviceOrganizationId);
+    await this.assertUniqueIdentity(data);
     try {
       return await this.prisma.driver.create({
         data: {
-          serviceOrganizationId: data.serviceOrganizationId,
+          serviceOrganizationId: data.serviceOrganizationId || null,
           name: data.name,
           phone: data.phone,
           idCardNo: data.idCardNo || null,
@@ -69,7 +100,7 @@ export class DriverService {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('该物流承运商下已存在相同手机号的司机');
+        throw this.uniqueConflict(error);
       }
       throw error;
     }
@@ -77,13 +108,16 @@ export class DriverService {
 
   async findAll(params: {
     page?: number; pageSize?: number; status?: string; search?: string;
-    serviceOrganizationId?: string; carrierPartnerId?: string; internal?: boolean;
+    serviceOrganizationId?: string; carrierPartnerId?: string; internal?: boolean; fleetId?: string;
   }) {
     const page = params.page || 1;
     const pageSize = Math.min(params.pageSize || 50, 200);
     const where: Prisma.DriverWhereInput = { deletedAt: null };
     if (params.status) where.status = params.status;
-    if (params.serviceOrganizationId) where.serviceOrganizationId = params.serviceOrganizationId;
+    // serviceOrganizationId=NONE 表示仅筛选"无承运商"司机（社会运力专用）。
+    if (params.serviceOrganizationId === 'NONE') where.serviceOrganizationId = null;
+    else if (params.serviceOrganizationId) where.serviceOrganizationId = params.serviceOrganizationId;
+    if (params.fleetId) where.fleetLinks = { some: { fleetId: params.fleetId } };
     const organizationFilter: Prisma.ServiceOrganizationWhereInput = {};
     if (params.carrierPartnerId) organizationFilter.partnerId = params.carrierPartnerId;
     if (params.internal !== undefined) organizationFilter.partner = { isInternal: params.internal };
@@ -119,10 +153,17 @@ export class DriverService {
 
   async update(id: string, data: UpdateDriverDto) {
     const current = await this.findOne(id);
-    const serviceOrganizationId = data.serviceOrganizationId || current.serviceOrganizationId;
+    // 传空字符串表示解除承运商（变为无承运商司机），不传该字段表示保持原值。
+    const serviceOrganizationId = data.serviceOrganizationId === undefined
+      ? current.serviceOrganizationId
+      : data.serviceOrganizationId || null;
     const phone = data.phone || current.phone;
-    if (serviceOrganizationId !== current.serviceOrganizationId) await this.requireCarrier(serviceOrganizationId);
-    await this.assertUniquePhone(serviceOrganizationId, phone, id);
+    const idCardNo = data.idCardNo === undefined ? current.idCardNo : data.idCardNo || null;
+    const licenseNo = data.licenseNo === undefined ? current.licenseNo : data.licenseNo || null;
+    if (serviceOrganizationId && serviceOrganizationId !== current.serviceOrganizationId) {
+      await this.requireCarrier(serviceOrganizationId);
+    }
+    await this.assertUniqueIdentity({ phone, idCardNo, licenseNo }, id);
     try {
       return await this.prisma.driver.update({
         where: { id },
@@ -141,7 +182,7 @@ export class DriverService {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('该物流承运商下已存在相同手机号的司机');
+        throw this.uniqueConflict(error);
       }
       throw error;
     }

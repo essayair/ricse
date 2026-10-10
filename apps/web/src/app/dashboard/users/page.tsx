@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Building2, Link2, Loader2, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 interface BackendAccount {
   id: string;
@@ -120,8 +121,8 @@ export default function UserManagementPage() {
   };
 
   const unbind = async (user: PlatformUser) => {
-    if (!user.linkedUser || !confirm(`确认解除与后台账号“${user.linkedUser.username}”的关联吗？解除后小程序将不能访问企业工作台。`)) return;
-    const note = window.prompt('解除原因（可选）', '') ?? undefined;
+    if (!user.linkedUser || !await confirmAction(`确认解除与后台账号“${user.linkedUser.username}”的关联吗？解除后小程序将不能访问企业工作台。`, { title: '解除账号关联确认' })) return;
+    const note = await promptAction('解除原因（可选）', '') ?? undefined;
     if (note === undefined) return;
     try {
       await api.delete(`/platform-users/${user.id}/backend-account`, { note: note.trim() || undefined });
@@ -134,7 +135,7 @@ export default function UserManagementPage() {
 
   const toggleStatus = async (user: PlatformUser) => {
     const next = user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-    if (next === 'DISABLED' && !confirm('禁用后，该用户不能使用需要登录的小程序功能，确认继续吗？')) return;
+    if (next === 'DISABLED' && !await confirmAction('禁用后，该用户不能使用需要登录的小程序功能，确认继续吗？')) return;
     try {
       await api.patch(`/platform-users/${user.id}`, { status: next });
       await load();

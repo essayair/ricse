@@ -12,6 +12,7 @@ import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachm
 import { SETTLEMENT_METHOD_SUGGESTIONS, settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -307,7 +308,7 @@ export default function ContractEditPage() {
   };
 
   const deleteAttachment = async (id: string) => {
-    if (!confirm('确定删除这个附件吗？')) return;
+    if (!await confirmAction('确定删除这个附件吗？')) return;
     try {
       await api.delete(`/contracts/attachments/${id}`);
       setAttachments(current => current.filter(item => item.id !== id));
@@ -317,7 +318,7 @@ export default function ContractEditPage() {
   };
 
   const renameAttachment = async (attachment: any) => {
-    const originalName = prompt('请输入新的附件名称', attachment.originalName)?.trim();
+    const originalName = (await promptAction('请输入新的附件名称', attachment.originalName))?.trim();
     if (!originalName || originalName === attachment.originalName) return;
     try {
       const updated = await api.patch<any>(`/contracts/attachments/${attachment.id}/name`, { originalName });

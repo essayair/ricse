@@ -371,8 +371,9 @@ export class MobileWorkspaceService {
       })),
       drivers: drivers.map(item => ({
         ...item,
-        carrierPartnerId: item.serviceOrganization.partnerId,
-        carrierName: item.serviceOrganization.partner.name,
+        // 无承运商司机（社会运力专用）这两个字段为空，由调用方按 freightMode 决定是否需要承运商。
+        carrierPartnerId: item.serviceOrganization?.partnerId ?? null,
+        carrierName: item.serviceOrganization?.partner.name ?? null,
         available: item.waybills.length === 0,
         activeWaybill: item.waybills[0] || null,
       })),

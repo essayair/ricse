@@ -6,6 +6,7 @@ import { Eye, Paperclip, Trash2, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { confirmAction } from '@/lib/system-dialog';
 
 export interface SettlementAttachment {
   id: string; originalName: string; mimeType: string; size: number;
@@ -30,7 +31,7 @@ export function SettlementAttachments({ attachments = [], uploadPath, editable, 
     catch (error: any) { alert(error.message); }
   };
   const remove = async (item: SettlementAttachment) => {
-    if (!confirm(`确定删除附件“${item.originalName}”吗？`)) return;
+    if (!await confirmAction(`确定删除附件“${item.originalName}”吗？`)) return;
     try { await api.delete(`/financial-settlements/attachments/${item.id}`); await onChanged(); }
     catch (error: any) { alert(error.message); }
   };

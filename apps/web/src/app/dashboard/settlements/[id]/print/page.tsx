@@ -135,7 +135,7 @@ function PartyBox({ title, party }: { title: string; party: Party }) {
   const bank = party.bankAccounts?.[0];
   return <div className="print-avoid min-h-[190px] border border-slate-900 p-4">
     <h3 className="border-b border-slate-400 pb-2 text-base font-bold">{title}</h3>
-    <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-2 gap-y-2 text-[12px] leading-5">
+    <dl className="mt-3 grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-2 text-[12px] leading-5">
       <dt className="text-slate-500">单位名称</dt><dd>{party.name}</dd>
       <dt className="text-slate-500">联系地址</dt><dd>{partyAddress(party)}</dd>
       <dt className="text-slate-500">联系人</dt><dd>{party.contactPerson || '—'}{party.contactPhone ? ` / ${party.contactPhone}` : ''}</dd>
@@ -193,7 +193,7 @@ export default function SettlementPrintPage() {
 
     {!printable && <div className="settlement-print-actions mx-auto mb-4 max-w-[1040px] rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">{item.status === 'DRAFT' ? '该结算单尚未确认，不能作为正式单据打印存档。' : '该结算单已作废，不能打印存档。'}</div>}
 
-    <article className="settlement-print-paper mx-auto max-w-[1040px] bg-white px-10 py-9 text-slate-950 shadow-lg">
+    <article className="settlement-print-paper mx-auto bg-white text-slate-950 shadow-lg">
       <header className="border-b-2 border-slate-900 pb-5 text-center">
         <div className="text-xs tracking-[0.35em] text-slate-500">RICSE · 区域产业链服务生态</div>
         <h1 className="mt-3 text-3xl font-bold tracking-[0.18em]">业务确认及结算单</h1>
@@ -250,26 +250,50 @@ export default function SettlementPrintPage() {
         <div className="mt-1 text-slate-600">本单由系统已确认结算数据生成。双方签字盖章及纸质/电子归档方式，按合同约定与公司档案制度执行。</div>
       </section>
 
-      <footer className="mt-5 flex justify-between border-t border-slate-300 pt-3 text-[10px] text-slate-500"><span>单据编号：{item.settlementNo}</span><span>打印时间：{printedAt || '—'}</span></footer>
+      <footer className="mt-5 flex flex-wrap justify-between gap-2 border-t border-slate-300 pt-3 text-[10px] text-slate-500"><span>单据编号：{item.settlementNo}</span><span>打印时间：{printedAt || '—'}</span></footer>
     </article>
 
     <style jsx global>{`
+      .settlement-print-page { overflow-x: auto; }
+      .settlement-print-actions { width: min(210mm, 100%); }
+      .settlement-print-paper {
+        box-sizing: border-box;
+        width: 210mm;
+        max-width: 100%;
+        min-height: 297mm;
+        padding: 10mm;
+      }
+      .settlement-print-paper *, .settlement-print-paper *::before, .settlement-print-paper *::after { box-sizing: border-box; min-width: 0; }
+      .settlement-print-paper table { width: 100%; table-layout: fixed; }
+      .settlement-print-paper th, .settlement-print-paper td { overflow-wrap: anywhere; word-break: break-word; }
       @media print {
-        @page { size: A4 portrait; margin: 9mm; }
-        html, body { background: #fff !important; }
+        @page { size: A4 portrait; margin: 10mm; }
+        html, body { width: auto !important; min-width: 0 !important; margin: 0 !important; overflow: visible !important; background: #fff !important; }
         [data-app-sidebar], [data-dashboard-header], .settlement-print-actions { display: none !important; }
-        [data-dashboard-shell] { margin-left: 0 !important; min-height: auto !important; }
-        [data-dashboard-main] { padding: 0 !important; }
-        .settlement-print-page { margin: 0 !important; min-height: auto !important; padding: 0 !important; background: #fff !important; }
-        .settlement-print-paper { width: 100% !important; max-width: none !important; padding: 0 !important; box-shadow: none !important; }
-        .print-avoid, table, tr { break-inside: avoid; page-break-inside: avoid; }
+        [data-dashboard-shell] { width: auto !important; margin-left: 0 !important; min-height: auto !important; overflow: visible !important; }
+        [data-dashboard-main] { width: auto !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+        .settlement-print-page { width: auto !important; margin: 0 !important; min-height: auto !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+        .settlement-print-paper {
+          width: 190mm !important;
+          max-width: 190mm !important;
+          min-height: 277mm !important;
+          margin: 0 auto !important;
+          padding: 0 !important;
+          overflow: visible !important;
+          box-shadow: none !important;
+          print-color-adjust: exact;
+          -webkit-print-color-adjust: exact;
+        }
+        .settlement-print-paper thead { display: table-header-group; }
+        .settlement-print-paper tfoot { display: table-footer-group; }
+        .settlement-print-paper tr, .print-avoid { break-inside: avoid; page-break-inside: avoid; }
       }
     `}</style>
   </div>;
 }
 
 function Meta({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
-  return <div className={`grid min-h-11 grid-cols-[88px_1fr] border-b border-r border-slate-900 ${wide ? 'col-span-2' : ''}`}><div className="flex items-center bg-slate-100 px-2 font-medium">{label}</div><div className="flex items-center break-words px-2">{value}</div></div>;
+  return <div className={`grid min-h-11 grid-cols-[88px_minmax(0,1fr)] border-b border-r border-slate-900 ${wide ? 'col-span-2' : ''}`}><div className="flex items-center bg-slate-100 px-2 font-medium">{label}</div><div className="flex min-w-0 items-center break-all px-2">{value}</div></div>;
 }
 
 function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {

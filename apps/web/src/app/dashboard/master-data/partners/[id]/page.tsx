@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { PartnerAddressDialog, type PartnerAddress } from '@/components/partner-address-dialog';
 import { StatusText } from '@/components/status-text';
+import { confirmAction } from '@/lib/system-dialog';
 
 /* ── Types ── */
 
@@ -153,7 +154,7 @@ export default function PartnerDetailPage() {
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === partner?.status) { setStatusMenu(false); return; }
     const label = STATUS_MAP[newStatus]?.label || newStatus;
-    if (newStatus === 'BLACKLIST' && !confirm(`确定要将「${partner?.name}」加入黑名单吗？黑名单单位将被冻结，不可参与任何新业务。`)) {
+    if (newStatus === 'BLACKLIST' && !await confirmAction(`确定要将「${partner?.name}」加入黑名单吗？黑名单单位将被冻结，不可参与任何新业务。`)) {
       setStatusMenu(false);
       return;
     }

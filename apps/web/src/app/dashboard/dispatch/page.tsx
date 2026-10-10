@@ -7,6 +7,7 @@ import {
   Clock3, List, MapPin, Plus, RefreshCw, Search, Truck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { confirmAction } from '@/lib/system-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -86,7 +87,7 @@ export default function DispatchPage() {
 
   const transition = async (event: React.MouseEvent, item: Waybill, status: string, label: string) => {
     event.stopPropagation();
-    if (!confirm(`确定${label} ${item.waybillNo}？`)) return;
+    if (!await confirmAction(`确定${label} ${item.waybillNo}？`, { title: `${label}确认` })) return;
     setUpdatingId(item.id);
     try {
       await api.patch(`/waybills/${item.id}/status`, { status });
@@ -203,7 +204,7 @@ function WaybillCard({ item, updating, onOpen, onTransition }: {
       </div>
       <div className="mt-3 rounded-md bg-muted/50 p-2 text-xs">
         <div className="truncate">{item.lineItems?.[0]?.materialName || '未记录物料'}</div>
-        <div className="mt-1 text-muted-foreground">{quantityText(item)} · {item.freightMode === 'SELF' ? '自营' : item.carrierName || '委外'}</div>
+        <div className="mt-1 text-muted-foreground">{quantityText(item)} · {item.freightMode === 'SELF' ? '自营' : item.freightMode === 'SOCIAL' ? (item.carrierName || '社会运力 · 承运商未定') : (item.carrierName || '委外')}</div>
       </div>
       <div className="mt-3 space-y-1 text-[11px] text-muted-foreground">
         <div className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{item.originLocation || '-'} → {item.destinationLocation || '-'}</span></div>
