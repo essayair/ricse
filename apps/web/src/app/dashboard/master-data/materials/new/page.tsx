@@ -170,9 +170,9 @@ export default function MaterialNewPage() {
 
       <Card className="space-y-5 p-6">
         <div><h2 className="font-semibold">规格标准定义</h2><p className="mt-1 text-xs text-muted-foreground">核心规格参与商品名称拼接和标准商品查重；其他指标作为质量与单据标准保留</p></div>
-        <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2.5 dark:border-blue-800 dark:bg-blue-950/30">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
-          <p className="text-xs text-blue-700 dark:text-blue-300">规格参数会显示在合同、质检、入出库等单据中，请按行业标准录入，如 CaF₂≥97%、水分≤10%。</p>
+        <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2.5">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="text-xs text-foreground">规格参数会显示在合同、质检、入出库等单据中，请按行业标准录入，如 CaF₂≥97%、水分≤10%。</p>
         </div>
         <div className="space-y-2">
           <div className="grid grid-cols-[80px_1fr_72px_96px_72px_36px] items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
