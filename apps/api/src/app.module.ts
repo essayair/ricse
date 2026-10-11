@@ -19,6 +19,7 @@ import { PlatformUsersModule } from './modules/platform-users/platform-users.mod
 import { MobileWorkspaceModule } from './modules/mobile-workspace/mobile-workspace.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
 import { FinancialSettlementModule } from './modules/financial-settlement/financial-settlement.module';
+import { NotificationModule } from './modules/notification/notification.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { BusinessOperationInterceptor } from './modules/common/business-operation.interceptor';
 
@@ -44,6 +45,7 @@ import { BusinessOperationInterceptor } from './modules/common/business-operatio
     MobileWorkspaceModule,
     MonitorModule,
     FinancialSettlementModule,
+    NotificationModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: BusinessOperationInterceptor },

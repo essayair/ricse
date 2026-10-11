@@ -11,6 +11,7 @@ import { WeighbridgeModule } from '../weighbridge/weighbridge.module';
 import { MasterDataModule } from '../master-data/master-data.module';
 import { MobileUserGuard } from './mobile-user.guard';
 import { MobileWorkspaceController } from './mobile-workspace.controller';
+import { MobileNotificationController } from './mobile-notification.controller';
 import { MobileWorkspaceService } from './mobile-workspace.service';
 
 @Module({
@@ -26,7 +27,7 @@ import { MobileWorkspaceService } from './mobile-workspace.service';
     InventoryModule,
     MasterDataModule,
   ],
-  controllers: [MobileWorkspaceController],
+  controllers: [MobileWorkspaceController, MobileNotificationController],
   providers: [MobileUserGuard, MobileWorkspaceService],
 })
 export class MobileWorkspaceModule {}
