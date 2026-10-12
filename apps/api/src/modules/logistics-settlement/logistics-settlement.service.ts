@@ -13,6 +13,7 @@ export class LogisticsSettlementService {
 
   private readonly include = {
     payerCompany: { select: { id: true, name: true, code: true } },
+    payerPartner: { select: { id: true, name: true, code: true } },
     preparer: { select: { id: true, name: true } },
     reviewer: { select: { id: true, name: true } },
     lines: {
@@ -48,7 +49,7 @@ export class LogisticsSettlementService {
     originLocation: string | null;
     destinationLocation: string | null;
     signedAt: Date | null;
-  }, payerCompanyId: string) {
+  }, payerCompanyId: string | null) {
     if (!waybill.carrierPartnerId || !waybill.originLocation || !waybill.destinationLocation) return null;
     const referenceDate = waybill.signedAt ?? new Date();
     const findTerm = (companyId: string | null) => this.prisma.logisticsContractPriceTerm.findFirst({
@@ -73,7 +74,8 @@ export class LogisticsSettlementService {
     });
 
     // 优先匹配当前结算主体签订的合同；没有时才允许使用未指定主体的通用合同。
-    return (await findTerm(payerCompanyId)) ?? findTerm(null);
+    const companyTerm = payerCompanyId ? await findTerm(payerCompanyId) : null;
+    return companyTerm ?? findTerm(null);
   }
 
   async listCandidateWaybills(query: { periodStart: string; periodEnd: string }, userId: string) {
@@ -96,6 +98,19 @@ export class LogisticsSettlementService {
         id: true, waybillNo: true, plateNo: true, signedAt: true,
         originLocation: true, destinationLocation: true,
         carrierPartnerId: true, carrierName: true,
+        dispatchNotice: {
+          select: {
+            order: {
+              select: {
+                contract: {
+                  select: {
+                    signingPartner: { select: { id: true, code: true, name: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
         weightSelections: {
           where: { purpose: 'SETTLEMENT', isCurrent: true },
           select: { quantity: true },
@@ -104,13 +119,15 @@ export class LogisticsSettlementService {
       orderBy: { signedAt: 'asc' },
     });
     // 社会运力运单可能尚未补绑开票承运商：不剔除，交由前端在结算候选列表里禁用勾选并提示原因。
-    return items.map(item => ({ ...item, carrierPending: !item.carrierPartnerId }));
+    return items.map(item => ({
+      ...item,
+      payerPartner: item.dispatchNotice.order.contract.signingPartner,
+      carrierPending: !item.carrierPartnerId,
+    }));
   }
 
   async create(dto: CreateLogisticsSettlementDto, userId: string) {
-    const context = await this.accessControl.assertPermission(userId, 'logistics.settlement.manage');
-    const payerCompanyId = dto.payerCompanyId || context.user.company?.id;
-    if (!payerCompanyId) throw new BadRequestException('无法确定货主方企业，请手动指定 payerCompanyId');
+    await this.accessControl.assertPermission(userId, 'logistics.settlement.manage');
     const waybillScope = await this.accessControl.getWaybillScope(userId, 'logistics.settlement.manage');
     const periodStart = new Date(dto.periodStart);
     const periodEnd = new Date(dto.periodEnd);
@@ -124,6 +141,15 @@ export class LogisticsSettlementService {
     const waybills = await this.prisma.waybill.findMany({
       where: { AND: [{ id: { in: waybillIds } }, waybillScope] },
       include: {
+        dispatchNotice: {
+          include: {
+            order: {
+              include: {
+                contract: { select: { signingPartnerId: true, signingPartner: { select: { id: true, name: true } } } },
+              },
+            },
+          },
+        },
         weightSelections: {
           where: { purpose: 'SETTLEMENT', isCurrent: true },
           include: { weighTicket: { select: { grossWeight: true } } },
@@ -133,6 +159,24 @@ export class LogisticsSettlementService {
     if (waybills.length !== waybillIds.length) {
       throw new BadRequestException('存在不在当前数据范围内或不存在的运单');
     }
+    const missingPayer = waybills.find((item) => !item.dispatchNotice.order.contract.signingPartnerId);
+    if (missingPayer) {
+      throw new BadRequestException(`运单 ${missingPayer.waybillNo} 的合同缺少我方签约主体，不能创建物流结算单`);
+    }
+    const payerPartnerIds = [...new Set(waybills.map((item) => item.dispatchNotice.order.contract.signingPartnerId!))];
+    if (payerPartnerIds.length !== 1) {
+      throw new BadRequestException('所选运单属于不同的我方签约主体，请按货主方分别创建物流结算单');
+    }
+    const payerPartnerId = payerPartnerIds[0];
+    if (dto.payerPartnerId && dto.payerPartnerId !== payerPartnerId) {
+      throw new BadRequestException('指定的货主方与所选运单对应合同的我方签约主体不一致');
+    }
+    // 兼容旧物流合同按组织企业匹配专属运价；没有映射时使用通用运价合同。
+    const legacyCompany = await this.prisma.company.findFirst({
+      where: { partnerId: payerPartnerId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    const payerCompanyId = legacyCompany?.id || null;
     const notSigned = waybills.find((item) => item.status !== 'SIGNED');
     if (notSigned) {
       throw new BadRequestException(`运单 ${notSigned.waybillNo} 尚未签收，不能加入结算单`);
@@ -188,6 +232,7 @@ export class LogisticsSettlementService {
       data: {
         settlementNo,
         payerCompanyId,
+        payerPartnerId,
         periodStart,
         periodEnd,
         preparedBy: userId,

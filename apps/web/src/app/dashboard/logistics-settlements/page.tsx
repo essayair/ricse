@@ -16,7 +16,8 @@ interface SettlementItem {
   periodEnd: string;
   totalNetWeight: string;
   totalAmount: string;
-  payerCompany: { id: string; name: string };
+  payerCompany: { id: string; name: string } | null;
+  payerPartner: { id: string; name: string } | null;
   preparer: { id: string; name: string };
   lines: Array<unknown>;
 }
@@ -87,7 +88,7 @@ export default function LogisticsSettlementsPage() {
                 {items.map((item) => (
                   <tr key={item.id} className="border-b">
                     <td className="p-3 font-mono">{item.settlementNo}</td>
-                    <td className="p-3">{item.payerCompany.name}</td>
+                    <td className="p-3">{item.payerPartner?.name || item.payerCompany?.name || '—'}</td>
                     <td className="p-3 text-xs text-muted-foreground">{item.periodStart.slice(0, 10)} ~ {item.periodEnd.slice(0, 10)}</td>
                     <td className="p-3"><StatusText status={item.status}>{STATUS_LABEL[item.status] || item.status}</StatusText></td>
                     <td className="p-3">{item.lines.length}</td>

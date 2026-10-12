@@ -594,10 +594,11 @@ export class AccessControlService {
   }
 
   async getLogisticsSettlementScope(userId: string, permissionCode = 'logistics.settlement.view'): Promise<Prisma.LogisticsSettlementWhereInput> {
-    const resolved = await this.resolveLogisticsCompanyIds(userId, permissionCode);
-    if (resolved.isAdmin) return {};
-    if (resolved.isExternal || resolved.companyIds.length === 0) return this.noAccess();
-    return { payerCompanyId: { in: resolved.companyIds } };
+    const context = await this.getContext(userId);
+    if (context.isAdmin) return {};
+    if (context.isExternal) return this.noAccess();
+    // 物流结算归属合同的我方签约主体，但普通账号的数据边界仍由运单继承的业务单元决定。
+    return { lines: { some: { waybill: await this.getWaybillScope(userId, permissionCode) } } };
   }
 
   async getInventoryLotScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.InventoryLotWhereInput> {

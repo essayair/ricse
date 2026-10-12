@@ -18,6 +18,7 @@ describe('LogisticsSettlementService', () => {
     id: 'waybill-1', waybillNo: 'WB-20260717-0001', status: 'SIGNED',
     carrierPartnerId: 'carrier-1', originLocation: '额济纳', destinationLocation: '玉门',
     signedAt: new Date('2026-07-27'),
+    dispatchNotice: { order: { contract: { signingPartnerId: 'partner-1', signingPartner: { id: 'partner-1', name: '我方主体' } } } },
     weightSelections: [{ quantity: 104.06, weighTicket: { grossWeight: 125.84 } }],
   };
 
@@ -36,6 +37,7 @@ describe('LogisticsSettlementService', () => {
     service = module.get(LogisticsSettlementService);
     prisma.logisticsSettlement.count.mockResolvedValue(0);
     prisma.logisticsSettlementLine.findMany.mockResolvedValue([]);
+    prisma.company.findFirst.mockResolvedValue({ id: 'company-1' } as any);
     prisma.logisticsContractPriceTerm.findFirst.mockReset();
     prisma.logisticsContractPriceTerm.findFirst.mockResolvedValue(null);
   });
@@ -60,6 +62,37 @@ describe('LogisticsSettlementService', () => {
   });
 
   describe('create', () => {
+    it('从所选运单合同自动确定我方签约主体', async () => {
+      prisma.waybill.findMany.mockResolvedValue([waybillBase] as any);
+      prisma.logisticsSettlement.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'settlement-1', ...data }) as any);
+
+      await service.create({
+        periodStart: '2026-07-01', periodEnd: '2026-07-31',
+        lines: [{ waybillId: 'waybill-1', manualUnitPrice: 100 }],
+      }, 'user-1');
+
+      expect(prisma.logisticsSettlement.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ payerPartnerId: 'partner-1', payerCompanyId: 'company-1' }),
+      }));
+    });
+
+    it('不同我方签约主体的运单不能混在同一张结算单', async () => {
+      prisma.waybill.findMany.mockResolvedValue([
+        waybillBase,
+        {
+          ...waybillBase,
+          id: 'waybill-2',
+          waybillNo: 'WB-20260717-0002',
+          dispatchNotice: { order: { contract: { signingPartnerId: 'partner-2', signingPartner: { id: 'partner-2', name: '另一主体' } } } },
+        },
+      ] as any);
+
+      await expect(service.create({
+        periodStart: '2026-07-01', periodEnd: '2026-07-31',
+        lines: [{ waybillId: 'waybill-1' }, { waybillId: 'waybill-2' }],
+      }, 'user-1')).rejects.toThrow('所选运单属于不同的我方签约主体');
+    });
+
     it('匹配到生效合同运价时按合同价自动生成明细', async () => {
       prisma.waybill.findMany.mockResolvedValue([waybillBase] as any);
       prisma.logisticsSettlementLine.findMany.mockResolvedValueOnce([]);

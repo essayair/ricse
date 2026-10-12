@@ -420,6 +420,7 @@ model Partner {
   serviceOrganizations               ServiceOrganization[]
   carrierWaybills                    Waybill[]             @relation("WaybillCarrierPartner")
   logisticsContracts                 LogisticsContract[]   @relation("LogisticsContractCarrier")
+  logisticsSettlementsAsPayer        LogisticsSettlement[] @relation("LogisticsSettlementPayerPartner")
   institutionInspections             QualityInspection[]   @relation("QualityInstitutionPartner")
   ownedBusinessInbounds              BusinessInbound[]     @relation("BusinessInboundOwner")
   ownedInventoryLots                 InventoryLot[]        @relation("InventoryLotOwner")
@@ -1685,7 +1686,8 @@ model LogisticsContractPriceTerm {
 model LogisticsSettlement {
   id               String    @id @default(cuid())
   settlementNo     String    @unique
-  payerCompanyId   String
+  payerCompanyId   String? // 兼容历史数据；新单据以合同我方签约主体 payerPartnerId 为准
+  payerPartnerId   String?
   periodStart      DateTime
   periodEnd        DateTime
   status           String    @default("DRAFT") // DRAFT | SUBMITTED | REVIEWED | VOIDED
@@ -1702,13 +1704,15 @@ model LogisticsSettlement {
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
-  payerCompany Company                   @relation(fields: [payerCompanyId], references: [id])
+  payerCompany Company?                  @relation(fields: [payerCompanyId], references: [id])
+  payerPartner Partner?                  @relation("LogisticsSettlementPayerPartner", fields: [payerPartnerId], references: [id])
   preparer     User                      @relation("LogisticsSettlementPreparer", fields: [preparedBy], references: [id])
   reviewer     User?                     @relation("LogisticsSettlementReviewer", fields: [reviewedBy], references: [id])
   creator      User                      @relation("LogisticsSettlementCreator", fields: [createdBy], references: [id])
   lines        LogisticsSettlementLine[]
 
   @@index([payerCompanyId])
+  @@index([payerPartnerId])
   @@index([status])
   @@map("logistics_settlements")
 }

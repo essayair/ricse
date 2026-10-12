@@ -16,6 +16,7 @@ interface CandidateWaybill {
   destinationLocation: string | null;
   carrierName: string | null;
   carrierPending: boolean;
+  payerPartner: { id: string; code: string; name: string } | null;
   weightSelections: Array<{ quantity: string }>;
 }
 
@@ -44,7 +45,19 @@ export default function NewLogisticsSettlementPage() {
     finally { setLoading(false); }
   };
 
-  const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggle = (item: CandidateWaybill) => setSelected((prev) => {
+    if (prev[item.id]) return { ...prev, [item.id]: false };
+    if (!item.payerPartner) {
+      alert('该运单对应合同缺少我方签约主体，暂不能结算');
+      return prev;
+    }
+    const selectedItem = candidates.find((candidate) => prev[candidate.id]);
+    if (selectedItem?.payerPartner?.id !== undefined && selectedItem.payerPartner.id !== item.payerPartner.id) {
+      alert(`一张物流结算单只能对应一个货主方；当前已选择“${selectedItem.payerPartner.name}”`);
+      return prev;
+    }
+    return { ...prev, [item.id]: true };
+  });
 
   const submit = async () => {
     const waybillIds = Object.keys(selected).filter((id) => selected[id]);
@@ -103,7 +116,7 @@ export default function NewLogisticsSettlementPage() {
             <div className="p-12 text-center text-muted-foreground">该周期内没有可结算的运单</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1100px] text-sm">
                 <thead className="border-b bg-muted/50 text-left text-muted-foreground">
                   <tr>
                     <th className="p-3"></th>
@@ -111,6 +124,7 @@ export default function NewLogisticsSettlementPage() {
                     <th className="p-3">车牌</th>
                     <th className="p-3">线路</th>
                     <th className="p-3">承运方</th>
+                    <th className="p-3">货主方（我方签约主体）</th>
                     <th className="p-3">签收时间</th>
                     <th className="p-3">净重</th>
                     <th className="p-3">手工单价（未匹配合同价时填写）</th>
@@ -120,8 +134,8 @@ export default function NewLogisticsSettlementPage() {
                   {candidates.map((item) => (
                     <tr key={item.id} className={`border-b ${item.carrierPending ? 'bg-amber-50' : ''}`}>
                       <td className="p-3">
-                        <input type="checkbox" checked={!!selected[item.id]} disabled={item.carrierPending}
-                          onChange={() => toggle(item.id)} title={item.carrierPending ? '请先确定该运单的开票承运商' : undefined} />
+                        <input type="checkbox" checked={!!selected[item.id]} disabled={item.carrierPending || !item.payerPartner}
+                          onChange={() => toggle(item)} title={item.carrierPending ? '请先确定该运单的开票承运商' : !item.payerPartner ? '合同缺少我方签约主体' : undefined} />
                       </td>
                       <td className="p-3 font-mono">{item.waybillNo}</td>
                       <td className="p-3">{item.plateNo || '—'}</td>
@@ -131,6 +145,7 @@ export default function NewLogisticsSettlementPage() {
                           ? <span className="text-amber-700" title="社会运力运单尚未补绑开票承运商，请先到运单详情页完成绑定">请先确定该运单的开票承运商</span>
                           : (item.carrierName || '—')}
                       </td>
+                      <td className="p-3">{item.payerPartner ? `${item.payerPartner.name}（${item.payerPartner.code}）` : <span className="text-destructive">合同未设置</span>}</td>
                       <td className="p-3 text-xs text-muted-foreground">{item.signedAt?.slice(0, 16).replace('T', ' ') || '—'}</td>
                       <td className="p-3">{item.weightSelections[0]?.quantity ?? '—'}</td>
                       <td className="p-3">

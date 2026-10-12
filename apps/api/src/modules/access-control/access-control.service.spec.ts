@@ -404,10 +404,11 @@ describe('AccessControlService', () => {
       });
     });
 
-    it('SPECIFIED_COMPANIES 范围按角色配置的目标企业收口', async () => {
+    it('物流结算按用户可访问运单的业务单元范围收口', async () => {
       prisma.user.findUnique.mockResolvedValue({
         id: 'finance-user', role: 'USER',
         company: { id: 'internal-company', type: 'INTERNAL' },
+        businessUnits: [],
         roleAssignments: [{
           id: 'assignment-1', status: 'ACTIVE', effectiveAt: new Date('2026-01-01'), expiresAt: null,
           scopeType: 'SPECIFIED_COMPANIES',
@@ -417,7 +418,7 @@ describe('AccessControlService', () => {
       } as any);
 
       await expect(service.getLogisticsSettlementScope('finance-user', 'logistics.settlement.view')).resolves.toEqual({
-        payerCompanyId: { in: ['other-company'] },
+        lines: { some: { waybill: expect.any(Object) } },
       });
     });
 

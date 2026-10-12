@@ -320,8 +320,9 @@ export default function WeighTicketDetailPage() {
 
   const printTicket = async () => {
     try {
-      applyTicket(await api.patch<WeighTicket>(`/weigh-tickets/${id}/print`, {}));
-      window.setTimeout(() => window.print(), 100);
+      const printedTicket = await api.patch<WeighTicket>(`/weigh-tickets/${id}/print`, {});
+      applyTicket(printedTicket);
+      window.setTimeout(() => window.print(), 250);
     } catch (error: any) {
       alert(error.message || '记录打印时间失败');
     }
@@ -347,7 +348,8 @@ export default function WeighTicketDetailPage() {
   const grossRecords = ticket.records.filter(item => item.weighingType === 'GROSS');
   const tareRecords = ticket.records.filter(item => item.weighingType === 'TARE');
 
-  return <div className="space-y-6">
+  return <>
+  <div className="weigh-ticket-screen space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.push(`/dashboard/weighbridge/management/${ticket.waybill.id}`)}><ArrowLeft className="h-4 w-4" /></Button>
@@ -530,7 +532,134 @@ export default function WeighTicketDetailPage() {
       </div>
       <BusinessOperationHistory logs={(ticket as any).operationLogs} />
     </div>
-  </div>;
+  </div>
+  <WeighTicketPrintSheet ticket={ticket} />
+  <style jsx global>{`
+    .weigh-ticket-print { display: none; }
+    @media print {
+      @page { size: A4 portrait; margin: 10mm 12mm; }
+      html, body {
+        width: auto !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+        overflow: visible !important;
+        background: #fff !important;
+      }
+      [data-app-sidebar], [data-dashboard-header], .weigh-ticket-screen { display: none !important; }
+      [data-dashboard-shell] {
+        width: auto !important;
+        min-height: auto !important;
+        margin-left: 0 !important;
+        overflow: visible !important;
+      }
+      [data-dashboard-main] {
+        width: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+      .weigh-ticket-print {
+        display: block !important;
+        box-sizing: border-box;
+        width: 186mm;
+        max-width: 186mm;
+        margin: 0 auto;
+        padding-top: 3mm;
+        color: #000;
+        background: #fff;
+        font-family: "Songti SC", SimSun, serif;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+      .weigh-ticket-print *, .weigh-ticket-print *::before, .weigh-ticket-print *::after {
+        box-sizing: border-box;
+      }
+    }
+  `}</style>
+  </>;
+}
+
+function WeighTicketPrintSheet({ ticket }: { ticket: WeighTicket }) {
+  const plateNo = ticket.plateNo || ticket.waybill.plateNo || '';
+  const driverName = ticket.driverName || ticket.waybill.driverName || '';
+  const weighmasterName = ticket.weighmasterName || ticket.creator.name || '';
+
+  return <article className="weigh-ticket-print" aria-hidden="true">
+    <h1 className="weigh-ticket-print-title">称 重 计 量 单</h1>
+    <table className="weigh-ticket-print-meta">
+      <tbody><tr>
+        <td><span>打印时间：</span>{formatDateTimeToSecond(ticket.printedAt)}</td>
+        <td><span>计量单位：</span>吨</td>
+        <td><span>称重编号：</span>{ticket.ticketNo}</td>
+      </tr></tbody>
+    </table>
+    <table className="weigh-ticket-print-table">
+      <colgroup><col className="label" /><col className="value" /><col className="label" /><col className="value" /></colgroup>
+      <tbody>
+        <PrintRow leftLabel="车号" leftValue={plateNo} rightLabel="毛重" rightValue={plainPrintNumber(ticket.grossWeight)} />
+        <PrintRow leftLabel="货名" leftValue={ticket.materialName || ''} rightLabel="皮重" rightValue={plainPrintNumber(ticket.tareWeight)} />
+        <PrintRow leftLabel="规格" leftValue={ticket.materialSpec || ''} rightLabel="净重" rightValue={plainPrintNumber(ticket.netWeight)} />
+        <PrintRow leftLabel="发货单位" leftValue={ticket.shipperName || ''} rightLabel="毛重时间" rightValue={printDateTime(recordValue(ticket.records, ticket.selectedGrossRecordId))} />
+        <PrintRow leftLabel="收货单位" leftValue={ticket.receiverName || ''} rightLabel="皮重时间" rightValue={printDateTime(recordValue(ticket.records, ticket.selectedTareRecordId))} />
+        <tr className="remarks"><th>备注</th><td colSpan={3}>{ticket.remarks || ''}</td></tr>
+      </tbody>
+    </table>
+    <div className="weigh-ticket-print-signatures">
+      <div><span>司磅员：</span>{weighmasterName}</div>
+      <div><span>驾驶员：</span>{driverName}</div>
+    </div>
+    <style jsx>{`
+      .weigh-ticket-print-title {
+        margin: 0 0 5mm;
+        text-align: center;
+        font-size: 20px;
+        font-weight: 500;
+        letter-spacing: .48em;
+      }
+      .weigh-ticket-print-meta, .weigh-ticket-print-table {
+        width: 100%;
+        table-layout: fixed;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .weigh-ticket-print-meta td { padding: 0 3mm 2.5mm; white-space: nowrap; }
+      .weigh-ticket-print-meta td:nth-child(1) { width: 43%; }
+      .weigh-ticket-print-meta td:nth-child(2) { width: 22%; }
+      .weigh-ticket-print-meta td:nth-child(3) { width: 35%; }
+      .weigh-ticket-print-meta span, .weigh-ticket-print-signatures span { margin-right: 3mm; }
+      .weigh-ticket-print-table .label { width: 18%; }
+      .weigh-ticket-print-table .value { width: 32%; }
+      .weigh-ticket-print-table th, .weigh-ticket-print-table td {
+        height: 8.5mm;
+        border: .35mm solid #000;
+        padding: 1.5mm 3mm;
+        text-align: center;
+        font-weight: 400;
+        vertical-align: middle;
+        overflow-wrap: anywhere;
+      }
+      .weigh-ticket-print-table td { font-family: Arial, "Microsoft YaHei", sans-serif; }
+      .weigh-ticket-print-table .remarks th, .weigh-ticket-print-table .remarks td {
+        height: 9mm;
+        text-align: left;
+      }
+      .weigh-ticket-print-table .remarks th { text-align: center; }
+      .weigh-ticket-print-signatures {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12mm;
+        padding: 3mm 5mm 0;
+        font-size: 12px;
+      }
+      .weigh-ticket-print-signatures div { min-height: 8mm; }
+    `}</style>
+  </article>;
+}
+
+function PrintRow({ leftLabel, leftValue, rightLabel, rightValue }: { leftLabel: string; leftValue: string; rightLabel: string; rightValue: string }) {
+  return <tr><th>{leftLabel}</th><td>{leftValue}</td><th>{rightLabel}</th><td>{rightValue}</td></tr>;
 }
 
 function Metric({ label, value, primary, danger }: { label: string; value: string; primary?: boolean; danger?: boolean }) {
@@ -569,10 +698,18 @@ function signedWeight(value: string | null) {
 function plainNumber(value: string | null) {
   return value === null ? '-' : number(value);
 }
+function plainPrintNumber(value: string | null) {
+  return value === null ? '' : number(value);
+}
 function formatDateOnly(value: string) {
   return new Date(value).toLocaleDateString('zh-CN');
 }
+function recordValue(records: WeighRecord[], id: string | null) {
+  return records.find(item => item.id === id)?.weighedAt || null;
+}
+function printDateTime(value: string | null) {
+  return value ? formatDateTimeToSecond(value, '') : '';
+}
 function recordTime(records: WeighRecord[], id: string | null) {
-  const record = records.find(item => item.id === id);
-  return formatDateTimeToSecond(record?.weighedAt);
+  return formatDateTimeToSecond(recordValue(records, id));
 }

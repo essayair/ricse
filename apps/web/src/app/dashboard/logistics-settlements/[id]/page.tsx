@@ -40,7 +40,8 @@ interface SettlementDetail {
   totalNetWeight: string;
   totalAmount: string;
   remarks: string | null;
-  payerCompany: { id: string; name: string };
+  payerCompany: { id: string; name: string } | null;
+  payerPartner: { id: string; name: string } | null;
   preparer: { id: string; name: string };
   reviewer: { id: string; name: string } | null;
   lines: SettlementLine[];
@@ -121,7 +122,7 @@ export default function LogisticsSettlementDetailPage() {
         <div>
           <h1 className="text-2xl font-bold font-mono">{settlement.settlementNo}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            货主方：{settlement.payerCompany.name} · 结算周期：{settlement.periodStart.slice(0, 10)} ~ {settlement.periodEnd.slice(0, 10)}
+            货主方：{settlement.payerPartner?.name || settlement.payerCompany?.name || '—'} · 结算周期：{settlement.periodStart.slice(0, 10)} ~ {settlement.periodEnd.slice(0, 10)}
           </p>
         </div>
         <div className="flex items-center gap-2">

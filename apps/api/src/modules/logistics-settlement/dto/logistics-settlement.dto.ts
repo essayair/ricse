@@ -9,8 +9,10 @@ export class CreateLogisticsSettlementLineDto {
 }
 
 export class CreateLogisticsSettlementDto {
-  /** 不传时默认取当前登录用户所属企业 */
+  /** 历史兼容字段；新单据由所选运单对应合同自动确定我方签约主体 */
   @IsOptional() @IsString() payerCompanyId?: string;
+  /** 可选校验字段；实际值必须与所选运单对应合同的我方签约主体一致 */
+  @IsOptional() @IsString() payerPartnerId?: string;
   @IsDateString() periodStart: string;
   @IsDateString() periodEnd: string;
   @IsOptional() @IsString() remarks?: string;
