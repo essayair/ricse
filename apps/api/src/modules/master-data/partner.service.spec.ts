@@ -3,13 +3,30 @@ import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PartnerService } from './partner.service';
 
-describe('PartnerService 车辆管理', () => {
+describe('PartnerService', () => {
   const prisma = mockDeep<PrismaService>();
   let service: PartnerService;
 
   beforeEach(() => {
     jest.clearAllMocks();
     service = new PartnerService(prisma);
+  });
+
+  it('允许将合作伙伴类别明确清空', async () => {
+    prisma.partner.findUnique.mockResolvedValue({
+      id: 'partner-1', name: '测试合作伙伴', taxId: '91330000TEST',
+      category: 'CORE', roles: ['SUPPLIER'], status: 'ACTIVE', deletedAt: null,
+      bankAccounts: [], businessAddresses: [], vehicles: [], warehouses: [],
+      serviceOrganizations: [], attachments: [], creator: null,
+    } as any);
+    prisma.partner.update.mockResolvedValue({ id: 'partner-1', category: null } as any);
+
+    await service.update('partner-1', { category: null });
+
+    expect(prisma.partner.update).toHaveBeenCalledWith({
+      where: { id: 'partner-1' },
+      data: { category: null },
+    });
   });
 
   it('创建车辆时规范化车牌并保存完整档案', async () => {

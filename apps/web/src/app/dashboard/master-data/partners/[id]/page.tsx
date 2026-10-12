@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -127,7 +127,6 @@ function fmtMoney(val: string | null | undefined): string | null {
 
 export default function PartnerDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
   const [partner, setPartner] = useState<PartnerDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -213,9 +212,11 @@ export default function PartnerDetailPage() {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <Button variant="ghost" size="sm" onClick={() => router.back()}>
-              <ArrowLeft className="h-4 w-4 mr-1" />返回
-            </Button>
+            <Link href="/dashboard/master-data?tab=partners">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-1" />返回
+              </Button>
+            </Link>
             <StatusText status={p.status}>{statusCfg.label}</StatusText>
           </div>
           <h1 className="text-2xl font-bold">{p.name}</h1>

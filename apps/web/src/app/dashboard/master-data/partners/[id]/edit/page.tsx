@@ -193,15 +193,25 @@ export default function PartnerEditPage() {
   };
 
   const handleSubmit = async () => {
+    const name = form.name?.trim();
+    if (!name) {
+      setError('企业名称不能为空');
+      return;
+    }
     setSaving(true); setError('');
     try {
-      const patch: Record<string, any> = { name: form.name, roles };
+      const patch: Record<string, any> = { name, roles };
       for (const [k, v] of Object.entries(form)) {
         if (k === 'name') continue;
-        if (v === '' || v == null) continue;
-        if (k === 'creditLimit' || k === 'regCapital') patch[k] = parseFloat(v) || 0;
-        else if (k === 'isParent') patch[k] = v === 'true';
-        else patch[k] = v;
+        const normalized = typeof v === 'string' ? v.trim() : v;
+        if (k === 'creditLimit' || k === 'regCapital') {
+          patch[k] = normalized === '' || normalized == null ? null : Number(normalized);
+        } else if (k === 'isParent') {
+          patch[k] = normalized === '' || normalized == null ? null : normalized === 'true';
+        } else {
+          // 空值必须明确提交 null，才能区分“主动清空”和“未提交该字段”。
+          patch[k] = normalized === '' || normalized == null ? null : normalized;
+        }
       }
       await api.patch(`/partners/${id}`, patch);
       if (newFiles.length > 0) await uploadNewFiles();
@@ -214,7 +224,8 @@ export default function PartnerEditPage() {
           accountType: acct.accountType, isDefault: acct.isDefault,
         });
       }
-      router.push(`/dashboard/master-data/partners/${id}`);
+      // 替换编辑页历史记录，避免详情页返回时再次进入旧的编辑状态。
+      router.replace(`/dashboard/master-data/partners/${id}`);
     } catch (e: any) {
       setError(e.message || '保存失败');
       setSaving(false);
@@ -228,7 +239,9 @@ export default function PartnerEditPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => router.back()}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
+          <Link href={`/dashboard/master-data/partners/${id}`} replace>
+            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
+          </Link>
           <div>
             <h1 className="text-2xl font-bold">编辑合作伙伴</h1>
             <p className="text-sm text-muted-foreground mt-0.5">修改运营数据，编码和信用代码不可修改</p>
