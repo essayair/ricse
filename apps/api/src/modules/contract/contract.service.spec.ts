@@ -256,7 +256,13 @@ describe('ContractService', () => {
         buyerId: null,
         businessUnitId: 'bu-1',
         draftData: { form: { title: '修改后的草稿' } },
-      }, 'user-1');
+        unit: 'TON',
+        quantity: '',
+        unitPrice: '',
+        materialId: '',
+        materialName: '',
+        saleUnitPrice: '',
+      } as any, 'user-1');
 
       const updateArgs = prisma.contract.update.mock.calls[0][0] as any;
       expect(updateArgs.data).toEqual(expect.objectContaining({
@@ -270,6 +276,12 @@ describe('ContractService', () => {
       expect(updateArgs.data).not.toHaveProperty('sellerId');
       expect(updateArgs.data).not.toHaveProperty('buyerId');
       expect(updateArgs.data).not.toHaveProperty('businessUnitId');
+      expect(updateArgs.data).not.toHaveProperty('unit');
+      expect(updateArgs.data).not.toHaveProperty('quantity');
+      expect(updateArgs.data).not.toHaveProperty('unitPrice');
+      expect(updateArgs.data).not.toHaveProperty('materialId');
+      expect(updateArgs.data).not.toHaveProperty('materialName');
+      expect(updateArgs.data).not.toHaveProperty('saleUnitPrice');
     });
   });
 

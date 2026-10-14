@@ -29,6 +29,18 @@ function FormField({ label, required, children }: { label: string; required?: bo
 
 const SELECT_CLS = 'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring';
 
+function mergeKnownFormValues<T extends Record<string, unknown>>(defaults: T, draft: unknown): T {
+  if (!draft || typeof draft !== 'object' || Array.isArray(draft)) return defaults;
+  const source = draft as Record<string, unknown>;
+  const result = { ...defaults } as Record<string, unknown>;
+  Object.keys(defaults).forEach((key) => {
+    const value = source[key];
+    if (typeof value === 'string') result[key] = value;
+    else if (typeof value === 'number') result[key] = String(value);
+  });
+  return result as T;
+}
+
 interface LineItem {
   materialId: string;
   materialName: string;
@@ -154,9 +166,7 @@ export default function ContractEditPage() {
         remarks: contract.remarks || '',
       };
       const rawDraftForm = contract.draftData?.form;
-      setForm(rawDraftForm && typeof rawDraftForm === 'object'
-        ? { ...persistedForm, ...rawDraftForm }
-        : persistedForm);
+      setForm(mergeKnownFormValues(persistedForm, rawDraftForm));
 
       const rawDraftLines = Array.isArray(contract.draftData?.lineItems)
         ? contract.draftData.lineItems

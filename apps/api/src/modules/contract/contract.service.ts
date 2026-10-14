@@ -1186,8 +1186,6 @@ export class ContractService {
       buyerId,
       signingPartnerId,
       companyId,
-      businessUnitId: _businessUnitId,
-      ...rest
     } = dto;
     const resolvedType = dto.type ?? contract.type;
     if (resolvedType === 'BILATERAL' && lineItems?.some((item) => item.salesUnitPrice === undefined)) {
@@ -1238,7 +1236,26 @@ export class ContractService {
       return tx.contract.update({
         where: { id },
         data: {
-          ...rest,
+          title: dto.title,
+          type: dto.type,
+          totalAmount: dto.totalAmount,
+          departmentId: dto.departmentId,
+          externalNo: dto.externalNo,
+          contactPerson: dto.contactPerson,
+          contactPhone: dto.contactPhone,
+          pricingType: dto.pricingType,
+          overfillPct: dto.overfillPct,
+          shortfallPct: dto.shortfallPct,
+          deliveryMethod: dto.deliveryMethod,
+          deliveryLocation: dto.deliveryLocation,
+          settlementMethod: dto.settlementMethod,
+          settlementBasis: dto.settlementBasis,
+          prepayPct: dto.prepayPct,
+          paymentDays: dto.paymentDays,
+          paymentMethod: dto.paymentMethod,
+          moistureRule: dto.moistureRule,
+          impurityRule: dto.impurityRule,
+          remarks: dto.remarks,
           draftData: draftData as Prisma.InputJsonValue | undefined,
           seller: sellerId === undefined
             ? undefined
