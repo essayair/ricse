@@ -25,6 +25,7 @@ import {
   Newspaper,
   Users,
   Video,
+  Database,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -134,6 +135,22 @@ const CONTENT_ITEMS: NavGroup[] = [
   },
 ];
 
+const INDUSTRY_ITEMS: NavGroup[] = [
+  {
+    label: '产业数据库',
+    icon: Database,
+    children: [
+      { href: '/dashboard/industry-database', label: '产业概览' },
+      { href: '/dashboard/industry-database/fluorite-regional-map', label: '区域分布地图' },
+      { href: '/dashboard/industry-database/fluorite-producers', label: '萤石生产企业' },
+      { href: '/dashboard/industry-database/fluorochemical-producers', label: '氟化工生产企业' },
+      { href: '/dashboard/industry-database/mine-resources', label: '矿山与资源' },
+      { href: '/dashboard/industry-database/capacity-projects', label: '产能与项目' },
+      { href: '/dashboard/industry-database/parks', label: '产业园区' },
+    ],
+  },
+];
+
 const USER_ITEMS: NavGroup[] = [
   {
     label: '用户管理',
@@ -161,6 +178,8 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
   const { open } = useSidebar();
   const canViewContent = ['ADMIN', 'CONTENT_OPERATOR'].includes(userRole)
     || permissions.some((code) => code.startsWith('content.'));
+  const canViewIndustry = userRole === 'ADMIN'
+    || permissions.some((code) => code.startsWith('industry.database.'));
   const canViewMonitor = userRole === 'ADMIN' || permissions.some((code) => code.startsWith('monitor.'));
   const can = (permission: string) => userRole === 'ADMIN' || permissions.includes(permission);
   const permissionForHref = (href: string) => {
@@ -173,6 +192,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href.startsWith('/dashboard/inventory') || href.startsWith('/dashboard/inbound') || href.startsWith('/dashboard/outbound')) return 'inventory.view';
     if (href.startsWith('/dashboard/production')) return 'production.view';
     if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/receivables') || href.startsWith('/dashboard/receipts') || href.startsWith('/dashboard/payables') || href.startsWith('/dashboard/payment-requests') || href.startsWith('/dashboard/payments')) return 'settlement.view';
+    if (href.startsWith('/dashboard/industry-database')) return 'industry.database.view';
     if (href.startsWith('/dashboard/master-data') || href.startsWith('/dashboard/org')) return 'organization.view';
     return '';
   };
@@ -188,6 +208,12 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
     const [base, qs] = href.split('?');
+
+    // 产业概览是产业数据库的索引页，只在自身路由高亮。
+    // 否则它会因为是所有产业子页面的路径前缀，与当前子菜单同时高亮。
+    if (base === '/dashboard/industry-database' && !qs) {
+      return pathname === base;
+    }
 
     // 资金结算的三级功能放在页面顶部切换，侧边栏继续高亮所属二级模块。
     if (base === '/dashboard/receivables' && pathname === '/dashboard/receipts') return true;
@@ -260,14 +286,24 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
           />
         )}
 
-        {canViewContent && (
+        {(canViewContent || canViewIndustry) && (
           <>
             {/* 运营类模块与交易业务、基础管理分别成组，保持一级导航简洁。 */}
             <div className="px-3 py-2">
               <div className="h-px bg-border" />
             </div>
 
-            {CONTENT_ITEMS.map((group) => (
+            {canViewContent && CONTENT_ITEMS.map((group) => (
+              <SidebarGroupItem
+                key={group.label}
+                icon={group.icon}
+                label={group.label}
+                items={group.children}
+                isActive={isActive}
+              />
+            ))}
+
+            {canViewIndustry && INDUSTRY_ITEMS.map((group) => (
               <SidebarGroupItem
                 key={group.label}
                 icon={group.icon}

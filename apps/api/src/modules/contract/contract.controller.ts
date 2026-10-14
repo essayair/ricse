@@ -94,6 +94,14 @@ export class ContractController {
     return this.contractService.getApprovalReadiness(id, userId);
   }
 
+  @Post(':id/print')
+  @ApiOperation({ summary: '登记合同信息及审批流打印存档' })
+  printArchive(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    // 打印从合同创建后即可使用；合同状态仅作为打印件标识，不限制打印。
+    // 仍复用合同查看权限和数据范围，避免通过打印接口绕过数据权限。
+    return this.contractService.findOne(id, userId, 'contract.view');
+  }
+
   @Post(':id/attachments')
   @ApiOperation({ summary: '上传合同附件' })
   @ApiConsumes('multipart/form-data')

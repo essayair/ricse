@@ -132,6 +132,21 @@ describe('BusinessOperationInterceptor', () => {
     });
   });
 
+  it('合同打印存档动作记录到对应合同', async () => {
+    prisma.businessOperationLog.create.mockResolvedValue({} as any);
+
+    await lastValueFrom(interceptor.intercept(executionContext({
+      method: 'POST', path: '/api/v1/contracts/contract-1/print', body: {}, user: { id: 'user-1' },
+    }), handler({ id: 'contract-1', contractNo: 'CG202610140001', status: 'DRAFT' })));
+
+    expect(prisma.businessOperationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        businessType: 'CONTRACT', businessId: 'contract-1',
+        action: 'PRINT', actionLabel: '打印存档', operatorId: 'user-1',
+      }),
+    });
+  });
+
   it('付款申请打印存档动作记录到对应付款申请', async () => {
     prisma.businessOperationLog.create.mockResolvedValue({} as any);
 

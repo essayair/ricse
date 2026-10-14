@@ -86,6 +86,14 @@ function resolveResource(pathname: string, route: ResourceRoute): BreadcrumbItem
       { label: route.editLabel },
     ]);
   }
+  if (suffix.length === 2 && suffix[1] === 'print' && route.base === '/dashboard/contracts') {
+    return withHome([
+      { label: route.section },
+      list,
+      { label: route.detailLabel, href: `${route.base}/${suffix[0]}` },
+      { label: '打印存档' },
+    ]);
+  }
   return null;
 }
 
@@ -324,6 +332,13 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     '/dashboard/content/contacts': [{ label: '内容运营中心' }, { label: '官网咨询' }],
     '/dashboard/content/data-sources': [{ label: '内容运营中心' }, { label: '数据源管理' }],
     '/dashboard/content/jobs': [{ label: '内容运营中心' }, { label: '采集与 AI' }],
+    '/dashboard/industry-database': [{ label: '产业数据库' }, { label: '产业概览' }],
+    '/dashboard/industry-database/fluorite-regional-map': [{ label: '产业数据库' }, { label: '区域分布地图' }],
+    '/dashboard/industry-database/fluorite-producers': [{ label: '产业数据库' }, { label: '萤石生产企业' }],
+    '/dashboard/industry-database/fluorochemical-producers': [{ label: '产业数据库' }, { label: '氟化工生产企业' }],
+    '/dashboard/industry-database/mine-resources': [{ label: '产业数据库' }, { label: '矿山与资源' }],
+    '/dashboard/industry-database/capacity-projects': [{ label: '产业数据库' }, { label: '产能与项目' }],
+    '/dashboard/industry-database/parks': [{ label: '产业数据库' }, { label: '产业园区' }],
     '/dashboard/users': [{ label: '用户管理中心' }, { label: '个人用户' }],
   };
   if (exactRoutes[pathname]) return { items: withHome(exactRoutes[pathname]), supported: true };

@@ -12,6 +12,7 @@ const STATUS_TONES: Record<string, StatusTone> = {
   RESIGNED: 'muted',
   RETIRED: 'muted',
   DEPLETED: 'muted',
+  STOPPED: 'muted',
   UNBOUND: 'muted',
 
   PENDING: 'warning',
@@ -35,6 +36,8 @@ const STATUS_TONES: Record<string, StatusTone> = {
   SUBMITTED: 'warning',
   NEW: 'warning',
   REPORTED: 'warning',
+  UNKNOWN: 'warning',
+  PLANNED: 'warning',
   REWORK: 'warning',
   MAINTENANCE: 'warning',
   RESERVED: 'warning',
@@ -53,6 +56,7 @@ const STATUS_TONES: Record<string, StatusTone> = {
   TESTING: 'primary',
   INSPECTING: 'primary',
   PROCESSING: 'primary',
+  CONSTRUCTION: 'primary',
   FOLLOWING: 'primary',
   MATERIAL_PREPARED: 'primary',
   PARTIAL_COMPLETED: 'primary',
@@ -79,6 +83,7 @@ const STATUS_TONES: Record<string, StatusTone> = {
   ONLINE: 'success',
   BOUND: 'success',
   AVAILABLE: 'success',
+  OPERATING: 'success',
 
   REJECTED: 'destructive',
   OTHERS_REJECTED: 'destructive',

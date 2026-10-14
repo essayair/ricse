@@ -2632,6 +2632,147 @@ model Attachment {
 
 // ========== 内容运营中心 ==========
 
+// ========== 产业数据库 ==========
+
+/// 萤石生产企业。独立于交易合作伙伴，不参与合同、结算和财务主数据。
+model IndustryFluoriteProducer {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  shortName         String?
+  province          String?
+  city              String?
+  address           String?
+  mainProducts      String[] @default([])
+  designCapacity    Decimal? @db.Decimal(18, 4)
+  effectiveCapacity Decimal? @db.Decimal(18, 4)
+  capacityUnit      String   @default("万吨/年")
+  status            String   @default("ACTIVE")
+  dataYear          Int?
+  source            String?
+  description       String?
+  remark            String?
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([province, status])
+  @@index([dataYear])
+  @@map("industry_fluorite_producers")
+}
+
+/// 氟化工生产企业。产品类型采用多选标签，避免为每类产品重复建企业档案。
+model IndustryFluorochemicalProducer {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  shortName         String?
+  province          String?
+  city              String?
+  address           String?
+  productCategories String[] @default([])
+  mainProducts      String[] @default([])
+  status            String   @default("ACTIVE")
+  dataYear          Int?
+  source            String?
+  description       String?
+  remark            String?
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([province, status])
+  @@index([dataYear])
+  @@map("industry_fluorochemical_producers")
+}
+
+/// 具体矿山、矿区或资源项目资料。
+model IndustryMineResource {
+  id             String   @id @default(cuid())
+  name           String
+  operatorName   String?
+  province       String?
+  city           String?
+  district       String?
+  address        String?
+  mineralType    String?
+  reserveAmount  Decimal? @db.Decimal(18, 4)
+  reserveUnit    String   @default("万吨")
+  averageGrade   Decimal? @db.Decimal(10, 4)
+  miningCapacity Decimal? @db.Decimal(18, 4)
+  capacityUnit   String   @default("万吨/年")
+  latitude       Decimal? @db.Decimal(10, 6)
+  longitude      Decimal? @db.Decimal(10, 6)
+  status         String   @default("UNKNOWN")
+  dataYear       Int?
+  source         String?
+  description    String?
+  remark         String?
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([province, status])
+  @@index([operatorName])
+  @@map("industry_mine_resources")
+}
+
+/// 企业生产基地、装置及产能项目。与企业表分离以支持一企多基地、多产品和多年度口径。
+model IndustryCapacityProject {
+  id                String    @id @default(cuid())
+  name              String
+  companyName       String
+  province          String?
+  city              String?
+  address           String?
+  productName       String
+  designCapacity    Decimal?  @db.Decimal(18, 4)
+  effectiveCapacity Decimal?  @db.Decimal(18, 4)
+  plannedCapacity   Decimal?  @db.Decimal(18, 4)
+  capacityUnit      String    @default("万吨/年")
+  commissioningDate DateTime? @db.Date
+  status            String    @default("UNKNOWN")
+  dataYear          Int?
+  source            String?
+  description       String?
+  remark            String?
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([companyName])
+  @@index([productName, status])
+  @@index([province, dataYear])
+  @@map("industry_capacity_projects")
+}
+
+/// 氟化工产业园区及其静态空间资料。
+model IndustryPark {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  province        String?
+  city            String?
+  address         String?
+  level           String?
+  focusIndustries String[] @default([])
+  latitude        Decimal? @db.Decimal(10, 6)
+  longitude       Decimal? @db.Decimal(10, 6)
+  status          String   @default("ACTIVE")
+  dataYear        Int?
+  source          String?
+  description     String?
+  remark          String?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([province, status])
+  @@map("industry_parks")
+}
+
 /// 资讯栏目。legacyId 用于迁移旧官网数字主键及保持历史链接有效。
 model ContentCategory {
   id        String   @id @default(cuid())
@@ -2928,24 +3069,24 @@ model WechatAccountBinding {
 
 /// 企业工作台统一待办提醒。业务单据仍是事实来源，通知仅负责触达与跳转。
 model Notification {
-  id               String    @id @default(cuid())
-  recipientUserId  String
-  type             String // APPROVAL | FIELD_TASK
-  businessType     String // CONTRACT_APPROVAL | WEIGH_TASK | QUALITY_TASK | INBOUND_RECEIPT | OUTBOUND_RECEIPT
-  businessId       String
-  dedupeKey        String    @unique
-  title            String
-  content          String
-  pagePath         String
-  status           String    @default("PENDING") // PENDING | DONE
-  readAt           DateTime?
-  completedAt      DateTime?
-  wechatStatus     String    @default("PENDING") // PENDING | SENDING | SENT | FAILED | SKIPPED
-  wechatAttempts   Int       @default(0)
-  wechatSentAt     DateTime?
-  wechatError      String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  recipientUserId String
+  type            String // APPROVAL | FIELD_TASK
+  businessType    String // CONTRACT_APPROVAL | WEIGH_TASK | QUALITY_TASK | INBOUND_RECEIPT | OUTBOUND_RECEIPT
+  businessId      String
+  dedupeKey       String    @unique
+  title           String
+  content         String
+  pagePath        String
+  status          String    @default("PENDING") // PENDING | DONE
+  readAt          DateTime?
+  completedAt     DateTime?
+  wechatStatus    String    @default("PENDING") // PENDING | SENDING | SENT | FAILED | SKIPPED
+  wechatAttempts  Int       @default(0)
+  wechatSentAt    DateTime?
+  wechatError     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   recipient User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
 

@@ -20,6 +20,7 @@ import { MobileWorkspaceModule } from './modules/mobile-workspace/mobile-workspa
 import { MonitorModule } from './modules/monitor/monitor.module';
 import { FinancialSettlementModule } from './modules/financial-settlement/financial-settlement.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { IndustryDatabaseModule } from './modules/industry-database/industry-database.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { BusinessOperationInterceptor } from './modules/common/business-operation.interceptor';
 
@@ -46,6 +47,7 @@ import { BusinessOperationInterceptor } from './modules/common/business-operatio
     MonitorModule,
     FinancialSettlementModule,
     NotificationModule,
+    IndustryDatabaseModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: BusinessOperationInterceptor },

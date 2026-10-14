@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2, Plus, ShieldAlert, MoreHorizontal } from 'lucide-react';
+import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2, Plus, ShieldAlert, MoreHorizontal, Printer } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
 import { settlementMethodLabel } from '@/lib/contract-settlement';
@@ -593,6 +593,9 @@ export default function ContractDetailPage() {
       <div className="flex items-center justify-between">
         <button onClick={() => router.push('/dashboard/contracts')} className="text-sm text-primary hover:underline">&larr; 返回合同列表</button>
         <div className="flex gap-2">
+          <Link href={`/dashboard/contracts/${c.id}/print`}>
+            <Button variant="outline" size="sm"><Printer className="h-4 w-4 mr-1" />打印存档</Button>
+          </Link>
           {['APPROVED', 'EXECUTING'].includes(c.status) && (
             <Link href={`/dashboard/orders/create?contractId=${c.id}`}>
               <Button size="sm">
