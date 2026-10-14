@@ -241,6 +241,38 @@ describe('ContractService', () => {
     });
   });
 
+  describe('update', () => {
+    it('编辑草稿时通过关联字段保存合同主体和交易对手方', async () => {
+      prisma.contract.findFirst.mockResolvedValue(mockContract as any);
+      prisma.contract.update.mockResolvedValue(mockContract as any);
+      accessControl.getBusinessUnitOptions.mockResolvedValue([
+        { id: 'bu-1', isDefault: true },
+      ] as any);
+
+      await service.update('test-id', {
+        title: '修改后的草稿',
+        signingPartnerId: 'internal-1',
+        sellerId: 'sup-1',
+        buyerId: null,
+        businessUnitId: 'bu-1',
+        draftData: { form: { title: '修改后的草稿' } },
+      }, 'user-1');
+
+      const updateArgs = prisma.contract.update.mock.calls[0][0] as any;
+      expect(updateArgs.data).toEqual(expect.objectContaining({
+        title: '修改后的草稿',
+        signingPartner: { connect: { id: 'internal-1' } },
+        seller: { connect: { id: 'sup-1' } },
+        buyer: { disconnect: true },
+        businessUnit: { connect: { id: 'bu-1' } },
+      }));
+      expect(updateArgs.data).not.toHaveProperty('signingPartnerId');
+      expect(updateArgs.data).not.toHaveProperty('sellerId');
+      expect(updateArgs.data).not.toHaveProperty('buyerId');
+      expect(updateArgs.data).not.toHaveProperty('businessUnitId');
+    });
+  });
+
   describe('findAll', () => {
     it('应该返回分页结果', async () => {
       prisma.contract.findMany.mockResolvedValue([mockContract] as any);

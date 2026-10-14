@@ -1176,12 +1176,24 @@ export class ContractService {
       dto.buyerId !== undefined ? dto.buyerId || undefined : contract.buyerId || undefined,
     );
 
-    const { lineItems, signedAt, effectiveAt, expireAt, draftData, ...rest } = dto;
+    const {
+      lineItems,
+      signedAt,
+      effectiveAt,
+      expireAt,
+      draftData,
+      sellerId,
+      buyerId,
+      signingPartnerId,
+      companyId,
+      businessUnitId: _businessUnitId,
+      ...rest
+    } = dto;
     const resolvedType = dto.type ?? contract.type;
     if (resolvedType === 'BILATERAL' && lineItems?.some((item) => item.salesUnitPrice === undefined)) {
       throw new BadRequestException('双边合同必须填写采购单价和销售单价');
     }
-    let resolvedCompanyId = rest.companyId;
+    let resolvedCompanyId = companyId;
     if (dto.departmentId) {
       const department = await this.prisma.department.findUnique({
         where: { id: dto.departmentId },
@@ -1228,8 +1240,31 @@ export class ContractService {
         data: {
           ...rest,
           draftData: draftData as Prisma.InputJsonValue | undefined,
-          companyId: resolvedCompanyId,
-          businessUnitId: businessUnit?.id || requestedBusinessUnitId || null,
+          seller: sellerId === undefined
+            ? undefined
+            : sellerId
+              ? { connect: { id: sellerId } }
+              : { disconnect: true },
+          buyer: buyerId === undefined
+            ? undefined
+            : buyerId
+              ? { connect: { id: buyerId } }
+              : { disconnect: true },
+          signingPartner: signingPartnerId === undefined
+            ? undefined
+            : signingPartnerId
+              ? { connect: { id: signingPartnerId } }
+              : { disconnect: true },
+          company: resolvedCompanyId === undefined
+            ? undefined
+            : resolvedCompanyId
+              ? { connect: { id: resolvedCompanyId } }
+              : { disconnect: true },
+          businessUnit: requestedBusinessUnitId === undefined
+            ? undefined
+            : businessUnit?.id || requestedBusinessUnitId
+              ? { connect: { id: businessUnit?.id || requestedBusinessUnitId! } }
+              : { disconnect: true },
           signedAt: signedAt ? new Date(signedAt) : undefined,
           effectiveAt: effectiveAt ? new Date(effectiveAt) : undefined,
           expireAt: expireAt ? new Date(expireAt) : undefined,
