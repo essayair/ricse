@@ -21,6 +21,9 @@ export default function CreateOrderPage() {
   const [contract, setContract] = useState<ContractDetail | null>(null);
   const [type, setType] = useState('PURCHASE');
   const [name, setName] = useState('');
+  const suggestedName = contract
+    ? `${contract.title}-${type === 'PURCHASE' ? '采购' : '销售'}执行批次`
+    : '';
   const [plannedDate, setPlannedDate] = useState('');
   const [deliveryLocation, setDeliveryLocation] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -59,7 +62,6 @@ export default function CreateOrderPage() {
       const detail = await api.get<ContractDetail>(`/contracts/${id}`);
       const orderType = detail.type === 'SALES' ? 'SALES' : 'PURCHASE';
       setType(orderType);
-      setName(`${detail.title}-${orderType === 'PURCHASE' ? '采购' : '销售'}执行批次`);
       setDeliveryLocation(detail.deliveryLocation || '');
       await loadAvailability(detail, orderType);
     } catch (error: any) {
@@ -76,7 +78,6 @@ export default function CreateOrderPage() {
 
   const changeType = async (orderType: string) => {
     setType(orderType);
-    if (contract) setName(`${contract.title}-${orderType === 'PURCHASE' ? '采购' : '销售'}执行批次`);
     if (contract) {
       try {
         await loadAvailability(contract, orderType);
@@ -97,7 +98,7 @@ export default function CreateOrderPage() {
 
   const submit = async () => {
     if (!contract) return alert('请选择关联合同');
-    if (!name.trim()) return alert('请填写执行批次名称');
+    const resolvedName = name.trim() || suggestedName;
     const lineItems = contract.lineItems
       .filter(item => (quantities[item.id] || 0) > 0)
       .map(item => ({ contractLineItemId: item.id, quantity: quantities[item.id] }));
@@ -105,7 +106,7 @@ export default function CreateOrderPage() {
     setSaving(true);
     try {
       const order = await api.post<{ id: string }>('/orders', {
-        name: name.trim(),
+        name: resolvedName,
         contractId: contract.id,
         type,
         plannedDate: plannedDate || undefined,
@@ -138,9 +139,9 @@ export default function CreateOrderPage() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium">执行批次名称 *</label>
-          <Input maxLength={100} value={name} onChange={event => setName(event.target.value)} placeholder="例如：7月第一批采购到货" />
-          <p className="mt-1 text-xs text-muted-foreground">选择合同后系统生成建议名称，也可以直接填写或修改；批次编号仍由系统自动生成。</p>
+          <label className="mb-1 block text-sm font-medium">执行批次名称</label>
+          <Input maxLength={100} value={name} onChange={event => setName(event.target.value)} placeholder={suggestedName || '例如：7月第一批采购到货'} />
+          <p className="mt-1 text-xs text-muted-foreground">可自行填写；留空时使用灰色提示中的建议名称。批次编号由系统自动生成。</p>
         </div>
 
         {contract && (

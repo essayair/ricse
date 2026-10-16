@@ -258,7 +258,7 @@ export class ContractService {
     const materials = await client.material.findMany({
       where: { id: { in: materialIds }, deletedAt: null },
       select: { id: true, name: true },
-    });
+    }) || [];
     const names = new Map(materials.map((material) => [material.id, material.name]));
     const missingId = materialIds.find((materialId) => !names.has(materialId));
     if (missingId) throw new BadRequestException('所选物料不存在或已被删除');
@@ -269,14 +269,36 @@ export class ContractService {
     client: Prisma.TransactionClient | PrismaService,
     contract: {
       type: string;
+      title?: string;
+      externalNo?: string | null;
+      departmentId?: string | null;
+      pricingType?: string | null;
+      signedAt?: Date | null;
+      effectiveAt?: Date | null;
+      expireAt?: Date | null;
+      deliveryMethod?: string | null;
+      deliveryLocation?: string | null;
+      settlementBasis?: string | null;
+      settlementMethod?: string | null;
+      prepayPct?: unknown;
+      paymentDays?: number | null;
+      paymentMethod?: string | null;
+      moistureRule?: string | null;
+      impurityRule?: string | null;
+      overfillPct?: unknown;
+      shortfallPct?: unknown;
+      createdBy?: string;
       signingPartnerId: string | null;
       sellerId: string | null;
       buyerId: string | null;
+      attachments?: Array<{ id: string }>;
       lineItems: Array<{
         materialId: string;
         quantity: unknown;
         unitPrice: unknown;
         salesUnitPrice: unknown;
+        deliveryDate?: Date | null;
+        qualityRulesSnapshot?: unknown;
       }>;
       businessUnitId?: string | null;
     },
@@ -292,16 +314,93 @@ export class ContractService {
       contract.sellerId || undefined,
       contract.buyerId || undefined,
     );
+    const requiredText: Array<[unknown, string]> = [
+      [contract.title, '合同标题'], [contract.externalNo, '外部合同号（无编号请明确填写“无”）'],
+      [contract.deliveryMethod, '交货方式'], [contract.deliveryLocation, '交货地点'],
+      [contract.settlementBasis, '结算数量依据'], [contract.settlementMethod, '结算方式'],
+      [contract.paymentMethod, '付款方式'],
+    ];
+    const missing = requiredText.find(([value]) => typeof value !== 'string' || !value.trim());
+    if (missing) throw new BadRequestException(`请填写${missing[1]}`);
+    if (!['PURCHASE', 'SALES', 'BILATERAL'].includes(contract.type)) {
+      throw new BadRequestException('请选择有效的合同类型');
+    }
+    if (contract.pricingType !== 'FIXED') throw new BadRequestException('当前仅支持固定价格（一口价）合同');
+    const validDate = (value: Date | null | undefined) => value instanceof Date && !Number.isNaN(value.getTime());
+    if (!validDate(contract.signedAt)) throw new BadRequestException('请填写纸质合同签订日期');
+    if (!contract.attachments?.length) throw new BadRequestException('请至少上传一份合同附件后再提交审批');
+    if (validDate(contract.effectiveAt) && validDate(contract.expireAt) && contract.expireAt! < contract.effectiveAt!) {
+      throw new BadRequestException('到期日期不能早于生效日期');
+    }
+    if (contract.prepayPct == null || !Number.isFinite(Number(contract.prepayPct)) || Number(contract.prepayPct) < 0 || Number(contract.prepayPct) > 100) {
+      throw new BadRequestException('请填写0至100之间的预付比例；无预付请填写0');
+    }
+    if (contract.paymentDays == null || !Number.isInteger(contract.paymentDays) || contract.paymentDays < 0) {
+      throw new BadRequestException('请填写尾款账期；无账期请填写0');
+    }
+    for (const [value, label] of [[contract.overfillPct, '溢装比例'], [contract.shortfallPct, '短装比例']] as Array<[unknown, string]>) {
+      if (value == null || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100) {
+        throw new BadRequestException(`请填写0至100之间的${label}`);
+      }
+    }
+    if (!contract.departmentId && contract.createdBy) {
+      const creator = await client.user.findUnique({
+        where: { id: contract.createdBy },
+        select: { employee: { select: { departmentId: true } } },
+      });
+      contract.departmentId = creator?.employee?.departmentId || null;
+    }
+    if (!contract.departmentId) throw new BadRequestException('请选择业务部门');
     if (contract.lineItems.length === 0) {
       throw new BadRequestException('请至少填写一项合同货物');
     }
     const invalidLine = contract.lineItems.find((item) => (
       !item.materialId
+      || !Number.isFinite(Number(item.quantity))
       || Number(item.quantity) <= 0
-      || Number(item.unitPrice) < 0
-      || (contract.type === 'BILATERAL' && item.salesUnitPrice == null)
+      || !Number.isFinite(Number(item.unitPrice))
+      || Number(item.unitPrice) <= 0
+      || (contract.type === 'BILATERAL' && (item.salesUnitPrice == null || !Number.isFinite(Number(item.salesUnitPrice)) || Number(item.salesUnitPrice) <= 0))
     ));
     if (invalidLine) throw new BadRequestException('请完整填写货物、数量和单价');
+    const materials = await client.material.findMany({
+      where: { id: { in: contract.lineItems.map(item => item.materialId) }, deletedAt: null },
+      select: { id: true, name: true, categoryId: true, qualityTemplateId: true, qualityTemplate: { select: { status: true } } },
+    });
+    const scene = contract.type === 'SALES' ? 'SALES' : 'PURCHASE';
+    const fallbackTemplates = await client.qualityTemplate.findMany({
+      where: { status: 'ACTIVE', materialCategoryId: { in: [...new Set(materials.map(material => material.categoryId))] }, businessScene: { in: [scene, 'GENERAL'] } },
+      select: { materialCategoryId: true },
+    }) || [];
+    const materialById = new Map(materials.map(material => [material.id, material]));
+    for (const line of contract.lineItems) {
+      const material = materialById.get(line.materialId);
+      const hasDirectTemplate = Boolean(material?.qualityTemplateId && material.qualityTemplate?.status === 'ACTIVE');
+      const hasFallbackTemplate = fallbackTemplates.some(template => template.materialCategoryId === material?.categoryId);
+      if ((hasDirectTemplate || hasFallbackTemplate) && (!line.qualityRulesSnapshot || !Array.isArray((line.qualityRulesSnapshot as any).items) || !(line.qualityRulesSnapshot as any).items.length)) {
+        throw new BadRequestException(`物料“${material?.name || line.materialId}”已配置质检模板，请先在合同明细中核对并保存质量结算规则`);
+      }
+      const rules = (line.qualityRulesSnapshot as any)?.items;
+      if (Array.isArray(rules)) {
+        for (const rule of rules) {
+          if (!rule.code || !rule.name || !['GTE', 'GT', 'LTE', 'LT', 'EQ', 'RANGE'].includes(rule.operator)) {
+            throw new BadRequestException(`物料“${material?.name || line.materialId}”的质量规则缺少有效指标或合同标准`);
+          }
+          if (rule.deductionMode === 'PER_STEP' && (!(Number(rule.deductionStep) > 0) || !(Number(rule.deductionAmount) >= 0))) {
+            throw new BadRequestException(`指标“${rule.name}”请填写大于0的扣款步长及有效的元/吨标准`);
+          }
+          if (rule.deductionMode === 'FLAT' && !(Number(rule.deductionAmount) >= 0)) {
+            throw new BadRequestException(`指标“${rule.name}”请填写有效的固定扣款标准`);
+          }
+          if (rule.deductionCondition === 'IN_RANGE' && (rule.deductionLowerValue == null || rule.deductionUpperValue == null || Number(rule.deductionLowerValue) > Number(rule.deductionUpperValue))) {
+            throw new BadRequestException(`指标“${rule.name}”的扣款区间上下限不完整或顺序错误`);
+          }
+          if (rule.rejectOperator && rule.rejectOperator !== 'NONE' && rule.rejectValue == null) {
+            throw new BadRequestException(`指标“${rule.name}”已设置拒收条件，请填写拒收值`);
+          }
+        }
+      }
+    }
   }
 
   async create(dto: CreateContractDto, userId: string) {
@@ -401,6 +500,7 @@ export class ContractService {
                 : null,
               deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
               remarks: item.remarks,
+              qualityRulesSnapshot: item.qualityRulesSnapshot as Prisma.InputJsonValue | undefined,
             })),
           },
         },
@@ -598,7 +698,24 @@ export class ContractService {
           id: true,
           status: true,
           type: true,
+          title: true,
+          externalNo: true,
+          pricingType: true,
           totalAmount: true,
+          signedAt: true,
+          effectiveAt: true,
+          expireAt: true,
+          deliveryMethod: true,
+          deliveryLocation: true,
+          settlementBasis: true,
+          settlementMethod: true,
+          prepayPct: true,
+          paymentDays: true,
+          paymentMethod: true,
+          moistureRule: true,
+          impurityRule: true,
+          overfillPct: true,
+          shortfallPct: true,
           signingPartnerId: true,
           sellerId: true,
           buyerId: true,
@@ -612,6 +729,8 @@ export class ContractService {
               quantity: true,
               unitPrice: true,
               salesUnitPrice: true,
+              deliveryDate: true,
+              qualityRulesSnapshot: true,
             },
           },
         },
@@ -756,7 +875,6 @@ export class ContractService {
 
       const updateData: Prisma.ContractUncheckedUpdateManyInput = { status };
       if (status === 'PENDING_APPROVAL') updateData.draftData = Prisma.JsonNull;
-      if (status === 'APPROVED') updateData.effectiveAt = new Date();
       if (approvalScope) {
         updateData.companyId = approvalScope.companyId;
         updateData.departmentId = approvalScope.departmentId;
@@ -786,7 +904,24 @@ export class ContractService {
       select: {
         id: true,
         type: true,
+        title: true,
+        externalNo: true,
+        pricingType: true,
         totalAmount: true,
+        signedAt: true,
+        effectiveAt: true,
+        expireAt: true,
+        deliveryMethod: true,
+        deliveryLocation: true,
+        settlementBasis: true,
+        settlementMethod: true,
+        prepayPct: true,
+        paymentDays: true,
+        paymentMethod: true,
+        moistureRule: true,
+        impurityRule: true,
+        overfillPct: true,
+        shortfallPct: true,
         status: true,
         signingPartnerId: true,
         sellerId: true,
@@ -795,12 +930,15 @@ export class ContractService {
         departmentId: true,
         businessUnitId: true,
         createdBy: true,
+        attachments: { select: { id: true } },
         lineItems: {
           select: {
             materialId: true,
             quantity: true,
             unitPrice: true,
             salesUnitPrice: true,
+            deliveryDate: true,
+            qualityRulesSnapshot: true,
           },
         },
       },
@@ -1146,7 +1284,7 @@ export class ContractService {
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;
-      signedAt?: string; effectiveAt?: string; expireAt?: string;
+      signedAt?: string; effectiveAt?: string | null; expireAt?: string | null;
       settlementMethod?: string; settlementBasis?: string;
       prepayPct?: number; paymentDays?: number; paymentMethod?: string;
       moistureRule?: string; impurityRule?: string; remarks?: string;
@@ -1155,6 +1293,7 @@ export class ContractService {
         materialId: string; materialName?: string;
         quantity: number; unit?: string;
         unitPrice: number; salesUnitPrice?: number; deliveryDate?: string; remarks?: string;
+        qualityRulesSnapshot?: Record<string, unknown>;
       }>;
     },
     userId?: string,
@@ -1228,6 +1367,7 @@ export class ContractService {
                 : null,
               deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
               remarks: item.remarks,
+              qualityRulesSnapshot: item.qualityRulesSnapshot as Prisma.InputJsonValue | undefined,
             })),
           });
         }
@@ -1283,8 +1423,8 @@ export class ContractService {
               ? { connect: { id: businessUnit?.id || requestedBusinessUnitId! } }
               : { disconnect: true },
           signedAt: signedAt ? new Date(signedAt) : undefined,
-          effectiveAt: effectiveAt ? new Date(effectiveAt) : undefined,
-          expireAt: expireAt ? new Date(expireAt) : undefined,
+          effectiveAt: effectiveAt === undefined ? undefined : effectiveAt ? new Date(effectiveAt) : null,
+          expireAt: expireAt === undefined ? undefined : expireAt ? new Date(expireAt) : null,
         },
         include: this.include,
       });

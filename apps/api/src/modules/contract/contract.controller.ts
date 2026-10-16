@@ -200,6 +200,7 @@ export class ContractController {
         materialId: string; materialName?: string;
         quantity: number; unit?: string;
         unitPrice: number; salesUnitPrice?: number; deliveryDate?: string; remarks?: string;
+        qualityRulesSnapshot?: Record<string, unknown>;
       }>;
     },
     @CurrentUser('id') userId?: string,

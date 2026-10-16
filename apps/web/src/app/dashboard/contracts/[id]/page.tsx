@@ -69,7 +69,7 @@ interface ContractDetail {
   seller: { id: string; code: string; name: string; roles: string[] } | null;
   buyer: { id: string; code: string; name: string; roles: string[] } | null;
   attachments?: Array<{ id: string; originalName: string; mimeType: string; size: number; category: string }>;
-  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; salesUnitPrice?: string | null; salesTotalPrice?: string | null; deliveryDate: string | null; remarks?: string | null }>;
+  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; salesUnitPrice?: string | null; salesTotalPrice?: string | null; remarks?: string | null; qualityRulesSnapshot?: any }>;
   approvals: Approval[];
   fulfillment: { directions: FulfillmentDirection[] };
   orders: Array<{
@@ -646,7 +646,7 @@ export default function ContractDetailPage() {
             {c.type === 'BILATERAL' && <Field label="预计毛利" value={<span className={`font-bold ${bilateralProfit >= 0 ? 'text-success' : 'text-destructive'}`}>¥{bilateralProfit.toLocaleString()}</span>} />}
             <Field label="联系人" value={`${c.contactPerson || '—'}${c.contactPhone ? ` ${c.contactPhone}` : ''}`} />
             <Field label="定价类型" value={c.pricingType === 'FIXED' ? '一口价' : c.pricingType === 'BASIS' ? '基差定价' : c.pricingType === 'FLOATING' ? '不定价' : '—'} />
-            <Field label="溢装/短装" value={`${c.overfillPct || '—'}% / ${c.shortfallPct || '—'}%`} />
+            <Field label="溢装/短装" value={`${c.overfillPct ?? '—'}% / ${c.shortfallPct ?? '—'}%`} />
             <Field label="交货方式" value={c.deliveryMethod || '—'} />
             <Field label="交货地点" value={c.deliveryLocation || '—'} />
             <Field label="签订日期" value={c.signedAt ? new Date(c.signedAt).toLocaleDateString('zh-CN') : '—'} />
@@ -662,11 +662,9 @@ export default function ContractDetailPage() {
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <Field label="结算依据" value={c.settlementBasis === 'WEIGHT' ? '地磅净重' : c.settlementBasis === 'QUALITY' ? '质检干重' : '合同量'} />
                 <Field label="结算方式" value={settlementMethodLabel(c.settlementMethod)} />
-                <Field label="预付比例" value={c.prepayPct ? `${c.prepayPct}%` : '—'} />
-                <Field label="尾款账期" value={c.paymentDays ? `${c.paymentDays} 天` : '—'} />
+                <Field label="预付比例" value={c.prepayPct == null ? '—' : `${c.prepayPct}%`} />
+                <Field label="尾款账期" value={c.paymentDays == null ? '—' : `${c.paymentDays} 天`} />
                 <Field label="付款方式" value={c.paymentMethod || '—'} />
-                <Field label="扣水规则" value={c.moistureRule || '—'} />
-                <Field label="扣杂规则" value={c.impurityRule || '—'} />
               </div>
             </>
 
@@ -706,6 +704,8 @@ export default function ContractDetailPage() {
               </div>
             </>
           )}
+          {c.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <div className="mt-5 space-y-3"><h3 className="text-sm font-semibold">物料质量结算规则（合同快照）</h3>{c.lineItems.filter(line => line.qualityRulesSnapshot?.items?.length).map(line => <div key={line.id} className="rounded-md border p-3"><div className="mb-2 text-sm font-medium">{line.materialName || '合同物料'} · {line.qualityRulesSnapshot.templateName || '质检模板'}{line.qualityRulesSnapshot.templateVersion ? ` V${line.qualityRulesSnapshot.templateVersion}` : ''}</div><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="py-2">指标 / 标准</th><th>偏差处理</th><th>扣款标准</th><th>拒收条件</th></tr></thead><tbody>{line.qualityRulesSnapshot.items.map((rule: any, index: number) => <tr key={`${rule.code}-${index}`} className="border-b last:border-0"><td className="py-2">{rule.symbol || rule.name} {rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? `–${rule.upperValue}` : ''} {rule.unit}</td><td>{rule.deductionMode === 'PER_STEP' ? `按步长 ${rule.deductionStep}` : rule.deductionMode === 'FLAT' ? '固定扣款' : '按标准验收'}</td><td>{rule.deductionMode === 'NONE' ? '—' : `${rule.deductionAmount ?? '待填'} 元/吨`}</td><td>{rule.rejectOperator && rule.rejectOperator !== 'NONE' ? `${rule.rejectOperator} ${rule.rejectValue}` : '未设置'}</td></tr>)}</tbody></table></div></div>)}</div>}
+          {!c.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <p className="mt-3 text-xs text-muted-foreground">未配置结构化质量结算规则；存量合同按原合同约定处理，不自动套用新模板。</p>}
         </CardContent>
       </Card>
 

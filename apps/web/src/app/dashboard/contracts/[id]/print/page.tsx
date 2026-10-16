@@ -67,8 +67,8 @@ interface ContractPrintDetail {
     totalPrice: string;
     salesUnitPrice?: string | null;
     salesTotalPrice?: string | null;
-    deliveryDate?: string | null;
     remarks?: string | null;
+    qualityRulesSnapshot?: any;
   }>;
   approvals?: Approval[];
   attachments?: Array<{ id: string; originalName: string; category: string; size: number; createdAt?: string }>;
@@ -175,15 +175,15 @@ export default function ContractPrintPage() {
           <Meta label="定价类型" value={PRICING[item.pricingType || ''] || item.pricingType || '—'} />
           <Meta label="交货方式" value={item.deliveryMethod || '—'} />
           <Meta label="交货地点" value={item.deliveryLocation || '—'} />
-          <Meta label="溢装 / 短装" value={`${item.overfillPct || '—'}% / ${item.shortfallPct || '—'}%`} />
+          <Meta label="溢装 / 短装" value={`${item.overfillPct ?? '—'}% / ${item.shortfallPct ?? '—'}%`} />
           <Meta label="最后修改时间" value={dateTime(item.updatedAt)} />
         </div>
       </PrintSection>
 
       <PrintSection title="二、货物与价格">
         <table className="w-full border-collapse text-[10px]">
-          <thead><tr className="bg-slate-100"><Th>序号</Th><Th>物料</Th><Th>数量</Th><Th>{item.type === 'SALES' ? '销售单价' : '采购单价'}</Th>{item.type === 'BILATERAL' && <Th>销售单价</Th>}<Th>计划交货日期</Th><Th>小计</Th>{item.type === 'BILATERAL' && <Th>销售小计</Th>}<Th>备注</Th></tr></thead>
-          <tbody>{item.lineItems.length ? item.lineItems.map((line, index) => <tr key={line.id}><Td center>{index + 1}</Td><Td>{line.materialName || '—'}</Td><Td>{Number(line.quantity).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} {unitLabel(line.unit)}</Td><Td>¥{money(line.unitPrice)}</Td>{item.type === 'BILATERAL' && <Td>{line.salesUnitPrice == null ? '—' : `¥${money(line.salesUnitPrice)}`}</Td>}<Td>{day(line.deliveryDate)}</Td><Td>¥{money(line.totalPrice)}</Td>{item.type === 'BILATERAL' && <Td>{line.salesTotalPrice == null ? '—' : `¥${money(line.salesTotalPrice)}`}</Td>}<Td>{line.remarks || '—'}</Td></tr>) : <tr><Td center colSpan={item.type === 'BILATERAL' ? 9 : 7}>暂无货物明细</Td></tr>}</tbody>
+          <thead><tr className="bg-slate-100"><Th>序号</Th><Th>物料</Th><Th>数量</Th><Th>{item.type === 'SALES' ? '销售单价' : '采购单价'}</Th>{item.type === 'BILATERAL' && <Th>销售单价</Th>}<Th>小计</Th>{item.type === 'BILATERAL' && <Th>销售小计</Th>}<Th>备注</Th></tr></thead>
+          <tbody>{item.lineItems.length ? item.lineItems.map((line, index) => <tr key={line.id}><Td center>{index + 1}</Td><Td>{line.materialName || '—'}</Td><Td>{Number(line.quantity).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} {unitLabel(line.unit)}</Td><Td>¥{money(line.unitPrice)}</Td>{item.type === 'BILATERAL' && <Td>{line.salesUnitPrice == null ? '—' : `¥${money(line.salesUnitPrice)}`}</Td>}<Td>¥{money(line.totalPrice)}</Td>{item.type === 'BILATERAL' && <Td>{line.salesTotalPrice == null ? '—' : `¥${money(line.salesTotalPrice)}`}</Td>}<Td>{line.remarks || '—'}</Td></tr>) : <tr><Td center colSpan={item.type === 'BILATERAL' ? 8 : 6}>暂无货物明细</Td></tr>}</tbody>
         </table>
         <div className="mt-2 flex justify-end gap-8 border border-t-0 border-slate-900 p-2 text-[11px] font-semibold"><span>{item.type === 'BILATERAL' ? '采购总额' : '合同总额'}：¥{money(item.totalAmount)}</span>{item.type === 'BILATERAL' && <span>销售总额：¥{money(salesAmount)}</span>}</div>
       </PrintSection>
@@ -192,13 +192,13 @@ export default function ContractPrintPage() {
         <div className="grid grid-cols-3 border-l border-t border-slate-900 text-[11px]">
           <Meta label="结算依据" value={BASIS[item.settlementBasis || ''] || '合同量'} />
           <Meta label="结算方式" value={settlementMethodLabel(item.settlementMethod || '')} />
-          <Meta label="预付比例" value={item.prepayPct ? `${item.prepayPct}%` : '—'} />
-          <Meta label="尾款账期" value={item.paymentDays ? `${item.paymentDays} 天` : '—'} />
+          <Meta label="预付比例" value={item.prepayPct == null ? '—' : `${item.prepayPct}%`} />
+          <Meta label="尾款账期" value={item.paymentDays == null ? '—' : `${item.paymentDays} 天`} />
           <Meta label="付款方式" value={item.paymentMethod || '—'} />
-          <Meta label="扣水规则" value={item.moistureRule || '—'} />
-          <Meta label="扣杂规则" value={item.impurityRule || '—'} />
           <Meta label="合同备注" value={item.remarks || '—'} span={2} />
         </div>
+        {item.lineItems.filter(line => line.qualityRulesSnapshot?.items?.length).map((line, index) => <div key={line.id} className="mt-3"><div className="mb-1 text-[11px] font-semibold">{index + 1}. {line.materialName || '合同物料'}质量结算规则（{line.qualityRulesSnapshot.templateName || '质检模板'} V{line.qualityRulesSnapshot.templateVersion || 1}）</div><table className="w-full border-collapse text-[9px]"><thead><tr className="bg-slate-100"><Th>检测指标 / 合同标准</Th><Th>扣款方式</Th><Th>扣款标准</Th><Th>拒收条件</Th></tr></thead><tbody>{line.qualityRulesSnapshot.items.map((rule: any, ruleIndex: number) => <tr key={`${rule.code}-${ruleIndex}`}><Td>{rule.symbol || rule.name} {rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? `–${rule.upperValue}` : ''} {rule.unit}</Td><Td>{rule.deductionMode === 'PER_STEP' ? `每 ${rule.deductionStep} 偏差` : rule.deductionMode === 'FLAT' ? (rule.deductionCondition === 'IN_RANGE' ? `区间 ${rule.deductionLowerValue}-${rule.deductionUpperValue}` : '固定扣款') : '按标准验收'}</Td><Td>{rule.deductionMode === 'NONE' ? '—' : `${rule.deductionAmount ?? '—'} 元/吨`}</Td><Td>{rule.rejectOperator && rule.rejectOperator !== 'NONE' ? `${rule.rejectOperator} ${rule.rejectValue}` : '未设置'}</Td></tr>)}</tbody></table></div>)}
+        {!item.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <p className="mt-2 text-[10px]">未配置结构化质量结算规则；存量合同按原合同约定处理。</p>}
       </PrintSection>
 
       <PrintSection title="四、审批流程">

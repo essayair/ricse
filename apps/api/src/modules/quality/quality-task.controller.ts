@@ -231,4 +231,14 @@ export class QualityTaskController {
   ) {
     return this.service.finalizeTask(id, dto, userId);
   }
+
+  @Post(':id/accept-contract-deduction')
+  @ApiOperation({ summary: '确认按合同扣款接收货物并生成待入库单' })
+  acceptContractDeduction(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.acceptContractDeduction(id, body.reason || '', userId);
+  }
 }

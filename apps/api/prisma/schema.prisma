@@ -1011,6 +1011,7 @@ model ContractLineItem {
   salesTotalPrice Decimal?  @db.Decimal(15, 2) // 双边合同销售金额
   deliveryDate    DateTime?
   remarks         String?
+  qualityRulesSnapshot Json? // 合同签订时的物料质量结算规则快照；不随质检模板后续变更
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1774,6 +1775,11 @@ model QualityTask {
   plannedReportCount   Int       @default(1)
   qualityTemplateId    String?
   templateSnapshot     Json?
+  contractQualitySnapshot Json? // 来源合同明细的质量结算规则快照
+  contractQualityEvaluation Json? // 选定结算依据报告后的规则匹配及计算明细
+  qualityDisposition   String    @default("PENDING") // PENDING | PASS | DEDUCTION_PENDING | ACCEPT_WITH_DEDUCTION | REJECT | REVIEW_REQUIRED | LEGACY
+  qualityDeductionPerTon Decimal? @db.Decimal(15, 4)
+  qualityDispositionReason String?
   sampledAt            DateTime?
   samplerName          String?
   samplingMethod       String?
@@ -1804,6 +1810,7 @@ model QualityTask {
 
   @@index([status])
   @@index([finalConclusion])
+  @@index([qualityDisposition])
   @@index([handlerId])
   @@index([decidedBy])
   @@index([qualityTemplateId])
@@ -1957,6 +1964,8 @@ model InboundReceipt {
   moistureDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
   impurityDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
   deductionAmount         Decimal   @default(0) @db.Decimal(15, 2)
+  contractQualityDeductionPerTon Decimal? @db.Decimal(15, 4)
+  contractQualityEvaluation Json?
   receivedAt              DateTime?
   receiverName            String?
   remarks                 String?

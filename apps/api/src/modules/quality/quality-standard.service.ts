@@ -215,7 +215,7 @@ export class QualityStandardService {
   }
 
   async resolveForMaterial(materialId: string, scene: string, userId: string) {
-    await this.assertAnyPermission(userId, ['quality.view', 'master_data.view']);
+    await this.assertAnyPermission(userId, ['quality.view', 'master_data.view', 'contract.create', 'contract.view', 'contract.edit']);
     const material = await this.prisma.material.findFirst({
       where: { id: materialId, deletedAt: null },
       include: { qualityTemplate: { include: this.templateInclude } },

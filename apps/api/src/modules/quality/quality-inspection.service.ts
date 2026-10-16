@@ -5,6 +5,7 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { CreateQualityInspectionDto, QualityIndicatorDto } from './dto/create-quality-inspection.dto';
 import { CreateQualitySampleDto, UpdateQualitySampleDto } from './dto/quality-sample.dto';
+import { evaluateContractQualityRules } from './contract-quality-rules';
 
 @Injectable()
 export class QualityInspectionService {
@@ -164,7 +165,7 @@ export class QualityInspectionService {
       select: {
         id: true,
         status: true,
-        dispatchNotice: { select: { type: true, qualityRequired: true } },
+        dispatchNotice: { select: { type: true, qualityRequired: true, order: { select: { contractId: true } } } },
         lineItems: { select: { materialId: true }, orderBy: { createdAt: 'asc' }, take: 1 },
       },
     });
@@ -175,6 +176,13 @@ export class QualityInspectionService {
     });
     if (existing && !existing.deletedAt) return existing;
     const materialId = waybill.lineItems?.[0]?.materialId;
+    const contractLine = materialId && waybill.dispatchNotice.order?.contractId
+      ? await this.prisma.contractLineItem.findFirst({
+        where: { contractId: waybill.dispatchNotice.order.contractId, materialId },
+        orderBy: { createdAt: 'asc' },
+        select: { qualityRulesSnapshot: true },
+      })
+      : null;
     const material = materialId ? await this.prisma.material.findFirst({
       where: { id: materialId, deletedAt: null },
       include: {
@@ -211,6 +219,7 @@ export class QualityInspectionService {
           status: 'PENDING_SAMPLING', plannedReportCount: 1, createdBy: userId,
           qualityTemplateId: template?.id || null,
           templateSnapshot: template ? qualityTemplateSnapshot(template) : undefined,
+          contractQualitySnapshot: contractLine?.qualityRulesSnapshot as Prisma.InputJsonValue | undefined,
         },
         include: this.taskInclude,
       });
@@ -281,19 +290,49 @@ export class QualityInspectionService {
     if ((partial || confirmed.length === 1) && !data.reason?.trim()) {
       throw new BadRequestException('仅一份有效报告或有效报告少于计划数量时，必须填写判定原因');
     }
+    const basisWithIndicators = await this.prisma.qualityInspection.findFirst({
+      where: { id: basis.id, deletedAt: null },
+      include: { indicators: { orderBy: { sort: 'asc' } } },
+    });
+    const commercialEvaluation = task.contractQualitySnapshot
+      ? evaluateContractQualityRules(task.contractQualitySnapshot, basisWithIndicators?.indicators || [])
+      : null;
+    const qualityDisposition = commercialEvaluation
+      ? commercialEvaluation.disposition === 'DEDUCTION' ? 'DEDUCTION_PENDING' : commercialEvaluation.disposition
+      : task.contractQualitySnapshot ? 'REVIEW_REQUIRED' : data.conclusion === 'PASS' ? 'LEGACY' : 'REVIEW_REQUIRED';
     await this.prisma.qualityTask.update({
       where: { id },
       data: {
         status: 'COMPLETED', finalConclusion: data.conclusion,
+        contractQualityEvaluation: commercialEvaluation as unknown as Prisma.InputJsonValue | undefined,
+        qualityDisposition,
+        qualityDeductionPerTon: commercialEvaluation?.deductionPerTon,
+        qualityDispositionReason: commercialEvaluation
+          ? commercialEvaluation.items.filter(item => item.result !== 'PASS').map(item => `${item.name}：${item.reason}`).join('；') || '所有合同质量指标均符合约定'
+          : null,
         basisInspectionId: basis.id, finalizedReportIds: confirmed.map(report => report.id),
         finalizedReportCount: confirmed.length, decisionReason: data.reason?.trim() || '依据全部有效检测报告形成结论',
         decisionVersion: { increment: 1 }, decidedBy: userId, decidedAt: new Date(),
         handlerId: task.handlerId || userId, handledAt: task.handledAt || new Date(),
       },
     });
-    if (data.conclusion === 'PASS') {
+    if (qualityDisposition === 'PASS' || qualityDisposition === 'LEGACY') {
       await this.inventoryService.createPendingReceiptForConfirmedQuality(basis.id, userId);
     }
+    return this.findTask(id, userId, 'quality.manage');
+  }
+
+  async acceptContractDeduction(id: string, reason: string, userId: string) {
+    const task = await this.findTask(id, userId, 'quality.manage');
+    if (task.status !== 'COMPLETED' || task.qualityDisposition !== 'DEDUCTION_PENDING') {
+      throw new BadRequestException('当前质检任务没有待确认的合同扣款接收结果');
+    }
+    if (!reason?.trim()) throw new BadRequestException('请填写接受扣款的业务确认原因');
+    await this.prisma.qualityTask.update({
+      where: { id },
+      data: { qualityDisposition: 'ACCEPT_WITH_DEDUCTION', qualityDispositionReason: reason.trim() },
+    });
+    await this.inventoryService.createPendingReceiptForConfirmedQuality(task.basisInspectionId!, userId);
     return this.findTask(id, userId, 'quality.manage');
   }
 

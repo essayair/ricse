@@ -26,13 +26,14 @@ export class InventoryService {
         id: true, inspectionNo: true, institutionType: true, institutionName: true,
         reportNo: true, status: true, conclusion: true, settlementWeight: true,
         moistureDeductionWeight: true, impurityDeductionWeight: true, deductionAmount: true,
+        qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } },
       },
     },
     waybill: {
       include: {
         qualityTask: {
           select: {
-            id: true, taskNo: true, status: true, finalConclusion: true,
+            id: true, taskNo: true, status: true, finalConclusion: true, qualityDisposition: true,
             basisInspectionId: true, finalizedReportCount: true,
           },
         },
@@ -125,8 +126,8 @@ export class InventoryService {
       stageLabel = weighing ? '过磅处理中' : '待磅单复核';
       blocker = weighing ? '磅单已创建，等待完成有效称重并复核' : '称重已完成，等待复核磅单';
       tone = 'warning';
-    } else if (receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS') {
-      stage = 'READY_TO_RECEIVE'; stageLabel = '合格待收货'; blocker = '最终验收质检已合格，可以补齐收货信息并确认收货'; tone = 'success';
+    } else if (receipt.qualityInspection?.status === 'CONFIRMED' && ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(qualityTask?.qualityDisposition)) {
+      stage = 'READY_TO_RECEIVE'; stageLabel = qualityTask?.qualityDisposition === 'ACCEPT_WITH_DEDUCTION' ? '扣款接收待收货' : '合格待收货'; blocker = '最终验收依据已确认，可以补齐收货信息并确认收货'; tone = 'success';
     } else if (!inspections.length) {
       stage = 'WAITING_QUALITY'; stageLabel = '已过磅待质检'; blocker = qualityTask ? '到货质检任务已生成，等待录入检测报告' : '等待系统生成到货质检任务'; tone = 'warning';
     } else if (inProgressQuality) {
@@ -247,7 +248,7 @@ export class InventoryService {
         weighTickets: {
           some: {
             deletedAt: null, status: 'REVIEWED',
-            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS', basisForTasks: { some: { status: 'COMPLETED', finalConclusion: 'PASS' } } } },
+            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', basisForTasks: { some: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] } } } } },
           },
         },
       },
@@ -258,7 +259,7 @@ export class InventoryService {
           where: { deletedAt: null, status: 'REVIEWED' },
           include: {
             qualityInspections: {
-              where: { deletedAt: null, status: 'CONFIRMED', conclusion: 'PASS', basisForTasks: { some: { status: 'COMPLETED', finalConclusion: 'PASS' } } },
+              where: { deletedAt: null, status: 'CONFIRMED', basisForTasks: { some: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] } } } },
               orderBy: { testedAt: 'desc' },
             },
           },
@@ -291,12 +292,13 @@ export class InventoryService {
     const quality = await this.prisma.qualityInspection.findFirst({
       where: {
         id: dto.qualityInspectionId, deletedAt: null, weighTicket: { waybillId: waybill.id },
-        qualityTask: { status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: dto.qualityInspectionId },
+        qualityTask: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] }, basisInspectionId: dto.qualityInspectionId },
       },
+      include: { qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } } },
     });
     if (!quality || quality.status !== 'CONFIRMED') throw new BadRequestException('请选择该运单下已确认的质检单');
-    if (quality.conclusion !== 'PASS') {
-      throw new BadRequestException('只有质检结论为“合格”的货物才能入库；超标扣款、不合格（拒收）或待判定货物不能入库');
+    if (!['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes((quality as any).qualityTask?.qualityDisposition || '')) {
+      throw new BadRequestException('只有质检结论为“合格”的货物才能入库；按扣款接收的货物需先完成业务确认');
     }
     const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, status: 'ACTIVE', deletedAt: null } });
     if (!warehouse) throw new BadRequestException('入库仓库不存在或已停用');
@@ -310,7 +312,7 @@ export class InventoryService {
         receiptNo: await this.nextNo('LIR', 'inboundReceipt'), waybillId: waybill.id,
         weighTicketId: weighTicket.id, qualityInspectionId: quality.id, warehouseId: warehouse.id,
         status: 'PENDING',
-        acceptanceConclusion: quality.conclusion, materialName: quality.materialName,
+        acceptanceConclusion: (quality as any).qualityTask.qualityDisposition, materialName: quality.materialName,
         materialSpec: quality.materialSpec, supplierName: quality.supplierName,
         plateNo: quality.plateNo || waybill.plateNo,
         plannedQuantity: waybill.totalQuantity,
@@ -318,6 +320,8 @@ export class InventoryService {
         moistureDeductionWeight: quality.moistureDeductionWeight,
         impurityDeductionWeight: quality.impurityDeductionWeight,
         deductionAmount: quality.deductionAmount, receivedAt: new Date(dto.receivedAt),
+        contractQualityDeductionPerTon: (quality as any).qualityTask.qualityDeductionPerTon,
+        contractQualityEvaluation: (quality as any).qualityTask.contractQualityEvaluation as Prisma.InputJsonValue | undefined,
         receiverName: dto.receiverName.trim(), remarks: dto.remarks?.trim() || null, createdBy: userId,
       },
       include: this.include,
@@ -331,10 +335,9 @@ export class InventoryService {
         id: qualityInspectionId,
         deletedAt: null,
         status: 'CONFIRMED',
-        conclusion: 'PASS',
-        qualityTask: { status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: qualityInspectionId },
+        qualityTask: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] }, basisInspectionId: qualityInspectionId },
       },
-      include: {
+      include: { qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } },
         weighTicket: {
           include: {
             waybill: {
@@ -361,7 +364,7 @@ export class InventoryService {
         },
       },
     });
-    if (!quality) throw new BadRequestException('只有到货质检任务最终采用的合格报告才能补齐入库作业单验收依据');
+    if (!quality) throw new BadRequestException('只有最终判定合格或已确认扣款接收的质检报告才能补齐入库作业单验收依据');
 
     const ticket = quality.weighTicket;
     const waybill = ticket.waybill;
@@ -401,7 +404,7 @@ export class InventoryService {
         data: {
           weighTicketId: inventoryTicket.id,
           qualityInspectionId: quality.id,
-          acceptanceConclusion: 'PASS',
+        acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
           materialName: quality.materialName,
           materialSpec: quality.materialSpec,
           supplierName: quality.supplierName,
@@ -425,7 +428,7 @@ export class InventoryService {
           qualityInspectionId: quality.id,
           warehouseId: waybill.dispatchNotice.warehouseId,
           status: 'PENDING',
-          acceptanceConclusion: quality.conclusion,
+          acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
           materialName: quality.materialName,
           materialSpec: quality.materialSpec,
           supplierName: quality.supplierName,
@@ -435,6 +438,8 @@ export class InventoryService {
           moistureDeductionWeight: quality.moistureDeductionWeight,
           impurityDeductionWeight: quality.impurityDeductionWeight,
           deductionAmount: quality.deductionAmount,
+          contractQualityDeductionPerTon: (quality as any).qualityTask.qualityDeductionPerTon,
+          contractQualityEvaluation: (quality as any).qualityTask.contractQualityEvaluation as Prisma.InputJsonValue | undefined,
           receivedAt: null,
           receiverName: null,
           remarks: '历史或异常漏单：由到货质检任务最终合格结论兜底创建',
@@ -463,13 +468,12 @@ export class InventoryService {
         id: qualityInspectionId,
         deletedAt: null,
         status: 'CONFIRMED',
-        conclusion: 'PASS',
-        qualityTask: { status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: qualityInspectionId },
+        qualityTask: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] }, basisInspectionId: qualityInspectionId },
         weighTicket: { waybillId: receipt.waybillId, deletedAt: null, status: 'REVIEWED' },
       },
-      include: { weighTicket: true },
+      include: { weighTicket: true, qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } } },
     });
-    if (!quality) throw new BadRequestException('只能使用本运单到货质检任务最终采用的合格执行口径报告');
+    if (!quality) throw new BadRequestException('只能使用本运单到货质检任务最终采用的合格或已确认扣款接收执行口径报告');
     const inventoryTicket = receipt.weighTicket;
     if (!inventoryTicket || inventoryTicket.status !== 'REVIEWED') {
       throw new BadRequestException('请先在物流运单详情中选用已复核的入库磅单');
@@ -481,7 +485,9 @@ export class InventoryService {
       data: {
         weighTicketId: inventoryTicket.id,
         qualityInspectionId: quality.id,
-        acceptanceConclusion: 'PASS',
+        acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
+        contractQualityDeductionPerTon: (quality as any).qualityTask.qualityDeductionPerTon,
+        contractQualityEvaluation: (quality as any).qualityTask.contractQualityEvaluation as Prisma.InputJsonValue | undefined,
         materialName: quality.materialName,
         materialSpec: quality.materialSpec,
         supplierName: quality.supplierName,
@@ -701,11 +707,10 @@ export class InventoryService {
     qualityInspection?: { status: string; conclusion: string } | null;
   }) {
     if (
-      receipt.acceptanceConclusion !== 'PASS'
+      !['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(receipt.acceptanceConclusion || '')
       || receipt.qualityInspection?.status !== 'CONFIRMED'
-      || receipt.qualityInspection.conclusion !== 'PASS'
     ) {
-      throw new BadRequestException('只有已确认且质检合格的货物才能形成系统库存');
+      throw new BadRequestException('只有已确认合格或按合同扣款接收的货物才能形成系统库存');
     }
   }
 

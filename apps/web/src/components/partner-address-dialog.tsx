@@ -43,6 +43,7 @@ export function PartnerAddressDialog({
 }) {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
   const [recognitionText, setRecognitionText] = useState('');
   const [recognitionResult, setRecognitionResult] = useState('');
 
@@ -54,15 +55,20 @@ export function PartnerAddressDialog({
       contactPerson: initial.contactPerson, contactPhone: initial.contactPhone,
       isDefault: initial.isDefault, remark: initial.remark || '',
     } : EMPTY);
+    setFormError('');
     setRecognitionText('');
     setRecognitionResult('');
   }, [open, initial]);
 
-  const set = (key: keyof typeof EMPTY, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
+  const set = (key: keyof typeof EMPTY, value: string | boolean) => {
+    setFormError('');
+    setForm(current => ({ ...current, [key]: value }));
+  };
   const recognize = () => {
     if (!recognitionText.trim()) return setRecognitionResult('请先粘贴完整的收发货信息');
     const result = recognizePartnerAddress(recognitionText);
     if (!result.recognizedFields.length) return setRecognitionResult('未识别到有效信息，请检查文字后重试或手工填写');
+    setFormError('');
     setForm(current => ({
       ...current,
       addressName: result.addressName || current.addressName,
@@ -77,7 +83,11 @@ export function PartnerAddressDialog({
   };
   const save = async () => {
     const required = [form.addressName, form.province, form.city, form.district, form.detailAddress, form.contactPerson, form.contactPhone];
-    if (required.some(value => !String(value).trim())) return alert('请完整填写地址简称、省、市、区县、详细地址、联系人和联系方式');
+    if (required.some(value => !String(value).trim())) {
+      setFormError('请完整填写地址简称、省、市、区县、详细地址、联系人和联系方式');
+      return;
+    }
+    setFormError('');
     setSaving(true);
     try {
       const address = initial
@@ -85,7 +95,7 @@ export function PartnerAddressDialog({
         : await api.post<PartnerAddress>(`/partners/${partnerId}/addresses`, form);
       onSaved(address);
       onOpenChange(false);
-    } catch (error: any) { alert(error.message || '地址保存失败'); }
+    } catch (error: any) { setFormError(error.message || '地址保存失败'); }
     finally { setSaving(false); }
   };
 
@@ -106,12 +116,13 @@ export function PartnerAddressDialog({
         </div>
         <Field label="地址简称 *"><Input value={form.addressName} onChange={e => set('addressName', e.target.value)} placeholder="例如：甘肃厂区" /></Field>
         <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={form.isDefault} disabled={Boolean(initial?.isDefault)} onChange={e => set('isDefault', e.target.checked)} />{initial?.isDefault ? '当前默认地址（更换时请设置其他地址）' : '设为默认地址'}</label>
-        <div className="md:col-span-2"><ChinaRegionSelect value={{ province: form.province, city: form.city, district: form.district }} onChange={region => setForm(current => ({ ...current, ...region }))} /></div>
+        <div className="md:col-span-2"><ChinaRegionSelect value={{ province: form.province, city: form.city, district: form.district }} onChange={region => { setFormError(''); setForm(current => ({ ...current, ...region })); }} /></div>
         <div className="md:col-span-2"><Field label="详细地址 *"><Input value={form.detailAddress} onChange={e => set('detailAddress', e.target.value)} placeholder="街道、园区、门牌号或装卸区域" /></Field></div>
         <Field label="联系人 *"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></Field>
         <Field label="联系方式 *"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></Field>
         <div className="md:col-span-2"><Field label="备注"><Input value={form.remark} onChange={e => set('remark', e.target.value)} placeholder="入场要求、工作时间等" /></Field></div>
       </div>
+      {formError && <p className="mt-3 text-sm text-destructive" role="alert">{formError}</p>}
       <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button disabled={saving} onClick={() => void save()}>{saving ? '保存中...' : '保存地址'}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;

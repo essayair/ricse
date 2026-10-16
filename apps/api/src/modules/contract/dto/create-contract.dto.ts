@@ -53,6 +53,11 @@ class CreateContractLineItemDto {
   @IsOptional()
   @IsString()
   remarks?: string;
+
+  @ApiPropertyOptional({ description: '合同质量结算规则快照（从物料质检模板带入后由合同确认）' })
+  @IsOptional()
+  @IsObject()
+  qualityRulesSnapshot?: Record<string, unknown>;
 }
 
 export class CreateContractDto {

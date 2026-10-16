@@ -163,9 +163,8 @@ export default function InboundDetail() {
   };
 
   if (!item) return <div className="py-20 text-center">加载中...</div>;
-  const qualityQualified = item.acceptanceConclusion === 'PASS'
-    && item.qualityInspection?.status === 'CONFIRMED'
-    && item.qualityInspection?.conclusion === 'PASS';
+  const qualityQualified = ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(item.acceptanceConclusion || '')
+    && item.qualityInspection?.status === 'CONFIRMED';
   const inspections = (item.waybill?.weighTickets || [])
     .flatMap((ticket: any) => (ticket.qualityInspections || []).map((inspection: any) => ({ ...inspection, ticket })));
   const workflow = item.workflow || {};
@@ -296,7 +295,7 @@ export default function InboundDetail() {
           <div className="space-y-2">
             {inspections.map((inspection: any) => {
               const selected = item.qualityInspectionId === inspection.id;
-              const selectable = item.status === 'PENDING' && inspection.id === item.waybill.qualityTask?.basisInspectionId && inspection.status === 'CONFIRMED' && inspection.conclusion === 'PASS';
+              const selectable = item.status === 'PENDING' && inspection.id === item.waybill.qualityTask?.basisInspectionId && inspection.status === 'CONFIRMED' && ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(item.waybill.qualityTask?.qualityDisposition || '');
               return (
                 <div key={inspection.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 ${selected ? 'border-success/40 bg-success-bg' : ''}`}>
                   <div>

@@ -21,14 +21,32 @@ describe('ContractService', () => {
     signingPartnerId: 'internal-1',
     companyId: 'company-1',
     businessUnitId: 'bu-1',
-    departmentId: null,
+    departmentId: 'dept-1',
+    externalNo: 'PAPER-001',
+    pricingType: 'FIXED',
+    signedAt: new Date('2026-01-01T00:00:00.000Z'),
+    effectiveAt: new Date('2026-01-01T00:00:00.000Z'),
+    expireAt: new Date('2026-12-31T00:00:00.000Z'),
+    deliveryMethod: '供应商配送',
+    deliveryLocation: '龙游仓库',
+    settlementBasis: 'WEIGHT',
+    settlementMethod: '按交货结算',
+    prepayPct: '0',
+    paymentDays: 30,
+    paymentMethod: 'T/T',
+    moistureRule: '无',
+    impurityRule: '无',
+    overfillPct: '10',
+    shortfallPct: '10',
     totalAmount: '100000',
     lineItems: [{
       materialId: 'material-1',
       quantity: '100',
       unitPrice: '1000',
       salesUnitPrice: null,
+      deliveryDate: new Date('2026-02-01T00:00:00.000Z'),
     }],
+    attachments: [{ id: 'contract-attachment-1', originalName: 'signed-contract.pdf' }],
     createdBy: 'user-1',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -56,6 +74,7 @@ describe('ContractService', () => {
     accessControl.getContractScope.mockResolvedValue({});
     prisma.partner.findFirst.mockResolvedValue({ roles: ['SUPPLIER', 'CUSTOMER'] } as any);
     prisma.businessUnit.findFirst.mockResolvedValue({ id: 'bu-1', companyId: 'management-company-1' } as any);
+    prisma.department.findUnique.mockResolvedValue({ id: 'dept-1', companyId: 'company-1' } as any);
     prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '测试物料' }] as any);
     (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: PrismaService) => unknown) => callback(prisma));
 
@@ -372,13 +391,16 @@ describe('ContractService', () => {
       expect(prisma.approvalFlow.findUnique).not.toHaveBeenCalled();
     });
 
-    it('审批流程和审批人有效时返回可提交', async () => {
+    it('生效日期、到期日期和行项交货日期为空时仍可提交', async () => {
       prisma.contract.findFirst.mockResolvedValue({
         ...mockContract,
         status: 'DRAFT',
         type: 'PURCHASE',
         totalAmount: '100000',
         companyId: 'company-1',
+        effectiveAt: null,
+        expireAt: null,
+        lineItems: [{ ...mockContract.lineItems[0], deliveryDate: null }],
       } as any);
       prisma.approvalFlow.findUnique.mockResolvedValue({
         id: 'flow-1',
@@ -429,6 +451,31 @@ describe('ContractService', () => {
           ],
         }),
       );
+      expect(prisma.contract.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        select: expect.objectContaining({
+          lineItems: {
+            select: expect.objectContaining({ qualityRulesSnapshot: true }),
+          },
+        }),
+      }));
+    });
+
+    it('合同签订日期缺失时不允许进入审批', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, signedAt: null } as any);
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('请填写纸质合同签订日期');
+      expect(prisma.approvalFlow.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('没有合同附件时不允许进入审批', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, attachments: [] } as any);
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('请至少上传一份合同附件后再提交审批');
+      expect(prisma.approvalFlow.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('当前阶段拒绝基差或不定价合同提交', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, pricingType: 'BASIS' } as any);
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('当前仅支持固定价格（一口价）合同');
+      expect(prisma.approvalFlow.findUnique).not.toHaveBeenCalled();
     });
 
     it('业务单元与合同管理企业独立时仍按业务单元匹配审批人', async () => {

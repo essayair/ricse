@@ -29,7 +29,7 @@ describe('InventoryService', () => {
     prisma.waybillWeightSelection.findFirst.mockResolvedValue(null);
   });
 
-  it('只选择已到货、已复核且存在已确认合格质检单的采购运单', async () => {
+  it('只选择已到货、已复核且存在最终可入库质检处置的采购运单', async () => {
     prisma.waybill.findMany.mockResolvedValue([]);
 
     await service.eligibleWaybills('user-1');
@@ -44,7 +44,7 @@ describe('InventoryService', () => {
             qualityInspections: {
               some: expect.objectContaining({
                 status: 'CONFIRMED',
-                conclusion: 'PASS',
+                basisForTasks: { some: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] } } },
               }),
             },
           }),
@@ -70,6 +70,7 @@ describe('InventoryService', () => {
       id: 'quality-1',
       status: 'CONFIRMED',
       conclusion: 'DEDUCTION',
+      qualityTask: { qualityDisposition: 'DEDUCTION_PENDING' },
     } as any);
 
     await expect(service.createReceipt({
@@ -96,6 +97,7 @@ describe('InventoryService', () => {
       moistureDeductionWeight: 1,
       impurityDeductionWeight: 1,
       deductionAmount: 0,
+      qualityTask: { qualityDisposition: 'LEGACY', qualityDeductionPerTon: null, contractQualityEvaluation: null },
       weighTicket: {
         id: 'ticket-1',
         status: 'REVIEWED',
@@ -167,6 +169,7 @@ describe('InventoryService', () => {
       settlementWeight: 98, moistureDeductionWeight: 1, impurityDeductionWeight: 1, deductionAmount: 0,
       status: 'CONFIRMED',
       conclusion: 'PASS',
+      qualityTask: { qualityDisposition: 'LEGACY', qualityDeductionPerTon: null, contractQualityEvaluation: null },
       weighTicket: {
         id: 'ticket-1', netWeight: 100, settlementWeight: 100,
         status: 'REVIEWED',
@@ -207,6 +210,7 @@ describe('InventoryService', () => {
       id: 'quality-2', weighTicketId: 'ticket-2', materialName: '铁矿石', materialSpec: '粉矿',
       supplierName: '供应商A', plateNo: '沪A12345', settlementWeight: 97.5,
       moistureDeductionWeight: 1, impurityDeductionWeight: 0.5, deductionAmount: 0,
+      qualityTask: { qualityDisposition: 'LEGACY', qualityDeductionPerTon: null, contractQualityEvaluation: null },
       weighTicket: { id: 'ticket-2', status: 'REVIEWED', settlementWeight: 99 },
     } as any);
     prisma.inboundReceipt.update.mockResolvedValue({
@@ -219,7 +223,7 @@ describe('InventoryService', () => {
 
     expect(prisma.qualityInspection.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        id: 'quality-2', status: 'CONFIRMED', conclusion: 'PASS',
+        id: 'quality-2', status: 'CONFIRMED',
         weighTicket: expect.objectContaining({ waybillId: 'waybill-1', status: 'REVIEWED' }),
       }),
     }));
@@ -238,7 +242,7 @@ describe('InventoryService', () => {
     } as any);
 
     await expect(service.confirmReceipt('receipt-1', 'user-1'))
-      .rejects.toThrow('只有已确认且质检合格的货物才能形成系统库存');
+      .rejects.toThrow('只有已确认合格或按合同扣款接收的货物才能形成系统库存');
     expect(prisma.inboundReceipt.update).not.toHaveBeenCalled();
   });
 
@@ -265,7 +269,7 @@ describe('InventoryService', () => {
     } as any);
 
     await expect(service.postInventory('receipt-1', 'user-1'))
-      .rejects.toThrow('只有已确认且质检合格的货物才能形成系统库存');
+      .rejects.toThrow('只有已确认合格或按合同扣款接收的货物才能形成系统库存');
     expect(prisma.businessInbound.create).not.toHaveBeenCalled();
   });
 

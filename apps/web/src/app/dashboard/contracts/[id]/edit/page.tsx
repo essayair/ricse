@@ -9,10 +9,11 @@ import { ArrowLeft, Save, Plus, Trash2, Paperclip, Loader2, Pencil, X } from 'lu
 import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
 import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachment-file';
-import { SETTLEMENT_METHOD_SUGGESTIONS, settlementMethodLabel } from '@/lib/contract-settlement';
+import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
+import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -48,8 +49,8 @@ interface LineItem {
   unit: string;
   unitPrice: string;
   salesUnitPrice: string;
-  deliveryDate: string;
   remarks: string;
+  qualityRulesSnapshot?: any;
 }
 
 interface DepartmentItem {
@@ -97,14 +98,14 @@ export default function ContractEditPage() {
     pricingType: 'FIXED', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: '', effectiveAt: '', expireAt: '',
-    settlementMethod: '按交货结算', settlementBasis: 'WEIGHT',
+    settlementMethod: '', settlementBasis: 'WEIGHT',
     prepayPct: '', paymentDays: '30', paymentMethod: 'T/T',
-    moistureRule: '', impurityRule: '', remarks: '',
+    remarks: '',
   });
 
   const [lineItems, setLineItems] = useState<LineItem[]>([{
     materialId: '', materialName: '', quantity: '', unit: 'TON',
-    unitPrice: '', salesUnitPrice: '', deliveryDate: '', remarks: '',
+    unitPrice: '', salesUnitPrice: '', remarks: '',
   }]);
 
   const set = (k: string, v: string) => {
@@ -158,11 +159,9 @@ export default function ContractEditPage() {
         expireAt: contract.expireAt ? contract.expireAt.split('T')[0] : '',
         settlementMethod: settlementMethodLabel(contract.settlementMethod),
         settlementBasis: contract.settlementBasis || 'WEIGHT',
-        prepayPct: contract.prepayPct || '',
-        paymentDays: contract.paymentDays || '30',
+        prepayPct: contract.prepayPct == null ? '' : String(contract.prepayPct),
+        paymentDays: contract.paymentDays == null ? '' : String(contract.paymentDays),
         paymentMethod: contract.paymentMethod || 'T/T',
-        moistureRule: contract.moistureRule || '',
-        impurityRule: contract.impurityRule || '',
         remarks: contract.remarks || '',
       };
       const rawDraftForm = contract.draftData?.form;
@@ -180,8 +179,8 @@ export default function ContractEditPage() {
           unit: item.unit || 'TON',
           unitPrice: String(item.unitPrice || ''),
           salesUnitPrice: String(item.salesUnitPrice || ''),
-          deliveryDate: item.deliveryDate ? item.deliveryDate.split('T')[0] : '',
           remarks: item.remarks || '',
+          qualityRulesSnapshot: item.qualityRulesSnapshot || null,
         })));
       }
     }).catch(e => {
@@ -197,6 +196,7 @@ export default function ContractEditPage() {
       next[idx] = { ...next[idx], [key]: value };
       if (key === 'materialId') {
         const m = materials.find((x: any) => x.id === value);
+        next[idx].qualityRulesSnapshot = null;
         if (m) { next[idx].materialName = m.name; next[idx].unit = m.unit || 'TON'; }
       }
       return next;
@@ -207,7 +207,7 @@ export default function ContractEditPage() {
     setIsDirty(true);
     setLineItems(prev => [
       ...prev,
-      { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', salesUnitPrice: '', deliveryDate: '', remarks: '' },
+      { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', salesUnitPrice: '', remarks: '', qualityRulesSnapshot: null },
     ]);
   };
 
@@ -235,17 +235,17 @@ export default function ContractEditPage() {
     try {
       await api.patch(`/contracts/${contractId}`, {
         ...form,
-        title: form.title || `${form.type === 'PURCHASE' ? '采购' : form.type === 'SALES' ? '销售' : '双边'}合同`,
+        title: form.title,
         sellerId: form.sellerId || null,
         settlementMethod: form.settlementMethod.trim() || '按交货结算',
         totalAmount,
         overfillPct: form.overfillPct === '' ? undefined : Number(form.overfillPct),
         shortfallPct: form.shortfallPct === '' ? undefined : Number(form.shortfallPct),
-        prepayPct: Number(form.prepayPct) || undefined,
-        paymentDays: Number(form.paymentDays) || undefined,
+        prepayPct: form.prepayPct === '' ? undefined : Number(form.prepayPct),
+        paymentDays: form.paymentDays === '' ? undefined : Number(form.paymentDays),
         signedAt: form.signedAt || undefined,
-        effectiveAt: form.effectiveAt || undefined,
-        expireAt: form.expireAt || undefined,
+        effectiveAt: form.effectiveAt || null,
+        expireAt: form.expireAt || null,
         buyerId: form.buyerId || null,
         signingPartnerId: form.signingPartnerId || null,
         departmentId: form.departmentId || null,
@@ -258,8 +258,8 @@ export default function ContractEditPage() {
           unit: item.unit,
           unitPrice: Number(item.unitPrice),
           ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(item.salesUnitPrice) } : {}),
-          deliveryDate: item.deliveryDate || undefined,
           remarks: item.remarks || undefined,
+          qualityRulesSnapshot: item.qualityRulesSnapshot || undefined,
         })),
       });
       if (pendingAttachments.length > 0) await uploadAttachments();
@@ -409,11 +409,12 @@ export default function ContractEditPage() {
             <FormField label="合同标题" required>
               <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="如：采购萤石粉CaF₂≥97% 5000吨" />
             </FormField>
-            <FormField label="外部合同号">
+            <FormField label="外部合同号" required>
               <Input value={form.externalNo} onChange={e => set('externalNo', e.target.value)} placeholder="纸质合同或其他系统合同编号" />
+              <span className="text-xs text-muted-foreground">没有外部编号时请明确填写“无”</span>
             </FormField>
             <div className="col-span-2">
-              <FormField label="我方签约主体（内部）">
+              <FormField label="我方签约主体（内部）" required>
                 <select value={form.signingPartnerId} onChange={e => set('signingPartnerId', e.target.value)} className={SELECT_CLS}>
                   <option value="">请选择</option>
                   {internalPartners
@@ -485,16 +486,17 @@ export default function ContractEditPage() {
           <SectionTitle>货物与价格</SectionTitle>
           <div className="space-y-3">
             {lineItems.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-lg bg-muted/20">
+              <div key={idx} className="space-y-2">
+              <div className="grid grid-cols-12 gap-2 items-end p-3 border rounded-lg bg-muted/20">
                 <div className={form.type === 'BILATERAL' ? 'col-span-4' : 'col-span-5'}>
-                  <label className="text-xs text-muted-foreground">物料{idx === 0 && <span className="text-destructive">*</span>}</label>
+                  <label className="text-xs text-muted-foreground">物料 <span className="text-destructive">*</span></label>
                   <select value={item.materialId} onChange={e => updateLineItem(idx, 'materialId', e.target.value)} className={SELECT_CLS + ' mt-1'}>
                     <option value="">请选择</option>
                     {materials.map((m: any) => <option key={m.id} value={m.id}>{m.code} {m.name}{m.grade ? ` (${m.grade})` : ''}</option>)}
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground">数量{idx === 0 && <span className="text-destructive">*</span>}</label>
+                  <label className="text-xs text-muted-foreground">数量 <span className="text-destructive">*</span></label>
                   <Input className="mt-1" type="number" step="0.001" value={item.quantity} onChange={e => updateLineItem(idx, 'quantity', e.target.value)} />
                 </div>
                 <div className="col-span-1">
@@ -502,12 +504,12 @@ export default function ContractEditPage() {
                   <Input className="mt-1" value={unitLabel(item.unit)} onChange={e => updateLineItem(idx, 'unit', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground">{form.type === 'BILATERAL' ? '采购单价' : form.type === 'PURCHASE' ? '采购单价' : '销售单价'}(元/吨){idx === 0 && <span className="text-destructive">*</span>}</label>
+                  <label className="text-xs text-muted-foreground">{form.type === 'BILATERAL' ? '采购单价' : form.type === 'PURCHASE' ? '采购单价' : '销售单价'}(元/吨) <span className="text-destructive">*</span></label>
                   <Input className="mt-1" type="number" step="0.01" value={item.unitPrice} onChange={e => updateLineItem(idx, 'unitPrice', e.target.value)} />
                 </div>
                 {form.type === 'BILATERAL' && (
                   <div className="col-span-2">
-                    <label className="text-xs text-muted-foreground">销售单价(元/吨){idx === 0 && <span className="text-destructive">*</span>}</label>
+                    <label className="text-xs text-muted-foreground">销售单价(元/吨) <span className="text-destructive">*</span></label>
                     <Input className="mt-1" type="number" min="0" step="0.01" value={item.salesUnitPrice} onChange={e => updateLineItem(idx, 'salesUnitPrice', e.target.value)} />
                   </div>
                 )}
@@ -535,6 +537,16 @@ export default function ContractEditPage() {
                   </div>
                 )}
               </div>
+              <QualityRulesEditor
+                materialId={item.materialId}
+                scene={form.type === 'SALES' ? 'SALES' : 'PURCHASE'}
+                value={item.qualityRulesSnapshot}
+                onChange={snapshot => {
+                  setIsDirty(true);
+                  setLineItems(current => current.map((line, index) => index === idx ? { ...line, qualityRulesSnapshot: snapshot } : line));
+                }}
+              />
+              </div>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
               <Plus className="h-4 w-4 mr-1" />添加行项
@@ -543,17 +555,17 @@ export default function ContractEditPage() {
 
           {/* 定价参数 */}
           <div className="grid grid-cols-3 gap-x-6 gap-y-4 mt-4">
-            <FormField label="定价类型">
+            <FormField label="定价类型" required>
               <select value={form.pricingType} onChange={e => set('pricingType', e.target.value)} className={SELECT_CLS}>
-                <option value="FIXED">一口价</option>
-                <option value="BASIS">基差定价</option>
-                <option value="FLOATING">不定价</option>
+                <option value="FIXED">固定价格（一口价）</option>
+                {form.pricingType !== 'FIXED' && <option value={form.pricingType}>历史定价方式（仅查看，提交前请改为一口价）</option>}
               </select>
+              {form.pricingType !== 'FIXED' && <span className="text-xs text-amber-700">当前合同为历史定价方式；本阶段新提交仅支持固定价格，请确认纸质合同后改为一口价。</span>}
             </FormField>
-            <FormField label="溢装比例(%)">
+            <FormField label="溢装比例(%)" required>
               <Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} />
             </FormField>
-            <FormField label="短装比例(%)">
+            <FormField label="短装比例(%)" required>
               <Input type="number" min="0" max="100" step="0.01" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} />
             </FormField>
           </div>
@@ -573,7 +585,7 @@ export default function ContractEditPage() {
         <Card className="p-6">
           <SectionTitle>履约与交货</SectionTitle>
           <div className="grid grid-cols-3 gap-x-6 gap-y-4">
-            <FormField label="签订日期">
+            <FormField label="签订日期" required>
               <Input type="date" value={form.signedAt} onChange={e => set('signedAt', e.target.value)} />
             </FormField>
             <FormField label="生效日期">
@@ -582,10 +594,10 @@ export default function ContractEditPage() {
             <FormField label="到期日期">
               <Input type="date" value={form.expireAt} onChange={e => set('expireAt', e.target.value)} />
             </FormField>
-            <FormField label="交货方式">
+            <FormField label="交货方式" required>
               <Input value={form.deliveryMethod} onChange={e => set('deliveryMethod', e.target.value)} placeholder="供应商配送 / 自提 / 库转" />
             </FormField>
-            <FormField label="交货地点">
+            <FormField label="交货地点" required>
               <Input value={form.deliveryLocation} onChange={e => set('deliveryLocation', e.target.value)} />
             </FormField>
             <FormField label="备注">
@@ -598,32 +610,29 @@ export default function ContractEditPage() {
         <Card className="p-6">
           <SectionTitle>结算条款</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <FormField label="结算数量依据">
+            <FormField label="结算数量依据" required>
               <select value={form.settlementBasis} onChange={e => set('settlementBasis', e.target.value)} className={SELECT_CLS}>
                 <option value="WEIGHT">地磅净重</option>
                 <option value="QUALITY">质检干重</option>
                 <option value="CONTRACT">合同约定数量</option>
               </select>
             </FormField>
-            <FormField label="结算方式">
+            <FormField label="结算方式" required>
               <Input
-                list="contract-settlement-methods"
                 value={form.settlementMethod}
                 onChange={e => set('settlementMethod', e.target.value)}
                 maxLength={100}
-                placeholder="选择常用方式或手动填写"
+                placeholder="如：现款现货、预付款结算、账期结算"
               />
-              <datalist id="contract-settlement-methods">
-                {SETTLEMENT_METHOD_SUGGESTIONS.map(method => <option key={method} value={method} />)}
-              </datalist>
             </FormField>
-            <FormField label="预付比例(%)">
-              <Input type="number" value={form.prepayPct} onChange={e => set('prepayPct', e.target.value)} />
+            <FormField label="预付比例(%)" required>
+              <Input type="number" min="0" max="100" value={form.prepayPct} onChange={e => set('prepayPct', e.target.value)} />
+              <span className="text-xs text-muted-foreground">无预付请填写0</span>
             </FormField>
-            <FormField label="尾款账期（天）">
-              <Input type="number" value={form.paymentDays} onChange={e => set('paymentDays', e.target.value)} />
+            <FormField label="尾款账期（天）" required>
+              <Input type="number" min="0" value={form.paymentDays} onChange={e => set('paymentDays', e.target.value)} />
             </FormField>
-            <FormField label="付款方式">
+            <FormField label="付款方式" required>
               <select value={form.paymentMethod} onChange={e => set('paymentMethod', e.target.value)} className={SELECT_CLS}>
                 <option value="T/T">电汇 T/T</option>
                 <option value="BANK_ACCEPTANCE">银行承兑汇票</option>
@@ -631,18 +640,12 @@ export default function ContractEditPage() {
                 <option value="L/C">信用证 L/C</option>
               </select>
             </FormField>
-            <FormField label="扣水规则">
-              <Input value={form.moistureRule} onChange={e => set('moistureRule', e.target.value)} placeholder="每超0.1%扣款（元/吨）" />
-            </FormField>
-            <FormField label="扣杂规则">
-              <Input value={form.impurityRule} onChange={e => set('impurityRule', e.target.value)} placeholder="每超0.1%扣款（元/吨）" />
-            </FormField>
           </div>
         </Card>
 
         <Card className="p-6">
-          <SectionTitle>合同附件</SectionTitle>
-          <p className="mb-3 text-xs text-muted-foreground">支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB。</p>
+          <SectionTitle>合同附件（提交审批必需）</SectionTitle>
+          <p className="mb-3 text-xs text-muted-foreground">提交审批前至少保留或上传一份纸质合同扫描件或签章文件。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB。</p>
           <div className="space-y-2">
             {attachments.map(att => (
               <div key={att.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
