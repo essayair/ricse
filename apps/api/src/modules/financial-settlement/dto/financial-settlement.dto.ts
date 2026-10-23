@@ -5,6 +5,9 @@ export class CreateSettlementLineDto {
   @IsString()
   orderId!: string;
 
+  @IsOptional() @IsString()
+  waybillLineItemId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 3 })
@@ -42,7 +45,7 @@ export class CreateFinancialSettlementDto {
   @IsString()
   sourceNo?: string;
 
-  @IsIn(['BATCH', 'CONTRACT_STAGE', 'CONTRACT_FINAL', 'ADJUSTMENT'])
+  @IsIn(['BATCH', 'GOODS', 'CONTRACT_STAGE', 'CONTRACT_FINAL', 'ADJUSTMENT'])
   settlementScope!: string;
 
   @IsOptional()
@@ -162,8 +165,24 @@ export class CreateFundTransactionDto {
 }
 
 export class CreatePaymentRequestDto {
-  @IsString()
-  contractId!: string;
+  @IsOptional() @IsString()
+  contractId?: string;
+
+  @IsOptional() @IsString()
+  logisticsSettlementId?: string;
+
+  @IsOptional() @IsIn(['CONTRACT', 'BATCH', 'SETTLEMENT', 'LOGISTICS_SETTLEMENT'])
+  basisType?: string;
+
+  @IsOptional() @IsString() stageName?: string;
+  @IsOptional() @IsString() conditionText?: string;
+  @IsOptional() @IsString() clientRequestId?: string;
+  @IsOptional() @IsArray()
+  @IsIn(['SIGNED', 'DISPATCHED', 'ARRIVED', 'SIGNED_RECEIPT', 'QUALITY', 'INBOUND', 'INVOICE', 'DATE', 'OTHER'], { each: true })
+  conditionTypes?: string[];
+
+  @IsOptional() @IsArray() @IsString({ each: true })
+  sourceLineIds?: string[];
 
   @IsOptional()
   @IsString()
@@ -177,7 +196,7 @@ export class CreatePaymentRequestDto {
   @IsString()
   relatedTransactionId?: string;
 
-  @IsIn(['PURCHASE', 'SALES'])
+  @IsIn(['PURCHASE', 'SALES', 'LOGISTICS'])
   businessType!: string;
 
   @IsIn(['ADVANCE', 'PROGRESS', 'SETTLEMENT', 'FINAL', 'GUARANTEE', 'REFUND', 'GUARANTEE_RETURN', 'OTHER'])
@@ -233,6 +252,13 @@ export class CreatePaymentRequestDto {
 }
 
 export class UpdatePaymentRequestDto extends CreatePaymentRequestDto {}
+
+export class CreateFundEarmarkDto {
+  @IsOptional() @IsString() settlementId?: string;
+  @IsOptional() @IsString() orderId?: string;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) amount!: number;
+  @IsString() reason!: string;
+}
 
 export class ClaimFundDto {
   @IsString()

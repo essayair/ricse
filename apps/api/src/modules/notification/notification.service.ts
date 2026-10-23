@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
+import { Prisma } from '@prisma/client';
 
 type PendingNotice = {
   recipientUserId: string;
@@ -22,6 +24,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly access: AccessControlService,
   ) {}
 
   onModuleInit() {
@@ -97,7 +100,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     if (this.syncing) return;
     this.syncing = true;
     try {
-      const [approvals, weighTasks, qualityTasks, inboundReceipts, outboundReceipts] = await Promise.all([
+      const [approvals, weighTasks, qualityTasks, inboundReceipts, outboundReceipts, paymentApprovals] = await Promise.all([
         this.prisma.approval.findMany({
           where: { status: 'PENDING', contract: { deletedAt: null, status: 'PENDING_APPROVAL' } },
           select: {
@@ -133,6 +136,10 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
             waybill: { select: { dispatchNotice: { select: { order: { select: { contract: { select: { businessUnitId: true } } } } } } } },
           },
         }),
+        this.prisma.paymentRequestApproval.findMany({
+          where: { status: 'PENDING', paymentRequest: { status: 'PENDING_APPROVAL' } },
+          select: { id: true, assigneeId: true, nodeName: true, paymentRequest: { select: { id: true, requestNo: true, amount: true } } },
+        }),
       ]);
 
       const notices: PendingNotice[] = approvals.map((item) => ({
@@ -144,6 +151,20 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
         content: `${item.nodeName}：${item.contract.title || item.contract.contractNo}`,
         pagePath: `pages/approvals/detail?contractId=${encodeURIComponent(item.contract.id)}`,
       }));
+      const paymentScopes = new Map<string, Prisma.PaymentRequestWhereInput | null>();
+      for (const item of paymentApprovals) {
+        if (!paymentScopes.has(item.assigneeId)) {
+          try {
+            const context = await this.access.getContext(item.assigneeId);
+            paymentScopes.set(item.assigneeId, context.isAdmin || context.permissions.includes('settlement.payment.approve') ? await this.access.getPaymentRequestScope(item.assigneeId, 'settlement.payment.approve') : null);
+          } catch { paymentScopes.set(item.assigneeId, null); }
+        }
+        const scope = paymentScopes.get(item.assigneeId);
+        if (!scope || !await this.prisma.paymentRequest.findFirst({ where: { id: item.paymentRequest.id, AND: [scope] }, select: { id: true } })) continue;
+        notices.push({ recipientUserId: item.assigneeId, type: 'APPROVAL', businessType: 'PAYMENT_APPROVAL', businessId: item.id,
+          title: '付款申请待审批', content: `${item.nodeName}：${item.paymentRequest.requestNo} · ${item.paymentRequest.amount.toFixed(2)}元`,
+          pagePath: `pages/approvals/detail?paymentRequestId=${encodeURIComponent(item.paymentRequest.id)}` });
+      }
 
       await this.appendFieldTaskNotices(notices, 'WEIGH_TASK', 'quality.manage', weighTasks.map((item) => ({
         id: item.id, ownerId: item.createdBy,
@@ -173,6 +194,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
       for (const notice of notices) await this.upsertNotice(notice);
       await Promise.all([
         this.completeMissing('CONTRACT_APPROVAL', this.activeKeys(notices, 'CONTRACT_APPROVAL')),
+        this.completeMissing('PAYMENT_APPROVAL', this.activeKeys(notices, 'PAYMENT_APPROVAL')),
         this.completeMissing('WEIGH_TASK', this.activeKeys(notices, 'WEIGH_TASK')),
         this.completeMissing('QUALITY_TASK', this.activeKeys(notices, 'QUALITY_TASK')),
         this.completeMissing('INBOUND_RECEIPT', this.activeKeys(notices, 'INBOUND_RECEIPT')),

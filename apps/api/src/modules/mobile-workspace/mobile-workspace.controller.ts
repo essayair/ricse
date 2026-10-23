@@ -342,11 +342,11 @@ export class MobileWorkspaceController {
   @Patch('weigh-files/:waybillId/effective-ticket')
   selectEffectiveWeighTicket(
     @Param('waybillId') waybillId: string,
-    @Body() data: { weighTicketId: string; reason?: string },
+    @Body() data: { weighTicketId: string; reason?: string; purpose?: string },
     @CurrentUser('id') userId: string,
   ) {
     if (!data.weighTicketId) throw new BadRequestException('请选择执行磅单');
-    return this.weighService.selectEffectiveTicket(waybillId, data.weighTicketId, data.reason, userId);
+    return this.weighService.selectEffectiveTicket(waybillId, data.weighTicketId, data.reason, userId, data.purpose);
   }
 
   @Post('weigh-tickets/:id/attachments')
@@ -597,6 +597,27 @@ export class MobileWorkspaceController {
     await this.outboundService.deleteAttachment(id, userId);
     try { await this.fileService.delete(attachment.fileName); } catch {}
     return { deleted: true };
+  }
+
+  @Get('approval-center')
+  approvalCenter(@CurrentUser('id') userId: string, @Query('status') status?: string, @Query('type') type?: string) {
+    return this.service.approvalCenter(userId, status === 'DONE' ? 'DONE' : 'PENDING', type);
+  }
+
+  @Get('payment-approvals/:id')
+  paymentApprovalDetail(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.service.paymentApprovalDetail(userId, id);
+  }
+
+  @Patch('payment-approvals/:id')
+  decidePayment(@CurrentUser('id') userId: string, @Param('id') id: string, @Body() dto: MobileApprovalDecisionDto) {
+    return this.service.decidePayment(userId, id, dto.decision, dto.comment);
+  }
+
+  @Get('payment-approvals/:id/attachments/:attachmentId/view-url')
+  async paymentApprovalAttachment(@CurrentUser('id') userId: string, @Param('id') id: string, @Param('attachmentId') attachmentId: string) {
+    const attachment = await this.service.paymentApprovalAttachment(userId, id, attachmentId);
+    return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
   @Get('approvals')

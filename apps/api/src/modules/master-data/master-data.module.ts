@@ -10,11 +10,14 @@ import { DriverController } from './driver.controller';
 import { DriverService } from './driver.service';
 import { FleetController } from './fleet.controller';
 import { FleetService } from './fleet.service';
+import { TransportResourceService } from './transport-resource.service';
+import { TransportResourceController } from './transport-resource.controller';
+import { AccessControlModule } from '../access-control/access-control.module';
 
 @Module({
-  imports: [CommonModule],
-  controllers: [MasterDataController, PartnerController, ServiceOrganizationController, DriverController, FleetController],
-  providers: [MasterDataService, PartnerService, ServiceOrganizationService, DriverService, FleetService],
+  imports: [CommonModule, AccessControlModule],
+  controllers: [MasterDataController, PartnerController, ServiceOrganizationController, DriverController, FleetController, TransportResourceController],
+  providers: [MasterDataService, PartnerService, ServiceOrganizationService, DriverService, FleetService, TransportResourceService],
   exports: [MasterDataService, PartnerService, ServiceOrganizationService, DriverService, FleetService],
 })
 export class MasterDataModule {}

@@ -1,172 +1,85 @@
 'use client';
-
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { FreightWeightOption } from '@/components/logistics/freight-weight-option';
+import { freightWeightChoices } from '@/lib/logistics-weight';
+import { LogisticsCandidate, LogisticsRate, LogisticsPartner, LogisticsField as Field, logisticsField, num, time, useLogisticsPermission, useLogisticsError } from '@/components/logistics/logistics-shared';
 
-interface CandidateWaybill {
-  id: string;
-  waybillNo: string;
-  plateNo: string | null;
-  signedAt: string | null;
-  originLocation: string | null;
-  destinationLocation: string | null;
-  carrierName: string | null;
-  carrierPending: boolean;
-  payerPartner: { id: string; code: string; name: string } | null;
-  weightSelections: Array<{ quantity: string }>;
-}
-
+interface Line { rateId: string; ticketId: string; weightBasis: 'TICKET' | 'CONFIRMED'; confirmedWeight: string; weightReason: string; unitPrice: string; overrideReason: string; pricingBasis: string }
+const firstRate = (w: LogisticsCandidate) => { const best = w.priceTerms.filter(t => Boolean(t.originLocation) === Boolean(w.priceTerms[0]?.originLocation)); return best.length === 1 ? best[0] : undefined; };
+// 合同参考口径用于判断是否需要说明，不决定新建界面的默认勾选。
+const contractTicketFor = (w: LogisticsCandidate, rate?: LogisticsRate) => rate && rate.contract.defaultWeightBasis !== 'SETTLEMENT' ? w.tickets.find(t => t.weighingStage === rate.contract.defaultWeightBasis)?.id || '' : w.defaultTicketId || '';
 export default function NewLogisticsSettlementPage() {
-  const router = useRouter();
-  const [periodStart, setPeriodStart] = useState('');
-  const [periodEnd, setPeriodEnd] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [candidates, setCandidates] = useState<CandidateWaybill[]>([]);
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [manualPrices, setManualPrices] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [searched, setSearched] = useState(false);
-
-  const search = async () => {
-    if (!periodStart || !periodEnd) { alert('请先选择结算周期'); return; }
-    setLoading(true);
-    setSearched(true);
+  const router = useRouter(), can = useLogisticsPermission();
+  const canManage = can('logistics.settlement.manage');
+  const [from, setFrom] = useState(''), [to, setTo] = useState(''), [search, setSearch] = useState(''), [remarks, setRemarks] = useState('');
+  const [candidates, setCandidates] = useState<LogisticsCandidate[]>([]), [lines, setLines] = useState<Record<string, Line>>({});
+  const [payers, setPayers] = useState<LogisticsPartner[]>([]), [payerId, setPayerId] = useState(''), [changePayer, setChangePayer] = useState(false), [payerReason, setPayerReason] = useState('');
+  const [error, setError] = useLogisticsError('请检查物流结算信息'), [busy, setBusy] = useState(false), [searched, setSearched] = useState(false);
+  useEffect(() => { if (canManage) void api.get<{ payers: LogisticsPartner[] }>('/logistics-settlements/options').then(r => setPayers(r.payers)).catch(e => setError(e.message)); }, [canManage, setError]);
+  const selectedRows = candidates.filter(w => lines[w.id]), first = selectedRows[0];
+  const query = useCallback(async (periodStart = '', periodEnd = '') => {
+    setError(''); setBusy(true);
     try {
-      const query = new URLSearchParams({ periodStart, periodEnd });
-      const result = await api.get<CandidateWaybill[]>(`/logistics-settlements/candidate-waybills?${query}`);
-      setCandidates(result || []);
-      setSelected({});
-    } catch (error: any) { alert(error.message); }
-    finally { setLoading(false); }
+      const params = new URLSearchParams();
+      if (periodStart) params.set('periodStart', periodStart);
+      if (periodEnd) params.set('periodEnd', periodEnd);
+      setCandidates(await api.get('/logistics-settlements/candidate-waybills' + (params.size ? '?' + params : '')));
+      setLines({}); setPayerId(''); setChangePayer(false); setPayerReason(''); setSearched(true);
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  }, [setError]);
+  useEffect(() => { if (canManage) void query(); }, [canManage, query]);
+  const toggle = (w: LogisticsCandidate) => {
+    setError('');
+    if (lines[w.id]) { setLines(rows => { const next = { ...rows }; delete next[w.id]; return next; }); return; }
+    if (!w.payerPartner || !w.businessUnit || !w.carrierPartnerId || !w.tickets.length) { setError('请先补齐货主、事业部、承运方及至少一张已复核磅单'); return; }
+    if (first && (first.payerPartner?.id !== w.payerPartner.id || first.businessUnit?.id !== w.businessUnit.id || first.carrierPartnerId !== w.carrierPartnerId)) { setError('同一结算单请按同一货主、同一事业部、同一承运方选择运单'); return; }
+    const rate = firstRate(w);
+    setLines(rows => ({ ...rows, [w.id]: { rateId: rate?.id || '', ticketId: freightWeightChoices(w.tickets).defaultTicketId, weightBasis: 'TICKET', confirmedWeight: '', weightReason: '', unitPrice: rate?.unitPrice || '', overrideReason: '', pricingBasis: rate?.contract.settlementBasis || 'NET_WEIGHT' } }));
+    if (!first) { setPayerId(w.payerPartner.id); setChangePayer(false); setPayerReason(''); }
   };
-
-  const toggle = (item: CandidateWaybill) => setSelected((prev) => {
-    if (prev[item.id]) return { ...prev, [item.id]: false };
-    if (!item.payerPartner) {
-      alert('该运单对应合同缺少我方签约主体，暂不能结算');
-      return prev;
-    }
-    const selectedItem = candidates.find((candidate) => prev[candidate.id]);
-    if (selectedItem?.payerPartner?.id !== undefined && selectedItem.payerPartner.id !== item.payerPartner.id) {
-      alert(`一张物流结算单只能对应一个货主方；当前已选择“${selectedItem.payerPartner.name}”`);
-      return prev;
-    }
-    return { ...prev, [item.id]: true };
-  });
-
-  const submit = async () => {
-    const waybillIds = Object.keys(selected).filter((id) => selected[id]);
-    if (!waybillIds.length) { alert('请至少勾选一张运单'); return; }
-    setSubmitting(true);
-    try {
-      const lines = waybillIds.map((waybillId) => {
-        const manual = manualPrices[waybillId];
-        return { waybillId, manualUnitPrice: manual ? Number(manual) : undefined };
-      });
-      const created = await api.post<{ id: string }>('/logistics-settlements', {
-        periodStart, periodEnd, remarks: remarks || undefined, lines,
-      });
-      router.push(`/dashboard/logistics-settlements/${created.id}`);
-    } catch (error: any) { alert(error.message); }
-    finally { setSubmitting(false); }
-  };
-
-  const selectedCount = Object.values(selected).filter(Boolean).length;
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">新建物流结算单</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          选择结算周期后，系统列出该周期内已签收且尚未结算的运单；能匹配到生效合同运价的自动带出单价，其余需要手工填写单价（运满满、临时车辆）
-        </p>
-      </div>
-
-      <Card className="space-y-3 p-6">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">结算周期开始</label>
-            <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">结算周期结束</label>
-            <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-          </div>
-          <div className="flex items-end">
-            <Button variant="outline" onClick={() => void search()} disabled={loading}>{loading ? '查询中...' : '查询可结算运单'}</Button>
-          </div>
+  const put = (id: string, key: keyof Line, value: string) => setLines(rows => ({ ...rows, [id]: { ...rows[id], [key]: value } }));
+  const changeRate = (w: LogisticsCandidate, id: string) => { const rate = w.priceTerms.find(t => t.id === id); setLines(rows => ({ ...rows, [w.id]: { ...rows[w.id], rateId: id, unitPrice: rate?.unitPrice || '', overrideReason: '', pricingBasis: rate?.contract.settlementBasis || 'NET_WEIGHT', ticketId: rows[w.id].ticketId || freightWeightChoices(w.tickets).defaultTicketId, ...(rate?.contract.settlementBasis === 'TRIP' ? { weightBasis: 'TICKET', confirmedWeight: '' } : {}) } })); };
+  const selectTicket = (w: LogisticsCandidate, ticketId: string) => setLines(rows => rows[w.id] ? ({ ...rows, [w.id]: { ...rows[w.id], ticketId, weightBasis: 'TICKET', confirmedWeight: '' } }) : rows);
+  const amount = (w: LogisticsCandidate) => { const l = lines[w.id]; if (!l) return 0; const ticket = w.tickets.find(t => t.id === l.ticketId); const qty = l.pricingBasis === 'TRIP' ? 1 : l.weightBasis === 'CONFIRMED' ? Number(l.confirmedWeight) : Number(l.pricingBasis === 'GROSS_WEIGHT' ? ticket?.grossWeight : ticket?.netWeight); return Math.round((qty * Number(l.unitPrice) + Number.EPSILON) * 100) / 100 || 0; };
+  const save = async () => { setBusy(true); setError(''); try {
+    if (!first) throw new Error('请至少选择一张运单');
+    const payload = selectedRows.map(w => { const l = lines[w.id]; if (!l.ticketId) throw new Error(w.waybillNo + ' 请选择运费计费磅单'); if (w.priceTerms.length > 1 && !l.rateId) throw new Error(w.waybillNo + ' 请选择使用的合同运价');
+      if ((l.weightBasis === 'CONFIRMED' || l.ticketId !== contractTicketFor(w, w.priceTerms.find(rate => rate.id === l.rateId))) && !l.weightReason.trim()) throw new Error(w.waybillNo + '：所选计费磅单与合同参考口径不同或使用双方确认重量，请补充重量依据说明');
+      return { waybillId: w.id, contractPriceTermId: l.rateId || undefined, weighTicketId: l.ticketId, weightBasis: l.weightBasis, confirmedWeight: l.weightBasis === 'CONFIRMED' ? Number(l.confirmedWeight) : undefined, weightReason: l.weightReason || undefined, manualUnitPrice: l.unitPrice ? Number(l.unitPrice) : undefined, overrideReason: l.overrideReason || undefined, pricingBasis: l.pricingBasis === 'GROSS_WEIGHT' ? undefined : l.pricingBasis };
+    });
+    const created = await api.post<{ id: string }>('/logistics-settlements', { periodStart: from || undefined, periodEnd: to || undefined, payerPartnerId: payerId || first.payerPartner?.id, payerChangeReason: payerReason || undefined, remarks, lines: payload });
+    router.push('/dashboard/logistics-settlements/' + created.id);
+  } catch (e: any) { setError(e.message); } finally { setBusy(false); } };
+  return <div className="space-y-5 pb-8"><div className="flex items-center justify-between"><h1 className="text-xl font-semibold">新建物流结算单</h1><Button variant="outline" onClick={() => router.push('/dashboard/logistics-settlements')}>返回列表</Button></div>
+    {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+    <Card className="space-y-4 p-5"><h2 className="font-semibold">选择运输范围</h2><div className="grid items-end gap-4 md:grid-cols-3"><Field label="签收开始日期（选填）"><Input type="date" value={from} onChange={e => setFrom(e.target.value)}/></Field><Field label="签收结束日期（选填）"><Input type="date" value={to} onChange={e => setTo(e.target.value)}/></Field><div className="flex gap-2"><Button className="flex-1" variant="outline" disabled={busy || !canManage} onClick={() => void query(from, to)}>{busy ? '查询中…' : '查询可结算运单'}</Button><Button variant="outline" disabled={busy || !canManage} onClick={() => { setFrom(''); setTo(''); void query(); }}>重置</Button></div></div><p className="text-xs text-muted-foreground">默认展示当前权限范围内全部已签收、尚未结算的运单，日期仅用于筛选。不填日期时，结算周期按所选运单的签收日期自动生成。每张结算单对应同一事业部、货主及承运方。</p></Card>
+    {first && <Card className="space-y-4 p-5"><h2 className="font-semibold">结算主体</h2><div className="grid gap-4 text-sm md:grid-cols-2"><div><p className="text-muted-foreground">业务货主</p><p className="mt-1">{first.payerPartner?.name}</p></div><div><p className="text-muted-foreground">事业部 / 承运方</p><p className="mt-1">{first.businessUnit?.name} / {first.carrierName}</p></div></div><div className="flex items-center gap-3 text-sm"><span>本次付款主体：{payers.find(p => p.id === payerId)?.name || first.payerPartner?.name}</span><Button size="sm" variant="outline" onClick={() => setChangePayer(!changePayer)}>修改</Button></div>{changePayer && <div className="grid gap-4 md:grid-cols-2"><Field label="付款主体"><select className={logisticsField} value={payerId} onChange={e => setPayerId(e.target.value)}>{payers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field><Field label="修改原因 / 付款安排说明"><Input value={payerReason} onChange={e => setPayerReason(e.target.value)} placeholder="说明代付或其他约定，不改变原业务货主"/></Field></div>}{selectedRows.some(w => { const t = w.priceTerms.find(t => t.id === lines[w.id].rateId); return t && t.contract.signingPartnerId !== payerId; }) && <p className="text-sm text-amber-700">付款主体与所选物流合同签约主体不同，请点击“修改”填写付款安排说明，提交后由复核人员核对。</p>}</Card>}
+    {searched && <Card className="overflow-hidden"><div className="space-y-3 border-b p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">可结算运单（已选 {selectedRows.length} / {candidates.length}）</h2><Input className="max-w-sm" value={search} onChange={e => setSearch(e.target.value)} placeholder="运单、车牌、货物、企业模糊搜索"/></div><p className="text-xs text-muted-foreground">默认选用收货净重，只有一张有效磅单时选用该张。勾选运单后可切换发货或收货重量；<span className="text-primary">蓝色“较低”</span>仅作比较提示，不自动选用较低值。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[1400px] text-sm"><thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>{['选择', '运单 / 车牌', '货物 / 业务方向', '货主 / 事业部', '承运方 / 路线', '发货净重（吨）', '收货净重（吨）', '发货 / 签收时间'].map(t => <th key={t} className="whitespace-nowrap p-3">{t}</th>)}</tr></thead><tbody>{candidates.filter(w => [w.waybillNo, w.plateNo, w.materialName, w.payerPartner?.name, w.carrierName].join(' ').toLowerCase().includes(search.trim().toLowerCase())).map(w => {
+      const l = lines[w.id], choices = freightWeightChoices(w.tickets, l?.ticketId), selectedTicketId = l ? l.ticketId : choices.defaultTicketId;
+      const disabled = w.carrierPending || !w.payerPartner || !w.businessUnit || !choices.defaultTicketId;
+      return <tr key={w.id} className={l ? 'border-b bg-primary/5 align-top' : 'border-b align-top'}><td className="p-3"><input aria-label={'选择运单' + w.waybillNo} type="checkbox" checked={!!l} disabled={busy || disabled} onChange={() => toggle(w)}/></td><td className="whitespace-nowrap p-3"><div>{w.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{w.plateNo || '—'}</div></td><td className="min-w-40 p-3">{w.materialName}<div className="mt-1 text-xs text-muted-foreground">{w.businessType === 'PURCHASE' ? '采购收货' : '销售发货'}</div></td><td className="min-w-48 p-3">{w.payerPartner?.name || '货主待补充'}<div className="mt-1 text-xs text-muted-foreground">{w.businessUnit?.name || '事业部待补充'}</div></td><td className="min-w-48 p-3">{w.carrierName || '承运方待确定'}<div className="mt-1 text-xs text-muted-foreground">{w.originLocation || '—'} → {w.destinationLocation || '—'}</div>{!choices.defaultTicketId && <p className="mt-1 text-xs text-amber-700">缺少已复核有效磅单</p>}</td>{(['SHIPPING', 'RECEIVING'] as const).map(stage => { const ticket = stage === 'SHIPPING' ? choices.shipping : choices.receiving; return <td key={stage} className="min-w-44 p-3"><FreightWeightOption ticket={ticket} stage={stage} waybillNo={w.waybillNo} group={'freight-weight-' + w.id} checked={l?.weightBasis !== 'CONFIRMED' && !!ticket && selectedTicketId === ticket.id} lower={choices.lowerStage === stage} disabled={busy || disabled || !l} onSelect={ticketId => selectTicket(w, ticketId)}/></td>; })}<td className="whitespace-nowrap p-3 text-xs">{time(w.departedAt)}<div className="mt-1 text-muted-foreground">{time(w.signedAt)}</div></td></tr>;
+    })}{!candidates.length && <tr><td colSpan={8} className="p-10 text-center text-muted-foreground">当前筛选条件下没有可结算运单</td></tr>}</tbody></table></div></Card>}
+    {selectedRows.map(w => { const l = lines[w.id], rate = w.priceTerms.find(t => t.id === l.rateId), ticket = w.tickets.find(t => t.id === l.ticketId), expected = contractTicketFor(w, rate);
+      return <Card className="space-y-4 p-5" key={w.id}>
+        <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{w.waybillNo} · {w.plateNo || '未填车牌'}</h2><span className="text-sm font-medium">含税金额：{num(amount(w), 2)} 元</span></div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <Field label="物流合同运价"><select className={logisticsField} value={l.rateId} onChange={e => changeRate(w, e.target.value)}><option value="">{w.priceTerms.length ? '请选择适用合同运价' : '无适用合同，手工确认运价'}</option>{w.priceTerms.map(t => <option key={t.id} value={t.id}>{t.contract.contractNo} · {t.contract.title || ''} · {t.unitPrice} {t.contract.settlementBasis === 'TRIP' ? '元/车次' : '元/吨'} · {t.originLocation ? t.originLocation + '→' + t.destinationLocation : '不限路线'}</option>)}</select></Field>
+          <Field label="计价方式"><select className={logisticsField} disabled={!!rate} value={l.pricingBasis} onChange={e => put(w.id, 'pricingBasis', e.target.value)}><option value="NET_WEIGHT">按净重（元/吨）</option><option value="TRIP">按车次（元/车次）</option>{l.pricingBasis === 'GROSS_WEIGHT' && <option value="GROSS_WEIGHT">按毛重（历史口径）</option>}</select></Field>
+          <Field label="本次含税结算单价"><Input type="number" min="0.01" step="0.01" value={l.unitPrice} onChange={e => put(w.id, 'unitPrice', e.target.value)}/></Field>
+          <Field label="运费计费磅单 *"><select className={logisticsField} value={l.ticketId} onChange={e => selectTicket(w, e.target.value)}><option value="">请选择有效磅单</option>{w.tickets.map(t => <option key={t.id} value={t.id}>{t.ticketNo} · {t.weighingStage === 'SHIPPING' ? '发货' : '收货'} · 净重 {t.netWeight} 吨{t.id === freightWeightChoices(w.tickets).defaultTicketId ? '（默认）' : ''}</option>)}</select></Field>
+          <Field label="计费重量口径"><select className={logisticsField} value={l.weightBasis} disabled={l.pricingBasis === 'TRIP'} onChange={e => put(w.id, 'weightBasis', e.target.value)}><option value="TICKET">使用选定磅单重量</option><option value="CONFIRMED">双方确认重量</option></select></Field>
+          {l.weightBasis === 'CONFIRMED' && <Field label="双方确认重量（吨） *"><Input type="number" min="0.001" step="0.001" value={l.confirmedWeight} onChange={e => put(w.id, 'confirmedWeight', e.target.value)}/></Field>}
+          <Field label={'重量依据说明' + (l.ticketId !== expected || l.weightBasis === 'CONFIRMED' ? ' *' : '')}><Input value={l.weightReason} onChange={e => put(w.id, 'weightReason', e.target.value)} placeholder="不同于合同参考口径或双方确认重量时必填"/></Field>
+          {rate && Number(l.unitPrice) !== Number(rate.unitPrice) && <Field label="运价调整原因 *"><Input value={l.overrideReason} onChange={e => put(w.id, 'overrideReason', e.target.value)} placeholder="原合同运价不变，仅调整本次结算"/></Field>}
         </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium">备注</label>
-          <Input value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="选填" />
-        </div>
-      </Card>
-
-      {searched && (
-        <Card className="overflow-hidden">
-          <div className="border-b p-4 font-medium">
-            可结算运单（{candidates.length} 条，已选 {selectedCount} 条）
-          </div>
-          {!candidates.length ? (
-            <div className="p-12 text-center text-muted-foreground">该周期内没有可结算的运单</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-sm">
-                <thead className="border-b bg-muted/50 text-left text-muted-foreground">
-                  <tr>
-                    <th className="p-3"></th>
-                    <th className="p-3">运单号</th>
-                    <th className="p-3">车牌</th>
-                    <th className="p-3">线路</th>
-                    <th className="p-3">承运方</th>
-                    <th className="p-3">货主方（我方签约主体）</th>
-                    <th className="p-3">签收时间</th>
-                    <th className="p-3">净重</th>
-                    <th className="p-3">手工单价（未匹配合同价时填写）</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {candidates.map((item) => (
-                    <tr key={item.id} className={`border-b ${item.carrierPending ? 'bg-amber-50' : ''}`}>
-                      <td className="p-3">
-                        <input type="checkbox" checked={!!selected[item.id]} disabled={item.carrierPending || !item.payerPartner}
-                          onChange={() => toggle(item)} title={item.carrierPending ? '请先确定该运单的开票承运商' : !item.payerPartner ? '合同缺少我方签约主体' : undefined} />
-                      </td>
-                      <td className="p-3 font-mono">{item.waybillNo}</td>
-                      <td className="p-3">{item.plateNo || '—'}</td>
-                      <td className="p-3">{item.originLocation || '—'} → {item.destinationLocation || '—'}</td>
-                      <td className="p-3">
-                        {item.carrierPending
-                          ? <span className="text-amber-700" title="社会运力运单尚未补绑开票承运商，请先到运单详情页完成绑定">请先确定该运单的开票承运商</span>
-                          : (item.carrierName || '—')}
-                      </td>
-                      <td className="p-3">{item.payerPartner ? `${item.payerPartner.name}（${item.payerPartner.code}）` : <span className="text-destructive">合同未设置</span>}</td>
-                      <td className="p-3 text-xs text-muted-foreground">{item.signedAt?.slice(0, 16).replace('T', ' ') || '—'}</td>
-                      <td className="p-3">{item.weightSelections[0]?.quantity ?? '—'}</td>
-                      <td className="p-3">
-                        <Input type="number" className="w-32" placeholder="留空则按合同价自动匹配" disabled={item.carrierPending}
-                          value={manualPrices[item.id] || ''}
-                          onChange={(e) => setManualPrices((prev) => ({ ...prev, [item.id]: e.target.value }))} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="flex justify-end gap-2 border-t p-4">
-            <Button variant="outline" onClick={() => router.back()}>取消</Button>
-            <Button disabled={submitting || !selectedCount} onClick={() => void submit()}>
-              {submitting ? '提交中...' : `创建结算单（${selectedCount} 条）`}
-            </Button>
-          </div>
-        </Card>
-      )}
-    </div>
-  );
+        <p className="text-xs text-muted-foreground">选用磅单毛重 {num(ticket?.grossWeight)} 吨，皮重 {num(ticket?.tareWeight)} 吨，净重 {num(ticket?.netWeight)} 吨。物流选择不修改库存和货款依据。{l.weightBasis === 'CONFIRMED' && '保存草稿后请在详情上传双方重量确认依据。'}</p>
+      </Card>;
+    })}
+    <Card className="p-5"><Field label="结算说明"><Input value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="其他费用或付款安排说明"/></Field></Card><div className="sticky bottom-0 flex items-center justify-between gap-3 border-t bg-background/95 p-4"><p className="text-sm">已选 {selectedRows.length} 车 · 含税合计 {num(selectedRows.reduce((sum, w) => sum + amount(w), 0), 2)} 元</p><Button disabled={busy || !selectedRows.length || !can('logistics.settlement.manage')} onClick={() => void save()}>{busy ? '保存中…' : '保存结算草稿'}</Button></div>
+  </div>;
 }

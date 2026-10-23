@@ -291,7 +291,7 @@ export class ContractService {
       signingPartnerId: string | null;
       sellerId: string | null;
       buyerId: string | null;
-      attachments?: Array<{ id: string }>;
+      attachments: Array<{ id: string }>;
       lineItems: Array<{
         materialId: string;
         quantity: unknown;
@@ -723,6 +723,7 @@ export class ContractService {
           departmentId: true,
           businessUnitId: true,
           createdBy: true,
+          attachments: { select: { id: true } },
           lineItems: {
             select: {
               materialId: true,

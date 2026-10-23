@@ -236,9 +236,9 @@ export class QualityTaskController {
   @ApiOperation({ summary: '确认按合同扣款接收货物并生成待入库单' })
   acceptContractDeduction(
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body() body: { reason?: string; decisionVersion?: number },
     @CurrentUser('id') userId: string,
   ) {
-    return this.service.acceptContractDeduction(id, body.reason || '', userId);
+    return this.service.acceptContractDeduction(id, body.reason || '', userId, body.decisionVersion);
   }
 }

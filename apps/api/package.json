@@ -7,9 +7,9 @@
     "seed": "tsx prisma/seed.ts"
   },
   "scripts": {
-    "dev": "nest start --watch",
-    "dev:content": "nest start --watch --entryFile content-main",
-    "dev:worker": "nest start --watch --entryFile worker-main",
+    "dev": "nest start --watch --path tsconfig.dev-core.json",
+    "dev:content": "nest start --watch --path tsconfig.dev-content.json --entryFile content-main",
+    "dev:worker": "nest start --watch --path tsconfig.dev-worker.json --entryFile worker-main",
     "build": "nest build",
     "start": "node dist/src/main.js",
     "start:content": "node dist/src/content-main.js",

@@ -674,13 +674,13 @@ export default function ContractEditPage() {
                   setIsDirty(true);
                   setPendingAttachments(current => current.filter((_, i) => i !== index));
                 }} aria-label={`移除 ${item.name}`}>
-                  <X className="h-4 w-4" />
+                  <X className="mr-1 h-4 w-4" />移除附件
                 </Button>
               </div>
             ))}
             <label className={`inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-muted ${uploadingAttachments ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
-              <Paperclip className="mr-2 h-4 w-4" />选择附件
-              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" className="hidden" onChange={e => {
+              <Paperclip className="mr-2 h-4 w-4" />选择合同附件
+              <input aria-label="选择合同附件" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" className="hidden" onChange={e => {
                 const selectedFiles = selectValidAttachmentFiles(Array.from(e.currentTarget.files || []));
                 if (selectedFiles.length > 0) setIsDirty(true);
                 setPendingAttachments(current => [...current, ...selectedFiles.map(file => ({ file, name: file.name }))]);

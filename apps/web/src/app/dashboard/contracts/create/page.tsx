@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, TrendingDown, TrendingUp, Zap, Save } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
-import { openLocalAttachment } from '@/lib/attachment-preview';
+import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
 import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachment-file';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
+import { confirmAction } from '@/lib/system-dialog';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -61,6 +62,7 @@ export default function ContractCreatePage() {
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
   const [departmentError, setDepartmentError] = useState('');
   const [files, setFiles] = useState<Array<{ file: File; name: string }>>([]);
+  const [uploadedAttachments, setUploadedAttachments] = useState<Array<{ id: string; originalName: string }>>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -197,6 +199,8 @@ export default function ContractCreatePage() {
       if (!response.ok) {
         throw new Error(await attachmentUploadError(response, item.name));
       }
+      const uploaded = await response.json();
+      setUploadedAttachments(current => [...current.filter(entry => entry.id !== uploaded.id), uploaded]);
       // 上传成功后立即从待上传列表移除，后续重试不会重复上传。
       setFiles(current => current.filter(entry => entry !== item));
     }
@@ -503,16 +507,17 @@ export default function ContractCreatePage() {
           <SectionTitle>合同附件（必填）</SectionTitle>
           <p className="text-xs text-muted-foreground mb-3">提交审批前至少上传一份纸质合同扫描件或签章文件。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB；草稿可暂不上传。</p>
           <label className="block border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
-            <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" onChange={(e) => {
+            <input aria-label="选择合同附件" type="file" multiple disabled={submitting} accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" onChange={(e) => {
               const selectedFiles = selectValidAttachmentFiles(Array.from(e.currentTarget.files || []));
               if (selectedFiles.length > 0) setIsDirty(true);
               setFiles(prev => [...prev, ...selectedFiles.map(file => ({ file, name: file.name }))]);
               e.target.value = '';
             }} className="hidden" />
             <div className="text-2xl mb-2">📎</div>
-            <div className="text-sm font-semibold">点击或拖拽上传附件</div>
-            <div className="text-xs text-muted-foreground mt-1">纸质合同扫描件、签章文件等</div>
+            <div className="text-sm font-semibold">选择合同附件</div>
+            <div className="text-xs text-muted-foreground mt-1">纸质合同扫描件、签章文件等，保存或提交时自动上传</div>
           </label>
+          {uploadedAttachments.length > 0 && <div className="mt-3 space-y-2">{uploadedAttachments.map(item => <div key={item.id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.originalName}</span><span className="shrink-0 text-xs text-muted-foreground">已上传</span><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>查看附件</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div>)}</div>}
           {files.length > 0 && (
             <div className="mt-3 space-y-1.5">
               {files.map((item, i) => (
@@ -521,19 +526,19 @@ export default function ContractCreatePage() {
                     try { openLocalAttachment(item.file); }
                     catch (e: any) { alert(e.message || '附件打开失败'); }
                   }} className="shrink-0 text-primary hover:underline">查看</button>
-                  <Input value={item.name} onChange={e => {
+                  <Input value={item.name} disabled={submitting} onChange={e => {
                     setIsDirty(true);
                     setFiles(current => current.map((entry, index) => index === i ? { ...entry, name: e.target.value } : entry));
                   }} placeholder="附件名称" />
-                  <span className="shrink-0 text-xs text-muted-foreground">{(item.file.size / 1024).toFixed(0)} KB</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">待上传 · {(item.file.size / 1024).toFixed(0)} KB</span>
                   <button type="button" onClick={() => {
                     try { openLocalAttachment(item.file); }
                     catch (e: any) { alert(e.message || '附件打开失败'); }
                   }} className="text-primary text-xs">预览</button>
-                  <button type="button" onClick={() => {
+                  <button type="button" disabled={submitting} onClick={() => {
                     setIsDirty(true);
                     setFiles(prev => prev.filter((_, j) => j !== i));
-                  }} className="text-destructive text-xs">×</button>
+                  }} className="shrink-0 text-destructive text-xs">移除附件</button>
                 </div>
               ))}
             </div>

@@ -799,7 +799,7 @@ export class WeighTicketService {
     userId: string,
   ) {
     if (!SELECTION_PURPOSES.includes(purpose)) throw new BadRequestException('磅单选用用途无效');
-    return this.selectEffectiveTicket(waybillId, weighTicketId, reason, userId);
+    return this.selectEffectiveTicket(waybillId, weighTicketId, reason, userId, purpose);
   }
 
   async selectEffectiveTicket(
@@ -807,24 +807,51 @@ export class WeighTicketService {
     weighTicketId: string,
     reason: string | undefined,
     userId: string,
+    purpose?: string,
   ) {
+    if (purpose && !SELECTION_PURPOSES.includes(purpose)) throw new BadRequestException('磅单选用用途无效');
     await this.accessControl.assertPermission(userId, 'quality.manage');
     const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null, AND: [scope] },
-      select: { id: true },
+      select: { id: true, dispatchNotice: { select: { type: true } } },
     });
     if (!waybill) throw new NotFoundException('物流运单不存在');
     const ticket = await this.prisma.weighTicket.findFirst({
       where: { id: weighTicketId, waybillId, deletedAt: null, status: 'REVIEWED' },
-      select: { id: true, ticketNo: true, netWeight: true },
+      select: { id: true, ticketNo: true, netWeight: true, weighingStage: true },
     });
     if (!ticket) throw new BadRequestException('只能选用该运单下已复核的有效磅单');
     const quantity = Number(ticket.netWeight || 0);
     if (quantity <= 0) throw new BadRequestException('所选磅单缺少有效净重');
-    const selections = await this.setEffectiveSelection(waybillId, ticket.id, quantity, reason, userId, true);
+    const selections = waybill.dispatchNotice?.type === 'SALES'
+      ? await this.setSalesSelection(waybillId, ticket, purpose || (ticket.weighingStage === 'RECEIVING' ? 'SETTLEMENT' : 'INVENTORY'), reason, userId)
+      : await this.setEffectiveSelection(waybillId, ticket.id, quantity, reason, userId, true);
     await this.syncTaskForWaybill(waybillId, userId);
     return selections;
+  }
+
+  private async setSalesSelection(waybillId: string, ticket: { id: string; netWeight: unknown; weighingStage: string }, purpose: string, reason: string | undefined, userId: string) {
+    if (purpose === 'INVENTORY' && ticket.weighingStage !== 'SHIPPING') throw new BadRequestException('销售出库依据应选择我方发货磅单，客户收货磅单可用于销售货款结算');
+    return this.prisma.$transaction(async tx => {
+      const key = 'weigh-selection:' + waybillId;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text`;
+      const current = await tx.waybillWeightSelection.findFirst({ where: { waybillId, purpose, isCurrent: true } });
+      if (current?.weighTicketId === ticket.id) return [current];
+      if (current && !reason?.trim()) throw new BadRequestException('更换磅单必须填写变更原因');
+      if (purpose === 'INVENTORY') {
+        const posted = await tx.outboundReceipt.findFirst({ where: { waybillId, status: { in: ['POSTED', 'READY', 'VARIANCE_PENDING'] }, deletedAt: null }, select: { receiptNo: true } });
+        if (posted) throw new BadRequestException('出库已过账或完成拣配，不能直接更换我方出库磅单；请先处理出库更正');
+      } else if (current && await tx.financialSettlementLine.count({ where: { weightSelectionId: current.id, settlement: { direction: 'RECEIVABLE', status: { notIn: ['DRAFT', 'VOIDED'] }, deletedAt: null } } })) {
+        throw new BadRequestException('该销售货款依据已被确认结算引用，请先处理关联结算更正');
+      }
+      await tx.waybillWeightSelection.updateMany({ where: { waybillId, purpose, isCurrent: true }, data: { isCurrent: false } });
+      const selection = await tx.waybillWeightSelection.create({ data: { waybillId, purpose, weighTicketId: ticket.id, quantity: Number(ticket.netWeight), reason: reason?.trim() || '系统按销售业务节点默认选用', selectedBy: userId }, include: {
+        weighTicket: { select: { id: true, ticketNo: true, weighingStage: true, sequence: true, netWeight: true } }, selector: { select: { id: true, name: true } },
+      } });
+      if (purpose === 'INVENTORY') await tx.outboundReceipt.updateMany({ where: { waybillId, status: 'PENDING', deletedAt: null }, data: { weighTicketId: ticket.id } });
+      return [selection];
+    });
   }
 
   private async setEffectiveSelection(
@@ -908,6 +935,13 @@ export class WeighTicketService {
     });
     const quantity = Number(ticket.netWeight || 0);
     if (quantity <= 0) return;
+    if (ticket.waybill.dispatchNotice.type === 'SALES') {
+      const purpose = ticket.weighingStage === 'SHIPPING' ? 'INVENTORY' : 'SETTLEMENT';
+      const current = await this.prisma.waybillWeightSelection.findFirst({ where: { waybillId: ticket.waybillId, purpose, isCurrent: true } });
+      const count = await this.prisma.weighTicket.count({ where: { waybillId: ticket.waybillId, weighingStage: ticket.weighingStage, deletedAt: null, status: { not: 'VOIDED' } } });
+      if (!current && count === 1) await this.setSalesSelection(ticket.waybillId, ticket, purpose, undefined, userId);
+      return;
+    }
     const current = await this.prisma.waybillWeightSelection.findFirst({
       where: { waybillId: ticket.waybillId, purpose: { in: SELECTION_PURPOSES }, isCurrent: true },
     });

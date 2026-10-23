@@ -18,10 +18,10 @@ interface BankAccount {
 }
 
 interface PaymentRequest {
-  id: string; requestNo: string; status: string; businessType: 'PURCHASE' | 'SALES'; paymentStage: string; paymentMethod: string; amount: string;
+  id: string; requestNo: string; status: string; businessType: 'PURCHASE' | 'SALES' | 'LOGISTICS'; paymentStage: string; paymentMethod: string; amount: string;
   purpose?: string | null; ourBankAccount?: string | null; ourBankAccountName?: string | null; ourBankName?: string | null;
   counterpartyBankAccount?: string | null; counterpartyBankAccountName?: string | null; counterpartyBankName?: string | null;
-  actualPayeeName?: string | null; contract: { id: string; contractNo: string; title: string };
+  actualPayeeName?: string | null; logisticsSettlement?: { id: string; settlementNo: string } | null; contract?: { id: string; contractNo: string; title: string } | null;
   order?: { id: string; orderNo: string; name?: string | null } | null; businessUnit?: { name: string } | null;
   legalEntity: { id: string; name: string; bankAccounts: BankAccount[] };
   counterparty: { id: string; name: string; bankAccounts: BankAccount[] };
@@ -84,7 +84,7 @@ export default function CreatePaymentPage() {
   const remainingAmount = Math.max(0, Number(selected?.amount || 0) - paidAmount);
   const filteredRequests = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return requests.filter(item => !needle || `${item.requestNo} ${item.contract.contractNo} ${item.contract.title} ${item.legalEntity.name} ${item.counterparty.name}`.toLowerCase().includes(needle));
+    return requests.filter(item => !needle || `${item.requestNo} ${item.contract?.contractNo || ''} ${item.contract?.title || ''} ${item.logisticsSettlement?.settlementNo || ''} ${item.legalEntity.name} ${item.counterparty.name}`.toLowerCase().includes(needle));
   }, [requests, search]);
 
   const resetFromRequest = (requestId: string) => {
@@ -192,8 +192,8 @@ export default function CreatePaymentPage() {
     <SettlementSectionTabs section="payable" />
     <div className="flex items-start gap-3"><Button variant="ghost" size="icon" asChild><Link href="/dashboard/payments"><ArrowLeft className="h-4 w-4" /></Link></Button><div><h1 className="text-2xl font-bold">创建付款单</h1><p className="mt-1 text-sm text-muted-foreground">选择已审批付款申请，上传银行付款凭证并核对识别结果</p></div></div>
 
-    <Card className="space-y-4 p-6"><h2 className="font-semibold">一、选择付款申请</h2><div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(360px,2fr)]"><Field label="申请单/合同/企业搜索"><Input placeholder="输入申请单号、合同号或企业名称" value={search} onChange={event => setSearch(event.target.value)} /></Field><Field label="付款申请单 *"><select className={fieldClass} value={selectedId} disabled={loading} onChange={event => resetFromRequest(event.target.value)}><option value="">请选择已审批且尚未付清的付款申请</option>{filteredRequests.map(item => <option key={item.id} value={item.id}>{item.requestNo} · {item.contract.contractNo} · {item.legalEntity.name} → {item.counterparty.name}</option>)}</select></Field></div>
-      {selected && <><div className="grid gap-4 rounded-md bg-muted/30 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><Info label="付款申请单" value={selected.requestNo}/><Info label="合同" value={`${selected.contract.contractNo} · ${selected.contract.title}`}/><Info label="业务单元（事业部）" value={selected.businessUnit?.name || '—'}/><Info label="执行批次" value={selected.order ? `${selected.order.orderNo} · ${selected.order.name || '未命名批次'}` : '按合同'}/><Info label="我方付款主体" value={selected.legalEntity.name}/><Info label="交易对手方" value={selected.counterparty.name}/><Info label="申请金额" value={money(selected.amount)}/><Info label="剩余待付" value={money(remainingAmount)} emphasis/></div><div className="grid gap-4 rounded-md border p-4 text-sm md:grid-cols-2"><AccountCard title="申请计划付款账户" name={selected.ourBankAccountName || selected.legalEntity.name} bank={selected.ourBankName} account={selected.ourBankAccount}/><AccountCard title="申请计划收款账户" name={selected.counterpartyBankAccountName || selected.actualPayeeName || selected.counterparty.name} bank={selected.counterpartyBankName} account={selected.counterpartyBankAccount}/></div></>}
+    <Card className="space-y-4 p-6"><h2 className="font-semibold">一、选择付款申请</h2><div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(360px,2fr)]"><Field label="申请单/合同/企业搜索"><Input placeholder="输入申请单号、合同号或企业名称" value={search} onChange={event => setSearch(event.target.value)} /></Field><Field label="付款申请单 *"><select className={fieldClass} value={selectedId} disabled={loading} onChange={event => resetFromRequest(event.target.value)}><option value="">请选择已审批且尚未付清的付款申请</option>{filteredRequests.map(item => <option key={item.id} value={item.id}>{item.requestNo} · {item.logisticsSettlement?.settlementNo || item.contract?.contractNo || '—'} · {item.legalEntity.name} → {item.counterparty.name}</option>)}</select></Field></div>
+      {selected && <><div className="grid gap-4 rounded-md bg-muted/30 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><Info label="付款申请单" value={selected.requestNo}/><Info label={selected.businessType === 'LOGISTICS' ? '物流结算单' : '合同'} value={selected.logisticsSettlement?.settlementNo || `${selected.contract?.contractNo || '—'} · ${selected.contract?.title || ''}`}/><Info label="业务单元（事业部）" value={selected.businessUnit?.name || '—'}/><Info label="执行批次" value={selected.order ? `${selected.order.orderNo} · ${selected.order.name || '未命名批次'}` : selected.businessType === 'LOGISTICS' ? '按物流结算' : '按合同'}/><Info label="我方付款主体" value={selected.legalEntity.name}/><Info label="交易对手方" value={selected.counterparty.name}/><Info label="申请金额" value={money(selected.amount)}/><Info label="剩余待付" value={money(remainingAmount)} emphasis/></div><div className="grid gap-4 rounded-md border p-4 text-sm md:grid-cols-2"><AccountCard title="申请计划付款账户" name={selected.ourBankAccountName || selected.legalEntity.name} bank={selected.ourBankName} account={selected.ourBankAccount}/><AccountCard title="申请计划收款账户" name={selected.counterpartyBankAccountName || selected.actualPayeeName || selected.counterparty.name} bank={selected.counterpartyBankName} account={selected.counterpartyBankAccount}/></div></>}
     </Card>
 
     <div className="grid gap-5 xl:grid-cols-[minmax(360px,0.9fr)_minmax(560px,1.3fr)]">

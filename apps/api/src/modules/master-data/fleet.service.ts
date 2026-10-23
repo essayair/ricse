@@ -120,12 +120,19 @@ export class FleetService {
   }
 
   async addDriver(fleetId: string, driverId: string) {
-    await this.findOne(fleetId);
-    const driver = await this.prisma.driver.findFirst({ where: { id: driverId, deletedAt: null } });
+    if (typeof driverId !== 'string' || !driverId.trim()) throw new BadRequestException('请选择要加入的司机');
+    const fleet = await this.findOne(fleetId);
+    if (fleet.status !== 'ACTIVE') throw new BadRequestException('车队已停用，请先启用后再加入司机');
+    const driver = await this.prisma.driver.findFirst({ where: { id: driverId, deletedAt: null, status: 'ACTIVE' } });
     if (!driver) throw new BadRequestException('司机不存在或已停用');
     const existing = await this.prisma.driverFleet.findUnique({ where: { driverId_fleetId: { driverId, fleetId } } });
     if (existing) throw new ConflictException('该司机已在此车队中');
-    return this.prisma.driverFleet.create({ data: { driverId, fleetId } });
+    try {
+      return await this.prisma.driverFleet.create({ data: { driverId, fleetId } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('该司机已在此车队中，请刷新成员列表');
+      throw error;
+    }
   }
 
   async removeDriver(fleetId: string, driverId: string) {
@@ -135,12 +142,19 @@ export class FleetService {
   }
 
   async addVehicle(fleetId: string, vehicleId: string) {
-    await this.findOne(fleetId);
-    const vehicle = await this.prisma.vehicle.findFirst({ where: { id: vehicleId, deletedAt: null } });
+    if (typeof vehicleId !== 'string' || !vehicleId.trim()) throw new BadRequestException('请选择要加入的车辆');
+    const fleet = await this.findOne(fleetId);
+    if (fleet.status !== 'ACTIVE') throw new BadRequestException('车队已停用，请先启用后再加入车辆');
+    const vehicle = await this.prisma.vehicle.findFirst({ where: { id: vehicleId, deletedAt: null, status: 'ACTIVE' } });
     if (!vehicle) throw new BadRequestException('车辆不存在或已停用');
     const existing = await this.prisma.vehicleFleet.findUnique({ where: { vehicleId_fleetId: { vehicleId, fleetId } } });
     if (existing) throw new ConflictException('该车辆已在此车队中');
-    return this.prisma.vehicleFleet.create({ data: { vehicleId, fleetId } });
+    try {
+      return await this.prisma.vehicleFleet.create({ data: { vehicleId, fleetId } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('该车辆已在此车队中，请刷新成员列表');
+      throw error;
+    }
   }
 
   async removeVehicle(fleetId: string, vehicleId: string) {

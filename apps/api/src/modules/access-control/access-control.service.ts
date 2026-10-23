@@ -50,7 +50,7 @@ export class AccessControlService {
     };
   }) {
     const now = new Date();
-    return context.user.businessUnits
+    return (context.user.businessUnits || [])
       .filter((membership) => membership.status === 'ACTIVE'
         && membership.businessUnit.status === 'ACTIVE'
         && membership.effectiveAt <= now
@@ -432,7 +432,7 @@ export class AccessControlService {
       }
       if (['SELF', 'DEPARTMENT', 'DEPARTMENT_AND_CHILDREN'].includes(assignment.scopeType)) allMemberships = true;
     }
-    const units = context.user.businessUnits
+    const units = (context.user.businessUnits || [])
       .filter((item) => membershipIds.includes(item.businessUnitId))
       .filter((item) => allMemberships || allowedIds.has(item.businessUnitId) || companyIds.has(item.businessUnit.companyId))
       .map((item) => ({ ...item.businessUnit, isDefault: item.isDefault }));
@@ -587,10 +587,13 @@ export class AccessControlService {
   }
 
   async getLogisticsContractScope(userId: string, permissionCode = 'logistics.contract.view'): Promise<Prisma.LogisticsContractWhereInput> {
-    const resolved = await this.resolveLogisticsCompanyIds(userId, permissionCode);
-    if (resolved.isAdmin) return {};
-    if (resolved.isExternal || resolved.companyIds.length === 0) return this.noAccess();
-    return { companyId: { in: resolved.companyIds } };
+    const context = await this.getContext(userId);
+    if (context.isAdmin) return { deletedAt: null };
+    if (context.isExternal) return this.noAccess();
+    const units = await this.getBusinessUnitOptions(userId, permissionCode);
+    if (!units.length) return this.noAccess();
+    return { deletedAt: null, OR: [{ allBusinessUnits: true },
+      { businessUnits: { some: { businessUnitId: { in: units.map(unit => unit.id) } } } }] };
   }
 
   async getLogisticsSettlementScope(userId: string, permissionCode = 'logistics.settlement.view'): Promise<Prisma.LogisticsSettlementWhereInput> {
@@ -598,7 +601,24 @@ export class AccessControlService {
     if (context.isAdmin) return {};
     if (context.isExternal) return this.noAccess();
     // 物流结算归属合同的我方签约主体，但普通账号的数据边界仍由运单继承的业务单元决定。
-    return { lines: { some: { waybill: await this.getWaybillScope(userId, permissionCode) } } };
+    const waybill = await this.getWaybillScope(userId, permissionCode);
+    return { deletedAt: null, lines: { some: {}, every: { waybill } } };
+  }
+
+  async getLogisticsPaymentScope(userId: string, permissionCode = 'settlement.view'): Promise<Prisma.LogisticsSettlementWhereInput> {
+    const context = await this.getContext(userId);
+    if (context.isExternal) return this.noAccess();
+    if (context.isAdmin) return { deletedAt: null };
+    const scope = await this.getWaybillScope(userId, permissionCode);
+    // 一张结算单的全部运单都必须处于当前操作权限范围，不能因其中一车可见而泄漏其他事业部。
+    return { deletedAt: null, lines: { some: {}, every: { waybill: scope } } };
+  }
+
+  async getPaymentRequestScope(userId: string, permissionCode = 'settlement.view'): Promise<Prisma.PaymentRequestWhereInput> {
+    return { OR: [
+      { businessType: { not: 'LOGISTICS' }, contract: { is: await this.getContractScope(userId, permissionCode) } },
+      { businessType: 'LOGISTICS', logisticsSettlement: { is: await this.getLogisticsPaymentScope(userId, permissionCode) } },
+    ] };
   }
 
   async getInventoryLotScope(userId: string, permissionCode = 'inventory.view'): Promise<Prisma.InventoryLotWhereInput> {

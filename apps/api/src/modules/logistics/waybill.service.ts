@@ -343,6 +343,12 @@ export class WaybillService {
       driver = await this.findAvailableDriver(dto.driverId);
       await this.validateDriverAssignment(driver, freightMode, carrier);
     }
+    const plateNo = (dto.plateNo || vehicle?.plateNo || '').trim().toUpperCase();
+    const driverName = (dto.driverName || driver?.name || vehicle?.driverName || '').trim();
+    const driverPhone = (dto.driverPhone || driver?.phone || vehicle?.driverPhone || '').trim();
+    if (!plateNo) throw new BadRequestException('创建运单前请确定车辆并填写车牌号');
+    if (!driverName) throw new BadRequestException('创建运单前请确定司机并填写司机姓名');
+    if (!driverPhone) throw new BadRequestException('创建运单前请填写司机联系电话');
     const sources = new Map(availability.lineItems.map(item => [item.dispatchNoticeLineItemId, item]));
     const seen = new Set<string>();
     const lines = dto.lineItems.map(item => {
@@ -366,15 +372,16 @@ export class WaybillService {
       return tx.waybill.create({
         data: {
           waybillNo,
+          status: 'PENDING',
           dispatchNoticeId: notice.id,
           freightMode,
           vehicleId: dto.vehicleId || null,
           driverId: dto.driverId || null,
           carrierPartnerId: carrier?.id || null,
           carrierName: carrier?.name || null,
-          plateNo: dto.plateNo || vehicle?.plateNo,
-          driverName: dto.driverName || driver?.name || vehicle?.driverName,
-          driverPhone: dto.driverPhone || driver?.phone || vehicle?.driverPhone,
+          plateNo,
+          driverName,
+          driverPhone,
           originLocation: dto.originLocation || notice.originLocation || notice.warehouse?.address,
           destinationLocation: dto.destinationLocation || notice.destinationLocation,
           totalQuantity: lines.reduce((sum, item) => sum + Number(item.quantity), 0),
@@ -466,6 +473,7 @@ export class WaybillService {
         const waybill = await tx.waybill.create({
           data: {
             waybillNo: waybillNumbers[index],
+            status: 'PENDING',
             dispatchNoticeId: dto.dispatchNoticeId,
             freightMode: item.freightMode,
             vehicleId: item.vehicle?.id || null,
@@ -541,7 +549,7 @@ export class WaybillService {
     plannedDepartureAt?: string; plannedArrivalAt?: string;
   }, userId: string) {
     const waybill = await this.findOne(id, userId, 'logistics.manage');
-    if (waybill.status !== 'PENDING') throw new BadRequestException('仅待调度或待发运的物流运单可以调整车辆');
+    if (waybill.status !== 'PENDING') throw new BadRequestException('仅待发运的物流运单可以修改运输信息');
     const departureAt = data.plannedDepartureAt ? new Date(data.plannedDepartureAt) : waybill.plannedDepartureAt;
     const arrivalAt = data.plannedArrivalAt ? new Date(data.plannedArrivalAt) : waybill.plannedArrivalAt;
     if (departureAt && arrivalAt && arrivalAt <= departureAt) {
@@ -570,6 +578,10 @@ export class WaybillService {
       driver = await this.findAvailableDriver(driverId);
       await this.validateDriverAssignment(driver, freightMode, carrier);
     }
+    const plateNo = (data.plateNo === undefined ? vehicle?.plateNo ?? waybill.plateNo : data.plateNo)?.trim().toUpperCase() || null;
+    const driverName = (data.driverName === undefined ? driver?.name ?? vehicle?.driverName ?? waybill.driverName : data.driverName)?.trim() || null;
+    const driverPhone = (data.driverPhone === undefined ? driver?.phone ?? vehicle?.driverPhone ?? waybill.driverPhone : data.driverPhone)?.trim() || null;
+    if (!plateNo || !driverName || !driverPhone) throw new BadRequestException('请补齐车牌号、司机姓名和联系电话后保存运输信息');
     const updated = await this.prisma.waybill.update({
       where: { id },
       data: {
@@ -578,9 +590,9 @@ export class WaybillService {
         driverId: driverId || null,
         carrierPartnerId: carrier?.id || null,
         carrierName: carrier?.name || null,
-        plateNo: data.plateNo === undefined ? vehicle?.plateNo ?? waybill.plateNo : data.plateNo?.trim() || null,
-        driverName: data.driverName === undefined ? driver?.name ?? vehicle?.driverName ?? waybill.driverName : data.driverName?.trim() || null,
-        driverPhone: data.driverPhone === undefined ? driver?.phone ?? vehicle?.driverPhone ?? waybill.driverPhone : data.driverPhone?.trim() || null,
+        plateNo,
+        driverName,
+        driverPhone,
         plannedDepartureAt: data.plannedDepartureAt ? new Date(data.plannedDepartureAt) : undefined,
         plannedArrivalAt: data.plannedArrivalAt ? new Date(data.plannedArrivalAt) : undefined,
       },
@@ -651,12 +663,12 @@ export class WaybillService {
       }
       const inventorySelection = (waybill.weightSelections || []).find(selection => selection.purpose === 'INVENTORY');
       const settlementSelection = (waybill.weightSelections || []).find(selection => selection.purpose === 'SETTLEMENT');
-      if (!inventorySelection || !settlementSelection) {
+      if (waybill.dispatchNotice.type === 'PURCHASE' && (!inventorySelection || !settlementSelection)) {
         throw new BadRequestException(validTickets.length > 1
           ? '存在多张有效磅单，请先选择库存与结算统一执行磅单'
           : '请先将唯一有效磅单确认为库存与结算执行口径');
       }
-      if (inventorySelection.weighTicketId !== settlementSelection.weighTicketId) {
+      if (waybill.dispatchNotice.type === 'PURCHASE' && inventorySelection?.weighTicketId !== settlementSelection?.weighTicketId) {
         throw new BadRequestException('库存与结算执行磅单不一致，请先统一选择执行口径');
       }
     }

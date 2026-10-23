@@ -39,7 +39,7 @@ interface DriverOption {
   serviceOrganization: { id: string; partnerId: string; partner: PartnerOption } | null;
 }
 
-const EMPTY_VALUE: VehicleFormValue = {
+export const EMPTY_VEHICLE_VALUE: VehicleFormValue = {
   plateNo: '', vehicleType: 'SEMI_TRAILER', brand: '', tareWeight: '', loadCapacity: '', plateColor: 'YELLOW',
   licenseNo: '', annualInspectionExpiry: '', compulsoryInsuranceExpiry: '', commercialInsuranceExpiry: '',
   ownerType: 'OUTSOURCED', ownerId: '', ownerName: '', ownerPhone: '', drivers: [],
@@ -48,14 +48,19 @@ const EMPTY_VALUE: VehicleFormValue = {
 
 const normalizePlateNo = (value: string) => value.replace(/[\s·•]/g, '').toUpperCase();
 
-export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, showStatus = false }: {
+export function VehicleForm({ initialValue, value, onValueChange, submitLabel, onSubmit, onCancel, showStatus = false, hideActions = false, showDriverLinks = true }: {
   initialValue?: VehicleFormValue;
+  value?: VehicleFormValue;
+  onValueChange?: React.Dispatch<React.SetStateAction<VehicleFormValue>>;
   submitLabel: string;
   onSubmit: (value: VehicleFormValue) => Promise<void>;
   onCancel: () => void;
   showStatus?: boolean;
+  hideActions?: boolean;
+  showDriverLinks?: boolean;
 }) {
-  const [form, setForm] = useState<VehicleFormValue>(initialValue || EMPTY_VALUE);
+  const [internalForm, setInternalForm] = useState<VehicleFormValue>(initialValue || EMPTY_VEHICLE_VALUE);
+  const form = value || internalForm, setForm = onValueChange || setInternalForm;
   const [internalPartners, setInternalPartners] = useState<PartnerOption[]>([]);
   const [carriers, setCarriers] = useState<CarrierProfile[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
@@ -66,13 +71,13 @@ export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, sho
     Promise.all([
       api.get<{ items: PartnerOption[] }>('/partners?pageSize=200&status=ACTIVE'),
       api.get<{ items: CarrierProfile[] }>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE&pageSize=200'),
-      api.get<{ items: DriverOption[] }>('/drivers?pageSize=200'),
+      showDriverLinks ? api.get<{ items: DriverOption[] }>('/drivers?pageSize=200') : Promise.resolve({ items: [] as DriverOption[] }),
     ]).then(([partnerData, carrierData, driverData]) => {
       setInternalPartners((partnerData.items || []).filter(item => item.isInternal));
       setCarriers(carrierData.items || []);
       setDrivers(driverData.items || []);
     }).catch((error) => alert(error.message || '车辆关联主数据加载失败'));
-  }, []);
+  }, [showDriverLinks]);
 
   const ownerOptions = useMemo(() => form.ownerType === 'SELF'
     ? internalPartners
@@ -91,7 +96,7 @@ export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, sho
       return !keyword || selected || [driver.name, driver.phone, driver.licenseClass || '', driver.serviceOrganization?.partner.name || '社会运力']
         .some(value => value.toLowerCase().includes(keyword));
     });
-  }, [driverSearch, drivers, form.ownerId, form.ownerType]);
+  }, [driverSearch, drivers, form.ownerId, form.ownerType, form.drivers]);
 
   const set = (key: keyof VehicleFormValue, value: string) => setForm(current => ({ ...current, [key]: value }));
   const changeOwner = (ownerType: string, ownerId = '') => setForm(current => ({
@@ -155,14 +160,14 @@ export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, sho
       </div>
     </Card>
 
-    <Card className="space-y-4 p-6">
+    {showDriverLinks && <Card className="space-y-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">关联司机</h2><p className="mt-1 text-xs text-muted-foreground">一辆车可关联一名主驾和多名副驾；未绑定承运商时可选择无承运商的社会运力司机。</p></div><Link href="/dashboard/master-data?tab=vehicles&resource=driver" className="text-sm text-primary hover:underline">维护司机档案</Link></div>
       <div className="relative max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={driverSearch} onChange={e => setDriverSearch(e.target.value)} placeholder="搜索司机姓名、手机号、准驾车型" /></div>
       {!eligibleDrivers.length ? <div className="rounded-md bg-muted p-5 text-sm text-muted-foreground">当前没有可关联司机，可先到运力管理维护司机档案；车辆也可以暂不关联司机。</div> : <div className="grid gap-3 md:grid-cols-2">{eligibleDrivers.map(driver => {
         const link = form.drivers.find(item => item.driverId === driver.id);
         return <div key={driver.id} className={`flex items-center gap-3 rounded-lg border p-3 ${link ? 'border-primary bg-primary/5' : ''}`}><input type="checkbox" checked={Boolean(link)} onChange={() => toggleDriver(driver.id)} /><UserRound className="h-5 w-5 text-muted-foreground" /><div className="min-w-0 flex-1"><div className="font-medium">{driver.name}{driver.status !== 'ACTIVE' && <span className="ml-2 text-xs text-amber-700">已停用，请解除关联</span>}</div><div className="truncate text-xs text-muted-foreground">{driver.phone} · {driver.licenseClass || '未填写准驾车型'} · {driver.serviceOrganization?.partner.name || '无承运商（社会运力）'}</div></div>{link && <select className="h-8 rounded-md border bg-background px-2 text-xs" value={link.role} onChange={e => setDriverRole(driver.id, e.target.value as 'PRIMARY' | 'SECONDARY')}><option value="PRIMARY">主驾</option><option value="SECONDARY">副驾</option></select>}</div>;
       })}</div>}
-    </Card>
+    </Card>}
 
     <Card className="space-y-5 p-6">
       <SectionTitle>北斗 / GPS 设备绑定</SectionTitle>
@@ -172,7 +177,7 @@ export function VehicleForm({ initialValue, submitLabel, onSubmit, onCancel, sho
     </Card>
 
     <Card className="p-6"><Field label="备注"><textarea className="min-h-24 w-full rounded-md border bg-background p-3 text-sm" maxLength={500} value={form.remark} onChange={e => set('remark', e.target.value)} /></Field></Card>
-    <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={onCancel}>取消</Button><Button disabled={submitting} onClick={() => void submit()}>{submitting ? '保存中...' : submitLabel}</Button></div>
+    {!hideActions && <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={onCancel}>取消</Button><Button disabled={submitting} onClick={() => void submit()}>{submitting ? '保存中...' : submitLabel}</Button></div>}
   </div>;
 }
 

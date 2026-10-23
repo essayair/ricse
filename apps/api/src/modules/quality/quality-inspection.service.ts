@@ -306,6 +306,7 @@ export class QualityInspectionService {
         status: 'COMPLETED', finalConclusion: data.conclusion,
         contractQualityEvaluation: commercialEvaluation as unknown as Prisma.InputJsonValue | undefined,
         qualityDisposition,
+        qualityAcceptanceSnapshot: Prisma.DbNull,
         qualityDeductionPerTon: commercialEvaluation?.deductionPerTon,
         qualityDispositionReason: commercialEvaluation
           ? commercialEvaluation.items.filter(item => item.result !== 'PASS').map(item => `${item.name}：${item.reason}`).join('；') || '所有合同质量指标均符合约定'
@@ -322,18 +323,24 @@ export class QualityInspectionService {
     return this.findTask(id, userId, 'quality.manage');
   }
 
-  async acceptContractDeduction(id: string, reason: string, userId: string) {
-    const task = await this.findTask(id, userId, 'quality.manage');
+  async acceptContractDeduction(id: string, reason: string, userId: string, expectedVersion?: number) {
+    const permission = 'settlement.quality.accept';
+    const context = await this.accessControl.getContext(userId);
+    if (context.user.company?.type === 'EXTERNAL') throw new BadRequestException('外部账号不能确认内部采购商务接收');
+    const task = await this.findTask(id, userId, permission);
+    if (!Number.isInteger(expectedVersion) || expectedVersion !== task.decisionVersion) throw new BadRequestException('质检依据版本已变更，请刷新并核对后确认扣款接收');
     if (task.status !== 'COMPLETED' || task.qualityDisposition !== 'DEDUCTION_PENDING') {
       throw new BadRequestException('当前质检任务没有待确认的合同扣款接收结果');
     }
     if (!reason?.trim()) throw new BadRequestException('请填写接受扣款的业务确认原因');
-    await this.prisma.qualityTask.update({
-      where: { id },
-      data: { qualityDisposition: 'ACCEPT_WITH_DEDUCTION', qualityDispositionReason: reason.trim() },
+    const updated = await this.prisma.qualityTask.updateMany({
+      where: { id, status: 'COMPLETED', qualityDisposition: 'DEDUCTION_PENDING', decisionVersion: task.decisionVersion },
+      data: { qualityDisposition: 'ACCEPT_WITH_DEDUCTION', qualityDispositionReason: reason.trim(),
+        qualityAcceptanceSnapshot: { userId, name: context.user.name, acceptedAt: new Date().toISOString(), reason: reason.trim(), decisionVersion: task.decisionVersion, basisInspectionId: task.basisInspectionId } },
     });
+    if (!updated.count) throw new BadRequestException('质检依据已变更或已处理，请刷新后重试');
     await this.inventoryService.createPendingReceiptForConfirmedQuality(task.basisInspectionId!, userId);
-    return this.findTask(id, userId, 'quality.manage');
+    return this.findTask(id, userId, permission);
   }
 
   async updateTaskSampling(

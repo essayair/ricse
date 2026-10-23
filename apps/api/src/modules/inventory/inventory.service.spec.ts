@@ -53,6 +53,28 @@ describe('InventoryService', () => {
     }));
   });
 
+  it('详情返回统一收货默认值，读取不回填数据库', async () => {
+    const signedAt = new Date('2026-10-22T09:10:11Z');
+    prisma.inboundReceipt.findFirst.mockResolvedValue({
+      id: 'receipt-defaults', status: 'PENDING', warehouseId: null, receivedAt: null, receiverName: null,
+      waybill: {
+        status: 'SIGNED', signedAt, weighTickets: [],
+        dispatchNotice: {
+          destinationWarehouseId: 'warehouse-destination', destinationContactPerson: '现场联系人',
+          destinationWarehouse: { id: 'warehouse-destination', status: 'ACTIVE', manager: '仓库负责人' },
+        },
+      },
+    } as any);
+
+    const result = await service.findReceipt('receipt-defaults', 'user-1');
+
+    expect(result).toMatchObject({
+      warehouseId: null, receivedAt: null, receiverName: null,
+      receiptDefaults: { warehouseId: 'warehouse-destination', receivedAt: signedAt, receiverName: '现场联系人', receivedAtSource: 'SIGNED' },
+    });
+    expect(prisma.inboundReceipt.update).not.toHaveBeenCalled();
+  });
+
   it('超标扣款质检单不能创建物流入库单', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1',

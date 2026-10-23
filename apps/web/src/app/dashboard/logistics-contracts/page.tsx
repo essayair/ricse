@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Plus, Search } from 'lucide-react';
@@ -9,16 +9,22 @@ import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { day, pricingLabel, useLogisticsPermission } from '@/components/logistics/logistics-shared';
 
 interface ContractItem {
   id: string;
   contractNo: string;
+  title: string | null;
+  externalContractNo: string | null;
+  allBusinessUnits: boolean;
+  signingPartner: { name: string } | null;
+  businessUnits: Array<{ businessUnit: { name: string } }>;
   status: string;
   settlementBasis: string;
   effectiveAt: string | null;
   expireAt: string | null;
   carrierPartner: { id: string; name: string; code: string };
-  priceTerms: Array<{ id: string; expiresAt: string | null }>;
+  priceTerms: Array<{ id: string; effectiveAt: string; expiresAt: string | null }>;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,6 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function LogisticsContractsPage() {
+  const can = useLogisticsPermission();
   const searchParams = useSearchParams();
   const carrierPartnerId = searchParams.get('carrierPartnerId') || '';
   const carrierName = searchParams.get('carrierName') || '';
@@ -34,7 +41,7 @@ export default function LogisticsContractsPage() {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const query = new URLSearchParams();
@@ -45,25 +52,25 @@ export default function LogisticsContractsPage() {
       setItems(result || []);
     } catch (error: any) { alert(error.message); }
     finally { setLoading(false); }
-  };
-  useEffect(() => { void load(); }, [carrierPartnerId]);
+  }, [carrierPartnerId, search, status]);
+  useEffect(() => { const timer = setTimeout(() => void load(), 200); return () => clearTimeout(timer); }, [load]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">物流合同</h1>
-          <p className="mt-1 text-sm text-muted-foreground">维护长期合同物流公司的运价条款，运满满、临时车辆不在此建档</p>
+          <p className="mt-1 text-sm text-muted-foreground">维护物流合作约定、合同运价与关联结算记录</p>
         </div>
-        <Link href="/dashboard/logistics-contracts/new">
+        {can('logistics.contract.manage') && <Link href="/dashboard/logistics-contracts/new">
           <Button><Plus className="mr-1 h-4 w-4" />新建物流合同</Button>
-        </Link>
+        </Link>}
       </div>
 
       <div className="flex flex-wrap gap-2">
         <div className="relative w-72">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="搜索合同号..." value={search}
+          <Input className="pl-9" placeholder="编号、合同名称或签约企业" value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && void load()} />
         </div>
@@ -91,10 +98,12 @@ export default function LogisticsContractsPage() {
             <table className="w-full min-w-[900px] text-sm">
               <thead className="border-b bg-muted/50 text-left text-muted-foreground">
                 <tr>
-                  <th className="p-3">合同号</th>
+                  <th className="p-3">编号 / 合同名称</th>
                   <th className="p-3">承运方</th>
-                  <th className="p-3">结算方式</th>
+                  <th className="p-3">我方签约主体</th>
                   <th className="p-3">状态</th>
+                  <th className="p-3">适用事业部</th>
+                  <th className="p-3">计价方式</th>
                   <th className="p-3">生效期</th>
                   <th className="p-3">当前运价条款数</th>
                   <th className="p-3">操作</th>
@@ -103,17 +112,19 @@ export default function LogisticsContractsPage() {
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id} className="border-b">
-                    <td className="p-3 font-mono">{item.contractNo}</td>
+                    <td className="min-w-56 p-3"><div className="font-mono">{item.contractNo}</div><div className="mt-1">{item.title || '—'}</div>{item.externalContractNo && <div className="mt-1 text-xs text-muted-foreground">外部合同号：{item.externalContractNo}</div>}</td>
                     <td className="p-3">
                       <div className="font-medium">{item.carrierPartner.name}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{item.carrierPartner.code}</div>
                     </td>
-                    <td className="p-3">{item.settlementBasis === 'NET_WEIGHT' ? '按净重' : item.settlementBasis === 'GROSS_WEIGHT' ? '按毛重' : '按车次'}</td>
+                    <td className="min-w-48 p-3">{item.signingPartner?.name || '待补充'}</td>
                     <td className="p-3"><StatusText status={item.status}>{STATUS_LABEL[item.status] || item.status}</StatusText></td>
+                    <td className="min-w-36 p-3">{item.allBusinessUnits ? '全部事业部' : item.businessUnits.map(u => u.businessUnit.name).join('、')}</td>
+                    <td className="whitespace-nowrap p-3">{pricingLabel[item.settlementBasis]}</td>
                     <td className="p-3 text-xs text-muted-foreground">
-                      {item.effectiveAt ? item.effectiveAt.slice(0, 10) : '—'} ~ {item.expireAt ? item.expireAt.slice(0, 10) : '不限'}
+                      {day(item.effectiveAt) || '—'} ~ {day(item.expireAt) || '不限'}
                     </td>
-                    <td className="p-3">{item.priceTerms.filter((term) => !term.expiresAt).length} 条当前生效</td>
+                    <td className="p-3">{item.priceTerms.filter((term) => new Date(term.effectiveAt) <= new Date() && (!term.expiresAt || new Date(term.expiresAt) > new Date())).length} 条当前生效</td>
                     <td className="p-3">
                       <Link href={`/dashboard/logistics-contracts/${item.id}`}>
                         <Button size="sm" variant="ghost">详情</Button>

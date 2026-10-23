@@ -134,7 +134,7 @@ export default function InboundPage() {
                       </td>
                       <td className="p-3">
                         <div className="font-mono text-xs">{item.waybill?.waybillNo || '-'}</div>
-                        <div className="mt-1 font-medium">{item.plateNo || item.waybill?.plateNo || '待调度'}</div>
+                        <div className="mt-1 font-medium">{item.plateNo || item.waybill?.plateNo || '车辆信息待补齐'}</div>
                         <div className="mt-1 text-xs text-muted-foreground">到达：{formatDateTimeToSecond(item.waybill?.arrivedAt)}</div>
                       </td>
                       <td className="max-w-64 p-3">

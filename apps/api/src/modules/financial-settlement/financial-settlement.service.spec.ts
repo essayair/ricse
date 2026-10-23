@@ -12,6 +12,7 @@ describe('FinancialSettlementService payment approvals', () => {
     jest.clearAllMocks();
     accessControl.assertPermission.mockResolvedValue({ isAdmin: false } as any);
     accessControl.getContractScope.mockResolvedValue({} as any);
+    accessControl.getPaymentRequestScope.mockResolvedValue({} as any);
     prisma.$transaction.mockImplementation(async (handler: any) => handler(prisma));
   });
 
@@ -31,6 +32,11 @@ describe('FinancialSettlementService payment approvals', () => {
         },
       }),
     }));
+  });
+
+  it('新采购最终结算不能绕过入库过账改用计划批次数量，提前付款走申请', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller', buyerId: 'owner' } as any);
+    await expect(service.create({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'BATCH' }, 'u')).rejects.toThrow('按批次提前付款');
   });
 
   it('管理员读取付款单时不把空合同范围嵌入可空关系过滤', async () => {
@@ -63,7 +69,7 @@ describe('FinancialSettlementService payment approvals', () => {
 
   it('执行批次未完成时仍可作为结算候选，但排除已取消批次', async () => {
     prisma.contract.findFirst.mockResolvedValue({
-      id: 'contract-1', type: 'PURCHASE', sellerId: 'supplier-1', buyerId: 'internal-1',
+      id: 'contract-1', status: 'APPROVED', type: 'PURCHASE', sellerId: 'supplier-1', buyerId: 'internal-1',
       signingPartnerId: 'internal-1', lineItems: [],
     } as any);
     prisma.order.findMany.mockResolvedValue([{
@@ -92,7 +98,7 @@ describe('FinancialSettlementService payment approvals', () => {
 
   it('最后一个付款审批节点通过后才将申请置为已批准', async () => {
     prisma.paymentRequest.findFirst.mockResolvedValue({
-      id: 'request-1', status: 'PENDING_APPROVAL', approvals: [],
+      id: 'request-1', contractId: 'contract-1', status: 'PENDING_APPROVAL', approvals: [],
     } as any);
     prisma.paymentRequestApproval.findMany.mockResolvedValue([{
       id: 'task-1', paymentRequestId: 'request-1', assigneeId: 'user-1',
@@ -113,7 +119,7 @@ describe('FinancialSettlementService payment approvals', () => {
   });
 
   it('当前节点通过后存在后续节点时只激活下一级', async () => {
-    prisma.paymentRequest.findFirst.mockResolvedValue({ id: 'request-1', status: 'PENDING_APPROVAL' } as any);
+    prisma.paymentRequest.findFirst.mockResolvedValue({ id: 'request-1', contractId: 'contract-1', status: 'PENDING_APPROVAL' } as any);
     prisma.paymentRequestApproval.findMany.mockResolvedValue([{
       id: 'task-1', paymentRequestId: 'request-1', assigneeId: 'user-1',
       approvalMode: 'ANY', round: 1, step: 1, status: 'PENDING',
@@ -130,5 +136,15 @@ describe('FinancialSettlementService payment approvals', () => {
       data: { status: 'PENDING' },
     });
     expect(prisma.paymentRequest.update).not.toHaveBeenCalled();
+  });
+
+  it('财务确认资金时按确认权限和对应事业部范围检查，不能直接指定其他事业部ID', async () => {
+    const scope = { businessUnitId: { in: ['unit-1'] } };
+    accessControl.assertPermission.mockResolvedValue({ isAdmin: false, permissions: ['settlement.fund.confirm'] } as any);
+    accessControl.getContractScope.mockResolvedValue(scope as any);
+    prisma.fundTransaction.findFirst.mockResolvedValue(null);
+    await expect(service.confirmFund('other-unit-fund', 'user-1')).rejects.toThrow('无权访问');
+    expect(accessControl.getContractScope).toHaveBeenCalledWith('user-1', 'settlement.fund.confirm');
+    expect(prisma.fundTransaction.update).not.toHaveBeenCalled();
   });
 });

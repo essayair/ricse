@@ -7,7 +7,7 @@ import { prepareAttachmentUpload } from '../common/attachment-upload';
 import { CurrentUser } from '../common/current-user.decorator';
 import {
   AllocateFundDto, ClaimFundDto, CreateFinancialSettlementDto, CreateFundTransactionDto, CreatePaymentRequestDto,
-  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto, UpdatePaymentRequestDto,
+  ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto, UpdatePaymentRequestDto, CreateFundEarmarkDto,
 } from './dto/financial-settlement.dto';
 import { FinancialSettlementService } from './financial-settlement.service';
 import { PaymentVoucherRecognitionService } from './payment-voucher-recognition.service';
@@ -22,6 +22,51 @@ export class FinancialSettlementController {
     private readonly fileService: FileService,
     private readonly paymentVoucherRecognition: PaymentVoucherRecognitionService,
   ) {}
+
+  @Get('options/logistics-settlements')
+  logisticsPaymentOptions(@CurrentUser('id') userId: string, @Query('excludeRequestId') excludeRequestId?: string) {
+    return this.service.logisticsPaymentOptions(userId, excludeRequestId);
+  }
+
+  @Post('funds/:id/allocate-logistics')
+  allocateLogistics(@Param('id') id: string, @Body() dto: AllocateFundDto, @CurrentUser('id') userId: string) {
+    return this.service.allocateLogisticsFund(id, dto, userId);
+  }
+
+  @Post('funds/:id/logistics-allocations/:allocationId/reverse')
+  reverseLogistics(@Param('id') id: string, @Param('allocationId') allocationId: string, @Body() dto: ReverseAllocationDto, @CurrentUser('id') userId: string) {
+    return this.service.reverseLogisticsAllocation(allocationId, dto, userId, id);
+  }
+
+  @Get('options/payment-context')
+  paymentContext(@Query('contractId') contractId: string, @Query('excludeRequestId') excludeRequestId: string | undefined, @CurrentUser('id') userId: string) {
+    return this.service.paymentContext(contractId, userId, excludeRequestId);
+  }
+
+  @Get('options/goods-sources')
+  goodsSources(@Query('contractId') contractId: string, @CurrentUser('id') userId: string) {
+    return this.service.settlementSources(contractId, userId);
+  }
+
+  @Post('preview-goods')
+  previewGoods(@Body() dto: CreateFinancialSettlementDto, @CurrentUser('id') userId: string) {
+    return this.service.previewGoodsSettlement(dto, userId);
+  }
+
+  @Get('payment-requests/:id/precheck')
+  paymentPrecheck(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.paymentPrecheck(id, userId);
+  }
+
+  @Post('funds/:id/earmarks')
+  earmarkFund(@Param('id') id: string, @Body() dto: CreateFundEarmarkDto, @CurrentUser('id') userId: string) {
+    return this.service.earmarkFund(id, dto, userId);
+  }
+
+  @Post('funds/:id/earmarks/:earmarkId/release')
+  releaseEarmark(@Param('id') id: string, @Param('earmarkId') earmarkId: string, @CurrentUser('id') userId: string) {
+    return this.service.releaseFundEarmark(id, earmarkId, userId);
+  }
 
   @Get('options/contracts')
   contractOptions(@CurrentUser('id') userId: string, @Query('direction') direction: string) {

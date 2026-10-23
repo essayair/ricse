@@ -64,12 +64,61 @@ describe('WaybillService', () => {
     prisma.waybill.create.mockResolvedValue({ id: 'waybill-1', waybillNo: 'WB-20260717-0001' } as any);
     const result = await service.create({
       dispatchNoticeId: notice.id,
+      plateNo: ' 甘a00001 ', driverName: ' 张三 ', driverPhone: ' 13800000001 ',
       lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
     }, 'user-1');
     expect(result.waybillNo).toBe('WB-20260717-0001');
     expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ totalQuantity: 5 }),
+      data: expect.objectContaining({ totalQuantity: 5, status: 'PENDING', plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001' }),
     }));
+  });
+
+  it.each([
+    ['车牌', { plateNo: ' ', driverName: '张三', driverPhone: '13800000001' }, '填写车牌号'],
+    ['司机', { plateNo: '甘A00001', driverName: ' ', driverPhone: '13800000001' }, '填写司机姓名'],
+    ['电话', { plateNo: '甘A00001', driverName: '张三', driverPhone: ' ' }, '司机联系电话'],
+  ])('单车接口缺少%s时拒绝创建空运单', async (_label, fields, message) => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    await expect(service.create({
+      dispatchNoticeId: notice.id, ...(fields as object),
+      lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+    }, 'user-1')).rejects.toThrow(message as string);
+    expect(prisma.waybill.create).not.toHaveBeenCalled();
+    expect(weighTicketService.ensureTaskForWaybill).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['车牌', { plateNo: ' ', driverName: '张三', driverPhone: '13800000001' }],
+    ['司机', { plateNo: '甘A00001', driverName: ' ', driverPhone: '13800000001' }],
+    ['电话', { plateNo: '甘A00001', driverName: '张三', driverPhone: ' ' }],
+  ])('统一建单缺少%s时整批不创建', async (_label, fields) => {
+    prisma.waybill.findMany.mockResolvedValue([]);
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    await expect(service.createBatch({
+      dispatchNoticeId: notice.id, batchRequestId: '123e4567-e89b-42d3-a456-426614174000',
+      items: [{ clientRowId: '123e4567-e89b-42d3-a456-426614174001', ...(fields as object),
+        lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+      }],
+    }, 'user-1')).rejects.toThrow(BadRequestException);
+    expect(prisma.waybill.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('统一建单只填写一行也创建一张待发运运单', async () => {
+    prisma.waybill.findMany.mockResolvedValue([]);
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.waybill.create.mockResolvedValue({
+      id: 'single-row', status: 'PENDING', plateNo: '甘A00001', dispatchNotice: { type: 'PURCHASE' },
+    } as any);
+    const result = await service.createBatch({
+      dispatchNoticeId: notice.id, batchRequestId: '123e4567-e89b-42d3-a456-426614174000',
+      items: [{ clientRowId: '123e4567-e89b-42d3-a456-426614174001',
+        plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001',
+        lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
+      }],
+    }, 'user-1');
+    expect(result.createdCount).toBe(1);
+    expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING' }) }));
   });
 
   it('批量派车按每行生成独立物流运单', async () => {
@@ -235,6 +284,29 @@ describe('WaybillService', () => {
     }));
   });
 
+  it('历史缺资料运单可补齐运输信息后继续处理', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'legacy', status: 'PENDING', freightMode: 'SOCIAL', vehicleId: null, driverId: null,
+      carrierPartnerId: null, plateNo: null, driverName: null, driverPhone: null,
+      plannedDepartureAt: null, plannedArrivalAt: null,
+    } as any);
+    prisma.waybill.update.mockResolvedValue({ id: 'legacy', status: 'PENDING', plateNo: '甘A00001' } as any);
+    await service.assign('legacy', { plateNo: '甘a00001', driverName: '张三', driverPhone: '13800000001' }, 'user-1');
+    expect(prisma.waybill.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001', carrierPartnerId: null,
+    }) }));
+  });
+
+  it('待发运修改不得清空车辆司机信息重新形成空运单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'pending', status: 'PENDING', freightMode: 'SOCIAL', vehicleId: null, driverId: null,
+      carrierPartnerId: null, plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001',
+      plannedDepartureAt: null, plannedArrivalAt: null,
+    } as any);
+    await expect(service.assign('pending', { plateNo: ' ' }, 'user-1')).rejects.toThrow('请补齐车牌号、司机姓名和联系电话');
+    expect(prisma.waybill.update).not.toHaveBeenCalled();
+  });
+
   it('委外运输缺少承运单位时不能确认发运', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1', status: 'PENDING', freightMode: 'THIRD_PARTY',
@@ -326,7 +398,7 @@ describe('WaybillService', () => {
     },
   );
 
-  it('库存与结算执行磅单不一致时不允许确认签收', async () => {
+  it('采购库存与结算执行磅单不一致时不允许确认签收', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1', status: 'ARRIVED',
       attachments: [{ id: 'attachment-1', category: 'RECEIPT_DOCUMENT' }],
@@ -343,6 +415,15 @@ describe('WaybillService', () => {
 
     await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1'))
       .rejects.toThrow('库存与结算执行磅单不一致，请先统一选择执行口径');
+  });
+
+  it('销售按我方出库、客户货款两种口径时允许确认客户签收', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: 'waybill-1', status: 'ARRIVED', attachments: [{ category: 'RECEIPT_DOCUMENT' }], outboundReceipts: [{ status: 'POSTED' }],
+      dispatchNotice: { id: notice.id, type: 'SALES', status: 'IN_PROGRESS' }, weighTickets: [{ status: 'REVIEWED', netWeight: 10 }],
+      weightSelections: [{ purpose: 'INVENTORY', weighTicketId: 'shipping' }, { purpose: 'SETTLEMENT', weighTicketId: 'customer' }] } as any);
+    prisma.$transaction.mockImplementation(async (f: any) => f(prisma));
+    prisma.waybill.update.mockResolvedValue({ id: 'waybill-1', status: 'SIGNED' } as any);
+    await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1')).resolves.toMatchObject({ status: 'SIGNED' });
   });
 
   it('新增物流收货附件必须使用明确分类', async () => {
@@ -413,6 +494,7 @@ describe('WaybillService', () => {
       freightMode: 'THIRD_PARTY',
       carrierPartnerId: 'carrier-1',
       vehicleId: 'vehicle-1',
+      plateNo: '甘A00001', driverName: '临时司机', driverPhone: '13800000001',
       lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
     }, 'user-1');
 
@@ -441,6 +523,7 @@ describe('WaybillService', () => {
       freightMode: 'THIRD_PARTY',
       carrierPartnerId: 'carrier-1',
       driverId: 'driver-1',
+      plateNo: '甘A00001',
       lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
     }, 'user-1');
 

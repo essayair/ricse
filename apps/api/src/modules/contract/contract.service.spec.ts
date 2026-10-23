@@ -456,6 +456,7 @@ describe('ContractService', () => {
           lineItems: {
             select: expect.objectContaining({ qualityRulesSnapshot: true }),
           },
+          attachments: { select: { id: true } },
         }),
       }));
     });
@@ -823,6 +824,35 @@ describe('ContractService', () => {
     };
 
     // 合法路径
+    it.each(['PURCHASE', 'SALES', 'BILATERAL'])('%s 合同已有附件时提交审批必须实际查询附件，不能把已上传文件误判为缺失', async (type) => {
+      await setupContract('DRAFT');
+      const stored = {
+        ...mockContract,
+        departmentId: 'dept-business',
+        type,
+        buyerId: type === 'BILATERAL' ? 'customer-1' : null,
+        lineItems: mockContract.lineItems.map(item => ({ ...item, salesUnitPrice: type === 'BILATERAL' ? '1200' : null })),
+      };
+      // 模拟 Prisma select：没有显式查询的关联不会出现在返回值中。
+      (prisma.contract.findFirst as jest.Mock).mockImplementation(async (args: any) => Object.fromEntries(
+        Object.entries(stored).filter(([key]) => args.select?.[key]),
+      ) as any);
+      await expect(service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, adminUser)).resolves.toBeDefined();
+      expect(prisma.contract.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        select: expect.objectContaining({ attachments: { select: { id: true } } }),
+      }));
+      expect(prisma.approval.createMany).toHaveBeenCalled();
+    });
+
+    it('直接提交无附件合同仍应拦截，不创建审批任务或变更合同状态', async () => {
+      await setupContract('DRAFT');
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, attachments: [] } as any);
+      await expect(service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, adminUser))
+        .rejects.toThrow('请至少上传一份合同附件后再提交审批');
+      expect(prisma.approval.createMany).not.toHaveBeenCalled();
+      expect(prisma.contract.updateMany).not.toHaveBeenCalled();
+    });
+
     it('DRAFT → PENDING_APPROVAL', async () => {
       await setupContract('DRAFT');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'PENDING_APPROVAL' } as any);

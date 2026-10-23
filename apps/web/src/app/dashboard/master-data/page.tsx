@@ -15,6 +15,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
 import { StatusText } from '@/components/status-text';
+import { FleetMemberManager } from '@/components/fleet-member-manager';
 import { ORGANIZATION_TYPES } from './service-organizations/service-organization-form';
 
 /* ── Types ── */
@@ -67,10 +68,6 @@ interface Fleet {
   carrierPartnerId: string | null; carrierPartner: { id: string; code: string; name: string; status: string } | null;
   status: string; remark: string | null;
   _count: { driverLinks: number; vehicleLinks: number };
-}
-interface FleetDetail extends Fleet {
-  driverLinks: Array<{ driver: { id: string; name: string; phone: string; status: string; serviceOrganizationId: string | null; serviceOrganization: { partner: { id: string; name: string } } | null } }>;
-  vehicleLinks: Array<{ vehicle: { id: string; plateNo: string; vehicleType: string; status: string; ownerType: string; ownerId: string | null } }>;
 }
 type OrganizationType = keyof typeof ORGANIZATION_TYPES;
 interface ServiceOrgItem {
@@ -282,37 +279,12 @@ function MasterDataPageInner() {
   const [showFleetForm, setShowFleetForm] = useState(false);
   const [fleetSaving, setFleetSaving] = useState(false);
   const [fleetMembersId, setFleetMembersId] = useState<string | null>(null);
-  const [fleetDetail, setFleetDetail] = useState<FleetDetail | null>(null);
-  const [addDriverId, setAddDriverId] = useState('');
-  const [fleetDriverSearch, setFleetDriverSearch] = useState('');
-  const [fleetDriverCandidates, setFleetDriverCandidates] = useState<Driver[]>([]);
-  const [fleetDriverSearching, setFleetDriverSearching] = useState(false);
-  const [addVehicleId, setAddVehicleId] = useState('');
 
   useEffect(() => {
     if (resourceFromUrl && RESOURCE_TABS.some(item => item.key === resourceFromUrl)) {
       setResourceTab(resourceFromUrl);
     }
   }, [resourceFromUrl]);
-
-  useEffect(() => {
-    if (!fleetMembersId) {
-      setFleetDriverCandidates([]);
-      setFleetDriverSearching(false);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      setFleetDriverSearching(true);
-      const params = new URLSearchParams({ pageSize: '50', status: 'ACTIVE' });
-      if (fleetDriverSearch.trim()) params.set('search', fleetDriverSearch.trim());
-      api.get<{ items: Driver[] }>(`/drivers?${params}`)
-        .then((data) => { if (!cancelled) setFleetDriverCandidates(data.items || []); })
-        .catch((error) => { if (!cancelled) alert(error.message || '司机候选加载失败'); })
-        .finally(() => { if (!cancelled) setFleetDriverSearching(false); });
-    }, 250);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [fleetDriverSearch, fleetMembersId]);
 
   const fetchPartners = useCallback(() => {
     const params = new URLSearchParams();
@@ -485,48 +457,7 @@ function MasterDataPageInner() {
     try { await api.delete(`/fleets/${fleet.id}`); fetchFleets(); }
     catch (error: any) { alert(error.message); }
   };
-  const openFleetMembers = async (fleetId: string) => {
-    try {
-      const detail = await api.get<FleetDetail>(`/fleets/${fleetId}`);
-      setFleetDetail(detail);
-      setFleetMembersId(fleetId);
-      setAddDriverId(''); setFleetDriverSearch(''); setAddVehicleId('');
-    } catch (error: any) { alert(error.message); }
-  };
-  const addDriverToFleet = async () => {
-    if (!fleetMembersId || !addDriverId) return;
-    try {
-      await api.post(`/fleets/${fleetMembersId}/drivers`, { driverId: addDriverId });
-      setAddDriverId('');
-      await openFleetMembers(fleetMembersId);
-      fetchFleets(); fetchDrivers();
-    } catch (error: any) { alert(error.message); }
-  };
-  const removeDriverFromFleet = async (driverId: string) => {
-    if (!fleetMembersId) return;
-    try {
-      await api.delete(`/fleets/${fleetMembersId}/drivers/${driverId}`);
-      await openFleetMembers(fleetMembersId);
-      fetchFleets(); fetchDrivers();
-    } catch (error: any) { alert(error.message); }
-  };
-  const addVehicleToFleet = async () => {
-    if (!fleetMembersId || !addVehicleId) return;
-    try {
-      await api.post(`/fleets/${fleetMembersId}/vehicles`, { vehicleId: addVehicleId });
-      setAddVehicleId('');
-      await openFleetMembers(fleetMembersId);
-      fetchFleets();
-    } catch (error: any) { alert(error.message); }
-  };
-  const removeVehicleFromFleet = async (vehicleId: string) => {
-    if (!fleetMembersId) return;
-    try {
-      await api.delete(`/fleets/${fleetMembersId}/vehicles/${vehicleId}`);
-      await openFleetMembers(fleetMembersId);
-      fetchFleets();
-    } catch (error: any) { alert(error.message); }
-  };
+  const openFleetMembers = (fleetId: string) => setFleetMembersId(fleetId);
 
   const toggleServiceOrgStatus = async (item: ServiceOrgItem) => {
     const status = item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
@@ -667,15 +598,15 @@ function MasterDataPageInner() {
           </Link>
         )}
         {tab === 'vehicles' && resourceTab === 'vehicle' && (
-          <Link href="/dashboard/master-data/vehicles/new">
+          <Link href="/dashboard/master-data/transport-resources/new">
             <Button>
-              <Plus className="h-4 w-4 mr-1" />新建车辆
+              <Plus className="h-4 w-4 mr-1" />新建司机与车辆
             </Button>
           </Link>
         )}
         {tab === 'vehicles' && resourceTab === 'driver' && (
-          <Button onClick={() => { resetDriverForm(); setShowDriverForm(true); }}>
-            <Plus className="h-4 w-4 mr-1" />新增司机
+          <Button onClick={() => { router.push('/dashboard/master-data/transport-resources/new'); }}>
+            <Plus className="h-4 w-4 mr-1" />新建司机与车辆
           </Button>
         )}
         {tab === 'vehicles' && resourceTab === 'fleet' && (
@@ -819,9 +750,9 @@ function MasterDataPageInner() {
             </select>
             <select className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm" value={vehicleOwnerIdFilter} onChange={(event) => setVehicleOwnerIdFilter(event.target.value)}><option value="">全部承运商</option>{vehicleOwners.map(item => <option key={item.id} value={item.partnerId}>{item.partner.name}</option>)}</select>
             <select className="h-9 rounded-md border bg-background px-3 text-sm" value={vehicleTypeFilter} onChange={(event) => setVehicleTypeFilter(event.target.value)}><option value="">全部车型</option><option value="SEMI_TRAILER">半挂车（标准型）</option><option value="HEAVY_SEMI_TRAILER">半挂车（超重型）</option><option value="BOX_TRUCK">厢式货车</option><option value="DUMP_TRUCK">自卸车</option><option value="TANK_TRUCK">槽罐车</option></select>
-            <Link href="/dashboard/master-data/vehicles/new" className="ml-auto">
+            <Link href="/dashboard/master-data/transport-resources/new" className="ml-auto">
               <Button>
-                <Plus className="mr-1 h-4 w-4" />新建车辆
+                <Plus className="mr-1 h-4 w-4" />新建司机与车辆
               </Button>
             </Link>
           </>
@@ -862,7 +793,7 @@ function MasterDataPageInner() {
         </div>
       </div>
 
-      {/* 司机新增/编辑表单 */}
+      {/* 司机字段快捷编辑；新建统一进入司机与车辆登记页 */}
       {tab === 'vehicles' && resourceTab === 'driver' && showDriverForm && (
         <Card className="space-y-4 p-5">
           <div className="flex items-center justify-between">
@@ -1102,7 +1033,7 @@ function MasterDataPageInner() {
             empty={(
               <div className="flex flex-col items-center gap-3">
                 <span>暂无车辆数据</span>
-                <Link href="/dashboard/master-data/vehicles/new">
+                <Link href="/dashboard/master-data/transport-resources/new">
                   <Button size="sm">
                     <Plus className="mr-1 h-4 w-4" />创建第一辆车辆
                   </Button>
@@ -1117,7 +1048,7 @@ function MasterDataPageInner() {
           <DataTable
             headers={['司机 / 手机', '所属承运商', '所属车队', '驾驶证 / 准驾车型', '状态', '有效期', '引用运单', '操作']}
             rows={drivers.map((d) => [
-              <div key="n"><div className="font-medium">{d.name}</div><div className="mt-1 text-xs text-muted-foreground">{d.phone}</div></div>,
+              <div key="n"><Link href={`/dashboard/master-data/drivers/${d.id}`} className="font-medium text-primary hover:underline">{d.name}</Link><div className="mt-1 text-xs text-muted-foreground">{d.phone}</div></div>,
               d.serviceOrganization
                 ? <span key="org" className="text-sm">{d.serviceOrganization.partner.name}</span>
                 : <Badge key="org2" variant="outline" className="text-xs">无承运商 · 社会运力</Badge>,
@@ -1136,7 +1067,7 @@ function MasterDataPageInner() {
             empty={(
               <div className="flex flex-col items-center gap-3">
                 <span>暂无司机档案</span>
-                <Button size="sm" onClick={() => { resetDriverForm(); setShowDriverForm(true); }}>
+                <Button size="sm" onClick={() => { router.push('/dashboard/master-data/transport-resources/new'); }}>
                   <Plus className="mr-1 h-4 w-4" />新增第一位司机
                 </Button>
               </div>
@@ -1313,80 +1244,7 @@ function MasterDataPageInner() {
         </div>
       )}
 
-      {/* 车队成员管理面板 */}
-      {tab === 'vehicles' && resourceTab === 'fleet' && fleetMembersId && fleetDetail && (
-        <Card className="space-y-4 p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">
-              {fleetDetail.name} · 成员管理
-              {fleetDetail.carrierPartner && <span className="ml-2 text-xs text-muted-foreground">挂靠承运商：{fleetDetail.carrierPartner.name}</span>}
-            </h2>
-            <Button variant="ghost" size="sm" onClick={() => { setFleetMembersId(null); setFleetDetail(null); setFleetDriverSearch(''); setAddDriverId(''); }}>关闭</Button>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium">司机（{fleetDetail.driverLinks.length}）</h3>
-                  <span className="text-xs text-muted-foreground">搜索并加入已有司机档案</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <div className="relative min-w-44 flex-1">
-                    <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input className="h-8 pl-8 text-xs" value={fleetDriverSearch} onChange={(e) => { setFleetDriverSearch(e.target.value); setAddDriverId(''); }} placeholder="搜索姓名、手机号、承运商" />
-                  </div>
-                  <select className="h-8 min-w-48 flex-1 rounded-md border bg-background px-2 text-xs" value={addDriverId} onChange={(e) => setAddDriverId(e.target.value)} disabled={fleetDriverSearching}>
-                    <option value="">{fleetDriverSearching ? '搜索中...' : '选择要加入的司机'}</option>
-                    {fleetDriverCandidates.filter((d) => !fleetDetail.driverLinks.some((link) => link.driver.id === d.id)).map((d) => (
-                      <option key={d.id} value={d.id}>{d.name} · {d.phone}{d.serviceOrganization ? ` · ${d.serviceOrganization.partner.name}` : ' · 社会运力'}</option>
-                    ))}
-                  </select>
-                  <Button size="sm" className="h-8 text-xs" disabled={!addDriverId || fleetDriverSearching} onClick={() => void addDriverToFleet()}>加入</Button>
-                </div>
-              </div>
-              <div className="rounded-md border divide-y">
-                {fleetDetail.driverLinks.length === 0
-                  ? <div className="p-3 text-center text-xs text-muted-foreground">暂无司机</div>
-                  : fleetDetail.driverLinks.map((link) => (
-                    <div key={link.driver.id} className="flex items-center justify-between p-2.5 text-sm">
-                      <div>
-                        <span>{link.driver.name}</span>
-                        <span className="ml-1 text-xs text-muted-foreground">{link.driver.phone}{link.driver.serviceOrganization ? ` · ${link.driver.serviceOrganization.partner.name}` : ' · 无承运商'}</span>
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive" onClick={() => void removeDriverFromFleet(link.driver.id)}>移出</Button>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium">车辆（{fleetDetail.vehicleLinks.length}）</h3>
-                <div className="flex gap-1.5">
-                  <select className="h-8 max-w-44 rounded-md border bg-background px-2 text-xs" value={addVehicleId} onChange={(e) => setAddVehicleId(e.target.value)}>
-                    <option value="">选择要加入的车辆</option>
-                    {vehicles.filter((v) => !fleetDetail.vehicleLinks.some((link) => link.vehicle.id === v.id)).map((v) => (
-                      <option key={v.id} value={v.id}>{v.plateNo}</option>
-                    ))}
-                  </select>
-                  <Button size="sm" className="h-8 text-xs" disabled={!addVehicleId} onClick={() => void addVehicleToFleet()}>加入</Button>
-                </div>
-              </div>
-              <div className="rounded-md border divide-y">
-                {fleetDetail.vehicleLinks.length === 0
-                  ? <div className="p-3 text-center text-xs text-muted-foreground">暂无车辆</div>
-                  : fleetDetail.vehicleLinks.map((link) => (
-                    <div key={link.vehicle.id} className="flex items-center justify-between p-2.5 text-sm">
-                      <span className="font-mono">{link.vehicle.plateNo}</span>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive" onClick={() => void removeVehicleFromFleet(link.vehicle.id)}>移出</Button>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
+      <FleetMemberManager fleetId={tab === 'vehicles' && resourceTab === 'fleet' ? fleetMembersId : null} onClose={() => setFleetMembersId(null)} onChanged={() => { fetchFleets(); fetchDrivers(); fetchVehicles(); }} />
 
     </div>
   );

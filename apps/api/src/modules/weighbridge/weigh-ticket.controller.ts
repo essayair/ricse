@@ -126,7 +126,7 @@ export class WeighTicketController {
   }
 
   @Patch('waybills/:waybillId/selections/:purpose')
-  @ApiOperation({ summary: '兼容接口：统一选择运单的库存与结算执行磅单' })
+  @ApiOperation({ summary: '选择运单计量用途；采购统一，销售出库与货款分别选用' })
   selectWaybillWeight(
     @Param('waybillId') waybillId: string,
     @Param('purpose') purpose: string,
@@ -137,13 +137,13 @@ export class WeighTicketController {
   }
 
   @Patch('waybills/:waybillId/effective-ticket')
-  @ApiOperation({ summary: '统一选择运单的库存与结算执行磅单' })
+  @ApiOperation({ summary: '选择运单磅单用途；采购统一，销售按业务节点确认' })
   selectEffectiveTicket(
     @Param('waybillId') waybillId: string,
     @Body() dto: SelectWaybillWeightDto,
     @CurrentUser('id') userId: string,
   ) {
-    return this.service.selectEffectiveTicket(waybillId, dto.weighTicketId, dto.reason, userId);
+    return this.service.selectEffectiveTicket(waybillId, dto.weighTicketId, dto.reason, userId, dto.purpose);
   }
 
   @Delete('attachments/:id')

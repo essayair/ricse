@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { day, useLogisticsPermission } from '@/components/logistics/logistics-shared';
 
 interface SettlementItem {
   id: string;
@@ -27,11 +28,12 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function LogisticsSettlementsPage() {
+  const can = useLogisticsPermission();
   const [items, setItems] = useState<SettlementItem[]>([]);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const query = new URLSearchParams();
@@ -40,19 +42,19 @@ export default function LogisticsSettlementsPage() {
       setItems(result || []);
     } catch (error: any) { alert(error.message); }
     finally { setLoading(false); }
-  };
-  useEffect(() => { void load(); }, [status]);
+  }, [status]);
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">物流结算单</h1>
-          <p className="mt-1 text-sm text-muted-foreground">运费结算对象为承运方，区别于合同买卖双方的应收应付结算</p>
+          <p className="mt-1 text-sm text-muted-foreground">运费结算对象为承运方，区别于合同买卖双方的应收采购结算</p>
         </div>
-        <Link href="/dashboard/logistics-settlements/new">
+        {can('logistics.settlement.manage') && <Link href="/dashboard/logistics-settlements/new">
           <Button><Plus className="mr-1 h-4 w-4" />新建结算单</Button>
-        </Link>
+        </Link>}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -74,7 +76,7 @@ export default function LogisticsSettlementsPage() {
               <thead className="border-b bg-muted/50 text-left text-muted-foreground">
                 <tr>
                   <th className="p-3">结算单号</th>
-                  <th className="p-3">货主方</th>
+                  <th className="p-3">付款主体</th>
                   <th className="p-3">结算周期</th>
                   <th className="p-3">状态</th>
                   <th className="p-3">车次</th>
@@ -89,7 +91,7 @@ export default function LogisticsSettlementsPage() {
                   <tr key={item.id} className="border-b">
                     <td className="p-3 font-mono">{item.settlementNo}</td>
                     <td className="p-3">{item.payerPartner?.name || item.payerCompany?.name || '—'}</td>
-                    <td className="p-3 text-xs text-muted-foreground">{item.periodStart.slice(0, 10)} ~ {item.periodEnd.slice(0, 10)}</td>
+                    <td className="p-3 text-xs text-muted-foreground">{day(item.periodStart)} ~ {day(item.periodEnd)}</td>
                     <td className="p-3"><StatusText status={item.status}>{STATUS_LABEL[item.status] || item.status}</StatusText></td>
                     <td className="p-3">{item.lines.length}</td>
                     <td className="p-3">{item.totalNetWeight}</td>

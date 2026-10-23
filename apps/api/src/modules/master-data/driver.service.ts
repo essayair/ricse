@@ -8,6 +8,8 @@ export class DriverService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly include = {
+    attachments: { orderBy: { createdAt: 'desc' as const } },
+    vehicleLinks: { include: { vehicle: { select: { id: true, plateNo: true, status: true, deletedAt: true } } } },
     serviceOrganization: {
       select: {
         id: true,
@@ -19,7 +21,7 @@ export class DriverService {
       },
     },
     fleetLinks: {
-      select: { fleet: { select: { id: true, name: true, carrierPartnerId: true } } },
+      select: { fleet: { select: { id: true, name: true, carrierPartnerId: true, status: true, deletedAt: true } } },
     },
     _count: {
       select: {

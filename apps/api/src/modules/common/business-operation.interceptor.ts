@@ -28,6 +28,8 @@ const ROOT_TYPES: Record<string, string> = {
   'inbound-receipts': 'INBOUND_RECEIPT',
   'outbound-receipts': 'OUTBOUND_RECEIPT',
   'inventory-reversals': 'INVENTORY_REVERSAL',
+  'logistics-contracts': 'LOGISTICS_CONTRACT',
+  'logistics-settlements': 'LOGISTICS_SETTLEMENT',
   'financial-settlements': 'FINANCIAL_SETTLEMENT',
 };
 
@@ -36,6 +38,7 @@ const STATIC_SEGMENTS = new Set([
   'availability', 'traceability', 'eligible-waybills', 'eligible-sources', 'eligible-lots',
   'eligible-weigh-tickets', 'batch', 'management-files', 'samples', 'sample-attachments',
   'options', 'funds', 'allocations', 'ledger', 'payment-requests',
+  'candidate-waybills',
 ]);
 
 const STATUS_LABELS: Record<string, string> = {
@@ -45,6 +48,7 @@ const STATUS_LABELS: Record<string, string> = {
   IN_PROGRESS: '执行中', PENDING: '待处理', WEIGHING: '称重中', RECEIVED: '已收货',
   READY: '待放行', VARIANCE_PENDING: '待差异处理', IN_TRANSIT: '运输中', ARRIVED: '已到达',
   SIGNED: '已签收', REVIEWED: '已复核', POSTED: '已过账', RELEASED: '已下达',
+  ACTIVE: '生效中', EXPIRED: '已到期', TERMINATED: '已终止',
   MATERIAL_PREPARED: '已备料', PENDING_QC: '待质检', PARTIAL_COMPLETED: '部分完工', PARTIALLY_CLAIMED: '部分认领',
 };
 
@@ -177,6 +181,11 @@ export class BusinessOperationInterceptor implements NestInterceptor {
 
   private resolveBusinessContext(path: string, method: string): BusinessContext | null {
     const segments = path.split('?')[0].split('/').filter(Boolean);
+    if (segments.includes('financial-settlements') && (segments.includes('options') || segments.includes('preview-goods') || segments.includes('precheck'))) return null;
+    if (segments.includes('mobile') && segments.includes('payment-approvals')) {
+      const id = segments[segments.indexOf('payment-approvals') + 1];
+      return id ? { businessType: 'PAYMENT_REQUEST', businessId: id, isDetail: false } : null;
+    }
     const productionIndex = segments.indexOf('production');
     if (productionIndex >= 0) {
       const section = segments[productionIndex + 1];
@@ -230,6 +239,12 @@ export class BusinessOperationInterceptor implements NestInterceptor {
 
   private resolveAction(method: string, path: string, body: any, isCreate?: boolean) {
     if (isCreate) return { code: 'CREATE', label: '创建单据' };
+    if (path.includes('/logistics-settlements/')) {
+      if (path.endsWith('/price')) return { code: 'PRICE_ADJUST', label: '调整本次运费单价' };
+      if (path.endsWith('/weight')) return { code: 'WEIGHT_ADJUST', label: '更换运费计费依据' };
+      if (path.endsWith('/payer')) return { code: 'PAYER_CHANGE', label: '修改本次付款主体' };
+      if (path.endsWith('/return-draft')) return { code: 'RETURN_DRAFT', label: '退回物流结算草稿' };
+    }
     if (path.includes('/attachments')) {
       if (method === 'POST') return { code: 'UPLOAD_ATTACHMENT', label: '上传附件' };
       if (method === 'DELETE') return { code: 'DELETE_ATTACHMENT', label: '删除附件' };
@@ -247,6 +262,8 @@ export class BusinessOperationInterceptor implements NestInterceptor {
     if (path.endsWith('/refresh-reservation')) return { code: 'RESERVE_REFRESH', label: '刷新库存预占' };
     if (path.endsWith('/confirm')) return { code: 'CONFIRM', label: '确认业务单据' };
     if (path.endsWith('/claim')) return { code: 'CLAIM', label: '认领收款' };
+    if (path.endsWith('/allocate-logistics')) return { code: 'ALLOCATE', label: '核销物流运费付款' };
+    if (path.includes('/logistics-allocations/') && path.endsWith('/reverse')) return { code: 'REVERSE_ALLOCATION', label: '撤销运费付款核销' };
     if (path.endsWith('/approve')) return { code: 'APPROVE', label: '批准付款申请' };
     if (path.endsWith('/reject')) return { code: 'REJECT', label: '驳回付款申请' };
     if (path.endsWith('/execute') || path.endsWith('/execute-with-voucher')) return { code: 'EXECUTE_PAYMENT', label: '上传付款凭证并创建付款单' };

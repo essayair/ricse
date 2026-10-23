@@ -1,6 +1,10 @@
 node_modules/
 dist/
+dist-dev-*/
 .next/
+.next-quality-payment-check/
+.next-logistics-check/
+.next-transport-check/
 coverage/
 .env
 .env.local

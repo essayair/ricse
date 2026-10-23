@@ -66,7 +66,7 @@ const STATUS: Record<string, string> = {
 const ORDER_STATUS: Record<string, string> = {
   DRAFT: '草稿', CONFIRMED: '已确认', DISPATCHED: '执行中', COMPLETED: '已完成', CANCELLED: '已取消',
 };
-const SCOPE: Record<string, string> = { BATCH: '执行批次结算', CONTRACT_STAGE: '合同阶段结算', CONTRACT_FINAL: '合同最终结算', ADJUSTMENT: '调整结算' };
+const SCOPE: Record<string, string> = { GOODS: '实际货物结算', BATCH: '执行批次结算', CONTRACT_STAGE: '合同阶段结算', CONTRACT_FINAL: '合同最终结算', ADJUSTMENT: '调整结算' };
 const STAGE: Record<string, string> = { ADVANCE: '预付款', PROGRESS: '阶段款', SETTLEMENT: '结算款', FINAL: '尾款', GUARANTEE: '保证金', REFUND: '退款', GUARANTEE_RETURN: '保证金退回', OTHER: '其他款项' };
 const METHOD: Record<string, string> = { BANK_TRANSFER: '银行转账', BANK_ACCEPTANCE: '银行承兑', COMMERCIAL_ACCEPTANCE: '商业承兑', LETTER_OF_CREDIT: '信用证', FUNDING_PAYMENT: '融资支付', CASH: '现金', OTHER: '其他' };
 const money = (value: string | number | null | undefined) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -74,10 +74,11 @@ const day = (value?: string | null) => value ? value.slice(0, 10) : '—';
 const today = () => new Date().toLocaleDateString('sv-SE');
 const fieldClass = 'h-10 w-full rounded-md border bg-background px-3 text-sm';
 
-export function SettlementWorkbench({ direction, standalone = false }: { direction: Direction; standalone?: boolean }) {
+export function SettlementWorkbench({ direction, standalone = false, showTitle = true }: { direction: Direction; standalone?: boolean; showTitle?: boolean }) {
   const receivable = direction === 'RECEIVABLE';
   const businessType: BusinessType = receivable ? 'SALES' : 'PURCHASE';
-  const title = receivable ? '应收款计划' : '应付结算单';
+  const title = receivable ? '应收款计划' : '采购结算单';
+  const balanceLabel = receivable ? '应收' : '应付';
   const cashLabel = receivable ? '收款' : '付款';
   const dueDateLabel = receivable ? '约定收款到期日' : '约定付款到期日';
   const accent = receivable ? 'text-blue-600' : 'text-orange-600';
@@ -152,6 +153,7 @@ export function SettlementWorkbench({ direction, standalone = false }: { directi
   const updateBatch = (orderId: string, key: keyof BatchLineForm, value: string) => setBatchLines((old) => old.map((line) => line.orderId === orderId ? { ...line, [key]: value } : line));
 
   const openSettlement = () => {
+    if (!receivable) { window.location.assign('/dashboard/payable-settlements/new'); return; }
     setForm({ contractId: '', settlementScope: 'BATCH', stageName: '', stageRatio: '', grossAmount: '', adjustmentAmount: '0', dueDate: '', remarks: '' });
     setBatchLines([]); setOrders([]); setSettlementOpen(true);
   };
@@ -249,12 +251,12 @@ export function SettlementWorkbench({ direction, standalone = false }: { directi
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">{title}</h1><p className="mt-1 text-sm text-muted-foreground">{standalone ? (receivable ? '确认销售业务应收、跟踪核销与逾期状态' : '确认采购业务应付、跟踪核销与逾期状态') : (receivable ? '销售结算、客户回款、预收款、退款与核销' : '采购结算、供应商付款、预付款、退款与核销')}</p></div>
-      {can('settlement.create') && <div className="flex gap-2">{!standalone && <Button variant="outline" onClick={openFund}><WalletCards className="mr-1 h-4 w-4" />登记资金流水</Button>}<Button onClick={openSettlement}><Plus className="mr-1 h-4 w-4" />新建{title.slice(0, 2)}结算</Button></div>}
+      <div>{showTitle && <h1 className="text-2xl font-bold">{title}</h1>}<p className="mt-1 text-sm text-muted-foreground">{standalone ? (receivable ? '确认销售业务应收、跟踪核销与逾期状态' : '确认采购业务应付、跟踪核销与逾期状态') : (receivable ? '销售结算、客户回款、预收款、退款与核销' : '采购结算、供应商付款、预付款、退款与核销')}</p></div>
+      {can('settlement.create') && <div className="flex gap-2">{!standalone && <Button variant="outline" onClick={openFund}><WalletCards className="mr-1 h-4 w-4" />登记资金流水</Button>}<Button onClick={openSettlement}><Plus className="mr-1 h-4 w-4" />{receivable ? '新建应收结算' : '新建采购结算单'}</Button></div>}
     </div>
 
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label={`${title.slice(0, 2)}总额`} value={money(summary.total)} icon={<CircleDollarSign className={accent} />} />
+      <Metric label={`${balanceLabel}总额`} value={money(summary.total)} icon={<CircleDollarSign className={accent} />} />
       <Metric label={`已${cashLabel}核销`} value={money(summary.settled)} icon={<CheckCircle2 className="text-emerald-600" />} />
       <Metric label={`未${cashLabel}金额`} value={money(summary.outstanding)} icon={<AccentIcon className={accent} />} />
       <Metric label="逾期未结" value={money(summary.overdue)} icon={<CircleDollarSign className="text-red-600" />} />
@@ -262,7 +264,7 @@ export function SettlementWorkbench({ direction, standalone = false }: { directi
 
     <div className="flex flex-wrap items-center justify-between gap-3">
       {!standalone && <div className="flex rounded-md border bg-muted/30 p-1">
-        {([['SETTLEMENT', `${title}结算`], ['FUND', '资金流水'], ['CONTRACT', '合同结算台账']] as const).map(([key, label]) => <button key={key} className={`rounded px-4 py-1.5 text-sm ${tab === key ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`} onClick={() => setTab(key)}>{label}</button>)}
+        {([['SETTLEMENT', title], ['FUND', '资金流水'], ['CONTRACT', '合同结算台账']] as const).map(([key, label]) => <button key={key} className={`rounded px-4 py-1.5 text-sm ${tab === key ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`} onClick={() => setTab(key)}>{label}</button>)}
       </div>}
       {(standalone || tab === 'SETTLEMENT') && <div className="flex gap-2"><select className="h-9 rounded-md border bg-background px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option>{['DRAFT', 'CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED', 'VOIDED'].map((value) => <option value={value} key={value}>{STATUS[value]}</option>)}</select><div className="flex"><Input className="w-64 rounded-r-none" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void load()} placeholder="结算单号、合同或对手方"/><Button variant="outline" className="rounded-l-none px-3" onClick={() => void load()}><Search className="h-4 w-4" /></Button></div></div>}
     </div>
@@ -277,7 +279,7 @@ export function SettlementWorkbench({ direction, standalone = false }: { directi
       {!!selected.lines.length && <section><h3 className="mb-2 text-sm font-medium">执行批次明细</h3><div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[760px] text-sm"><thead className="bg-muted/40"><tr><th className="p-2 text-left">批次</th><th className="p-2 text-right">数量</th><th className="p-2 text-right">单价</th><th className="p-2 text-right">结算加减项</th><th className="p-2 text-left">调整原因</th><th className="p-2 text-right">结算金额</th></tr></thead><tbody>{selected.lines.map((line) => <tr key={line.id} className="border-t"><td className="p-2">{line.orderNo} · {line.orderName}</td><td className="p-2 text-right">{line.quantity} {line.unit || ''}</td><td className="p-2 text-right">{money(line.unitPrice)}</td><td className="p-2 text-right">{signedMoney(line.adjustmentAmount)}</td><td className="p-2">{line.remarks || '—'}</td><td className="p-2 text-right font-medium">{money(line.totalAmount)}</td></tr>)}</tbody></table></div></section>}
       <section><h3 className="mb-2 text-sm font-medium">核销记录</h3>{selected.allocations.length ? <div className="space-y-2">{selected.allocations.map((entry) => <div key={entry.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm ${entry.reversedAt ? 'bg-muted/40 text-muted-foreground line-through' : ''}`}><span>{entry.fundTransaction.transactionNo} · {STAGE[entry.fundTransaction.paymentStage]}</span><b>{money(entry.amount)}</b>{can('settlement.reverse') && !entry.reversedAt && <Button size="sm" variant="ghost" className="no-underline" onClick={() => void reverseAllocation(entry)}><RotateCcw className="mr-1 h-3.5 w-3.5" />撤销核销</Button>}<span className="w-full text-xs">{day(entry.fundTransaction.occurredAt)} · {entry.creator.name}{entry.reversedAt ? ` · 已由 ${entry.reverser?.name || '管理员'} 撤销：${entry.reversalReason}` : ''}</span></div>)}</div> : <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">暂无核销记录</div>}</section>
       {selected.remarks && <div className="text-sm"><span className="text-muted-foreground">备注：</span>{selected.remarks}</div>}
-      <DialogFooter>{['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(selected.status) && <Button variant="outline" asChild><Link href={`/dashboard/settlements/${selected.id}/print`}><Printer className="mr-1.5 h-4 w-4" />打印存档</Link></Button>}{selected.status === 'DRAFT' && can('settlement.confirm') && <Button disabled={busy} onClick={() => void settlementAction(selected, 'confirm')}>确认形成{title.slice(0, 2)}</Button>}{['CONFIRMED', 'PARTIALLY_SETTLED'].includes(selected.status) && can('settlement.allocate') && <Button disabled={busy} onClick={() => openAllocation(selected)}>核销{cashLabel}</Button>}{!['VOIDED', 'SETTLED'].includes(selected.status) && can('settlement.reverse') && <Button variant="outline" disabled={busy} onClick={() => void settlementAction(selected, 'void')}>作废</Button>}</DialogFooter>
+      <DialogFooter>{['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(selected.status) && <Button variant="outline" asChild><Link href={`/dashboard/settlements/${selected.id}/print`}><Printer className="mr-1.5 h-4 w-4" />打印存档</Link></Button>}{selected.status === 'DRAFT' && can('settlement.confirm') && <Button disabled={busy} onClick={() => void settlementAction(selected, 'confirm')}>确认形成{balanceLabel}</Button>}{['CONFIRMED', 'PARTIALLY_SETTLED'].includes(selected.status) && can('settlement.allocate') && <Button disabled={busy} onClick={() => openAllocation(selected)}>核销{cashLabel}</Button>}{!['VOIDED', 'SETTLED'].includes(selected.status) && can('settlement.reverse') && <Button variant="outline" disabled={busy} onClick={() => void settlementAction(selected, 'void')}>作废</Button>}</DialogFooter>
     </>}</DialogContent></Dialog>
 
     <Dialog open={settlementOpen} onOpenChange={setSettlementOpen}><DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle>新建{title.slice(0, 2)}结算单</DialogTitle><DialogDescription>可按一个或多个有效执行批次结算，也可进行合同阶段、最终或调整结算。</DialogDescription></DialogHeader><div className="space-y-4">

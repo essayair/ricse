@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { CreateInboundReceiptDto } from './dto/create-inbound-receipt.dto';
 import { UpdatePendingInboundReceiptDto } from './dto/update-pending-inbound-receipt.dto';
+import { inboundReceiptDefaults } from './inbound-receipt-defaults';
 
 @Injectable()
 export class InventoryService {
@@ -13,7 +14,7 @@ export class InventoryService {
   ) {}
 
   private readonly include = {
-    warehouse: { select: { id: true, code: true, name: true } },
+    warehouse: { select: { id: true, code: true, name: true, manager: true } },
     creator: { select: { id: true, name: true } },
     weighTicket: {
       select: {
@@ -56,6 +57,8 @@ export class InventoryService {
         },
         dispatchNotice: {
           include: {
+            destinationWarehouse: { select: { id: true, manager: true, status: true, deletedAt: true } },
+            warehouse: { select: { id: true, manager: true, status: true, deletedAt: true } },
             order: {
               include: {
                 contract: {
@@ -87,8 +90,8 @@ export class InventoryService {
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  private decorateReceipt<T>(receipt: T): T & { workflow: ReturnType<InventoryService['buildWorkflow']> } {
-    return { ...receipt, workflow: this.buildWorkflow(receipt as any) };
+  private decorateReceipt<T>(receipt: T): T & { workflow: ReturnType<InventoryService['buildWorkflow']>; receiptDefaults: ReturnType<typeof inboundReceiptDefaults> } {
+    return { ...receipt, workflow: this.buildWorkflow(receipt as any), receiptDefaults: inboundReceiptDefaults(receipt as any) };
   }
 
   private buildWorkflow(receipt: any) {
@@ -206,7 +209,7 @@ export class InventoryService {
           waybillId: waybill.id,
           weighTicketId: null,
           qualityInspectionId: null,
-          warehouseId: waybill.dispatchNotice.warehouseId,
+          warehouseId: waybill.dispatchNotice.destinationWarehouseId || waybill.dispatchNotice.warehouseId,
           status: 'PENDING',
           acceptanceConclusion: null,
           materialName: firstLine.materialName || '未命名物料',
@@ -426,7 +429,7 @@ export class InventoryService {
           waybillId: waybill.id,
           weighTicketId: inventoryTicket.id,
           qualityInspectionId: quality.id,
-          warehouseId: waybill.dispatchNotice.warehouseId,
+          warehouseId: waybill.dispatchNotice.destinationWarehouseId || waybill.dispatchNotice.warehouseId,
           status: 'PENDING',
           acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
           materialName: quality.materialName,

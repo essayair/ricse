@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { VehicleForm, VehicleFormValue } from '@/components/vehicle-form';
+import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-panel';
 
 interface VehicleDetail {
   plateNo: string; vehicleType: string; brand: string | null; loadCapacity: string;
@@ -15,6 +16,7 @@ interface VehicleDetail {
   drivers: Array<{ driverId: string; role: 'PRIMARY' | 'SECONDARY' }>;
   deviceType: string | null; deviceNo: string | null; deviceInstalledAt: string | null;
   status: string; remark: string | null; _count: { waybills: number };
+  attachments: BusinessAttachment[];
 }
 
 export default function EditVehiclePage() {
@@ -24,7 +26,7 @@ export default function EditVehiclePage() {
   const back = () => router.push(`/dashboard/master-data/vehicles/${id}`);
   useEffect(() => {
     api.get<VehicleDetail>(`/partners/vehicles/${id}`).then(setVehicle).catch((error) => { alert(error.message || '车辆加载失败'); router.push('/dashboard/master-data?tab=vehicles'); });
-  }, [id]);
+  }, [id, router]);
 
   const update = async (value: VehicleFormValue) => {
     try {
@@ -74,5 +76,5 @@ export default function EditVehiclePage() {
     status: vehicle.status,
     remark: vehicle.remark || '',
   };
-  return <div className="mx-auto max-w-6xl space-y-6"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={back}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">编辑车辆</h1><p className="mt-1 text-sm text-muted-foreground">已被 {vehicle._count?.waybills || 0} 张物流运单引用；历史运单保留调度时快照</p></div></div><VehicleForm initialValue={initialValue} submitLabel="保存车辆" onSubmit={update} onCancel={back} showStatus /></div>;
+  return <div className="mx-auto max-w-6xl space-y-6"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={back}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">编辑车辆</h1><p className="mt-1 text-sm text-muted-foreground">已被 {vehicle._count?.waybills || 0} 张物流运单引用；历史运单保留调度时快照</p></div></div><VehicleForm initialValue={initialValue} submitLabel="保存车辆" onSubmit={update} onCancel={back} showStatus /><AttachmentPanel title="车辆资料附件" description="行驶证等车辆资料，可在当前页上传、查看与替换；至少保留一份。" attachments={vehicle.attachments || []} uploadPath={`/transport-resources/vehicles/${id}/attachments`} attachmentPath={`/transport-resources/vehicles/${id}/attachments`} onChanged={async () => setVehicle(await api.get(`/partners/vehicles/${id}`))}/></div>;
 }

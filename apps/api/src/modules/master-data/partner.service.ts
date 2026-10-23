@@ -539,6 +539,7 @@ export class PartnerService {
             orderBy: { role: 'asc' },
             include: { driver: { include: { serviceOrganization: { include: { partner: true } } } } },
           },
+          fleetLinks: { select: { fleet: { select: { id: true, name: true, carrierPartnerId: true, status: true, deletedAt: true } } } },
           waybills: {
             where: { status: 'IN_TRANSIT', deletedAt: null },
             select: { id: true },
@@ -562,6 +563,7 @@ export class PartnerService {
     const vehicle = await this.prisma.vehicle.findFirst({
       where: { id, deletedAt: null },
       include: {
+        attachments: { orderBy: { createdAt: 'desc' } },
         owner: { select: { id: true, code: true, name: true, isInternal: true } },
         drivers: {
           orderBy: { role: 'asc' },

@@ -1,141 +1,83 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
-import { mockDeep } from 'jest-mock-extended';
+import { mockDeep, mockReset } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { FileService } from '../common/file.service';
 import { LogisticsContractService } from './logistics-contract.service';
 
-describe('LogisticsContractService', () => {
-  const prisma = mockDeep<PrismaService>();
-  const accessControl = {
-    assertPermission: jest.fn().mockResolvedValue({ user: { company: { id: 'company-1' } } }),
-    getLogisticsContractScope: jest.fn().mockResolvedValue({}),
-  };
-  let service: LogisticsContractService;
-
-  beforeEach(async () => {
-    jest.clearAllMocks();
-    accessControl.assertPermission.mockResolvedValue({ user: { company: { id: 'company-1' } } });
-    accessControl.getLogisticsContractScope.mockResolvedValue({});
-    const module = await Test.createTestingModule({
-      providers: [
-        LogisticsContractService,
-        { provide: PrismaService, useValue: prisma },
-        { provide: AccessControlService, useValue: accessControl },
-      ],
-    }).compile();
-    service = module.get(LogisticsContractService);
-    prisma.logisticsContract.count.mockResolvedValue(0);
-    prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
+describe('物流合同档案、共享范围与锁价', () => {
+  const prisma = mockDeep<PrismaService>(), access = mockDeep<AccessControlService>(), files = mockDeep<FileService>();
+  const service = new LogisticsContractService(prisma, access, files);
+  const dto = () => ({ title: '年度物流合同', carrierPartnerId: 'carrier', signingPartnerId: 'owner', allBusinessUnits: true });
+  const base = () => ({ id: 'lc', title: '年度物流合同', status: 'DRAFT', signingPartnerId: 'owner', attachments: [{ id: 'a', fileName: 'a.pdf' }], priceTerms: [{ id: 'p' }] });
+  beforeEach(() => {
+    mockReset(prisma); mockReset(access); mockReset(files);
+    access.assertPermission.mockResolvedValue({ user: { company: { id: 'management-company' } } } as any);
+    access.getBusinessUnitOptions.mockResolvedValue([{ id: 'unit' }] as any); access.getLogisticsContractScope.mockResolvedValue({});
+    prisma.serviceOrganization.findFirst.mockResolvedValue({ id: 'carrier-service' } as any);
+    prisma.partner.findFirst.mockResolvedValue({ id: 'owner', isInternal: true } as any);
+    prisma.logisticsContract.findFirst.mockResolvedValue(base() as any);
+    prisma.logisticsContractPriceTerm.findMany.mockResolvedValue([]);
+    prisma.logisticsContract.count.mockResolvedValue(0); prisma.logisticsSettlementLine.count.mockResolvedValue(0);
+    prisma.logisticsContract.create.mockResolvedValue(base() as any);
+    prisma.logisticsContract.findUniqueOrThrow.mockResolvedValue(base() as any);
+    prisma.$transaction.mockImplementation(async (f: any) => f(prisma));
   });
-
-  describe('create', () => {
-    it('承运方必须是有效的物流承运商主数据', async () => {
-      prisma.serviceOrganization.findFirst.mockResolvedValue(null);
-      await expect(service.create({ carrierPartnerId: 'partner-1' }, 'user-1'))
-        .rejects.toThrow('承运方必须是有效的物流承运商主数据');
-    });
-
-    it('承运方校验通过后创建物流合同并生成编号', async () => {
-      prisma.serviceOrganization.findFirst.mockResolvedValue({ id: 'so-1' } as any);
-      prisma.logisticsContract.create.mockResolvedValue({ id: 'lc-1', contractNo: 'LC202609170001' } as any);
-
-      const result = await service.create({ carrierPartnerId: 'partner-1' }, 'user-1');
-
-      expect(result.contractNo).toBe('LC202609170001');
-      expect(prisma.logisticsContract.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ carrierPartnerId: 'partner-1', createdBy: 'user-1', settlementBasis: 'NET_WEIGHT' }),
-      }));
-    });
+  it('签约主体使用内部合作伙伴，管理组织不作为法律主体；默认全部事业部', async () => {
+    await service.create(dto(), 'u');
+    expect(prisma.logisticsContract.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ signingPartnerId: 'owner', companyId: 'management-company', allBusinessUnits: true, defaultWeightBasis: 'SETTLEMENT', createdBy: 'u', contractNo: expect.stringMatching(/^LC\d{12}$/) }) }));
   });
-
-  describe('findOne', () => {
-    it('超出数据范围或不存在时抛出 NotFoundException', async () => {
-      prisma.logisticsContract.findFirst.mockResolvedValue(null);
-      await expect(service.findOne('lc-1', 'user-1')).rejects.toThrow(NotFoundException);
-    });
+  it('无效承运方或内部签约主体不能创建', async () => {
+    prisma.serviceOrganization.findFirst.mockResolvedValue(null);
+    await expect(service.create(dto(), 'u')).rejects.toThrow('有效的物流承运商');
+    prisma.serviceOrganization.findFirst.mockResolvedValue({ id: 's' } as any); prisma.partner.findFirst.mockResolvedValue(null);
+    await expect(service.create(dto(), 'u')).rejects.toThrow('内部我方签约主体');
   });
-
-  describe('updateStatus', () => {
-    it('允许 DRAFT 变更为 ACTIVE', async () => {
-      prisma.logisticsContract.findFirst.mockResolvedValue({ id: 'lc-1', status: 'DRAFT' } as any);
-      prisma.logisticsContract.update.mockResolvedValue({ id: 'lc-1', status: 'ACTIVE' } as any);
-      const result = await service.updateStatus('lc-1', { status: 'ACTIVE' }, 'user-1');
-      expect(result.status).toBe('ACTIVE');
-    });
-
-    it('不允许 DRAFT 直接变更为 TERMINATED', async () => {
-      prisma.logisticsContract.findFirst.mockResolvedValue({ id: 'lc-1', status: 'DRAFT' } as any);
-      await expect(service.updateStatus('lc-1', { status: 'TERMINATED' }, 'user-1'))
-        .rejects.toThrow('不能从 DRAFT 变更为 TERMINATED');
-    });
+  it('指定事业部必须是账号维护范围的子集', async () => {
+    await expect(service.create({ ...dto(), allBusinessUnits: false, businessUnitIds: ['other'] }, 'u')).rejects.toThrow('有维护权限');
+    await service.create({ ...dto(), allBusinessUnits: false, businessUnitIds: ['unit'] }, 'u');
+    expect(prisma.logisticsContract.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ businessUnits: { create: [{ businessUnitId: 'unit' }] } }) }));
   });
-
-  describe('addPriceTerm', () => {
-    beforeEach(() => {
-      prisma.logisticsContract.findFirst.mockResolvedValue({ id: 'lc-1', status: 'ACTIVE' } as any);
-    });
-
-    it('首次为某路线新增运价条款直接创建', async () => {
-      prisma.logisticsContractPriceTerm.findMany.mockResolvedValue([]);
-      prisma.logisticsContractPriceTerm.create.mockResolvedValue({ id: 'term-1' } as any);
-
-      await service.addPriceTerm('lc-1', {
-        originLocation: '额济纳', destinationLocation: '玉门', unitPrice: 106.5, effectiveAt: '2026-07-01',
-      }, 'user-1');
-
-      expect(prisma.logisticsContractPriceTerm.update).not.toHaveBeenCalled();
-      expect(prisma.logisticsContractPriceTerm.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ unitPrice: 106.5, expiresAt: null }),
-      }));
-    });
-
-    it('新增更晚生效的条款时自动收口原当前生效条款', async () => {
-      const openTerm = {
-        id: 'term-old', originLocation: '额济纳', destinationLocation: '玉门',
-        effectiveAt: new Date('2026-07-01'), expiresAt: null,
-      };
-      prisma.logisticsContractPriceTerm.findMany.mockResolvedValue([openTerm] as any);
-      prisma.logisticsContractPriceTerm.create.mockResolvedValue({ id: 'term-new' } as any);
-
-      await service.addPriceTerm('lc-1', {
-        originLocation: '额济纳', destinationLocation: '玉门', unitPrice: 110, effectiveAt: '2026-08-01',
-      }, 'user-1');
-
-      expect(prisma.logisticsContractPriceTerm.update).toHaveBeenCalledWith({
-        where: { id: 'term-old' },
-        data: { expiresAt: new Date('2026-08-01') },
-      });
-    });
-
-    it('新条款生效日期早于或等于当前生效条款时拒绝', async () => {
-      const openTerm = {
-        id: 'term-old', originLocation: '额济纳', destinationLocation: '玉门',
-        effectiveAt: new Date('2026-07-01'), expiresAt: null,
-      };
-      prisma.logisticsContractPriceTerm.findMany.mockResolvedValue([openTerm] as any);
-
-      await expect(service.addPriceTerm('lc-1', {
-        originLocation: '额济纳', destinationLocation: '玉门', unitPrice: 110, effectiveAt: '2026-07-01',
-      }, 'user-1')).rejects.toThrow('新运价生效日期必须晚于当前生效条款的生效日期');
-    });
-
-    it('与历史条款日期区间重叠时拒绝', async () => {
-      const historicalTerm = {
-        id: 'term-hist', originLocation: '额济纳', destinationLocation: '玉门',
-        effectiveAt: new Date('2026-01-01'), expiresAt: new Date('2026-06-01'),
-      };
-      prisma.logisticsContractPriceTerm.findMany.mockResolvedValue([historicalTerm] as any);
-
-      await expect(service.addPriceTerm('lc-1', {
-        originLocation: '额济纳', destinationLocation: '玉门', unitPrice: 110, effectiveAt: '2026-03-01', expiresAt: '2026-04-01',
-      }, 'user-1')).rejects.toThrow('该路线在此日期区间内已存在运价条款');
-    });
-
-    it('失效日期早于或等于生效日期时拒绝', async () => {
-      await expect(service.addPriceTerm('lc-1', {
-        originLocation: '额济纳', destinationLocation: '玉门', unitPrice: 110, effectiveAt: '2026-08-01', expiresAt: '2026-07-01',
-      }, 'user-1')).rejects.toThrow(BadRequestException);
-    });
+  it('没有事业部或外部账号不能利用全部适用创建合同', async () => {
+    access.getBusinessUnitOptions.mockResolvedValue([]);
+    await expect(service.create(dto(), 'u')).rejects.toThrow('先配置');
+    access.assertPermission.mockResolvedValue({ isExternal: true } as any);
+    await expect(service.create(dto(), 'u')).rejects.toThrow('外部企业');
+  });
+  it('草稿可修改，生效合同原信息与运价不能覆盖', async () => {
+    await service.update('lc', dto(), 'u');
+    expect(prisma.logisticsContract.update).toHaveBeenCalled();
+    prisma.logisticsContract.findFirst.mockResolvedValue({ ...base(), status: 'ACTIVE' } as any);
+    await expect(service.update('lc', dto(), 'u')).rejects.toThrow('合同已生效');
+    await expect(service.addPriceTerm('lc', { unitPrice: 100, effectiveAt: '2026-10-01' }, 'u')).rejects.toThrow('运价已锁定');
+  });
+  it('不限路线允许两端留空，但不能只填写一个地点', async () => {
+    await service.addPriceTerm('lc', { unitPrice: 100, effectiveAt: '2026-10-01' }, 'u');
+    expect(prisma.logisticsContractPriceTerm.create).toHaveBeenCalledWith({ data: expect.objectContaining({ originLocation: '', destinationLocation: '', unitPrice: 100 }) });
+    await expect(service.addPriceTerm('lc', { originLocation: '玉门', unitPrice: 100, effectiveAt: '2026-10-01' }, 'u')).rejects.toThrow('同时填写');
+  });
+  it('草稿内同一路线重叠运价拒绝，不会自动改写旧条款', async () => {
+    prisma.logisticsContractPriceTerm.findMany.mockResolvedValue([{ id: 'old', effectiveAt: new Date('2026-01-01'), expiresAt: null }] as any);
+    await expect(service.addPriceTerm('lc', { unitPrice: 120, effectiveAt: '2026-10-01' }, 'u')).rejects.toThrow('已存在运价');
+    expect(prisma.logisticsContractPriceTerm.update).not.toHaveBeenCalled();
+  });
+  it('启用前必须有附件与运价；启用后记录终止时间', async () => {
+    prisma.logisticsContract.findFirst.mockResolvedValue({ ...base(), attachments: [] } as any);
+    await expect(service.updateStatus('lc', { status: 'ACTIVE' }, 'u')).rejects.toThrow('合同附件');
+    prisma.logisticsContract.findFirst.mockResolvedValue(base() as any);
+    await service.updateStatus('lc', { status: 'ACTIVE' }, 'u');
+    prisma.logisticsContract.findFirst.mockResolvedValue({ ...base(), status: 'ACTIVE' } as any);
+    await service.updateStatus('lc', { status: 'TERMINATED' }, 'u');
+    expect(prisma.logisticsContract.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: { status: 'TERMINATED', terminatedAt: expect.any(Date) } }));
+  });
+  it('合同结算记录继续按全部关联运单范围过滤，不能通过共享合同越权', async () => {
+    access.getLogisticsSettlementScope.mockResolvedValue({ lines: { every: { waybill: { id: 'visible' } } } });
+    prisma.logisticsSettlementLine.findMany.mockResolvedValue([]);
+    await service.settlementRecords('lc', 'u');
+    expect(prisma.logisticsSettlementLine.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ settlement: { AND: [expect.objectContaining({ lines: expect.anything() }), { deletedAt: null }] } }) }));
+  });
+  it('生效合同附件不可删除，查看地址仍校验所属合同', async () => {
+    prisma.logisticsContract.findFirst.mockResolvedValue({ ...base(), status: 'ACTIVE' } as any);
+    await expect(service.attachment('lc', 'a', 'u', true)).rejects.toThrow('不能删除');
+    await expect(service.attachment('lc', 'foreign', 'u')).rejects.toThrow('附件不存在');
   });
 });

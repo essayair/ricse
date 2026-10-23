@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FleetService } from './fleet.service';
@@ -73,10 +74,51 @@ describe('FleetService 车队管理', () => {
   });
 
   it('司机加入车队时不能重复加入', async () => {
-    prisma.fleet.findFirst.mockResolvedValue({ id: 'fleet-1', _count: { driverLinks: 0, vehicleLinks: 0 } } as any);
+    prisma.fleet.findFirst.mockResolvedValue({ id: 'fleet-1', status: 'ACTIVE', _count: { driverLinks: 0, vehicleLinks: 0 } } as any);
     prisma.driver.findFirst.mockResolvedValue({ id: 'driver-1' } as any);
     prisma.driverFleet.findUnique.mockResolvedValue({ id: 'link-1' } as any);
     await expect(service.addDriver('fleet-1', 'driver-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it.each(['drivers', 'vehicles'])('加入 %s 未选择成员时给出业务提示，不调用数据库', async (kind) => {
+    await expect(kind === 'drivers' ? service.addDriver('fleet-1', undefined as any) : service.addVehicle('fleet-1', undefined as any))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.fleet.findFirst).not.toHaveBeenCalled();
+  });
+
+  it.each(['drivers', 'vehicles'])('停用车队不能新增 %s 成员', async (kind) => {
+    prisma.fleet.findFirst.mockResolvedValue({ id: 'fleet-1', status: 'INACTIVE' } as any);
+    await expect(kind === 'drivers' ? service.addDriver('fleet-1', 'driver-1') : service.addVehicle('fleet-1', 'vehicle-1'))
+      .rejects.toThrow('车队已停用');
+  });
+
+  it.each(['drivers', 'vehicles'])('候选 %s 只能是未删除且启用的档案', async (kind) => {
+    prisma.fleet.findFirst.mockResolvedValue({ id: 'fleet-1', status: 'ACTIVE' } as any);
+    if (kind === 'drivers') {
+      prisma.driver.findFirst.mockResolvedValue(null);
+      await expect(service.addDriver('fleet-1', 'driver-1')).rejects.toThrow('司机不存在或已停用');
+      expect(prisma.driver.findFirst).toHaveBeenCalledWith({ where: { id: 'driver-1', deletedAt: null, status: 'ACTIVE' } });
+    } else {
+      prisma.vehicle.findFirst.mockResolvedValue(null);
+      await expect(service.addVehicle('fleet-1', 'vehicle-1')).rejects.toThrow('车辆不存在或已停用');
+      expect(prisma.vehicle.findFirst).toHaveBeenCalledWith({ where: { id: 'vehicle-1', deletedAt: null, status: 'ACTIVE' } });
+    }
+  });
+
+  it.each(['drivers', 'vehicles'])('并发重复加入 %s 返回明确冲突而不是 Internal server error', async (kind) => {
+    prisma.fleet.findFirst.mockResolvedValue({ id: 'fleet-1', status: 'ACTIVE' } as any);
+    const error = new Prisma.PrismaClientKnownRequestError('duplicate member', { code: 'P2002', clientVersion: '5.18.0' });
+    if (kind === 'drivers') {
+      prisma.driver.findFirst.mockResolvedValue({ id: 'driver-1' } as any);
+      prisma.driverFleet.findUnique.mockResolvedValue(null);
+      prisma.driverFleet.create.mockRejectedValue(error);
+      await expect(service.addDriver('fleet-1', 'driver-1')).rejects.toBeInstanceOf(ConflictException);
+    } else {
+      prisma.vehicle.findFirst.mockResolvedValue({ id: 'vehicle-1' } as any);
+      prisma.vehicleFleet.findUnique.mockResolvedValue(null);
+      prisma.vehicleFleet.create.mockRejectedValue(error);
+      await expect(service.addVehicle('fleet-1', 'vehicle-1')).rejects.toBeInstanceOf(ConflictException);
+    }
   });
 
   it('移出不在车队中的车辆时报错', async () => {

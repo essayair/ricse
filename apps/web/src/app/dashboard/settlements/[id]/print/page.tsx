@@ -26,6 +26,8 @@ interface Party {
 }
 
 interface SettlementLine {
+  sourceSnapshot?: { waybillNo?: string; plateNo?: string; ticketNo?: string; reportNo?: string; deductionPerTon?: number };
+  qualityDeductionAmount?: string;
   id: string;
   orderNo?: string | null;
   orderName?: string | null;
@@ -54,6 +56,7 @@ interface Allocation {
 }
 
 interface Settlement {
+  qualityDeductionAmount?: string;
   id: string;
   settlementNo: string;
   direction: 'RECEIVABLE' | 'PAYABLE';
@@ -83,6 +86,7 @@ const STATUS: Record<string, string> = {
   CONFIRMED: '已确认', PARTIALLY_SETTLED: '部分结清', SETTLED: '已结清', DRAFT: '草稿', VOIDED: '已作废',
 };
 const SCOPE: Record<string, string> = {
+  GOODS: '实际货物结算',
   BATCH: '执行批次结算', CONTRACT_STAGE: '合同阶段结算', CONTRACT_FINAL: '合同最终结算', ADJUSTMENT: '调整结算',
 };
 const STAGE: Record<string, string> = {
@@ -187,7 +191,7 @@ export default function SettlementPrintPage() {
 
   return <div className="settlement-print-page -m-6 min-h-screen bg-slate-100 p-6">
     <div className="settlement-print-actions mx-auto mb-4 flex max-w-[1040px] items-center justify-between gap-3 rounded-lg border bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-3"><Button variant="ghost" onClick={() => router.back()}><ArrowLeft className="mr-1.5 h-4 w-4" />返回</Button><div><div className="font-medium">结算单打印存档</div><div className="text-xs text-muted-foreground">请核对单据内容后打印、签字盖章并按公司制度归档</div></div></div>
+      <div className="flex items-center gap-3"><Button variant="ghost" onClick={() => router.back()}><ArrowLeft className="mr-1.5 h-4 w-4" />返回</Button><div><div className="font-medium">{item.direction === 'PAYABLE' ? '采购结算单打印存档' : '结算单打印存档'}</div><div className="text-xs text-muted-foreground">请核对单据内容后打印、签字盖章并按公司制度归档</div></div></div>
       <Button disabled={!printable || printing} onClick={() => void printDocument()}><Printer className="mr-1.5 h-4 w-4" />{printing ? '正在准备…' : '打印存档'}</Button>
     </div>
 
@@ -195,9 +199,9 @@ export default function SettlementPrintPage() {
 
     <article className="settlement-print-paper mx-auto bg-white text-slate-950 shadow-lg">
       <header className="border-b-2 border-slate-900 pb-5 text-center">
-        <div className="text-xs tracking-[0.35em] text-slate-500">RICSE · 区域产业链服务生态</div>
-        <h1 className="mt-3 text-3xl font-bold tracking-[0.18em]">业务确认及结算单</h1>
-        <div className="mt-3 text-sm">{item.direction === 'PAYABLE' ? '采购应付结算' : '销售应收结算'} · {STATUS[item.status] || item.status}</div>
+        <div className="text-xs tracking-[0.35em] text-slate-500">RICSE — 和光云链区域产业链服务生态</div>
+        <h1 className="mt-3 text-3xl font-bold tracking-[0.18em]">{item.direction === 'PAYABLE' ? '采购结算单' : '业务确认及结算单'}</h1>
+        <div className="mt-3 text-sm">{item.direction === 'PAYABLE' ? '采购结算' : '销售应收结算'} · {STATUS[item.status] || item.status}</div>
       </header>
 
       <section className="print-avoid mt-5 grid grid-cols-4 border-l border-t border-slate-900 text-[12px]">
@@ -215,18 +219,18 @@ export default function SettlementPrintPage() {
         <h2 className="mb-2 text-sm font-bold">一、结算明细</h2>
         <table className="w-full table-fixed border-collapse text-[11px]">
           <thead><tr className="bg-slate-100">
-            <Th className="w-10">序号</Th><Th className="w-40">执行批次 / 来源</Th><Th>数量</Th><Th>单价（元）</Th><Th>原金额（元）</Th><Th>加减项（元）</Th><Th>结算金额（元）</Th><Th className="w-32">调整原因 / 备注</Th>
+            <Th className="w-10">序号</Th><Th className="w-32">执行批次 / 来源</Th><Th>数量</Th><Th>单价（元）</Th><Th>原金额（元）</Th><Th>质量扣款（元）</Th><Th>其他加减项（元）</Th><Th>结算金额（元）</Th><Th className="w-24">调整原因 / 备注</Th>
           </tr></thead>
           <tbody>{item.lines.length ? item.lines.map((line, index) => <tr key={line.id}>
-            <Td center>{index + 1}</Td><Td>{line.orderNo || item.sourceNo || '—'}<div className="text-[10px] text-slate-500">{line.orderName || ''}</div></Td><Td right>{line.quantity || '—'} {line.unit ? unitLabel(line.unit) : ''}</Td><Td right>{line.unitPrice ? money(line.unitPrice) : '—'}</Td><Td right>{money(line.grossAmount)}</Td><Td right>{money(line.adjustmentAmount)}</Td><Td right strong>{money(line.totalAmount)}</Td><Td>{line.remarks || '—'}</Td>
-          </tr>) : <tr><Td center>1</Td><Td>{item.sourceNo || item.contract.contractNo}</Td><Td center colSpan={2}>{SCOPE[item.settlementScope] || item.settlementScope}</Td><Td right>{money(item.grossAmount)}</Td><Td right>{money(item.adjustmentAmount)}</Td><Td right strong>{money(item.totalAmount)}</Td><Td>{item.remarks || '—'}</Td></tr>}</tbody>
+            <Td center>{index + 1}</Td><Td>{line.orderNo || item.sourceNo || '—'}<div className="text-[10px] text-slate-500">{line.orderName || ''}</div>{line.sourceSnapshot && <div className="mt-1 text-[10px]">{line.sourceSnapshot.waybillNo} · {line.sourceSnapshot.plateNo}<br/>磅单：{line.sourceSnapshot.ticketNo}<br/>报告：{line.sourceSnapshot.reportNo}</div>}</Td><Td right>{line.quantity || '—'} {line.unit ? unitLabel(line.unit) : ''}</Td><Td right>{line.unitPrice ? money(line.unitPrice) : '—'}</Td><Td right>{money(line.grossAmount)}</Td><Td right>{money(line.qualityDeductionAmount)}</Td><Td right>{money(line.adjustmentAmount)}</Td><Td right strong>{money(line.totalAmount)}</Td><Td>{line.remarks || '—'}</Td>
+          </tr>) : <tr><Td center>1</Td><Td>{item.sourceNo || item.contract.contractNo}</Td><Td center colSpan={2}>{SCOPE[item.settlementScope] || item.settlementScope}</Td><Td right>{money(item.grossAmount)}</Td><Td right>{money(item.qualityDeductionAmount)}</Td><Td right>{money(item.adjustmentAmount)}</Td><Td right strong>{money(item.totalAmount)}</Td><Td>{item.remarks || '—'}</Td></tr>}</tbody>
         </table>
       </section>
 
       <section className="print-avoid mt-4 border-2 border-slate-900 p-4">
         <div className="grid grid-cols-3 gap-4 text-[12px]">
           <Total label="结算原金额" value={`¥ ${money(item.grossAmount)}`} />
-          <Total label="价格 / 质量等加减项" value={`¥ ${money(item.adjustmentAmount)}`} />
+          <Total label="质量价格扣款" value={`¥ ${money(item.qualityDeductionAmount)}`} /><Total label="其他加减项" value={`¥ ${money(item.adjustmentAmount)}`} />
           <Total label="本单结算金额" value={`¥ ${money(item.totalAmount)}`} emphasis />
         </div>
         <div className="mt-4 border-t border-slate-400 pt-3 text-sm"><span className="text-slate-500">人民币大写：</span><strong>{uppercaseMoney(item.totalAmount)}</strong></div>

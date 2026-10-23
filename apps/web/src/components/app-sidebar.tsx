@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { PAYABLE_NAV_ITEMS } from '@/lib/settlement-navigation';
 import {
   Sidebar,
   SidebarContent,
@@ -50,7 +51,6 @@ const NAV_ITEMS: NavGroup[] = [
     children: [
       { href: '/dashboard/dispatch', label: '调度看板' },
       { href: '/dashboard/waybills', label: '运单管理' },
-      { href: '/dashboard/logistics-reconciliation', label: '物流对账' },
       { href: '/dashboard/logistics-settlements', label: '运费结算单' },
       { href: '/dashboard/logistics-contracts', label: '物流合同' },
     ],
@@ -87,7 +87,7 @@ const NAV_ITEMS: NavGroup[] = [
     icon: CircleDollarSign,
     children: [
       { href: '/dashboard/receivables', label: '应收管理' },
-      { href: '/dashboard/payment-requests', label: '应付管理' },
+      ...PAYABLE_NAV_ITEMS,
       { href: '/dashboard/settlement-ledger', label: '结算台账' },
     ],
   },
@@ -187,11 +187,11 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href.startsWith('/dashboard/orders') || href.startsWith('/dashboard/dispatch-notices')) return 'execution.view';
     if (href.startsWith('/dashboard/logistics-contracts')) return 'logistics.contract.view';
     if (href.startsWith('/dashboard/logistics-settlements')) return 'logistics.settlement.view';
-    if (href.startsWith('/dashboard/dispatch') || href.startsWith('/dashboard/waybills') || href.startsWith('/dashboard/logistics-reconciliation')) return 'logistics.view';
+    if (href.startsWith('/dashboard/dispatch') || href.startsWith('/dashboard/waybills')) return 'logistics.view';
     if (href.startsWith('/dashboard/weighbridge') || href.startsWith('/dashboard/quality')) return 'quality.view';
     if (href.startsWith('/dashboard/inventory') || href.startsWith('/dashboard/inbound') || href.startsWith('/dashboard/outbound')) return 'inventory.view';
     if (href.startsWith('/dashboard/production')) return 'production.view';
-    if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/receivables') || href.startsWith('/dashboard/receipts') || href.startsWith('/dashboard/payables') || href.startsWith('/dashboard/payment-requests') || href.startsWith('/dashboard/payments')) return 'settlement.view';
+    if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/receivables') || href.startsWith('/dashboard/receipts') || href.startsWith('/dashboard/payables') || href.startsWith('/dashboard/payable-settlements') || href.startsWith('/dashboard/payment-requests') || href.startsWith('/dashboard/payments')) return 'settlement.view';
     if (href.startsWith('/dashboard/industry-database')) return 'industry.database.view';
     if (href.startsWith('/dashboard/master-data') || href.startsWith('/dashboard/org')) return 'organization.view';
     return '';
@@ -215,12 +215,14 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
       return pathname === base;
     }
 
-    // 资金结算的三级功能放在页面顶部切换，侧边栏继续高亮所属二级模块。
+    // 收款单仍归属应收管理；应付各功能均有自己的二级入口。
     if (base === '/dashboard/receivables' && pathname === '/dashboard/receipts') return true;
-    if (base === '/dashboard/payment-requests' && pathname === '/dashboard/payments') return true;
 
     // 必须先确认当前路径属于该菜单；否则相同长度的其他路径可能被生产管理的特殊规则误判。
     if (pathname !== base && !pathname.startsWith(base + '/')) return false;
+
+    // 结算单有独立二级入口；新建页即使带有合同等参数，也归属于该菜单。
+    if (PAYABLE_NAV_ITEMS.some(item => item.href === base)) return true;
 
     if (base === '/dashboard/production' && !qs) {
       const child = pathname.slice(`${base}/`.length);

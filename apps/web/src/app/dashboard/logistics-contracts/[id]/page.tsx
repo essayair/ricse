@@ -1,161 +1,36 @@
 'use client';
-
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { confirmAction } from '@/lib/system-dialog';
+import { AttachmentPanel } from '@/components/attachment-panel';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-
-interface PriceTerm {
-  id: string;
-  originLocation: string;
-  destinationLocation: string;
-  unitPrice: string;
-  effectiveAt: string;
-  expiresAt: string | null;
-}
-
-interface ContractDetail {
-  id: string;
-  contractNo: string;
-  status: string;
-  settlementBasis: string;
-  signedAt: string | null;
-  effectiveAt: string | null;
-  expireAt: string | null;
-  remarks: string | null;
-  carrierPartner: { id: string; name: string; code: string };
-  priceTerms: PriceTerm[];
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: '草稿', ACTIVE: '生效中', EXPIRED: '已到期', TERMINATED: '已终止',
-};
-
-const NEXT_STATUS: Record<string, string> = { DRAFT: 'ACTIVE', ACTIVE: 'TERMINATED' };
-const NEXT_STATUS_LABEL: Record<string, string> = { ACTIVE: '启用合同', TERMINATED: '终止合同' };
+import { contractStatus, settlementStatus, pricingLabel, weightBasisLabel, num, time, day, useLogisticsPermission, useLogisticsError } from '@/components/logistics/logistics-shared';
 
 export default function LogisticsContractDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
-  const [contract, setContract] = useState<ContractDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-
-  const [origin, setOrigin] = useState('');
-  const [destination, setDestination] = useState('');
-  const [unitPrice, setUnitPrice] = useState('');
-  const [effectiveAt, setEffectiveAt] = useState('');
-  const [expiresAt, setExpiresAt] = useState('');
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const result = await api.get<ContractDetail>(`/logistics-contracts/${id}`);
-      setContract(result);
-    } catch (error: any) { alert(error.message); }
-    finally { setLoading(false); }
+  const { id } = useParams<{ id: string }>(), can = useLogisticsPermission();
+  const [contract, setContract] = useState<any>(null), [records, setRecords] = useState<any[]>([]), [error, setError] = useLogisticsError('物流合同操作未完成'), [busy, setBusy] = useState(false);
+  const canManage = can('logistics.contract.manage'), canViewRecords = can('logistics.settlement.view');
+  const load = useCallback(async () => { try { setContract(await api.get('/logistics-contracts/' + id)); } catch (e: any) { setError(e.message); } }, [id, setError]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (canViewRecords) void api.get<any[]>('/logistics-contracts/' + id + '/settlement-records').then(setRecords).catch(e => setError(e.message)); }, [id, canViewRecords, setError]);
+  const change = async (status: string) => {
+    const action = status === 'ACTIVE' ? '启用物流合同' : '终止物流合同';
+    if (!await confirmAction(status === 'ACTIVE' ? '启用后合同与运价锁定，结算调价在物流结算单记录，确认启用？' : '终止后不再匹配新的运输，既有运输和结算记录保留。确认终止？', { title: action })) return;
+    setBusy(true); setError(''); try { await api.patch('/logistics-contracts/' + id + '/status', { status }); await load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
-  useEffect(() => { void load(); }, [id]);
-
-  const updateStatus = async (status: string) => {
-    if (!await confirmAction(`确认${NEXT_STATUS_LABEL[status]}？`, { title: `${NEXT_STATUS_LABEL[status]}确认` })) return;
-    setBusy(true);
-    try { await api.patch(`/logistics-contracts/${id}/status`, { status }); await load(); }
-    catch (error: any) { alert(error.message); }
-    finally { setBusy(false); }
-  };
-
-  const addPriceTerm = async () => {
-    if (!origin.trim() || !destination.trim() || !unitPrice || !effectiveAt) {
-      alert('请填写起运地、目的地、单价和生效日期'); return;
-    }
-    setBusy(true);
-    try {
-      await api.post(`/logistics-contracts/${id}/price-terms`, {
-        originLocation: origin.trim(), destinationLocation: destination.trim(),
-        unitPrice: Number(unitPrice), effectiveAt, expiresAt: expiresAt || undefined,
-      });
-      setOrigin(''); setDestination(''); setUnitPrice(''); setEffectiveAt(''); setExpiresAt('');
-      await load();
-    } catch (error: any) { alert(error.message); }
-    finally { setBusy(false); }
-  };
-
-  if (loading) return <div className="p-12 text-center text-muted-foreground">加载中...</div>;
-  if (!contract) return <div className="p-12 text-center text-muted-foreground">物流合同不存在</div>;
-
-  const nextStatus = NEXT_STATUS[contract.status];
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold font-mono">{contract.contractNo}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">承运方：{contract.carrierPartner.name}（{contract.carrierPartner.code}）</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <StatusText status={contract.status}>{STATUS_LABEL[contract.status] || contract.status}</StatusText>
-          {nextStatus && (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void updateStatus(nextStatus)}>
-              {NEXT_STATUS_LABEL[nextStatus]}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <Card className="grid grid-cols-2 gap-4 p-6 text-sm md:grid-cols-4">
-        <div><div className="text-muted-foreground">结算方式</div><div className="mt-1">{contract.settlementBasis === 'NET_WEIGHT' ? '按净重' : contract.settlementBasis === 'GROSS_WEIGHT' ? '按毛重' : '按车次'}</div></div>
-        <div><div className="text-muted-foreground">签约日期</div><div className="mt-1">{contract.signedAt?.slice(0, 10) || '—'}</div></div>
-        <div><div className="text-muted-foreground">生效日期</div><div className="mt-1">{contract.effectiveAt?.slice(0, 10) || '—'}</div></div>
-        <div><div className="text-muted-foreground">到期日期</div><div className="mt-1">{contract.expireAt?.slice(0, 10) || '不限'}</div></div>
-        {contract.remarks && <div className="col-span-2 md:col-span-4"><div className="text-muted-foreground">备注</div><div className="mt-1">{contract.remarks}</div></div>}
-      </Card>
-
-      <Card className="overflow-hidden">
-        <div className="border-b p-4 font-medium">运价条款（不分货物品类，按路线分生效期维护）</div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-sm">
-            <thead className="border-b bg-muted/50 text-left text-muted-foreground">
-              <tr>
-                <th className="p-3">起运地</th>
-                <th className="p-3">目的地</th>
-                <th className="p-3">单价（元/吨，含税）</th>
-                <th className="p-3">生效期</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contract.priceTerms.map((term) => (
-                <tr key={term.id} className="border-b">
-                  <td className="p-3">{term.originLocation}</td>
-                  <td className="p-3">{term.destinationLocation}</td>
-                  <td className="p-3">{term.unitPrice}</td>
-                  <td className="p-3 text-xs text-muted-foreground">
-                    {term.effectiveAt.slice(0, 10)} ~ {term.expiresAt ? term.expiresAt.slice(0, 10) : '当前生效'}
-                  </td>
-                </tr>
-              ))}
-              {!contract.priceTerms.length && (
-                <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">暂无运价条款</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 border-t p-4 md:grid-cols-5">
-          <Input placeholder="起运地" value={origin} onChange={(e) => setOrigin(e.target.value)} />
-          <Input placeholder="目的地" value={destination} onChange={(e) => setDestination(e.target.value)} />
-          <Input placeholder="单价（元/吨）" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
-          <Input type="date" placeholder="生效日期" value={effectiveAt} onChange={(e) => setEffectiveAt(e.target.value)} />
-          <div className="flex gap-2">
-            <Input type="date" placeholder="失效日期（选填）" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
-            <Button disabled={busy} onClick={() => void addPriceTerm()}>新增</Button>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
+  if (!contract) return <div className="p-12 text-center text-muted-foreground">{error || '加载中...'}</div>;
+  return <div className="space-y-5 pb-8"><div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">{contract.title || '物流合同详情'}</h1><p className="mt-1 text-sm text-muted-foreground">编号：{contract.contractNo}</p></div><div className="flex items-center gap-2"><StatusText status={contract.status}>{contractStatus[contract.status]}</StatusText><Link href="/dashboard/logistics-contracts"><Button variant="outline">返回列表</Button></Link>{canManage && contract.status === 'DRAFT' && <><Link href={'/dashboard/logistics-contracts/' + id + '/edit'}><Button variant="outline">编辑草稿</Button></Link><Button disabled={busy} onClick={() => void change('ACTIVE')}>启用合同</Button></>}{canManage && contract.status === 'ACTIVE' && <Button variant="outline" disabled={busy} onClick={() => void change('TERMINATED')}>终止合同</Button>}</div></div>
+    {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+    <Card className="space-y-4 p-5"><h2 className="font-semibold">合同基本信息</h2><dl className="grid gap-4 text-sm md:grid-cols-2"><Info label="适用业务单元（事业部）" value={contract.allBusinessUnits ? '全部事业部' : contract.businessUnits.map((u: any) => u.businessUnit.name).join('、')}/><Info label="我方签约主体（内部）" value={contract.signingPartner?.name || '待补充'}/><Info label="承运方" value={contract.carrierPartner.name}/><Info label="外部合同号" value={contract.externalContractNo}/><Info label="计价方式" value={pricingLabel[contract.settlementBasis]}/><Info label="默认计量依据" value={contract.defaultWeightBasis === 'SETTLEMENT' ? '结算磅单（采购入库 / 销售货款依据）' : weightBasisLabel[contract.defaultWeightBasis]}/><Info label="签订日期" value={day(contract.signedAt)}/><Info label="合同有效期" value={(day(contract.effectiveAt) || '未限定') + ' 至 ' + (day(contract.expireAt) || '未限定')}/><Info label="创建人" value={contract.creator?.name}/><Info label="创建时间" value={time(contract.createdAt)}/><Info label="付款条件" value={contract.paymentTerms}/><Info label="其他约定及备注" value={contract.remarks}/></dl></Card>
+    <Card className="overflow-hidden"><div className="border-b p-5"><h2 className="font-semibold">合同运价</h2><p className="mt-1 text-xs text-muted-foreground">生效后原合同运价保持不变；本次结算价格调整在下方结算记录中留痕。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">起运地</th><th className="p-3">目的地</th><th className="p-3">含税单价</th><th className="p-3">运价有效期</th></tr></thead><tbody>{contract.priceTerms.map((t: any) => <tr key={t.id} className="border-b"><td className="p-3">{t.originLocation || '不限路线'}</td><td className="p-3">{t.destinationLocation || '不限路线'}</td><td className="p-3">{num(t.unitPrice, 2)} {contract.settlementBasis === 'TRIP' ? '元/车次' : '元/吨'}</td><td className="p-3">{day(t.effectiveAt)} 至 {day(t.expiresAt) || '未限定'}</td></tr>)}{!contract.priceTerms.length && <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">暂无运价，请在草稿编辑页维护后启用。</td></tr>}</tbody></table></div></Card>
+    <AttachmentPanel title="合同附件" description="在当前页面查看合同扫描件和补充资料，生效后原附件不可删除。" attachments={contract.attachments} uploadPath={'/logistics-contracts/' + id + '/attachments'} attachmentPath={'/logistics-contracts/' + id + '/attachments'} canUpload={canManage && ['DRAFT', 'ACTIVE'].includes(contract.status)} canDelete={canManage && contract.status === 'DRAFT'} onChanged={load}/>
+    {canViewRecords && <Card className="overflow-hidden"><div className="border-b p-5"><h2 className="font-semibold">结算记录</h2><p className="mt-1 text-xs text-muted-foreground">仅展示当前账号有权查看的结算；作废单据保留标记，不计入有效结算。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-sm"><thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>{['结算单 / 运单', '车牌', '状态', '计费数量', '合同单价', '结算单价', '含税金额', '调整记录'].map(s => <th className="whitespace-nowrap p-3" key={s}>{s}</th>)}</tr></thead><tbody>{records.map(r => <tr key={r.id} className="border-b align-top"><td className="p-3"><Link className="text-primary hover:underline" href={'/dashboard/logistics-settlements/' + r.settlementId}>{r.settlement.settlementNo}</Link><div className="mt-1 text-xs text-muted-foreground">{r.waybill.waybillNo}</div></td><td className="p-3">{r.waybill.plateNo || '—'}</td><td className="p-3"><StatusText status={r.settlement.status}>{settlementStatus[r.settlement.status]}</StatusText></td><td className="p-3">{num(r.chargeQuantity ?? r.netWeight)} {r.pricingBasis === 'TRIP' ? '车次' : '吨'}</td><td className="p-3">{num(r.contractUnitPrice, 2)}</td><td className="p-3">{num(r.unitPrice, 2)}</td><td className="p-3">{num(r.amount, 2)}</td><td className="min-w-64 p-3">{r.settlement.adjustments.map((a: any) => <div className="mb-2 text-xs" key={a.id}><p>{a.reason}</p><p className="mt-1 text-muted-foreground">{a.actorName} · {time(a.createdAt)}</p></div>)}{!r.settlement.adjustments.length && '—'}</td></tr>)}{!records.length && <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">暂无可见结算记录</td></tr>}</tbody></table></div></Card>}
+    <BusinessOperationHistory logs={contract.operationLogs}/>
+  </div>;
 }
+function Info({ label, value }: { label: string; value?: string | null }) { return <div><dt className="text-muted-foreground">{label}</dt><dd className="mt-1 whitespace-pre-wrap">{value || '—'}</dd></div>; }

@@ -1,4 +1,5 @@
 'use client';
+import { PurchasePaymentShortcut } from '@/components/settlement/purchase-payment-shortcut';
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -593,6 +594,7 @@ export default function ContractDetailPage() {
       <div className="flex items-center justify-between">
         <button onClick={() => router.push('/dashboard/contracts')} className="text-sm text-primary hover:underline">&larr; 返回合同列表</button>
         <div className="flex gap-2">
+          <PurchasePaymentShortcut contractId={c.id} enabled={['PURCHASE', 'BILATERAL'].includes(c.type) && ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'].includes(c.status)}/>
           <Link href={`/dashboard/contracts/${c.id}/print`}>
             <Button variant="outline" size="sm"><Printer className="h-4 w-4 mr-1" />打印存档</Button>
           </Link>

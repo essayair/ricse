@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, CircleDot,
+  AlertTriangle, CalendarClock, CheckCircle2, CircleDot,
   Clock3, List, MapPin, Plus, RefreshCw, Search, Truck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -40,11 +40,10 @@ interface Waybill {
   };
 }
 
-type BoardKey = 'UNASSIGNED' | 'READY' | 'IN_TRANSIT' | 'ARRIVED' | 'SIGNED';
+type BoardKey = 'READY' | 'IN_TRANSIT' | 'ARRIVED' | 'SIGNED';
 
 const COLUMNS: Array<{ key: BoardKey; label: string; description: string }> = [
-  { key: 'UNASSIGNED', label: '待调度', description: '缺少车辆或司机' },
-  { key: 'READY', label: '待发运', description: '调度完成，等待发车' },
+  { key: 'READY', label: '待发运', description: '等待车辆实际发车' },
   { key: 'IN_TRANSIT', label: '在途', description: '运输执行中' },
   { key: 'ARRIVED', label: '已到目的地', description: '等待交接确认' },
   { key: 'SIGNED', label: '已完成交接', description: '运输已完成' },
@@ -123,7 +122,7 @@ export default function DispatchPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Summary icon={Truck} label="有效运单" value={activeItems.length} note="不含已取消" />
-        <Summary icon={CircleDot} label="待调度" value={activeItems.filter(item => boardKey(item) === 'UNASSIGNED').length} note="需补车辆司机" />
+        <Summary icon={CircleDot} label="待发运" value={activeItems.filter(item => boardKey(item) === 'READY').length} note="等待实际发车" />
         <Summary icon={Clock3} label="在途车辆" value={activeItems.filter(item => item.status === 'IN_TRANSIT').length} note={`${inTransitQuantity.toLocaleString()} 吨在途`} />
         <Summary icon={CheckCircle2} label="已完成交接" value={activeItems.filter(item => item.status === 'SIGNED').length} note="运输闭环" />
         <Summary icon={AlertTriangle} label="调度异常" value={exceptions} note="超时或资料缺失" danger={exceptions > 0} />
@@ -148,7 +147,7 @@ export default function DispatchPage() {
       </div>
 
       <div className="overflow-x-auto pb-2">
-        <div className="grid min-w-[1480px] grid-cols-5 gap-4">
+        <div className="grid min-w-[1180px] grid-cols-4 gap-4">
           {COLUMNS.map(column => {
             const rows = filtered.filter(item => boardKey(item) === column.key);
             return (
@@ -198,9 +197,9 @@ function WaybillCard({ item, updating, onOpen, onTransition }: {
         <div className="font-mono text-xs font-medium text-primary">{item.waybillNo}</div>
         <BusinessDirectionBadge type={item.dispatchNotice.type} suffix="运输" />
       </div>
-      <div className="mt-2 font-medium">{item.plateNo || '待分配车辆'}</div>
+      <div className="mt-2 font-medium">{item.plateNo || '历史车辆信息待补齐'}</div>
       <div className="mt-0.5 text-xs text-muted-foreground">
-        {item.driverName || '待分配司机'}{item.driverPhone ? ` · ${item.driverPhone}` : ''}
+        {item.driverName || '历史司机信息待补齐'}{item.driverPhone ? ` · ${item.driverPhone}` : ''}
       </div>
       <div className="mt-3 rounded-md bg-muted/50 p-2 text-xs">
         <div className="truncate">{item.lineItems?.[0]?.materialName || '未记录物料'}</div>
@@ -219,8 +218,9 @@ function WaybillCard({ item, updating, onOpen, onTransition }: {
         </div>
       )}
       <div className="mt-3 flex justify-end">
-        {key === 'UNASSIGNED' && <Button size="sm" variant="outline" disabled={updating} onClick={event => { event.stopPropagation(); onOpen(); }}>去调度<ArrowRight className="ml-1 h-3 w-3" /></Button>}
-        {key === 'READY' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'IN_TRANSIT', '确认发运')}>确认发运</Button>}
+        {key === 'READY' && (!item.plateNo || !item.driverName
+          ? <Button size="sm" variant="outline" disabled={updating} onClick={event => { event.stopPropagation(); onOpen(); }}>补齐运输信息</Button>
+          : <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'IN_TRANSIT', '确认发运')}>确认发运</Button>)}
         {key === 'IN_TRANSIT' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'ARRIVED', waybillTransitionLabel('ARRIVED', item.dispatchNotice.type))}>{waybillTransitionLabel('ARRIVED', item.dispatchNotice.type)}</Button>}
         {key === 'ARRIVED' && <Button size="sm" disabled={updating} onClick={event => onTransition(event, item, 'SIGNED', waybillTransitionLabel('SIGNED', item.dispatchNotice.type))}>{waybillTransitionLabel('SIGNED', item.dispatchNotice.type)}</Button>}
         {key === 'SIGNED' && <span className="text-xs text-success">已完成运输</span>}
@@ -245,7 +245,7 @@ function Summary({ icon: Icon, label, value, note, danger = false }: {
 }
 
 function boardKey(item: Waybill): BoardKey {
-  if (item.status === 'PENDING') return item.plateNo && item.driverName ? 'READY' : 'UNASSIGNED';
+  if (item.status === 'PENDING') return 'READY';
   return item.status as BoardKey;
 }
 

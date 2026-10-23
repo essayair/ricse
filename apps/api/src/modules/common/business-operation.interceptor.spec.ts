@@ -75,6 +75,13 @@ describe('BusinessOperationInterceptor', () => {
     expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
   });
 
+  it('物流候选运单保持数组，不因管理员审计附加而变成对象', async () => {
+    const response = [{ id: 'w', tickets: [] }];
+    const result = await lastValueFrom(interceptor.intercept(executionContext({ method: 'GET', path: '/api/v1/logistics-settlements/candidate-waybills', user: { id: 'u', role: 'ADMIN' } }), handler(response)));
+    expect(result).toEqual(response); expect(Array.isArray(result)).toBe(true);
+    expect(prisma.businessOperationLog.findMany).not.toHaveBeenCalled();
+  });
+
   it('合同业务单元选项保持数组结构，不会被误判为合同详情', async () => {
     const response = [{ id: 'unit-1', code: 'YM', name: '玉门业务单元' }];
     const result = await lastValueFrom(interceptor.intercept(executionContext({

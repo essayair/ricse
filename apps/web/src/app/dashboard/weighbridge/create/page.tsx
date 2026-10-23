@@ -51,7 +51,7 @@ export default function CreateWeighTicketPage() {
   const [materialSpec, setMaterialSpec] = useState('');
   const [shipperName, setShipperName] = useState('');
   const [receiverName, setReceiverName] = useState('');
-  const [packageCount, setPackageCount] = useState('0');
+  const [packageCount, setPackageCount] = useState('');
   const [driverName, setDriverName] = useState('');
   const [weighmasterName, setWeighmasterName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -142,6 +142,7 @@ export default function CreateWeighTicketPage() {
     if (!files.length) return alert('请至少上传一份磅单附件');
     if (files.some(file => file.size > MAX_ATTACHMENT_SIZE || !file.size)) return alert('附件不能为空且单个文件不能超过 20 MB');
     if (!ticketDate || !plateNo.trim() || !materialName.trim() || !materialSpec.trim() || !shipperName.trim() || !receiverName.trim() || packageCount === '' || !driverName.trim() || !weighmasterName.trim()) return alert('请完整填写磅单日期、车牌、货物、规格、发收货单位、包/袋数、司机和司磅员');
+    if (!Number.isInteger(Number(packageCount)) || Number(packageCount) < 0) return alert('包/袋数请手动填写大于等于 0 的整数，散装货物填写 0');
     if (basis !== 'RECEIVING' && Number(basisWeight) <= 0) return alert('请填写所选结算口径的重量');
     const weightField: Record<string, string> = { SHIPPING: 'shippingWeight', CUSTOMER: 'customerWeight', THIRD_PARTY: 'thirdPartyWeight', MANUAL: 'manualWeight' };
     setSaving(true);

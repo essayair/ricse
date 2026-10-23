@@ -1,8 +1,25 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+
+export class CreatePriceTermDto {
+  @IsOptional() @IsString() originLocation?: string;
+  @IsOptional() @IsString() destinationLocation?: string;
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) unitPrice: number;
+  @IsDateString() effectiveAt: string;
+  @IsOptional() @IsDateString() expiresAt?: string;
+}
 
 export class CreateLogisticsContractDto {
   @IsString() carrierPartnerId: string;
-  /** 不传时默认取当前登录用户所属企业，与合同模块 companyId 推断口径一致 */
+  @IsString() signingPartnerId: string;
+  @IsString() title: string;
+  @IsOptional() @IsString() externalContractNo?: string;
+  @IsOptional() @IsBoolean() allBusinessUnits?: boolean;
+  @IsOptional() @IsArray() @IsString({ each: true }) businessUnitIds?: string[];
+  @IsOptional() @IsIn(['SETTLEMENT', 'SHIPPING', 'RECEIVING']) defaultWeightBasis?: string;
+  @IsOptional() @IsString() paymentTerms?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CreatePriceTermDto) priceTerms?: CreatePriceTermDto[];
+  /** 历史兼容参数；新合同管理组织由登录上下文确定，法律主体使用 signingPartnerId */
   @IsOptional() @IsString() companyId?: string;
   @IsOptional() @IsIn(['NET_WEIGHT', 'GROSS_WEIGHT', 'TRIP']) settlementBasis?: string;
   @IsOptional() @IsDateString() signedAt?: string;
@@ -13,12 +30,4 @@ export class CreateLogisticsContractDto {
 
 export class UpdateLogisticsContractStatusDto {
   @IsIn(['ACTIVE', 'TERMINATED']) status: string;
-}
-
-export class CreatePriceTermDto {
-  @IsString() originLocation: string;
-  @IsString() destinationLocation: string;
-  @IsNumber() @Min(0.01) unitPrice: number;
-  @IsDateString() effectiveAt: string;
-  @IsOptional() @IsDateString() expiresAt?: string;
 }

@@ -11,6 +11,7 @@ import { BusinessDirectionBadge } from '@/components/business-direction';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
 import { confirmAction } from '@/lib/system-dialog';
+import { PurchasePaymentShortcut } from '@/components/settlement/purchase-payment-shortcut';
 
 interface OrderDetail {
   id: string;
@@ -87,6 +88,7 @@ export default function OrderDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <PurchasePaymentShortcut contractId={order.contract.id} orderId={order.id} enabled={order.type === 'PURCHASE' && order.status !== 'CANCELLED'}/>
           {order.status === 'DRAFT' && <Button variant="outline" onClick={() => router.push(`/dashboard/orders/${order.id}/edit`)}>编辑执行批次</Button>}
           {['CONFIRMED', 'DISPATCHED'].includes(order.status) && <Button onClick={() => router.push(`/dashboard/dispatch-notices/create?orderId=${order.id}`)}>新建执行通知</Button>}
           {(ACTIONS[order.status] || []).map(action => (

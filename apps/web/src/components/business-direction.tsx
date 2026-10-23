@@ -45,8 +45,8 @@ export function businessDirectionFilterClass(type: BusinessDirection, active: bo
   return active ? style.active : cn(style.badge, style.hover);
 }
 
-export function waybillStatusLabel(status: string, type: BusinessDirection, assigned = true) {
-  if (status === 'PENDING') return assigned ? '待发运' : '待调度';
+export function waybillStatusLabel(status: string, type: BusinessDirection, _assigned = true) {
+  if (status === 'PENDING') return '待发运';
   if (status === 'IN_TRANSIT') return '在途';
   if (status === 'ARRIVED') return type === 'SALES' ? '已送达待客户签收' : '已到达待收货';
   if (status === 'SIGNED') return type === 'SALES' ? '客户已签收' : '已收货';

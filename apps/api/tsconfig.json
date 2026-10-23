@@ -19,5 +19,5 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true
   },
-  "exclude": ["node_modules", "dist", "test"]
+  "exclude": ["node_modules", "dist", "dist-dev-core", "dist-dev-content", "dist-dev-worker", "test"]
 }

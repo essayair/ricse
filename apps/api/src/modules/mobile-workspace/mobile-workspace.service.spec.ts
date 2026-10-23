@@ -83,11 +83,15 @@ describe('MobileWorkspaceService', () => {
     const result = await service.overview('admin');
 
     expect(result.summary).toEqual({
-      pendingApprovals: 2, contracts: 9, executingContracts: 3,
-      pendingDispatch: 6, pendingAssignment: 6, pendingDeparture: 6, inTransit: 6,
+      pendingApprovals: 2, pendingContractApprovals: 2, pendingPaymentApprovals: 0, contracts: 9, executingContracts: 3,
+      pendingDispatch: 6, pendingAssignment: 0, pendingDeparture: 6, inTransit: 6,
       pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
     });
     expect(result.account.roleNames).toEqual(['系统管理员']);
+    expect(prisma.waybill.count).toHaveBeenCalledTimes(3);
+    expect(prisma.waybill.count).toHaveBeenCalledWith(expect.objectContaining({
+      where: { deletedAt: null, status: 'PENDING', AND: [{}] },
+    }));
     expect(result.account.businessUnits).toEqual([
       { id: 'bu-1', code: 'BU-300000-001', name: '综合事业部', isDefault: true },
     ]);
@@ -136,6 +140,18 @@ describe('MobileWorkspaceService', () => {
     expect(result).toEqual({ items: [{ id: 'waybill-1' }], total: 1 });
   });
 
+  it.each(['PENDING', 'PENDING_READY', 'PENDING_UNASSIGNED'])('待发运待办 %s 包含缺资料历史单据，不再拆分遗漏', async (todo) => {
+    waybills.findAll.mockResolvedValue({ items: [
+      { id: 'legacy', status: 'PENDING', plateNo: null, driverName: null },
+      { id: 'ready', status: 'PENDING', plateNo: '甘A00001', driverName: '张三' },
+      { id: 'departed', status: 'IN_TRANSIT' },
+    ], total: 3 } as any);
+    const result = await service.businessList('user-1', 'waybills', { status: 'PENDING', todo });
+    expect(result.items.map((item: any) => item.id)).toEqual(['legacy', 'ready']);
+    expect(result.total).toBe(2);
+    expect(waybills.findAll).toHaveBeenCalledWith({ search: undefined, status: 'PENDING' }, 'user-1');
+  });
+
   it.each([
     ['weigh-tickets', weighTickets.findManagementFiles],
     ['quality-tasks', quality.findTasks],
@@ -177,6 +193,25 @@ describe('MobileWorkspaceService', () => {
     expect(qualityResult.pagination.total).toBe(1);
     expect(inboundResult.items.map((item: any) => item.id)).toEqual(['inbound-active']);
     expect(outboundResult.items.map((item: any) => item.id)).toEqual(['outbound-active']);
+  });
+
+  it('物流候选携带有效车队及车辆主驾关系，支持车队继承承运商筛选', async () => {
+    access.assertPermission.mockResolvedValue({ isAdmin: false, permissions: ['logistics.manage'] } as any);
+    const fleetLinks = [{ fleet: { id: 'fleet', name: '合作车队', carrierPartnerId: 'carrier' } }];
+    prisma.vehicle.findMany.mockResolvedValue([{ id: 'vehicle', plateNo: '浙A00001', fleetLinks, drivers: [{ role: 'PRIMARY', driverId: 'driver' }], waybills: [] }] as any);
+    prisma.driver.findMany.mockResolvedValue([{ id: 'driver', name: '测试司机', phone: '13800000001', serviceOrganization: null, fleetLinks, waybills: [] }] as any);
+    prisma.serviceOrganization.findMany.mockResolvedValue([{ id: 'org', partner: { id: 'carrier', code: '200001', name: '承运商', isInternal: true } }] as any);
+    const result = await service.logisticsOptions('user-1');
+    expect(result.vehicles[0].fleetLinks).toEqual(fleetLinks);
+    expect(result.vehicles[0].drivers).toEqual([{ role: 'PRIMARY', driverId: 'driver' }]);
+    expect(result.drivers[0].fleetLinks).toEqual(fleetLinks);
+    expect(result.drivers[0].carrierPartnerId).toBeNull();
+    expect(result.carriers[0].isInternal).toBe(true);
+    for (const resource of [prisma.vehicle.findMany, prisma.driver.findMany]) {
+      expect(resource).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({
+        fleetLinks: expect.objectContaining({ where: { fleet: { status: 'ACTIVE', deletedAt: null } } }),
+      }) }));
+    }
   });
 
   it('移动端保存车辆和司机档案前校验主数据维护权限', async () => {

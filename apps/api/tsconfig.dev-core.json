@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.dev-base.json",
+  "compilerOptions": { "outDir": "./dist-dev-core", "tsBuildInfoFile": "./dist-dev-core/build.tsbuildinfo" }
+}

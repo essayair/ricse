@@ -4,7 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { SystemDialogProvider } from '@/components/system-dialog-provider';
 
 export const metadata: Metadata = {
-  title: 'RICSE — 区域产业链服务生态',
+  title: 'RICSE — 和光云链区域产业链服务生态',
   description: '运营管理平台',
 };
 

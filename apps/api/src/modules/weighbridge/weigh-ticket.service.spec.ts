@@ -106,6 +106,7 @@ describe('WeighTicketService', () => {
         direction: 'INBOUND',
         weighingStage: 'RECEIVING',
         remarks: '系统根据物流运单自动生成我方收货待过磅单',
+        packageCount: undefined,
       }),
     }));
   });
@@ -149,6 +150,7 @@ describe('WeighTicketService', () => {
         direction: 'OUTBOUND',
         weighingStage: 'SHIPPING',
         remarks: '系统根据物流运单自动生成我方发货待过磅单',
+        packageCount: undefined,
       }),
     }));
   });
@@ -220,6 +222,17 @@ describe('WeighTicketService', () => {
         driverName: '张师傅',
         weighmasterName: '司磅员',
       }),
+    }));
+  });
+
+  it.each([undefined, 0, 68])('包/袋数为 %s 时仅保存人工录入值，不使用默认数量', async (packageCount) => {
+    prisma.waybill.findFirst.mockResolvedValue(waybill as any);
+    prisma.weighTicket.create.mockResolvedValue(ticket as any);
+
+    await service.create({ waybillId: waybill.id, packageCount }, 'user-1');
+
+    expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ packageCount }),
     }));
   });
 
@@ -407,6 +420,32 @@ describe('WeighTicketService', () => {
 
     await expect(service.selectEffectiveTicket(waybill.id, ticket.id, undefined, 'user-1'))
       .rejects.toThrow('更换库存与结算执行磅单必须填写变更原因');
+  });
+
+  it('销售出库后允许单独选择客户收货磅单作为货款依据，不回写出库', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: waybill.id, dispatchNotice: { type: 'SALES' } } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue({ id: 'customer', netWeight: 98, weighingStage: 'RECEIVING' } as any);
+    prisma.waybillWeightSelection.findFirst.mockResolvedValue({ id: 'old', weighTicketId: 'shipping', purpose: 'SETTLEMENT' } as any);
+    prisma.financialSettlementLine.count.mockResolvedValue(0);
+    prisma.waybillWeightSelection.create.mockResolvedValue({ id: 'new' } as any);
+    await service.selectForPurpose(waybill.id, 'SETTLEMENT', 'customer', '按客户收货磅单结货款', 'user-1');
+    expect(prisma.waybillWeightSelection.updateMany).toHaveBeenCalledWith({ where: { waybillId: waybill.id, purpose: 'SETTLEMENT', isCurrent: true }, data: { isCurrent: false } });
+    expect(prisma.outboundReceipt.updateMany).not.toHaveBeenCalled();
+    expect(prisma.waybillWeightSelection.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ purpose: 'SETTLEMENT', weighTicketId: 'customer', quantity: 98 }) }));
+  });
+
+  it('销售客户收货磅单不能选作我方出库依据', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: waybill.id, dispatchNotice: { type: 'SALES' } } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue({ id: 'customer', netWeight: 98, weighingStage: 'RECEIVING' } as any);
+    await expect(service.selectForPurpose(waybill.id, 'INVENTORY', 'customer', '错误选择', 'user-1')).rejects.toThrow('我方发货磅单');
+  });
+
+  it('销售已过账或已拣配时仍禁止直接更换我方出库磅单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({ id: waybill.id, dispatchNotice: { type: 'SALES' } } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue({ id: 'new-shipping', netWeight: 99, weighingStage: 'SHIPPING' } as any);
+    prisma.waybillWeightSelection.findFirst.mockResolvedValue({ id: 'old', weighTicketId: 'shipping', purpose: 'INVENTORY' } as any);
+    prisma.outboundReceipt.findFirst.mockResolvedValue({ receiptNo: 'CK001' } as any);
+    await expect(service.selectForPurpose(waybill.id, 'INVENTORY', 'new-shipping', '更换出库单', 'user-1')).rejects.toThrow('不能直接更换');
   });
 
   it('运单只有一张未作废磅单时自动选为入出库与结算口径', async () => {

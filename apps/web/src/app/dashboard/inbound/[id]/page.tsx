@@ -24,6 +24,7 @@ export default function InboundDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const receiptDirtyRef = useRef(false);
   const [item, setItem] = useState<any>(null);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [receiptForm, setReceiptForm] = useState({
@@ -36,17 +37,20 @@ export default function InboundDetail() {
     try {
       const result: any = await api.get(`/inbound-receipts/${id}`);
       setItem(result);
-      setReceiptForm({
-        warehouseId: result.warehouseId || '',
-        receivedAt: result.receivedAt ? toLocalDateTimeInput(new Date(result.receivedAt)) : '',
-        receiverName: result.receiverName || '',
-        remarks: result.remarks || '',
-      });
+      if (!receiptDirtyRef.current) {
+        const defaults = result.receiptDefaults || result;
+        setReceiptForm({
+          warehouseId: defaults.warehouseId || '',
+          receivedAt: defaults.receivedAt ? toLocalDateTimeInput(new Date(defaults.receivedAt)) : '',
+          receiverName: defaults.receiverName || '',
+          remarks: result.remarks || '',
+        });
+      }
     } catch (error: any) {
       alert(error.message);
     }
   }, [id]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { receiptDirtyRef.current = false; void load(); }, [load]);
   useEffect(() => {
     api.get<any[]>('/master-data/warehouses')
       .then(result => setWarehouses(result.filter(warehouse => warehouse.status === 'ACTIVE')))
@@ -60,11 +64,17 @@ export default function InboundDetail() {
     remarks: receiptForm.remarks,
   });
 
+  const editReceipt = (field: keyof typeof receiptForm, value: string) => {
+    receiptDirtyRef.current = true;
+    setReceiptForm(current => ({ ...current, [field]: value }));
+  };
+
   const savePending = async () => {
     setSaving(true);
     try {
       const result = await api.patch(`/inbound-receipts/${id}`, pendingPayload());
       setItem(result);
+      receiptDirtyRef.current = false;
       return result;
     } catch (error: any) {
       alert(error.message);
@@ -229,18 +239,18 @@ export default function InboundDetail() {
           {item.status === 'PENDING' ? (
             <div className="space-y-4">
               <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
-                本单由采购运单确认发运后自动生成。可以提前核对目标仓库；车辆到达并完成过磅、质检后，再补齐实际收货信息。
+                已默认带入上游仓库、收货联系人及签收时间；未签收时以实际到达时间作为参考。请核对或修改后确认收货，缺失信息需补充。
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="入库仓库 *">
-                  <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={receiptForm.warehouseId} onChange={event => setReceiptForm(current => ({ ...current, warehouseId: event.target.value }))}>
+                  <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={receiptForm.warehouseId} onChange={event => editReceipt('warehouseId', event.target.value)}>
                     <option value="">请选择仓库</option>
                     {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}
                   </select>
                 </Field>
-                <Field label="实际收货时间 *"><Input type="datetime-local" step="1" value={receiptForm.receivedAt} onChange={event => setReceiptForm(current => ({ ...current, receivedAt: event.target.value }))} /></Field>
-                <Field label="收货人 *"><Input value={receiptForm.receiverName} onChange={event => setReceiptForm(current => ({ ...current, receiverName: event.target.value }))} /></Field>
-                <Field label="备注"><Input value={receiptForm.remarks} onChange={event => setReceiptForm(current => ({ ...current, remarks: event.target.value }))} /></Field>
+                <Field label="实际收货时间 *"><Input type="datetime-local" step="1" value={receiptForm.receivedAt} onChange={event => editReceipt('receivedAt', event.target.value)} /></Field>
+                <Field label="收货人 *"><Input value={receiptForm.receiverName} onChange={event => editReceipt('receiverName', event.target.value)} /></Field>
+                <Field label="备注"><Input value={receiptForm.remarks} onChange={event => editReceipt('remarks', event.target.value)} /></Field>
               </div>
               {receiptError && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{receiptError}</div>}
               <Button variant="outline" disabled={saving} onClick={() => void savePending()}><Save className="mr-2 h-4 w-4" />保存收货信息</Button>

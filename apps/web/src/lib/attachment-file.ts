@@ -1,6 +1,15 @@
 const SUPPORTED_ATTACHMENT_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'pdf']);
 const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024;
 
+export function attachmentCategoryLabel(category?: string | null): string {
+  const labels: Record<string, string> = {
+    OTHER: '其他附件', CONTRACT: '合同文件', SIGNED_CONTRACT: '签章合同',
+    LOGISTICS_CONTRACT: '物流合同', BUSINESS_LICENSE: '营业执照',
+  };
+  if (!category) return '其他附件';
+  return labels[category] || (/[\u4e00-\u9fff]/.test(category) ? category : '其他附件');
+}
+
 export function attachmentFileError(file: File): string | null {
   const extension = file.name.toLowerCase().split('.').pop() || '';
   if (!SUPPORTED_ATTACHMENT_EXTENSIONS.has(extension)) {

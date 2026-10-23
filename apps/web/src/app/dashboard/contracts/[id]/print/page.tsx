@@ -1,5 +1,7 @@
 'use client';
 
+import { attachmentCategoryLabel } from '@/lib/attachment-file';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Printer } from 'lucide-react';
@@ -147,7 +149,7 @@ export default function ContractPrintPage() {
       {item.status === 'VOIDED' && <div className="contract-print-watermark">已作废</div>}
       {item.status === 'DRAFT' && <div className="contract-print-watermark">草稿</div>}
       <header className="border-b-2 border-slate-900 pb-5 text-center">
-        <div className="text-xs tracking-[0.35em] text-slate-500">RICSE · 区域产业链服务生态</div>
+        <div className="text-xs tracking-[0.35em] text-slate-500">RICSE — 和光云链区域产业链服务生态</div>
         <h1 className="mt-3 text-3xl font-bold tracking-[0.14em]">合同信息及审批流存档单</h1>
         <div className="mt-3 text-sm">{TYPE[item.type] || item.type} · {statusText}</div>
       </header>
@@ -209,7 +211,7 @@ export default function ContractPrintPage() {
       </PrintSection>
 
       <PrintSection title="五、合同附件清单">
-        <div className="min-h-14 border border-slate-900 p-3 text-[11px]">{item.attachments?.length ? item.attachments.map((attachment, index) => <div key={attachment.id}>{index + 1}. {attachment.originalName}（{attachment.category || '其他'}，{Math.max(1, Math.round(attachment.size / 1024))} KB）</div>) : '无附件'}</div>
+        <div className="min-h-14 border border-slate-900 p-3 text-[11px]">{item.attachments?.length ? item.attachments.map((attachment, index) => <div key={attachment.id}>{index + 1}. {attachment.originalName}（{attachmentCategoryLabel(attachment.category)}，{Math.max(1, Math.round(attachment.size / 1024))} KB）</div>) : '无附件'}</div>
       </PrintSection>
 
       <footer className="mt-8 flex flex-wrap justify-between gap-2 border-t border-slate-400 pt-3 text-[10px] text-slate-500"><span>系统合同编号：{item.contractNo}</span><span>打印状态：{statusText}</span><span>打印时间：{printedAt}</span></footer>

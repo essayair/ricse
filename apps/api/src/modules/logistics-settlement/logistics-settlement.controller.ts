@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
-import { CreateLogisticsSettlementDto, SetLinePriceDto } from './dto/logistics-settlement.dto';
+import { CreateLogisticsSettlementDto, SetLinePriceDto, SetLineWeightDto, SetPayerDto } from './dto/logistics-settlement.dto';
 import { LogisticsSettlementService } from './logistics-settlement.service';
 
 @ApiTags('物流结算单')
@@ -12,11 +13,14 @@ import { LogisticsSettlementService } from './logistics-settlement.service';
 export class LogisticsSettlementController {
   constructor(private readonly service: LogisticsSettlementService) {}
 
+  @Get('options')
+  options(@CurrentUser('id') userId: string) { return this.service.options(userId); }
+
   @Get('candidate-waybills')
   listCandidateWaybills(
     @CurrentUser('id') userId: string,
-    @Query('periodStart') periodStart: string,
-    @Query('periodEnd') periodEnd: string,
+    @Query('periodStart') periodStart?: string,
+    @Query('periodEnd') periodEnd?: string,
   ) {
     return this.service.listCandidateWaybills({ periodStart, periodEnd }, userId);
   }
@@ -50,6 +54,28 @@ export class LogisticsSettlementController {
   submit(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.submit(id, userId);
   }
+
+  @Get(':id/lines/:lineId/options')
+  lineOptions(@Param('id') id: string, @Param('lineId') lineId: string, @CurrentUser('id') userId: string) { return this.service.lineOptions(id, lineId, userId); }
+
+  @Post(':id/lines/:lineId/weight')
+  weight(@Param('id') id: string, @Param('lineId') lineId: string, @Body() dto: SetLineWeightDto, @CurrentUser('id') userId: string) { return this.service.setLineWeight(id, lineId, dto, userId); }
+
+  @Post(':id/payer')
+  payer(@Param('id') id: string, @Body() dto: SetPayerDto, @CurrentUser('id') userId: string) { return this.service.setPayer(id, dto, userId); }
+
+  @Post(':id/return-draft')
+  returnDraft(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.returnDraft(id, userId); }
+
+  @Post(':id/attachments')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  upload(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser('id') userId: string) { return this.service.uploadAttachment(id, file, userId); }
+
+  @Get(':id/attachments/:attachmentId/view-url')
+  view(@Param('id') id: string, @Param('attachmentId') attachmentId: string, @CurrentUser('id') userId: string) { return this.service.attachment(id, attachmentId, userId); }
+
+  @Delete(':id/attachments/:attachmentId')
+  remove(@Param('id') id: string, @Param('attachmentId') attachmentId: string, @CurrentUser('id') userId: string) { return this.service.attachment(id, attachmentId, userId, true); }
 
   @Post(':id/review')
   review(@Param('id') id: string, @CurrentUser('id') userId: string) {

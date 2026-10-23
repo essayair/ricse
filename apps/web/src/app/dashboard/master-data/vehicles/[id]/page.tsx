@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, FileText, MapPin, Pencil, Truck, Weight } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -9,6 +9,7 @@ import { waybillStatusLabel } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-panel';
 
 interface VehicleDetail {
   id: string; plateNo: string; vehicleType: string; brand: string | null; tareWeight: string | null; loadCapacity: string;
@@ -20,6 +21,7 @@ interface VehicleDetail {
   drivers: Array<{ id: string; role: string; driver: { id: string; name: string; phone: string; idCardNo: string | null; licenseNo: string | null; licenseClass: string | null; licenseExpiry: string | null; status: string; serviceOrganization: { partner: { name: string } } | null } }>;
   waybills: Array<{ id: string; waybillNo: string; status: string; totalQuantity: string; driverName: string | null; driverPhone: string | null; originLocation: string | null; destinationLocation: string | null; createdAt: string; departedAt: string | null; arrivedAt: string | null; dispatchNotice: { noticeNo: string; type: string; order: { orderNo: string; name: string; contract: { id: string; contractNo: string; title: string } } }; weighTickets: Array<{ id: string; ticketNo: string; ticketDate: string; grossWeight: string | null; tareWeight: string | null; netWeight: string | null; status: string }> }>;
   _count: { waybills: number };
+  attachments: BusinessAttachment[];
 }
 
 const VEHICLE_TYPES: Record<string, string> = { SEMI_TRAILER: '半挂车（标准型）', HEAVY_SEMI_TRAILER: '半挂车（超重型）', BOX_TRUCK: '厢式货车', DUMP_TRUCK: '自卸车', TANK_TRUCK: '槽罐车', TRUCK: '自卸车', TANK: '罐车', TRAILER: '挂车' };
@@ -31,9 +33,11 @@ export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [vehicle, setVehicle] = useState<VehicleDetail | null>(null);
+  const [canManage, setCanManage] = useState(false);
+  useEffect(() => { try { const user = JSON.parse(localStorage.getItem('user') || '{}'); setCanManage(user.role === 'ADMIN' || user.roles?.includes('ADMIN') || user.permissions?.includes('master_data.manage')); } catch {} }, []);
   const [tab, setTab] = useState<'PROFILE' | 'TRACK' | 'WEIGH' | 'TRANSPORT'>('PROFILE');
-  const load = () => api.get<VehicleDetail>(`/partners/vehicles/${id}`).then(setVehicle).catch((error) => { alert(error.message || '车辆加载失败'); router.push('/dashboard/master-data?tab=vehicles'); });
-  useEffect(() => { void load(); }, [id]);
+  const load = useCallback(() => api.get<VehicleDetail>(`/partners/vehicles/${id}`).then(setVehicle).catch((error) => { alert(error.message || '车辆加载失败'); router.push('/dashboard/master-data?tab=vehicles'); }), [id, router]);
+  useEffect(() => { void load(); }, [load]);
   const weighTickets = useMemo(() => vehicle?.waybills.flatMap(waybill => waybill.weighTickets.map(ticket => ({ ...ticket, waybill }))) || [], [vehicle]);
   const totalQuantity = useMemo(() => vehicle?.waybills.filter(item => item.status !== 'CANCELLED').reduce((sum, item) => sum + Number(item.totalQuantity), 0) || 0, [vehicle]);
   const toggleStatus = async () => {
@@ -45,7 +49,7 @@ export default function VehicleDetailPage() {
   if (!vehicle) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
 
   return <div className="space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/master-data?tab=vehicles')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{vehicle.plateNo}</h1><StatusText status={vehicle.status}>{STATUS[vehicle.status] || vehicle.status}</StatusText></div><p className="mt-1 text-sm text-muted-foreground">{VEHICLE_TYPES[vehicle.vehicleType] || vehicle.vehicleType} · {vehicle.owner?.name || (vehicle.ownerType === 'SELF' ? '自有车辆' : '社会运力 · 未绑定承运商')}</p></div></div><div className="flex gap-2"><Button variant="outline" onClick={() => router.push(`/dashboard/master-data/vehicles/${id}/edit`)}><Pencil className="mr-1 h-4 w-4" />编辑</Button>{vehicle.status !== 'RETIRED' && <Button variant="outline" onClick={() => void toggleStatus()}>{vehicle.status === 'ACTIVE' ? '转维修停用' : '恢复可用'}</Button>}</div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/master-data?tab=vehicles')}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{vehicle.plateNo}</h1><StatusText status={vehicle.status}>{STATUS[vehicle.status] || vehicle.status}</StatusText></div><p className="mt-1 text-sm text-muted-foreground">{VEHICLE_TYPES[vehicle.vehicleType] || vehicle.vehicleType} · {vehicle.owner?.name || (vehicle.ownerType === 'SELF' ? '自有车辆' : '社会运力 · 未绑定承运商')}</p></div></div><div className="flex gap-2">{canManage && <Button variant="outline" onClick={() => router.push(`/dashboard/master-data/transport-resources/new?vehicleId=${id}`)}>关联或新建司机</Button>}<Button variant="outline" onClick={() => router.push(`/dashboard/master-data/vehicles/${id}/edit`)}><Pencil className="mr-1 h-4 w-4" />编辑</Button>{vehicle.status !== 'RETIRED' && <Button variant="outline" onClick={() => void toggleStatus()}>{vehicle.status === 'ACTIVE' ? '转维修停用' : '恢复可用'}</Button>}</div></div>
 
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Stat label="历史运单" value={`${vehicle._count.waybills} 单`} icon={FileText} /><Stat label="累计运输数量" value={`${number(totalQuantity)} 吨`} icon={Truck} /><Stat label="历史磅单" value={`${weighTickets.length} 张`} icon={Weight} /><Stat label="定位设备" value={vehicle.deviceType && vehicle.deviceType !== 'NONE' ? `${deviceLabel(vehicle.deviceType)}已绑定` : '未绑定'} icon={MapPin} /></div>
 
@@ -53,6 +57,7 @@ export default function VehicleDetailPage() {
 
     {tab === 'PROFILE' && <div className="space-y-5"><Card className="space-y-5 p-6"><Title>车辆基本信息</Title><Grid><Info label="车牌号码" value={vehicle.plateNo} /><Info label="车辆类型" value={VEHICLE_TYPES[vehicle.vehicleType] || vehicle.vehicleType} /><Info label="品牌型号" value={vehicle.brand || '—'} /><Info label="档案状态" value={STATUS[vehicle.status] || vehicle.status} /><Info label="整备质量（皮重）" value={vehicle.tareWeight ? `${number(vehicle.tareWeight)} 吨` : '—'} /><Info label="核定载重" value={`${number(vehicle.loadCapacity)} 吨`} /><Info label="车牌颜色" value={PLATE_COLOR[vehicle.plateColor || ''] || '—'} /></Grid><Title>证件与保险</Title><Grid><Info label="行驶证号" value={vehicle.licenseNo || '—'} /><Expiry label="年检到期日" value={vehicle.annualInspectionExpiry} /><Expiry label="交强险到期日" value={vehicle.compulsoryInsuranceExpiry} /><Expiry label="商业险到期日" value={vehicle.commercialInsuranceExpiry} /></Grid></Card>
       <Card className="space-y-5 p-6"><Title>运力归属 / 车主</Title><Grid><Info label="归属类型" value={vehicle.ownerType === 'SELF' ? '自有车辆' : vehicle.owner ? '承运商车辆' : '社会运力'} /><Info label="关联承运商" value={vehicle.owner ? `${vehicle.owner.code} · ${vehicle.owner.name}` : '暂未绑定'} /><Info label="实际车主" value={vehicle.ownerName || '—'} /><Info label="车主手机号" value={vehicle.ownerPhone || '—'} /></Grid><Title>关联司机</Title>{vehicle.drivers.length ? <div className="grid gap-3 md:grid-cols-2">{vehicle.drivers.map(link => <div key={link.id} className="rounded-lg border p-4"><div className="flex items-center justify-between"><div className="font-medium">{link.driver.name}</div><Badge variant="outline">{link.role === 'PRIMARY' ? '主驾' : '副驾'}</Badge></div><div className="mt-2 text-sm text-muted-foreground">{link.driver.phone} · {link.driver.licenseClass || '未填写准驾车型'}</div><div className="mt-1 text-xs text-muted-foreground">{link.driver.serviceOrganization?.partner.name || '无承运商（社会运力）'}</div></div>)}</div> : <div className="rounded-md bg-muted p-4 text-sm text-muted-foreground">尚未关联司机，可在运单调度时选择或手工填写。</div>}</Card>
+      <AttachmentPanel title="车辆资料附件" description="行驶证、保险等车辆资料在当前页面查看；替换时先上传，再删除旧文件，至少保留一份。" attachments={vehicle.attachments || []} uploadPath={`/transport-resources/vehicles/${id}/attachments`} attachmentPath={`/transport-resources/vehicles/${id}/attachments`} canUpload={canManage} canDelete={canManage} onChanged={async () => { await load(); }}/>
       <Card className="space-y-5 p-6"><Title>定位设备</Title><Grid><Info label="设备类型" value={deviceLabel(vehicle.deviceType)} /><Info label="设备编号" value={vehicle.deviceNo || '—'} /><Info label="安装日期" value={dateOnly(vehicle.deviceInstalledAt)} /><Info label="实时状态" value="尚未接入定位平台" /></Grid><Title>备注</Title><div className="text-sm">{vehicle.remark || '—'}</div></Card></div>}
 
     {tab === 'TRACK' && <Card className="p-8 text-center"><MapPin className="mx-auto h-10 w-10 text-muted-foreground" /><h2 className="mt-3 font-semibold">{vehicle.deviceType && vehicle.deviceType !== 'NONE' ? '定位设备档案已维护' : '车辆尚未绑定定位设备'}</h2><p className="mt-2 text-sm text-muted-foreground">GPS轨迹、围栏与最后位置将在真实北斗/GPS平台接入后展示，当前不生成模拟轨迹。</p></Card>}

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
@@ -16,6 +16,7 @@ import { CreateDriverDto } from '../master-data/dto/driver.dto';
 import { CreateVehicleDto } from '../master-data/dto/vehicle.dto';
 import { DriverService } from '../master-data/driver.service';
 import { PartnerService } from '../master-data/partner.service';
+import { FinancialSettlementService } from '../financial-settlement/financial-settlement.service';
 
 export const MOBILE_BUSINESS_MODULES = [
   'contracts', 'orders', 'dispatch-notices', 'waybills', 'weigh-tickets', 'quality-tasks',
@@ -38,6 +39,7 @@ export class MobileWorkspaceService {
     private readonly outbound: OutboundService,
     private readonly partners: PartnerService,
     private readonly drivers: DriverService,
+    @Optional() private readonly finance?: FinancialSettlementService,
   ) {}
 
   private modulePermission(module: MobileBusinessModule) {
@@ -148,8 +150,8 @@ export class MobileWorkspaceService {
   private isMobileTodo(module: MobileBusinessModule, item: any, todo: string) {
     if (module === 'waybills') {
       if (todo === 'ACTIVE') return ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(item.status);
-      if (todo === 'PENDING_UNASSIGNED') return item.status === 'PENDING' && (!item.plateNo || !item.driverName);
-      if (todo === 'PENDING_READY') return item.status === 'PENDING' && Boolean(item.plateNo && item.driverName);
+      // 历史待办链接统一归入待发运，不再把缺资料运单分成另一个业务阶段。
+      if (['PENDING', 'PENDING_UNASSIGNED', 'PENDING_READY'].includes(todo)) return item.status === 'PENDING';
       return item.status === todo;
     }
     if (module === 'weigh-tickets') {
@@ -223,15 +225,16 @@ export class MobileWorkspaceService {
         isDefault: item.isDefault,
       }));
     const canApprove = context.isAdmin || context.permissions.includes('contract.approve');
+    const contractApprovalScope = canApprove ? await this.access.getContractScope(userId, 'contract.approve') : null;
     const canViewContracts = context.isAdmin || context.permissions.includes('contract.view');
     const pendingWhere = context.isAdmin ? {} : { assigneeId: userId };
     const contractScope = canViewContracts ? await this.access.getContractScope(userId) : null;
     const canViewQuality = context.isAdmin || context.permissions.includes('quality.view');
     const canViewInventory = context.isAdmin || context.permissions.includes('inventory.view');
     const canViewLogistics = context.isAdmin || context.permissions.includes('logistics.view');
-    const [pendingRows, contractCount, executingCount, pendingDispatch, pendingAssignment, pendingDeparture, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound] = await Promise.all([
+    const [pendingRows, contractCount, executingCount, pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound] = await Promise.all([
       canApprove ? this.prisma.approval.findMany({
-        where: { status: 'PENDING', ...pendingWhere, contract: { deletedAt: null, status: 'PENDING_APPROVAL' } },
+        where: { status: 'PENDING', ...pendingWhere, contract: { deletedAt: null, status: 'PENDING_APPROVAL', AND: contractApprovalScope ? [contractApprovalScope] : [] } },
         select: { contractId: true, round: true, step: true },
         take: 500,
       }) : Promise.resolve([]),
@@ -239,12 +242,6 @@ export class MobileWorkspaceService {
       contractScope ? this.prisma.contract.count({ where: { deletedAt: null, status: 'EXECUTING', AND: [contractScope] } }) : Promise.resolve(0),
       canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
         where: { deletedAt: null, status: 'PENDING', AND: [scope] },
-      })) : Promise.resolve(0),
-      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
-        where: { deletedAt: null, status: 'PENDING', OR: [{ plateNo: null }, { driverName: null }], AND: [scope] },
-      })) : Promise.resolve(0),
-      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
-        where: { deletedAt: null, status: 'PENDING', plateNo: { not: null }, driverName: { not: null }, AND: [scope] },
       })) : Promise.resolve(0),
       canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({
         where: { deletedAt: null, status: 'IN_TRANSIT', AND: [scope] },
@@ -265,7 +262,10 @@ export class MobileWorkspaceService {
         where: { deletedAt: null, status: { in: ['PENDING', 'READY', 'VARIANCE_PENDING'] }, AND: [scope] },
       })) : Promise.resolve(0),
     ]);
-    const pendingCount = new Set(pendingRows.map((item) => `${item.contractId}:${item.round}:${item.step}`)).size;
+    const pendingContractApprovals = new Set(pendingRows.map((item) => `${item.contractId}:${item.round}:${item.step}`)).size;
+    const pendingPaymentApprovals = this.finance && (context.isAdmin || context.permissions.includes('settlement.payment.approve'))
+      ? (await this.finance.paymentApprovalList(userId)).total : 0;
+    const pendingCount = pendingContractApprovals + pendingPaymentApprovals;
     return {
       account: {
         id: context.user.id,
@@ -279,8 +279,9 @@ export class MobileWorkspaceService {
         permissions: context.permissions,
       },
       summary: {
-        pendingApprovals: pendingCount, contracts: contractCount, executingContracts: executingCount,
-        pendingDispatch, pendingAssignment, pendingDeparture, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound,
+        pendingApprovals: pendingCount, pendingContractApprovals, pendingPaymentApprovals, contracts: contractCount, executingContracts: executingCount,
+        // 旧客户端字段保留兼容；新客户端仅使用统一待发运数量。
+        pendingDispatch, pendingAssignment: 0, pendingDeparture: pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound,
       },
     };
   }
@@ -314,6 +315,8 @@ export class MobileWorkspaceService {
         select: {
           id: true, plateNo: true, vehicleType: true, ownerType: true, ownerId: true,
           ownerName: true, driverName: true, driverPhone: true,
+          fleetLinks: { where: { fleet: { status: 'ACTIVE', deletedAt: null } }, select: { fleet: { select: { id: true, name: true, carrierPartnerId: true } } } },
+          drivers: { where: { driver: { status: 'ACTIVE', deletedAt: null } }, select: { role: true, driverId: true } },
           waybills: {
             where: { deletedAt: null, status: 'IN_TRANSIT' },
             select: { id: true, waybillNo: true },
@@ -327,6 +330,10 @@ export class MobileWorkspaceService {
         where: {
           deletedAt: null,
           status: 'ACTIVE',
+          AND: [{ OR: [
+            { serviceOrganizationId: null },
+            { serviceOrganization: { organizationType: 'LOGISTICS_CARRIER', status: 'ACTIVE', deletedAt: null, partner: { status: 'ACTIVE', deletedAt: null } } },
+          ] }],
           ...(keyword ? {
             OR: [
               { name: { contains: keyword, mode: 'insensitive' as const } },
@@ -338,6 +345,7 @@ export class MobileWorkspaceService {
         select: {
           id: true, name: true, phone: true, serviceOrganizationId: true,
           serviceOrganization: { select: { partnerId: true, partner: { select: { id: true, name: true } } } },
+          fleetLinks: { where: { fleet: { status: 'ACTIVE', deletedAt: null } }, select: { fleet: { select: { id: true, name: true, carrierPartnerId: true } } } },
           waybills: {
             where: { deletedAt: null, status: 'IN_TRANSIT' },
             select: { id: true, waybillNo: true },
@@ -411,19 +419,45 @@ export class MobileWorkspaceService {
     return rows.map(item => item.partner);
   }
 
+  async approvalCenter(userId: string, status: 'PENDING' | 'DONE' = 'PENDING', type = 'ALL') {
+    const access = await this.access.getContext(userId);
+    const [contracts, payments] = await Promise.all([
+      type !== 'PAYMENT_REQUEST' && (access.isAdmin || access.permissions.includes('contract.approve')) ? this.approvalList(userId, status) : { list: [] },
+      type !== 'CONTRACT' && this.finance && (access.isAdmin || access.permissions.includes('settlement.payment.approve')) ? this.finance.paymentApprovalList(userId, status) : { list: [] },
+    ]);
+    const list = [...contracts.list.map(item => ({ ...item, businessType: 'CONTRACT' as const })), ...payments.list];
+    return { status, total: list.length, list };
+  }
+
+  async paymentApprovalDetail(userId: string, id: string) {
+    if (!this.finance) throw new NotFoundException('付款审批服务未加载');
+    return this.finance.paymentApprovalDetail(id, userId);
+  }
+
+  async paymentApprovalAttachment(userId: string, id: string, attachmentId: string) {
+    if (!this.finance) throw new NotFoundException('付款审批服务未加载');
+    return this.finance.paymentApprovalAttachment(id, attachmentId, userId);
+  }
+
+  async decidePayment(userId: string, id: string, decision: string, comment: string) {
+    if (!this.finance) throw new NotFoundException('付款审批服务未加载');
+    return decision === 'APPROVED' ? this.finance.approvePaymentRequest(id, { comment }, userId) : this.finance.rejectPaymentRequest(id, { reason: comment }, userId);
+  }
+
   async approvalList(userId: string, status: 'PENDING' | 'DONE' = 'PENDING') {
     await this.access.assertPermission(userId, 'contract.approve');
     const context = await this.access.getContext(userId);
+    const approvalScope = await this.access.getContractScope(userId, 'contract.approve');
     const where: Prisma.ApprovalWhereInput = status === 'PENDING'
       ? {
         status: 'PENDING',
         ...(context.isAdmin ? {} : { assigneeId: userId }),
-        contract: { deletedAt: null, status: 'PENDING_APPROVAL' },
+        contract: { deletedAt: null, status: 'PENDING_APPROVAL', AND: [approvalScope] },
       }
       : {
         actedById: userId,
         status: { in: ['APPROVED', 'REJECTED'] },
-        contract: { deletedAt: null },
+        contract: { deletedAt: null, AND: [approvalScope] },
       };
     const rows = await this.prisma.approval.findMany({
       where,

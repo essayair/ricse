@@ -22,6 +22,19 @@ describe('AccessControlService', () => {
     service = module.get(AccessControlService);
   });
 
+  it('物流付款要求全部运单都处于当前操作数据范围', async () => {
+    jest.spyOn(service, 'getContext').mockResolvedValue({ isAdmin: false, isExternal: false } as any);
+    const scope = { dispatchNotice: { order: { contract: { businessUnitId: 'unit-a' } } } };
+    jest.spyOn(service, 'getWaybillScope').mockResolvedValue(scope);
+    await expect(service.getLogisticsPaymentScope('u', 'settlement.payment.approve')).resolves.toEqual({ deletedAt: null, lines: { some: {}, every: { waybill: scope } } });
+    expect(service.getWaybillScope).toHaveBeenCalledWith('u', 'settlement.payment.approve');
+  });
+
+  it('外部企业账号不参与内部物流付款', async () => {
+    jest.spyOn(service, 'getContext').mockResolvedValue({ isAdmin: false, isExternal: true } as any);
+    await expect(service.getLogisticsPaymentScope('external')).resolves.toEqual({ id: { equals: '__NO_ACCESS__' } });
+  });
+
   it('审批路由角色的权限模板不能在页面中直接改写', async () => {
     prisma.role.findUnique.mockResolvedValue({ id: 'role-owner', code: 'BUSINESS_OWNER' } as any);
 
@@ -366,7 +379,7 @@ describe('AccessControlService', () => {
         }],
       } as any);
 
-      await expect(service.getLogisticsContractScope('admin')).resolves.toEqual({});
+      await expect(service.getLogisticsContractScope('admin')).resolves.toEqual({ deletedAt: null });
       await expect(service.getLogisticsSettlementScope('admin')).resolves.toEqual({});
     });
 
@@ -387,7 +400,7 @@ describe('AccessControlService', () => {
       });
     });
 
-    it('COMPANY 范围按本企业 companyId 收口', async () => {
+    it('物流合同按适用事业部共享，而不是签约法律主体归属的组织企业', async () => {
       prisma.user.findUnique.mockResolvedValue({
         id: 'logistics-user', role: 'USER',
         company: { id: 'internal-company', type: 'INTERNAL' },
@@ -399,9 +412,10 @@ describe('AccessControlService', () => {
         }],
       } as any);
 
-      await expect(service.getLogisticsContractScope('logistics-user')).resolves.toEqual({
-        companyId: { in: ['internal-company'] },
-      });
+      jest.spyOn(service, 'getBusinessUnitOptions').mockResolvedValue([{ id: 'unit-1' }] as any);
+      await expect(service.getLogisticsContractScope('logistics-user')).resolves.toEqual({ deletedAt: null, OR: [
+        { allBusinessUnits: true }, { businessUnits: { some: { businessUnitId: { in: ['unit-1'] } } } },
+      ] });
     });
 
     it('物流结算按用户可访问运单的业务单元范围收口', async () => {
@@ -418,7 +432,7 @@ describe('AccessControlService', () => {
       } as any);
 
       await expect(service.getLogisticsSettlementScope('finance-user', 'logistics.settlement.view')).resolves.toEqual({
-        lines: { some: { waybill: expect.any(Object) } },
+        deletedAt: null, lines: { some: {}, every: { waybill: expect.any(Object) } },
       });
     });
 

@@ -236,6 +236,7 @@ model BusinessUnit {
   financialSettlements FinancialSettlement[]
   paymentRequests      PaymentRequest[]
   fundClaims           FundClaim[]
+  logisticsContractUnits LogisticsContractBusinessUnit[]
 
   @@index([companyId, status])
   @@index([parentId])
@@ -420,6 +421,7 @@ model Partner {
   serviceOrganizations               ServiceOrganization[]
   carrierWaybills                    Waybill[]             @relation("WaybillCarrierPartner")
   logisticsContracts                 LogisticsContract[]   @relation("LogisticsContractCarrier")
+  signedLogisticsContracts           LogisticsContract[]   @relation("LogisticsContractSigningPartner")
   logisticsSettlementsAsPayer        LogisticsSettlement[] @relation("LogisticsSettlementPayerPartner")
   institutionInspections             QualityInspection[]   @relation("QualityInstitutionPartner")
   ownedBusinessInbounds              BusinessInbound[]     @relation("BusinessInboundOwner")
@@ -529,6 +531,7 @@ model Driver {
   waybills            Waybill[]
   vehicleLinks        VehicleDriver[]
   fleetLinks          DriverFleet[]
+  attachments         Attachment[]
 
   // 有效档案的手机号、身份证号、驾驶证号全平台唯一；采用迁移中的部分唯一索引以兼容软删除。
   @@index([serviceOrganizationId, status])
@@ -794,6 +797,7 @@ model Vehicle {
   drivers    VehicleDriver[]
   waybills   Waybill[]
   fleetLinks VehicleFleet[]
+  attachments Attachment[]
 
   @@index([ownerId])
   @@map("vehicles")
@@ -1040,6 +1044,7 @@ model FinancialSettlement {
   unit                 String?
   grossAmount          Decimal   @db.Decimal(15, 2)
   adjustmentAmount     Decimal   @default(0) @db.Decimal(15, 2)
+  qualityDeductionAmount Decimal @default(0) @db.Decimal(15, 2)
   totalAmount          Decimal   @db.Decimal(15, 2)
   settledAmount        Decimal   @default(0) @db.Decimal(15, 2)
   dueDate              DateTime?
@@ -1060,6 +1065,7 @@ model FinancialSettlement {
   allocations     SettlementAllocation[]
   lines           FinancialSettlementLine[]
   paymentRequests PaymentRequest[]
+  fundEarmarks    FundEarmark[]
 
   @@index([direction, status])
   @@index([contractId])
@@ -1076,6 +1082,11 @@ model FinancialSettlementLine {
   orderId          String?
   orderNo          String?
   orderName        String?
+  waybillLineItemId String?
+  weightSelectionId String?
+  qualityTaskId    String?
+  sourceSnapshot   Json?
+  qualityDeductionAmount Decimal @default(0) @db.Decimal(15, 2)
   quantity         Decimal? @db.Decimal(15, 3)
   unit             String?
   unitPrice        Decimal? @db.Decimal(15, 4)
@@ -1087,9 +1098,13 @@ model FinancialSettlementLine {
 
   settlement FinancialSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
   order      Order?              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  waybillLineItem WaybillLineItem? @relation(fields: [waybillLineItemId], references: [id], onDelete: Restrict)
+  weightSelection WaybillWeightSelection? @relation(fields: [weightSelectionId], references: [id], onDelete: Restrict)
+  qualityTask QualityTask? @relation(fields: [qualityTaskId], references: [id], onDelete: Restrict)
 
   @@index([settlementId])
   @@index([orderId])
+  @@index([waybillLineItemId])
   @@map("financial_settlement_lines")
 }
 
@@ -1154,6 +1169,8 @@ model FundTransaction {
   paymentRequest        PaymentRequest?        @relation(fields: [paymentRequestId], references: [id], onDelete: Restrict)
   attachments           Attachment[]
   claims                FundClaim[]
+  earmarks              FundEarmark[]
+  logisticsAllocations  LogisticsPaymentAllocation[]
 
   @@index([direction, status])
   @@index([contractId])
@@ -1169,17 +1186,25 @@ model FundTransaction {
 model PaymentRequest {
   id                          String    @id @default(cuid())
   requestNo                   String    @unique
-  businessType                String    @default("PURCHASE") // PURCHASE | SALES
+  businessType                String    @default("PURCHASE") // PURCHASE | SALES | LOGISTICS
   paymentStage                String    @default("SETTLEMENT")
+  basisType                   String    @default("LEGACY") // LEGACY | CONTRACT | BATCH | SETTLEMENT
+  stageName                   String?
+  conditionText               String?
+  conditionTypes              Json?
+  sourceLineIds               Json?
+  evidenceSnapshot            Json?
+  clientRequestId             String?
   paymentMethod               String    @default("BANK_TRANSFER")
-  contractId                  String
+  contractId                  String?
+  logisticsSettlementId       String?
   orderId                     String?
   settlementId                String?
   relatedTransactionId        String?
   businessUnitId              String?
   legalEntityPartnerId        String
   counterpartyId              String
-  status                      String    @default("DRAFT") // DRAFT | BUSINESS_CONFIRMED | PENDING_APPROVAL | APPROVED | REJECTED | PAID | VOIDED
+  status                      String    @default("DRAFT") // DRAFT | BUSINESS_CONFIRMED | PENDING_APPROVAL | APPROVED | REJECTED | PARTIALLY_PAID | PAID | VOIDED
   amount                      Decimal   @db.Decimal(15, 2)
   requestedPayDate            DateTime?
   ourBankAccount              String?
@@ -1208,7 +1233,8 @@ model PaymentRequest {
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
-  contract           Contract                 @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  contract           Contract?                @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  logisticsSettlement LogisticsSettlement?     @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
   order              Order?                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   settlement         FinancialSettlement?     @relation(fields: [settlementId], references: [id], onDelete: Restrict)
   relatedTransaction FundTransaction?         @relation("PaymentRequestRefundSource", fields: [relatedTransactionId], references: [id], onDelete: Restrict)
@@ -1228,9 +1254,34 @@ model PaymentRequest {
   @@index([contractId])
   @@index([orderId])
   @@index([settlementId])
+  @@index([logisticsSettlementId])
   @@index([relatedTransactionId])
   @@index([businessUnitId])
+  @@unique([createdBy, clientRequestId])
   @@map("payment_requests")
+}
+
+/// 已付款未核销资金的用途指定；不改变货物应付金额，也不替代财务核销。
+model FundEarmark {
+  id                String @id @default(cuid())
+  fundTransactionId String
+  settlementId      String?
+  orderId           String?
+  amount            Decimal @db.Decimal(15, 2)
+  consumedAmount    Decimal @default(0) @db.Decimal(15, 2)
+  reason            String
+  createdBy         String
+  releasedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  fundTransaction FundTransaction @relation(fields: [fundTransactionId], references: [id], onDelete: Restrict)
+  settlement FinancialSettlement? @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([fundTransactionId, releasedAt])
+  @@index([settlementId])
+  @@index([orderId])
+  @@map("fund_earmarks")
 }
 
 /// 到账认领明细。一笔收款可以拆分认领到多个合同或执行批次，全部认领后由财务统一确认。
@@ -1302,6 +1353,7 @@ model SettlementAllocation {
   settlementId      String
   fundTransactionId String
   amount            Decimal   @db.Decimal(15, 2)
+  earmarkConsumptions Json?
   createdBy         String
   createdAt         DateTime  @default(now())
   reversedBy        String?
@@ -1343,6 +1395,7 @@ model Order {
   settlementLines FinancialSettlementLine[]
   paymentRequests PaymentRequest[]
   fundClaims      FundClaim[]
+  fundEarmarks    FundEarmark[]
 
   @@index([orderNo])
   @@index([contractId])
@@ -1537,6 +1590,7 @@ model WaybillLineItem {
 
   waybill                Waybill                @relation(fields: [waybillId], references: [id], onDelete: Cascade)
   dispatchNoticeLineItem DispatchNoticeLineItem @relation(fields: [dispatchNoticeLineItemId], references: [id])
+  settlementLines FinancialSettlementLine[]
 
   @@index([waybillId])
   @@index([dispatchNoticeLineItemId])
@@ -1627,6 +1681,7 @@ model WaybillWeightSelection {
   waybill     Waybill     @relation(fields: [waybillId], references: [id])
   weighTicket WeighTicket @relation(fields: [weighTicketId], references: [id])
   selector    User        @relation("WaybillWeightSelector", fields: [selectedBy], references: [id])
+  settlementLines FinancialSettlementLine[]
 
   @@index([waybillId, purpose, isCurrent])
   @@index([weighTicketId])
@@ -1634,10 +1689,17 @@ model WaybillWeightSelection {
   @@map("waybill_weight_selections")
 }
 
-/// 物流合同；仅用于有长期约定价的承运方，承运方需关联有效物流承运商服务档案
+/// 物流合作档案与运价约定，承运方复用有效物流承运商服务档案
 model LogisticsContract {
   id               String    @id @default(cuid())
   contractNo       String    @unique
+  title            String?
+  externalContractNo String?
+  signingPartnerId String?
+  allBusinessUnits Boolean   @default(true)
+  defaultWeightBasis String  @default("SETTLEMENT")
+  paymentTerms     String?
+  terminatedAt    DateTime?
   carrierPartnerId String
   companyId        String?
   status           String    @default("DRAFT") // DRAFT | ACTIVE | EXPIRED | TERMINATED
@@ -1655,11 +1717,24 @@ model LogisticsContract {
   company        Company?                     @relation(fields: [companyId], references: [id])
   creator        User                         @relation("LogisticsContractCreator", fields: [createdBy], references: [id])
   priceTerms     LogisticsContractPriceTerm[]
+  signingPartner Partner? @relation("LogisticsContractSigningPartner", fields: [signingPartnerId], references: [id], onDelete: Restrict)
+  businessUnits LogisticsContractBusinessUnit[]
+  attachments Attachment[]
 
   @@index([carrierPartnerId])
   @@index([companyId])
   @@index([status])
   @@map("logistics_contracts")
+}
+
+model LogisticsContractBusinessUnit {
+  contractId String
+  businessUnitId String
+  contract LogisticsContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  businessUnit BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
+  @@id([contractId, businessUnitId])
+  @@index([businessUnitId])
+  @@map("logistics_contract_business_units")
 }
 
 /// 物流合同运价条款；按路线维度分生效期管理，不区分货物品类
@@ -1689,6 +1764,10 @@ model LogisticsSettlement {
   settlementNo     String    @unique
   payerCompanyId   String? // 兼容历史数据；新单据以合同我方签约主体 payerPartnerId 为准
   payerPartnerId   String?
+  ownerPartnerId   String? // 原业务货主快照，修改付款主体不覆盖货权归属
+  carrierPartnerId String?
+  businessUnitId  String?
+  payerChangeReason String?
   periodStart      DateTime
   periodEnd        DateTime
   status           String    @default("DRAFT") // DRAFT | SUBMITTED | REVIEWED | VOIDED
@@ -1711,6 +1790,10 @@ model LogisticsSettlement {
   reviewer     User?                     @relation("LogisticsSettlementReviewer", fields: [reviewedBy], references: [id])
   creator      User                      @relation("LogisticsSettlementCreator", fields: [createdBy], references: [id])
   lines        LogisticsSettlementLine[]
+  paymentRequests PaymentRequest[]
+  paymentAllocations LogisticsPaymentAllocation[]
+  adjustments LogisticsSettlementAdjustment[]
+  attachments Attachment[]
 
   @@index([payerCompanyId])
   @@index([payerPartnerId])
@@ -1718,16 +1801,49 @@ model LogisticsSettlement {
   @@map("logistics_settlements")
 }
 
-/// 物流结算单明细；一车（一张已签收运单）一行，重量快照自运单结算执行磅单口径
+/// 运费付款核销，独立于采购货款核销，不能跨结算或跨承运方使用资金。
+model LogisticsPaymentAllocation {
+  id String @id @default(cuid())
+  logisticsSettlementId String
+  fundTransactionId String
+  amount Decimal @db.Decimal(15, 2)
+  createdBy String
+  createdAt DateTime @default(now())
+  reversedAt DateTime?
+  reversedBy String?
+  reversalReason String?
+  settlement LogisticsSettlement @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
+  fundTransaction FundTransaction @relation(fields: [fundTransactionId], references: [id], onDelete: Restrict)
+  @@index([logisticsSettlementId])
+  @@index([fundTransactionId])
+  @@map("logistics_payment_allocations")
+}
+
+/// 物流结算单明细；一车一行，计费磅单/数量独立保存，不回写库存和货款
 model LogisticsSettlementLine {
   id                  String   @id @default(cuid())
   settlementId        String
   waybillId           String
   netWeight           Decimal  @db.Decimal(15, 3)
+  grossWeight         Decimal? @db.Decimal(15, 3)
+  tareWeight          Decimal? @db.Decimal(15, 3)
+  shippingWeight      Decimal? @db.Decimal(15, 3)
+  receivingWeight     Decimal? @db.Decimal(15, 3)
+  chargeQuantity      Decimal? @db.Decimal(15, 3)
+  pricingBasis        String   @default("NET_WEIGHT")
+  weightBasis         String   @default("LEGACY")
+  weighTicketId       String?
+  ticketNo            String?
+  weightReason        String?
+  materialName        String?
+  materialSpec        String?
+  shippedAt           DateTime?
+  receivedAt          DateTime?
+  evidenceSnapshot    Json?
   unitPrice           Decimal? @db.Decimal(15, 2) // MANUAL 来源在提交前允许为空，待手工填写
   priceSource         String // CONTRACT | MANUAL | CONTRACT_OVERRIDDEN
   contractPriceTermId String?
-  contractUnitPrice   Decimal? @db.Decimal(15, 2) // priceSource=CONTRACT_OVERRIDDEN 时保留原合同单价，供审计对比
+  contractUnitPrice   Decimal? @db.Decimal(15, 2) // 引用时的合同原价快照，结算调价不覆盖
   overrideReason      String?
   amount              Decimal? @db.Decimal(15, 2) // unitPrice 为空时同步为空
   createdAt           DateTime @default(now())
@@ -1741,6 +1857,21 @@ model LogisticsSettlementLine {
   @@index([waybillId])
   @@index([contractPriceTermId])
   @@map("logistics_settlement_lines")
+}
+
+model LogisticsSettlementAdjustment {
+  id String @id @default(cuid())
+  settlementId String
+  lineId String?
+  kind String // PRICE | WEIGHT | PAYER
+  before Json
+  after Json
+  reason String
+  actorId String
+  createdAt DateTime @default(now())
+  settlement LogisticsSettlement @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  @@index([settlementId, createdAt])
+  @@map("logistics_settlement_adjustments")
 }
 
 model WeighRecord {
@@ -1780,6 +1911,7 @@ model QualityTask {
   qualityDisposition   String    @default("PENDING") // PENDING | PASS | DEDUCTION_PENDING | ACCEPT_WITH_DEDUCTION | REJECT | REVIEW_REQUIRED | LEGACY
   qualityDeductionPerTon Decimal? @db.Decimal(15, 4)
   qualityDispositionReason String?
+  qualityAcceptanceSnapshot Json? // 商务确认人、时间、原因及判定版本，与检测事实分别留存
   sampledAt            DateTime?
   samplerName          String?
   samplingMethod       String?
@@ -1799,6 +1931,7 @@ model QualityTask {
   deletedAt            DateTime?
 
   waybill         Waybill             @relation(fields: [waybillId], references: [id])
+  settlementLines FinancialSettlementLine[]
   creator         User                @relation("QualityTaskCreator", fields: [createdBy], references: [id])
   handler         User?               @relation("QualityTaskHandler", fields: [handlerId], references: [id])
   decider         User?               @relation("QualityTaskDecider", fields: [decidedBy], references: [id])
@@ -2593,6 +2726,10 @@ model Attachment {
   inventoryReversalId String? // 关联库存冲销单
   fundTransactionId   String? // 关联收款单/付款单银行回单
   paymentRequestId    String? // 关联付款申请依据
+  logisticsContractId String?
+  logisticsSettlementId String?
+  driverId            String? // 司机证件资料；与车辆附件独立存储
+  vehicleId           String? // 车辆行驶证等资料
   fileName            String // 存储文件名（UUID）
   originalName        String // 原始文件名
   mimeType            String
@@ -2619,6 +2756,10 @@ model Attachment {
   inventoryReversal InventoryReversal? @relation(fields: [inventoryReversalId], references: [id])
   fundTransaction   FundTransaction?   @relation(fields: [fundTransactionId], references: [id])
   paymentRequest    PaymentRequest?    @relation(fields: [paymentRequestId], references: [id])
+  logisticsContract LogisticsContract? @relation(fields: [logisticsContractId], references: [id], onDelete: Restrict)
+  logisticsSettlement LogisticsSettlement? @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
+  driver            Driver?            @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle           Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   uploader          User?              @relation("AttachmentUploader", fields: [uploadedBy], references: [id])
 
   @@index([partnerId])
@@ -2631,6 +2772,10 @@ model Attachment {
   @@index([qualityInspectionId])
   @@index([fundTransactionId])
   @@index([paymentRequestId])
+  @@index([logisticsContractId])
+  @@index([logisticsSettlementId])
+  @@index([driverId])
+  @@index([vehicleId])
   @@index([inboundReceiptId])
   @@index([outboundReceiptId])
   @@index([inventoryReversalId])

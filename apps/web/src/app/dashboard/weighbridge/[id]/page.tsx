@@ -176,7 +176,7 @@ export default function WeighTicketDetailPage() {
   const [editingWaybill, setEditingWaybill] = useState(false);
   const [waybillOptions, setWaybillOptions] = useState<any[]>([]);
   const [newWaybillId, setNewWaybillId] = useState('');
-  const [infoForm, setInfoForm] = useState({ ticketDate: '', plateNo: '', materialName: '', materialSpec: '', shipperName: '', receiverName: '', packageCount: '0', driverName: '', weighmasterName: '', remarks: '' });
+  const [infoForm, setInfoForm] = useState({ ticketDate: '', plateNo: '', materialName: '', materialSpec: '', shipperName: '', receiverName: '', packageCount: '', driverName: '', weighmasterName: '', remarks: '' });
   const [saving, setSaving] = useState(false);
 
   const applyTicket = (data: WeighTicket, resetRecordDrafts = false) => {
@@ -195,7 +195,7 @@ export default function WeighTicketDetailPage() {
       ticketDate: data.ticketDate.slice(0, 10), plateNo: data.plateNo || data.waybill.plateNo || '',
       materialName: data.materialName || '', materialSpec: data.materialSpec || '',
       shipperName: data.shipperName || '', receiverName: data.receiverName || '',
-      packageCount: String(data.packageCount ?? 0), driverName: data.driverName || data.waybill.driverName || '',
+      packageCount: data.packageCount == null ? '' : String(data.packageCount), driverName: data.driverName || data.waybill.driverName || '',
       weighmasterName: data.weighmasterName || data.creator.name, remarks: data.remarks || '',
     });
   };
@@ -329,6 +329,8 @@ export default function WeighTicketDetailPage() {
   };
 
   const saveInfo = async () => {
+    if (!infoForm.packageCount.trim()) return alert('请手动填写包/袋数，散装货物填写 0');
+    if (!Number.isInteger(Number(infoForm.packageCount)) || Number(infoForm.packageCount) < 0) return alert('包/袋数必须是大于等于 0 的整数');
     setSaving(true);
     try {
       applyTicket(await api.patch<WeighTicket>(`/weigh-tickets/${id}/info`, {

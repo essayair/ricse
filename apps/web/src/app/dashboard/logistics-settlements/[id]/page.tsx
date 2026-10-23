@@ -1,215 +1,48 @@
 'use client';
-
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { confirmAction } from '@/lib/system-dialog';
+import { AttachmentPanel } from '@/components/attachment-panel';
+import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-
-interface SettlementLine {
-  id: string;
-  netWeight: string;
-  unitPrice: string | null;
-  amount: string | null;
-  priceSource: 'CONTRACT' | 'MANUAL' | 'CONTRACT_OVERRIDDEN';
-  overrideReason: string | null;
-  contractPriceTerm: {
-    id: string;
-    contractId: string;
-    unitPrice: string;
-    originLocation: string;
-    destinationLocation: string;
-  } | null;
-  waybill: {
-    id: string; waybillNo: string; plateNo: string | null; signedAt: string | null;
-    originLocation: string | null; destinationLocation: string | null; carrierName: string | null;
-  };
-}
-
-interface SettlementDetail {
-  id: string;
-  settlementNo: string;
-  status: 'DRAFT' | 'SUBMITTED' | 'REVIEWED' | 'VOIDED';
-  periodStart: string;
-  periodEnd: string;
-  totalGrossWeight: string;
-  totalNetWeight: string;
-  totalAmount: string;
-  remarks: string | null;
-  payerCompany: { id: string; name: string } | null;
-  payerPartner: { id: string; name: string } | null;
-  preparer: { id: string; name: string };
-  reviewer: { id: string; name: string } | null;
-  lines: SettlementLine[];
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '已提交', REVIEWED: '已复核', VOIDED: '已作废',
-};
-
-const PRICE_SOURCE_LABEL: Record<string, string> = {
-  CONTRACT: '合同价', MANUAL: '手工录入', CONTRACT_OVERRIDDEN: '合同价已调整',
-};
+import { LogisticsField as Field, LogisticsPartner, LogisticsTicket, logisticsField, num, time, day, pricingLabel, weightBasisLabel, settlementStatus, useLogisticsPermission, useLogisticsError } from '@/components/logistics/logistics-shared';
 
 export default function LogisticsSettlementDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
-  const [settlement, setSettlement] = useState<SettlementDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [editingLine, setEditingLine] = useState<string | null>(null);
-  const [priceInput, setPriceInput] = useState('');
-  const [reasonInput, setReasonInput] = useState('');
-  const [canViewContract, setCanViewContract] = useState(false);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const result = await api.get<SettlementDetail>(`/logistics-settlements/${id}`);
-      setSettlement(result);
-    } catch (error: any) { alert(error.message); }
-    finally { setLoading(false); }
+  const { id } = useParams<{ id: string }>(), can = useLogisticsPermission();
+  const [item, setItem] = useState<any>(null), [error, setError] = useLogisticsError('物流结算操作未完成'), [busy, setBusy] = useState(false), [editing, setEditing] = useState('');
+  const [price, setPrice] = useState(''), [reason, setReason] = useState(''), [tickets, setTickets] = useState<LogisticsTicket[]>([]);
+  const [weightLine, setWeightLine] = useState(''), [ticketId, setTicketId] = useState(''), [basis, setBasis] = useState('TICKET'), [confirmed, setConfirmed] = useState('');
+  const [payers, setPayers] = useState<LogisticsPartner[]>([]), [editPayer, setEditPayer] = useState(false), [payerId, setPayerId] = useState(''), [payerReason, setPayerReason] = useState('');
+  const load = useCallback(async () => { try { setItem(await api.get('/logistics-settlements/' + id)); } catch (e: any) { setError(e.message); } }, [id, setError]);
+  useEffect(() => { void load(); }, [load]);
+  const manage = can('logistics.settlement.manage'), draft = item?.status === 'DRAFT' && manage;
+  const action = async (name: string) => {
+    const messages: Record<string, string> = { submit: '提交后不能直接修改，请确认计费磅单、单价和付款主体。', review: '请核对磅单依据、运价调整及付款安排。复核后可创建物流付款申请。', void: '作废后运单回到未结算范围，已有付款申请或核销时需先处理关联记录。', 'return-draft': '退回草稿后可以重新调整本次结算。' };
+    const labels: Record<string, string> = { submit: '提交物流结算', review: '复核物流结算', void: '作废物流结算', 'return-draft': '退回修改' };
+    if (!await confirmAction(messages[name], { title: labels[name] })) return;
+    setBusy(true); setError(''); try { await api.post('/logistics-settlements/' + id + '/' + name); await load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
-  useEffect(() => {
-    void load();
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}') as { role?: string; permissions?: string[] };
-      setCanViewContract(user.role === 'ADMIN' || (user.permissions || []).includes('logistics.contract.view'));
-    } catch {
-      setCanViewContract(false);
-    }
-  }, [id]);
-
-  const startEdit = (line: SettlementLine) => {
-    setEditingLine(line.id);
-    setPriceInput(line.unitPrice || '');
-    setReasonInput(line.overrideReason || '');
-  };
-
-  const savePrice = async (lineId: string) => {
-    if (!priceInput || Number(priceInput) <= 0) { alert('请填写有效单价'); return; }
-    setBusy(true);
-    try {
-      await api.post(`/logistics-settlements/${id}/lines/${lineId}/price`, {
-        unitPrice: Number(priceInput), overrideReason: reasonInput || undefined,
-      });
-      setEditingLine(null);
-      await load();
-    } catch (error: any) { alert(error.message); }
-    finally { setBusy(false); }
-  };
-
-  const doAction = async (action: 'submit' | 'review' | 'void', confirmText?: string) => {
-    if (confirmText && !await confirmAction(confirmText, { title: '物流结算操作确认' })) return;
-    setBusy(true);
-    try { await api.post(`/logistics-settlements/${id}/${action}`); await load(); }
-    catch (error: any) { alert(error.message); }
-    finally { setBusy(false); }
-  };
-
-  if (loading) return <div className="p-12 text-center text-muted-foreground">加载中...</div>;
-  if (!settlement) return <div className="p-12 text-center text-muted-foreground">结算单不存在</div>;
-
-  const isDraft = settlement.status === 'DRAFT';
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold font-mono">{settlement.settlementNo}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            货主方：{settlement.payerPartner?.name || settlement.payerCompany?.name || '—'} · 结算周期：{settlement.periodStart.slice(0, 10)} ~ {settlement.periodEnd.slice(0, 10)}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <StatusText status={settlement.status}>{STATUS_LABEL[settlement.status]}</StatusText>
-          {isDraft && <Button size="sm" disabled={busy} onClick={() => void doAction('submit')}>提交</Button>}
-          {settlement.status === 'SUBMITTED' && <Button size="sm" disabled={busy} onClick={() => void doAction('review')}>复核通过</Button>}
-          {settlement.status !== 'VOIDED' && (
-            <Button size="sm" variant="destructive" disabled={busy}
-              onClick={() => void doAction('void', '确认作废该结算单？作废后运单会重新回到未结算池，可被新的结算单再次选取。')}>
-              作废
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <Card className="grid grid-cols-2 gap-4 p-6 text-sm md:grid-cols-4">
-        <div><div className="text-muted-foreground">毛重合计</div><div className="mt-1">{settlement.totalGrossWeight}</div></div>
-        <div><div className="text-muted-foreground">净重合计</div><div className="mt-1">{settlement.totalNetWeight}</div></div>
-        <div><div className="text-muted-foreground">金额合计</div><div className="mt-1 font-medium">{settlement.totalAmount}</div></div>
-        <div><div className="text-muted-foreground">制表人 / 复核人</div><div className="mt-1">{settlement.preparer.name} / {settlement.reviewer?.name || '—'}</div></div>
-        {settlement.remarks && <div className="col-span-2 md:col-span-4"><div className="text-muted-foreground">备注</div><div className="mt-1">{settlement.remarks}</div></div>}
-      </Card>
-
-      <Card className="overflow-hidden">
-        <div className="border-b p-4 font-medium">结算明细（{settlement.lines.length} 车）</div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] text-sm">
-            <thead className="border-b bg-muted/50 text-left text-muted-foreground">
-              <tr>
-                <th className="p-3">运单号</th>
-                <th className="p-3">车牌</th>
-                <th className="p-3">线路</th>
-                <th className="p-3">净重</th>
-                <th className="p-3">单价</th>
-                <th className="p-3">金额</th>
-                <th className="p-3">单价来源</th>
-                {isDraft && <th className="p-3">操作</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {settlement.lines.map((line) => (
-                <tr key={line.id} className="border-b align-top">
-                  <td className="p-3 font-mono">{line.waybill.waybillNo}</td>
-                  <td className="p-3">{line.waybill.plateNo || '—'}</td>
-                  <td className="p-3">{line.waybill.originLocation || '—'} → {line.waybill.destinationLocation || '—'}</td>
-                  <td className="p-3">{line.netWeight}</td>
-                  <td className="p-3">
-                    {editingLine === line.id ? (
-                      <Input type="number" className="w-28" value={priceInput} onChange={(e) => setPriceInput(e.target.value)} />
-                    ) : (line.unitPrice ?? <span className="text-muted-foreground">未填写</span>)}
-                  </td>
-                  <td className="p-3">{line.amount ?? '—'}</td>
-                  <td className="p-3">
-                    <div>{PRICE_SOURCE_LABEL[line.priceSource]}</div>
-                    {canViewContract && line.contractPriceTerm && (
-                      <Link
-                        href={`/dashboard/logistics-contracts/${line.contractPriceTerm.contractId}`}
-                        className="mt-1 inline-block text-xs text-primary hover:underline"
-                      >
-                        查看物流合同
-                      </Link>
-                    )}
-                    {editingLine === line.id && (line.priceSource === 'CONTRACT' || line.priceSource === 'CONTRACT_OVERRIDDEN') && (
-                      <Input className="mt-1 w-48" placeholder="调整原因（必填）" value={reasonInput} onChange={(e) => setReasonInput(e.target.value)} />
-                    )}
-                    {line.priceSource === 'CONTRACT_OVERRIDDEN' && line.overrideReason && editingLine !== line.id && (
-                      <div className="mt-1 text-xs text-muted-foreground">原因：{line.overrideReason}</div>
-                    )}
-                  </td>
-                  {isDraft && (
-                    <td className="p-3">
-                      {editingLine === line.id ? (
-                        <div className="flex gap-1">
-                          <Button size="sm" disabled={busy} onClick={() => void savePrice(line.id)}>保存</Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingLine(null)}>取消</Button>
-                        </div>
-                      ) : (
-                        <Button size="sm" variant="ghost" onClick={() => startEdit(line)}>调整单价</Button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
+  const savePrice = async (lineId: string) => { setBusy(true); setError(''); try { if (!price || Number(price) <= 0 || !reason.trim()) throw new Error('请填写有效结算单价和调整原因'); await api.post('/logistics-settlements/' + id + '/lines/' + lineId + '/price', { unitPrice: Number(price), overrideReason: reason }); setEditing(''); await load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); } };
+  const startWeight = async (line: any) => { setError(''); try { const result = await api.get<{ tickets: LogisticsTicket[] }>('/logistics-settlements/' + id + '/lines/' + line.id + '/options'); setTickets(result.tickets); setWeightLine(line.id); setTicketId(line.weighTicketId || ''); setBasis(line.weightBasis === 'CONFIRMED' ? 'CONFIRMED' : 'TICKET'); setConfirmed(line.weightBasis === 'CONFIRMED' ? String(line.chargeQuantity) : ''); setReason(''); setEditing(''); } catch (e: any) { setError(e.message); } };
+  const saveWeight = async () => { setBusy(true); setError(''); try { if (!ticketId || !reason.trim()) throw new Error('请选择磅单并填写调整原因'); await api.post('/logistics-settlements/' + id + '/lines/' + weightLine + '/weight', { weighTicketId: ticketId, weightBasis: basis, confirmedWeight: basis === 'CONFIRMED' ? Number(confirmed) : undefined, weightReason: reason }); setWeightLine(''); await load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); } };
+  const startPayer = async () => { setError(''); try { setPayers((await api.get<{ payers: LogisticsPartner[] }>('/logistics-settlements/options')).payers); setPayerId(item.payerPartnerId || ''); setPayerReason(''); setEditPayer(true); } catch (e: any) { setError(e.message); } };
+  const savePayer = async () => { setBusy(true); setError(''); try { if (!payerId || !payerReason.trim()) throw new Error('请选择付款主体并填写修改原因'); await api.post('/logistics-settlements/' + id + '/payer', { payerPartnerId: payerId, reason: payerReason }); setEditPayer(false); await load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); } };
+  if (!item) return <div className="p-12 text-center text-muted-foreground">{error || '加载中...'}</div>;
+  return <div className="space-y-5 pb-8"><div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">物流结算单</h1><p className="mt-1 font-mono text-sm text-muted-foreground">{item.settlementNo}</p></div><div className="flex flex-wrap items-center gap-2"><StatusText status={item.status}>{settlementStatus[item.status]}</StatusText><Link href="/dashboard/logistics-settlements"><Button variant="outline">返回列表</Button></Link>{draft && <Button disabled={busy} onClick={() => void action('submit')}>提交复核</Button>}{manage && item.status === 'SUBMITTED' && <><Button variant="outline" disabled={busy} onClick={() => void action('return-draft')}>退回修改</Button><Button disabled={busy} onClick={() => void action('review')}>复核通过</Button></>}{can('settlement.payment.apply') && item.status === 'REVIEWED' && <Link href={'/dashboard/payment-requests/new?businessType=LOGISTICS&logisticsSettlementId=' + id}><Button>创建付款申请</Button></Link>}{manage && item.status !== 'VOIDED' && <Button variant="outline" disabled={busy} onClick={() => void action('void')}>作废</Button>}</div></div>
+    {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+    <Card className="space-y-4 p-5"><h2 className="font-semibold">结算基本信息</h2><dl className="grid gap-4 text-sm md:grid-cols-3"><Info label="业务货主" value={item.ownerPartner?.name || item.payerPartner?.name}/><div><dt className="text-muted-foreground">本次付款主体</dt><dd className="mt-1 flex items-center gap-2">{item.payerPartner?.name || '—'}{draft && <Button size="sm" variant="outline" onClick={() => void startPayer()}>修改</Button>}</dd></div><Info label="业务单元（事业部）" value={item.businessUnit?.name}/><Info label="结算承运方" value={item.lines[0]?.waybill.carrierName}/><Info label="结算周期" value={day(item.periodStart) + ' 至 ' + day(item.periodEnd)}/><Info label="制表人 / 复核人" value={item.preparer.name + ' / ' + (item.reviewer?.name || '—')}/><Info label="选用磅单净重合计（吨）" value={num(item.totalNetWeight)}/><Info label="含税金额合计（元）" value={num(item.totalAmount, 2)}/><Info label="运输车次" value={String(item.lines.length)}/>{item.payerChangeReason && <Info label="付款主体调整说明" value={item.payerChangeReason}/>}<Info label="结算说明" value={item.remarks}/></dl>{editPayer && <div className="grid items-end gap-4 border-t pt-4 md:grid-cols-3"><Field label="付款主体"><select className={logisticsField} value={payerId} onChange={e => setPayerId(e.target.value)}>{payers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field><Field label="修改原因 *"><Input value={payerReason} onChange={e => setPayerReason(e.target.value)} placeholder="原业务货主不变，说明代付等安排"/></Field><div className="flex gap-2"><Button disabled={busy} onClick={() => void savePayer()}>保存</Button><Button variant="outline" onClick={() => setEditPayer(false)}>取消</Button></div></div>}{item.lines.some((l: any) => l.contractPriceTerm?.contract.signingPartnerId && l.contractPriceTerm.contract.signingPartnerId !== item.payerPartnerId) && <p className="text-sm text-amber-700">付款主体与物流合同签约主体不一致，请复核付款安排说明和相关依据。</p>}</Card>
+    <Card className="overflow-hidden"><div className="border-b p-5"><h2 className="font-semibold">运输与结算明细</h2><p className="mt-1 text-xs text-muted-foreground">重量及运价按本次结算快照保存。物流调整不回写库存、货款结算或合同原价。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[1600px] text-sm"><thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>{['运单 / 车牌', '货物名称 / 规格', '发货 / 收货时间', '发货 / 收货净重（吨）', '计费磅单 / 口径', '毛重 / 皮重 / 净重（吨）', '计价方式 / 数量', '合同 / 本次单价', '含税金额（元）', '调整说明', ...(draft ? ['操作'] : [])].map(s => <th className="whitespace-nowrap p-3" key={s}>{s}</th>)}</tr></thead><tbody>{item.lines.map((l: any) => <tr key={l.id} className="border-b align-top"><td className="min-w-44 p-3"><Link className="text-primary hover:underline" href={'/dashboard/waybills/' + l.waybillId}>{l.waybill.waybillNo}</Link><p className="mt-1 text-xs text-muted-foreground">{l.waybill.plateNo || '—'}</p></td><td className="min-w-44 p-3">{l.materialName || '历史未记录'}<p className="mt-1 text-xs text-muted-foreground">{l.materialSpec || '—'}</p></td><td className="whitespace-nowrap p-3 text-xs">{time(l.shippedAt)}<p className="mt-1 text-muted-foreground">{time(l.receivedAt)}</p></td><td className="p-3">{num(l.shippingWeight)}<p className="mt-1 text-muted-foreground">{num(l.receivingWeight)}</p></td><td className="min-w-44 p-3">{l.ticketNo || '历史快照'}<p className="mt-1 text-xs text-muted-foreground">{weightBasisLabel[l.weightBasis] || l.weightBasis}</p></td><td className="p-3"><p>{num(l.grossWeight)} / {num(l.tareWeight)}</p><p className="mt-1 text-muted-foreground">{num(l.netWeight)}</p></td><td className="whitespace-nowrap p-3"><p className="text-xs">{pricingLabel[l.pricingBasis]}</p><p className="mt-1">{num(l.chargeQuantity ?? l.netWeight)} {l.pricingBasis === 'TRIP' ? '车次' : '吨'}</p></td><td className="min-w-36 p-3"><p className="text-muted-foreground">{num(l.contractUnitPrice, 2)}</p><p className="mt-1 font-medium">{num(l.unitPrice, 2)}</p>{can('logistics.contract.view') && l.contractPriceTerm && <Link className="mt-1 block text-xs text-primary hover:underline" href={'/dashboard/logistics-contracts/' + l.contractPriceTerm.contractId}>查看物流合同</Link>}</td><td className="whitespace-nowrap p-3 font-medium">{num(l.amount, 2)}</td><td className="min-w-48 p-3 text-xs">{l.overrideReason && <p>调价：{l.overrideReason}</p>}{l.weightReason && <p className="mt-1">重量：{l.weightReason}</p>}{!l.overrideReason && !l.weightReason && '—'}</td>{draft && <td className="min-w-32 p-3"><Button size="sm" variant="ghost" onClick={() => { setEditing(l.id); setPrice(l.unitPrice || ''); setReason(''); setWeightLine(''); }}>调整单价</Button><Button size="sm" variant="ghost" onClick={() => void startWeight(l)}>更换计费依据</Button></td>}</tr>)}</tbody></table></div></Card>
+    {draft && editing && <Card className="space-y-4 p-5"><h2 className="font-semibold">调整本次结算单价</h2><div className="grid items-end gap-4 md:grid-cols-3"><Field label="本次含税单价 *"><Input type="number" min="0.01" step="0.01" value={price} onChange={e => setPrice(e.target.value)}/></Field><Field label="调整原因 *"><Input value={reason} onChange={e => setReason(e.target.value)}/></Field><div className="flex gap-2"><Button disabled={busy} onClick={() => void savePrice(editing)}>保存</Button><Button variant="outline" onClick={() => setEditing('')}>取消</Button></div></div></Card>}
+    {draft && weightLine && <Card className="space-y-4 p-5"><h2 className="font-semibold">更换运费计费依据</h2><div className="grid gap-4 md:grid-cols-2"><Field label="有效磅单 *"><select className={logisticsField} value={ticketId} onChange={e => setTicketId(e.target.value)}><option value="">请选择</option>{tickets.map(t => <option key={t.id} value={t.id}>{t.ticketNo} · {t.weighingStage === 'SHIPPING' ? '发货' : '收货'} · 净重 {t.netWeight} 吨</option>)}</select></Field><Field label="计量口径"><select className={logisticsField} value={basis} onChange={e => setBasis(e.target.value)}><option value="TICKET">选定磅单重量</option><option value="CONFIRMED">双方确认重量（需上传依据）</option></select></Field>{basis === 'CONFIRMED' && <Field label="双方确认重量（吨）"><Input type="number" min="0.001" step="0.001" value={confirmed} onChange={e => setConfirmed(e.target.value)}/></Field>}<Field label="调整原因 *"><Input value={reason} onChange={e => setReason(e.target.value)}/></Field></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setWeightLine('')}>取消</Button><Button disabled={busy} onClick={() => void saveWeight()}>保存</Button></div></Card>}
+    <AttachmentPanel title="结算依据附件" description="可上传双方确认重量、运价调整或付款安排的依据。使用双方确认重量时，提交前至少上传一份依据。" attachments={item.attachments} uploadPath={'/logistics-settlements/' + id + '/attachments'} attachmentPath={'/logistics-settlements/' + id + '/attachments'} canUpload={draft} canDelete={draft} onChanged={load}/>
+    <Card className="space-y-4 p-5"><h2 className="font-semibold">调整记录</h2>{!item.adjustments.length && <p className="text-sm text-muted-foreground">暂无调整记录</p>}{item.adjustments.map((a: any) => <div key={a.id} className="border-t pt-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><p>{({ PRICE: '单价调整', WEIGHT: '计费依据调整', PAYER: '付款主体调整' } as Record<string, string>)[a.kind]}：{a.reason}</p><p className="text-xs text-muted-foreground">{a.actorName} · {time(a.createdAt)}</p></div><p className="mt-2 text-xs text-muted-foreground">{summary(a.before)} → {summary(a.after)}</p></div>)}</Card>
+    <BusinessOperationHistory logs={item.operationLogs}/>
+  </div>;
 }
+function Info({ label, value }: { label: string; value?: string | null }) { return <div><dt className="text-muted-foreground">{label}</dt><dd className="mt-1">{value || '—'}</dd></div>; }
+function summary(value: any) { return [value.name, value.ticketNo, value.unitPrice != null ? '单价 ' + num(value.unitPrice, 2) : '', value.chargeQuantity != null ? '数量 ' + num(value.chargeQuantity) : '', value.amount != null ? '金额 ' + num(value.amount, 2) : '', value.source].filter(Boolean).join(' · ') || '原始记录'; }
