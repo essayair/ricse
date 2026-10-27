@@ -19,6 +19,7 @@ describe('逐车质量结算来源与版本', () => {
         weightSelections: [{ id: 'ws', purpose: 'INVENTORY', weighTicketId: 'wt', quantity: new Prisma.Decimal(100), weighTicket: { ticketNo: 'B1', status: 'REVIEWED', updatedAt: new Date('2026-10-01') } }, { id: 'ws-legacy', purpose: 'SETTLEMENT', weighTicketId: 'wt', quantity: new Prisma.Decimal(100), weighTicket: { ticketNo: 'B1', status: 'REVIEWED', updatedAt: new Date('2026-10-01') } }],
         qualityTask: { id: 'q', taskNo: 'Q1', status: 'COMPLETED', qualityDisposition: 'ACCEPT_WITH_DEDUCTION', qualityDeductionPerTon: new Prisma.Decimal(40), decisionVersion: 1,
           basisInspection: { id: 'report', reportNo: 'R1', status: 'CONFIRMED', updatedAt: new Date('2026-10-01') } } } };
+    source.waybill.inboundReceipts[0].businessInbound.pricingQuantity = new Prisma.Decimal(100);
     prisma.waybillLineItem.findMany.mockResolvedValue([source]);
   });
   it('最终采购货款按入库过账数量而非磅单原始净重，减去已占用数量', async () => {
@@ -46,7 +47,18 @@ describe('逐车质量结算来源与版本', () => {
     const original = (await service.sources('c', 'u'))[0];
     prisma.financialSettlement.findUnique.mockResolvedValue({ id: 's', contractId: 'c', lines: [{ waybillLineItemId: 'wl', quantity: new Prisma.Decimal(100), sourceSnapshot: { ...original, inboundNo: undefined, signature: original.legacySignature } }] } as any);
     await expect(service.assertCurrent('s', 'u')).resolves.toBeUndefined();
-    source.waybill.inboundReceipts[0].businessInbound.quantity = new Prisma.Decimal(99);
+    source.waybill.inboundReceipts[0].businessInbound.pricingQuantity = new Prisma.Decimal(99);
+    await expect(service.assertCurrent('s', 'u')).rejects.toThrow('结算依据已变更');
+  });
+  it('双数量上线前已记录入库编号的结算快照，在数量事实未变时继续可确认', async () => {
+    const original = (await service.sources('c', 'u'))[0];
+    const oldSnapshot = { ...original, signature: original.priorSignature } as any;
+    delete oldSnapshot.inboundPhysicalQuantity;
+    prisma.financialSettlement.findUnique.mockResolvedValue({ id: 's', contractId: 'c', lines: [
+      { waybillLineItemId: 'wl', quantity: new Prisma.Decimal(100), sourceSnapshot: oldSnapshot },
+    ] } as any);
+    await expect(service.assertCurrent('s', 'u')).resolves.toBeUndefined();
+    source.waybill.inboundReceipts[0].businessInbound.pricingQuantity = new Prisma.Decimal(99);
     await expect(service.assertCurrent('s', 'u')).rejects.toThrow('结算依据已变更');
   });
   it('存在未映射的历史批次结算时阻止同货物重复确认应付', async () => {

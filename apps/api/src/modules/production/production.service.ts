@@ -448,18 +448,27 @@ export class ProductionService {
       for (const input of task.inputs) {
         for (const allocation of input.allocations) {
           const quantity = Number(allocation.reservedQuantity);
+          const sourceLot = await tx.inventoryLot.findUniqueOrThrow({ where: { id: allocation.inventoryLotId } });
+          const physicalBefore = new Prisma.Decimal(sourceLot.availableQuantity);
+          const pricingBefore = new Prisma.Decimal(sourceLot.pricingAvailableQuantity);
+          if (physicalBefore.lte(0) || new Prisma.Decimal(quantity).gt(physicalBefore)) throw new BadRequestException(`库存批次 ${allocation.inventoryLot.lotNo} 数量不足`);
+          const pricingQuantity = new Prisma.Decimal(quantity).eq(physicalBefore)
+            ? pricingBefore.toNumber()
+            : pricingBefore.mul(quantity).div(physicalBefore).toDecimalPlaces(3).toNumber();
           const updated = await tx.inventoryLot.updateMany({
-            where: { id: allocation.inventoryLotId, availableQuantity: { gte: quantity }, status: 'AVAILABLE' },
-            data: { availableQuantity: { decrement: quantity } },
+            where: { id: allocation.inventoryLotId, availableQuantity: sourceLot.availableQuantity,
+              pricingAvailableQuantity: sourceLot.pricingAvailableQuantity, status: 'AVAILABLE' },
+            data: { availableQuantity: { decrement: quantity }, pricingAvailableQuantity: { decrement: pricingQuantity } },
           });
           if (updated.count !== 1) throw new BadRequestException(`库存批次 ${allocation.inventoryLot.lotNo} 数量不足，领料失败`);
           const lot = await tx.inventoryLot.findUniqueOrThrow({ where: { id: allocation.inventoryLotId } });
-          await tx.productionMaterialAllocation.update({ where: { id: allocation.id }, data: { issuedQuantity: quantity } });
+          await tx.productionMaterialAllocation.update({ where: { id: allocation.id }, data: { issuedQuantity: quantity, issuedPricingQuantity: pricingQuantity } });
           await tx.inventoryLedger.create({ data: {
             lotId: lot.id, warehouseId: lot.warehouseId, materialId: lot.materialId,
             businessUnitId: lot.businessUnitId,
             businessType: 'PRODUCTION_ISSUE', businessNo: task.taskNo, quantityChange: -quantity,
             balanceAfter: lot.availableQuantity,
+            pricingQuantityChange: -pricingQuantity, pricingBalanceAfter: lot.pricingAvailableQuantity,
             remarks: task.mode === 'OUTSOURCED' ? `委外发料进入生产任务 ${task.taskNo} 在制台账` : `生产领料进入任务 ${task.taskNo} 在制台账`,
             createdBy: userId,
           } });
@@ -499,14 +508,19 @@ export class ProductionService {
         if (!allocation) throw new BadRequestException('原料批次分配记录不存在');
         const remaining = Number(allocation.issuedQuantity) - Number(allocation.consumedQuantity) - Number(allocation.returnedQuantity);
         if (item.quantity > remaining + 0.0005) throw new BadRequestException(`库存批次 ${allocation.inventoryLot.lotNo} 可退数量不足`);
-        const lot = await tx.inventoryLot.update({ where: { id: allocation.inventoryLotId }, data: { availableQuantity: { increment: item.quantity }, status: 'AVAILABLE' } });
-        await tx.productionMaterialAllocation.update({ where: { id: item.allocationId }, data: { returnedQuantity: { increment: item.quantity } } });
+        const pricingQuantity = new Prisma.Decimal(item.quantity).eq(new Prisma.Decimal(allocation.issuedQuantity).minus(allocation.returnedQuantity))
+          && Number(allocation.consumedQuantity) === 0
+          ? new Prisma.Decimal(allocation.issuedPricingQuantity || 0).minus(allocation.returnedPricingQuantity || 0).toNumber()
+          : new Prisma.Decimal(allocation.issuedPricingQuantity || 0).mul(item.quantity).div(allocation.issuedQuantity).toDecimalPlaces(3).toNumber();
+        const lot = await tx.inventoryLot.update({ where: { id: allocation.inventoryLotId }, data: { availableQuantity: { increment: item.quantity }, pricingAvailableQuantity: { increment: pricingQuantity }, status: 'AVAILABLE' } });
+        await tx.productionMaterialAllocation.update({ where: { id: item.allocationId }, data: { returnedQuantity: { increment: item.quantity }, returnedPricingQuantity: { increment: pricingQuantity } } });
         await tx.productionTaskInput.update({ where: { id: allocation.taskInputId }, data: { returnedQuantity: { increment: item.quantity } } });
         await tx.inventoryLedger.create({ data: {
           lotId: lot.id, warehouseId: lot.warehouseId, materialId: lot.materialId,
           businessUnitId: lot.businessUnitId,
           businessType: 'PRODUCTION_RETURN', businessNo: task.taskNo, quantityChange: item.quantity,
           balanceAfter: lot.availableQuantity, remarks: dto.remarks?.trim() || `生产任务 ${task.taskNo} 余料退回`, createdBy: userId,
+          pricingQuantityChange: pricingQuantity, pricingBalanceAfter: lot.pricingAvailableQuantity,
         } });
       }
     });
@@ -572,18 +586,22 @@ export class ProductionService {
     const isCompleted = qualifiedQuantity >= Number(completion.task.plannedOutputQuantity) - 0.0005;
     const lotNo = `LOT-${completion.completionNo}`;
     await this.prisma.$transaction(async tx => {
+      const outputMaterial = await tx.material.findUniqueOrThrow({ where: { id: completion.materialId } });
+      if (outputMaterial.pricingQuantityBasis === 'DRY_MATTER') throw new BadRequestException('折干计价产成品须先完成水分检测及折干数量确认，当前生产完工暂不支持直接过账');
       const lot = await tx.inventoryLot.create({ data: {
         lotNo, productionCompletionId: completion.id, warehouseId: completion.task.targetWarehouseId,
         ownerPartnerId: completion.task.ownerPartnerId, businessUnitId: completion.task.businessUnitId, materialId: completion.materialId,
-        materialName: (await tx.material.findUniqueOrThrow({ where: { id: completion.materialId } })).name,
+        materialName: outputMaterial.name,
         supplierName: completion.task.processorOrganization?.partner.name || '自营生产', initialQuantity: quantity,
-        availableQuantity: quantity, qualityConclusion: 'PASS', status: 'AVAILABLE',
+        availableQuantity: quantity, pricingInitialQuantity: quantity, pricingAvailableQuantity: quantity,
+        pricingQuantityBasis: 'PHYSICAL', qualityConclusion: 'PASS', status: 'AVAILABLE',
       } });
       await tx.inventoryLedger.create({ data: {
         lotId: lot.id, warehouseId: lot.warehouseId, materialId: lot.materialId,
         businessUnitId: lot.businessUnitId,
         businessType: 'PRODUCTION_INBOUND', businessNo: completion.completionNo,
         quantityChange: quantity, balanceAfter: quantity,
+        pricingQuantityChange: quantity, pricingBalanceAfter: quantity,
         remarks: `由生产任务 ${completion.task.taskNo} 完工入库生成`, createdBy: userId,
       } });
       await tx.productionCompletion.update({ where: { id: completion.id }, data: { status: 'POSTED', postedBy: userId, postedAt: new Date() } });

@@ -505,6 +505,32 @@ export class WeighTicketService {
     return this.addRecords(id, [dto], userId);
   }
 
+  async deleteRecord(id: string, recordId: string, userId: string) {
+    const ticket = await this.findOne(id, userId, 'quality.manage');
+    if (!['PENDING', 'WEIGHING', 'COMPLETED'].includes(ticket.status)) {
+      throw new BadRequestException('磅单复核后不能删除称重记录');
+    }
+    const record = ticket.records.find(item => item.id === recordId);
+    if (!record) throw new NotFoundException('称重记录不存在');
+    const updated = await this.prisma.$transaction(async tx => {
+      await tx.weighRecord.delete({ where: { id: recordId } });
+      const remaining = ticket.records.filter(item => item.id !== recordId);
+      const replacement = [...remaining].reverse().find(item => item.weighingType === record.weighingType);
+      await tx.weighTicket.update({
+        where: { id },
+        data: {
+          ...(ticket.selectedGrossRecordId === recordId ? { selectedGrossRecordId: replacement?.id || null } : {}),
+          ...(ticket.selectedTareRecordId === recordId ? { selectedTareRecordId: replacement?.id || null } : {}),
+          ...(ticket.status === 'COMPLETED' ? { status: 'WEIGHING' } : {}),
+        },
+      });
+      await this.recalculate(tx, id);
+      return tx.weighTicket.findUniqueOrThrow({ where: { id }, include: this.include });
+    });
+    await this.syncTaskForWaybill(ticket.waybillId, userId);
+    return updated;
+  }
+
   async addRecords(id: string, records: CreateWeighRecordDto[], userId: string) {
     const ticket = await this.findOne(id, userId, 'quality.manage');
     if (!['PENDING', 'WEIGHING'].includes(ticket.status)) {

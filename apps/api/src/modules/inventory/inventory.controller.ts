@@ -74,7 +74,7 @@ export class InboundReceiptController {
     if (!qualityInspectionId) throw new BadRequestException('请选择最终验收质检单');
     return this.service.selectAcceptanceQuality(id, qualityInspectionId, userId);
   }
-  @Patch(':id/confirm') confirm(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.confirmReceipt(id, userId); }
+  @Patch(':id/confirm') confirm(@Param('id') id: string, @Body('qualityExceptionReason') qualityExceptionReason: string | undefined, @CurrentUser('id') userId: string) { return this.service.confirmReceipt(id, userId, qualityExceptionReason); }
   @Patch(':id/cancel') cancel(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.cancelReceipt(id, userId); }
   @Post(':id/post') post(@Param('id') id: string, @CurrentUser('id') userId: string) { return this.service.postInventory(id, userId); }
 }

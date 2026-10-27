@@ -194,6 +194,7 @@ export class InventoryReversalService {
             create: [{
               inventoryLotId: source.inventoryLot.id,
               sourceQuantity: source.quantity,
+              sourcePricingQuantity: source.pricingQuantity,
               quantity,
             }],
           },
@@ -227,6 +228,7 @@ export class InventoryReversalService {
           inventoryLotId: line.inventoryLotId,
           sourceSalesOutboundLineId: sourceLine.id,
           sourceQuantity: sourceLine.quantity,
+          sourcePricingQuantity: sourceLine.pricingQuantity,
           quantity,
         });
       }
@@ -351,25 +353,39 @@ export class InventoryReversalService {
         }
         for (const line of item.lines) {
           const quantity = Number(line.quantity);
+          const postedPricing = await tx.inventoryReversalLine.aggregate({
+            where: { reversalId: { not: item.id }, reversal: { businessInboundId: item.businessInbound.id, status: 'POSTED' } },
+            _sum: { pricingQuantity: true },
+          });
+          const sourcePhysical = Number(item.businessInbound.quantity);
+          const sourcePricing = Number(item.businessInbound.pricingQuantity);
+          const pricingQuantity = Math.abs(Number(alreadyPosted._sum.quantity || 0) + quantity - sourcePhysical) < 0.0005
+            ? new Prisma.Decimal(sourcePricing).minus(postedPricing._sum.pricingQuantity || 0).toNumber()
+            : new Prisma.Decimal(sourcePricing).mul(quantity).div(sourcePhysical).toDecimalPlaces(3).toNumber();
           const updated = await tx.inventoryLot.updateMany({
             where: {
               id: line.inventoryLotId,
               availableQuantity: { gte: quantity },
               initialQuantity: { gte: quantity },
+              pricingAvailableQuantity: { gte: pricingQuantity },
+              pricingInitialQuantity: { gte: pricingQuantity },
             },
             data: {
               availableQuantity: { decrement: quantity },
               initialQuantity: { decrement: quantity },
+              pricingAvailableQuantity: { decrement: pricingQuantity },
+              pricingInitialQuantity: { decrement: pricingQuantity },
             },
           });
           if (updated.count !== 1) throw new BadRequestException(`批次 ${line.inventoryLot.lotNo} 当前可用库存不足`);
           const lot = await tx.inventoryLot.findUniqueOrThrow({ where: { id: line.inventoryLotId } });
           const balanceAfter = Number(lot.availableQuantity);
+          const pricingBalanceAfter = Number(lot.pricingAvailableQuantity);
           await tx.inventoryLot.update({
             where: { id: lot.id },
             data: { status: balanceAfter <= 0 ? 'DEPLETED' : 'AVAILABLE' },
           });
-          await tx.inventoryReversalLine.update({ where: { id: line.id }, data: { balanceAfter } });
+          await tx.inventoryReversalLine.update({ where: { id: line.id }, data: { balanceAfter, pricingQuantity, pricingBalanceAfter } });
           await tx.inventoryLedger.create({
             data: {
               lotId: lot.id,
@@ -380,6 +396,8 @@ export class InventoryReversalService {
               businessNo: item.reversalNo,
               quantityChange: -quantity,
               balanceAfter,
+              pricingQuantityChange: -pricingQuantity,
+              pricingBalanceAfter,
               remarks: `冲销业务入库单 ${item.businessInbound.inboundNo}：${item.reason}`,
               createdBy: userId,
             },
@@ -411,16 +429,27 @@ export class InventoryReversalService {
           if (Number(posted._sum.quantity || 0) + quantity > Number(line.sourceQuantity) + 0.0005) {
             throw new BadRequestException(`批次 ${line.inventoryLot.lotNo} 累计冲销数量超过原出库数量`);
           }
+          const postedPricing = await tx.inventoryReversalLine.aggregate({
+            where: { reversalId: { not: item.id }, sourceSalesOutboundLineId: line.sourceSalesOutboundLineId, reversal: { status: 'POSTED' } },
+            _sum: { pricingQuantity: true },
+          });
+          const sourcePricing = Number(line.sourceSalesOutboundLine?.pricingQuantity ?? line.sourcePricingQuantity ?? line.sourceQuantity);
+          const sourcePhysical = Number(line.sourceQuantity);
+          const pricingQuantity = Math.abs(Number(posted._sum.quantity || 0) + quantity - sourcePhysical) < 0.0005
+            ? new Prisma.Decimal(sourcePricing).minus(postedPricing._sum.pricingQuantity || 0).toNumber()
+            : new Prisma.Decimal(sourcePricing).mul(quantity).div(sourcePhysical).toDecimalPlaces(3).toNumber();
           await tx.inventoryLot.update({
             where: { id: line.inventoryLotId },
             data: {
               availableQuantity: { increment: quantity },
+              pricingAvailableQuantity: { increment: pricingQuantity },
               status: 'AVAILABLE',
             },
           });
           const lot = await tx.inventoryLot.findUniqueOrThrow({ where: { id: line.inventoryLotId } });
           const balanceAfter = Number(lot.availableQuantity);
-          await tx.inventoryReversalLine.update({ where: { id: line.id }, data: { balanceAfter } });
+          const pricingBalanceAfter = Number(lot.pricingAvailableQuantity);
+          await tx.inventoryReversalLine.update({ where: { id: line.id }, data: { balanceAfter, pricingQuantity, pricingBalanceAfter } });
           await tx.inventoryLedger.create({
             data: {
               lotId: lot.id,
@@ -431,6 +460,8 @@ export class InventoryReversalService {
               businessNo: item.reversalNo,
               quantityChange: quantity,
               balanceAfter,
+              pricingQuantityChange: pricingQuantity,
+              pricingBalanceAfter,
               remarks: `冲销销售出库单 ${item.salesOutbound.outboundNo}：${item.reason}`,
               createdBy: userId,
             },

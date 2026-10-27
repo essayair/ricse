@@ -192,7 +192,7 @@ export default function ContractPrintPage() {
 
       <PrintSection title="三、结算与质量条款">
         <div className="grid grid-cols-3 border-l border-t border-slate-900 text-[11px]">
-          <Meta label="结算依据" value={BASIS[item.settlementBasis || ''] || '合同量'} />
+          <Meta label="结算数量约定" value={BASIS[item.settlementBasis || ''] || item.settlementBasis || '—'} />
           <Meta label="结算方式" value={settlementMethodLabel(item.settlementMethod || '')} />
           <Meta label="预付比例" value={item.prepayPct == null ? '—' : `${item.prepayPct}%`} />
           <Meta label="尾款账期" value={item.paymentDays == null ? '—' : `${item.paymentDays} 天`} />

@@ -109,7 +109,7 @@ export default function OutboundOrderDetailPage() {
         const form = variance[receipt.id] || { decision: '', reason: '' };
         return <div key={receipt.id} className={`rounded-lg border p-4 ${receipt.status === 'VARIANCE_PENDING' ? 'border-destructive/40 bg-destructive/5' : ''}`}>
           <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Truck className="h-4 w-4" /><span className="font-mono font-medium">{receipt.waybill.waybillNo}</span><StatusText status={receipt.status}>{STATUS[receipt.status] || receipt.status}</StatusText></div>
-            <div className="mt-2 text-sm text-muted-foreground">{receipt.plateNo || receipt.waybill.plateNo || '待派车'} · 计划 {weight(receipt.plannedQuantity)} · 实际 {weight(receipt.outboundQuantity)}</div></div>
+            <div className="mt-2 text-sm text-muted-foreground">{receipt.plateNo || receipt.waybill.plateNo || '待派车'} · 计划 {weight(receipt.plannedQuantity)} · 出库实物 {weight(receipt.outboundQuantity)}{receipt.pricingQuantity != null ? ` · 出库计价 ${weight(receipt.pricingQuantity)}` : ''}</div></div>
             <div className="flex flex-wrap gap-2">
               {ticket && <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/weighbridge/${ticket.id}`)}><Scale className="mr-1 h-4 w-4" />查看磅单</Button>}
               {receipt.status === 'PENDING' && ticket?.status === 'REVIEWED' && <Button size="sm" onClick={() => router.push(`/dashboard/outbound/create?waybillId=${receipt.waybillId}&orderId=${item.id}`)}>拣配库存</Button>}

@@ -792,6 +792,17 @@ export class OutboundService {
     }
     const outboundNo = await this.nextNo('SOUT', 'salesOutbound');
 
+    const pricingByLot = new Map<string, number>();
+    for (const allocation of receipt.allocations) {
+      const physical = new Prisma.Decimal(allocation.inventoryLot.availableQuantity);
+      const pricing = new Prisma.Decimal(allocation.inventoryLot.pricingAvailableQuantity ?? allocation.inventoryLot.availableQuantity);
+      const requested = new Prisma.Decimal(allocation.quantity);
+      if (physical.lte(0) || requested.gt(physical)) throw new BadRequestException(`库存批次 ${allocation.inventoryLot.lotNo} 实物数量不足`);
+      const pricingTaken = requested.eq(physical) ? pricing : pricing.mul(requested).div(physical).toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
+      pricingByLot.set(allocation.inventoryLotId, pricingTaken.toNumber());
+    }
+    const totalPricingQuantity = [...pricingByLot.values()].reduce((sum, quantity) => new Prisma.Decimal(sum).plus(quantity).toNumber(), 0);
+
     await this.prisma.$transaction(async tx => {
       const outbound = await tx.salesOutbound.create({
         data: {
@@ -803,11 +814,13 @@ export class OutboundService {
           materialName: receipt.materialName,
           customerName: receipt.customerName,
           quantity: actualQuantity,
+          pricingQuantity: totalPricingQuantity,
           createdBy: userId,
         },
       });
       for (const allocation of receipt.allocations) {
         const quantity = Number(allocation.quantity);
+        const pricingQuantity = pricingByLot.get(allocation.inventoryLotId)!;
         const updated = await tx.inventoryLot.updateMany({
           where: {
             id: allocation.inventoryLotId,
@@ -815,15 +828,20 @@ export class OutboundService {
             materialId: receipt.materialId,
             businessUnitId: receipt.outboundOrder.businessUnitId,
             status: 'AVAILABLE',
-            availableQuantity: { gte: quantity },
+            availableQuantity: allocation.inventoryLot.availableQuantity,
+            pricingAvailableQuantity: allocation.inventoryLot.pricingAvailableQuantity,
           },
-          data: { availableQuantity: { decrement: quantity } },
+          data: { availableQuantity: { decrement: quantity }, pricingAvailableQuantity: { decrement: pricingQuantity } },
         });
         if (updated.count !== 1) {
           throw new BadRequestException(`库存批次 ${allocation.inventoryLot.lotNo} 可用数量不足，出库已取消`);
         }
         const lot = await tx.inventoryLot.findUniqueOrThrow({ where: { id: allocation.inventoryLotId } });
         const balanceAfter = Number(lot.availableQuantity);
+        const pricingBalanceAfter = Number(lot.pricingAvailableQuantity);
+        if (balanceAfter < 0 || pricingBalanceAfter < 0 || (balanceAfter === 0 && pricingBalanceAfter !== 0)) {
+          throw new BadRequestException(`库存批次 ${lot.lotNo} 数量口径发生并发变化，请刷新后重新分配`);
+        }
         if (balanceAfter <= 0) {
           await tx.inventoryLot.update({
             where: { id: lot.id },
@@ -836,8 +854,11 @@ export class OutboundService {
             inventoryLotId: lot.id,
             quantity,
             balanceAfter,
+            pricingQuantity,
+            pricingBalanceAfter,
           },
         });
+        await tx.outboundReceiptAllocation.update({ where: { id: allocation.id }, data: { pricingQuantity } });
         await tx.inventoryLedger.create({
           data: {
             lotId: lot.id,
@@ -848,6 +869,8 @@ export class OutboundService {
             businessNo: outboundNo,
             quantityChange: -quantity,
             balanceAfter,
+            pricingQuantityChange: -pricingQuantity,
+            pricingBalanceAfter,
             remarks: `由物流出库单 ${receipt.receiptNo} 生成`,
             createdBy: userId,
           },
@@ -855,7 +878,7 @@ export class OutboundService {
       }
       await tx.outboundReceipt.update({
         where: { id: receipt.id },
-        data: { status: 'POSTED' },
+        data: { status: 'POSTED', pricingQuantity: totalPricingQuantity },
       });
       const waybillLine = receipt.waybill.lineItems[0];
       if (waybillLine) {

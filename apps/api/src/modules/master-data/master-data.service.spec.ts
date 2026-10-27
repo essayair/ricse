@@ -133,6 +133,20 @@ describe('MasterDataService', () => {
       expect(result.name).toBe('萤石粉');
     });
 
+    it('同一标准商品可建立原重与折干两个不同业务物料', async () => {
+      prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1', name: '萤石粉' } as any);
+      prisma.material.create.mockResolvedValue({ ...mockMaterial, pricingQuantityBasis: 'DRY_MATTER' } as any);
+      await service.createMaterial({ code: 'TRD000002', categoryId: 'cat-1', baseName: '萤石粉',
+        commodityForm: '精粉', coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97', coreSpecUnit: '%',
+        packageType: '散装', unit: '吨', pricingQuantityBasis: 'DRY_MATTER' });
+      expect(prisma.material.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ standardCommodityId: 'std-1', pricingQuantityBasis: 'DRY_MATTER' }),
+      }));
+      expect(prisma.material.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ code: 'TRD000002', pricingQuantityBasis: 'DRY_MATTER' }),
+      }));
+    });
+
     it('系统编码重复时自动重新分配，不返回 500', async () => {
       prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
       prisma.material.findMany.mockResolvedValue([{ code: 'TRD000001' }] as any);

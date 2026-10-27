@@ -314,6 +314,11 @@ export class MobileWorkspaceController {
     return this.weighService.addRecord(id, dto, userId);
   }
 
+  @Delete('weigh-tickets/:id/records/:recordId')
+  deleteWeighRecord(@Param('id') id: string, @Param('recordId') recordId: string, @CurrentUser('id') userId: string) {
+    return this.weighService.deleteRecord(id, recordId, userId);
+  }
+
   @Post('weigh-tickets')
   createWeighTicket(@Body() dto: CreateWeighTicketDto, @CurrentUser('id') userId: string) {
     return this.weighService.create(dto, userId);
@@ -520,8 +525,8 @@ export class MobileWorkspaceController {
   ) { return this.inventoryService.updatePendingReceipt(id, dto, userId); }
 
   @Patch('inbound-receipts/:id/confirm')
-  confirmInboundReceipt(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.inventoryService.confirmReceipt(id, userId);
+  confirmInboundReceipt(@Param('id') id: string, @Body('qualityExceptionReason') qualityExceptionReason: string | undefined, @CurrentUser('id') userId: string) {
+    return this.inventoryService.confirmReceipt(id, userId, qualityExceptionReason);
   }
 
   @Post('inbound-receipts/:id/post')

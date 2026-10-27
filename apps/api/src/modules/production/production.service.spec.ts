@@ -82,23 +82,25 @@ describe('ProductionService', () => {
         id: 'input-1', plannedQuantity: 10, reservedQuantity: 10,
         allocations: [{
           id: 'allocation-1', inventoryLotId: 'lot-1', reservedQuantity: 10,
-          inventoryLot: { id: 'lot-1', lotNo: 'LOT-001' },
+          inventoryLot: { id: 'lot-1', lotNo: 'LOT-001', availableQuantity: 30, pricingAvailableQuantity: 24 },
         }],
       }],
     };
     prisma.productionTask.findFirst.mockResolvedValue(task as any);
     prisma.inventoryLot.updateMany.mockResolvedValue({ count: 1 });
-    prisma.inventoryLot.findUniqueOrThrow.mockResolvedValue({
-      id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'raw-1', availableQuantity: 20,
+    prisma.inventoryLot.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'raw-1', availableQuantity: 30, pricingAvailableQuantity: 24,
+    } as any).mockResolvedValueOnce({
+      id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'raw-1', availableQuantity: 20, pricingAvailableQuantity: 16,
     } as any);
 
     await service.issueMaterials('task-1', 'user-1');
 
     expect(prisma.inventoryLot.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: { availableQuantity: { decrement: 10 } },
+      data: { availableQuantity: { decrement: 10 }, pricingAvailableQuantity: { decrement: 8 } },
     }));
     expect(prisma.inventoryLedger.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ businessType: 'PRODUCTION_ISSUE', quantityChange: -10, balanceAfter: 20 }),
+      data: expect.objectContaining({ businessType: 'PRODUCTION_ISSUE', quantityChange: -10, balanceAfter: 20, pricingQuantityChange: -8, pricingBalanceAfter: 16 }),
     }));
     expect(prisma.productionTask.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'IN_PROGRESS' }),

@@ -14,9 +14,7 @@ interface ReceiptForDefaults {
     dispatchNotice?: {
       destinationContactPerson?: string | null;
       destinationWarehouseId?: string | null;
-      warehouseId?: string | null;
       destinationWarehouse?: ReceiptWarehouse | null;
-      warehouse?: ReceiptWarehouse | null;
     };
   } | null;
 }
@@ -34,19 +32,16 @@ export function inboundReceiptDefaults(receipt: ReceiptForDefaults) {
   const waybill = receipt.waybill;
   const notice = waybill?.dispatchNotice;
   const activeWarehouse = (warehouse?: ReceiptWarehouse | null) => warehouse?.status === 'ACTIVE' && !warehouse.deletedAt ? warehouse : null;
-  const suggestedWarehouse = activeWarehouse(notice?.destinationWarehouse) || activeWarehouse(notice?.warehouse);
+  // 入库仓库只能取物流目的地对应的仓库，不能误取执行通知的起运仓库。
+  const suggestedWarehouse = activeWarehouse(notice?.destinationWarehouse);
   const warehouseId = saved.warehouseId || suggestedWarehouse?.id || null;
-  const warehouse = saved.warehouseId ? receipt.warehouse : suggestedWarehouse;
-  const destinationWarehouseId = notice?.destinationWarehouseId || notice?.warehouseId;
-  const destinationContact = !warehouseId || !destinationWarehouseId || warehouseId === destinationWarehouseId
-    ? notice?.destinationContactPerson?.trim() : null;
   const signedAt = waybill?.status === 'SIGNED' ? waybill.signedAt : null;
   const arrivedAt = ['ARRIVED', 'SIGNED'].includes(waybill?.status || '') ? waybill?.arrivedAt : null;
 
   return {
     warehouseId,
     receivedAt: saved.receivedAt || signedAt || arrivedAt || null,
-    receiverName: saved.receiverName || destinationContact || warehouse?.manager?.trim() || null,
+    receiverName: saved.receiverName,
     receivedAtSource: saved.receivedAtSource || (signedAt ? 'SIGNED' : arrivedAt ? 'ARRIVED' : null),
   };
 }

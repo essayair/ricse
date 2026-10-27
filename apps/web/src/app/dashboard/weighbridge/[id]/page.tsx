@@ -328,6 +328,18 @@ export default function WeighTicketDetailPage() {
     }
   };
 
+  const deleteRecord = async (record: WeighRecord) => {
+    if (!await confirmAction(`删除第 ${record.sequence} 次${record.weighingType === 'GROSS' ? '毛重' : '皮重'}记录？若磅单已完成称重，将退回称重中，需重新完成并复核。`, { title: '删除称重记录' })) return;
+    setSaving(true);
+    try {
+      applyTicket(await api.delete<WeighTicket>(`/weigh-tickets/${id}/records/${record.id}`));
+    } catch (error: any) {
+      alert(error.message || '称重记录删除失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveInfo = async () => {
     if (!infoForm.packageCount.trim()) return alert('请手动填写包/袋数，散装货物填写 0');
     if (!Number.isInteger(Number(infoForm.packageCount)) || Number(infoForm.packageCount) < 0) return alert('包/袋数必须是大于等于 0 的整数');
@@ -346,6 +358,7 @@ export default function WeighTicketDetailPage() {
 
   if (!ticket) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
   const editable = ['PENDING', 'WEIGHING'].includes(ticket.status);
+  const recordDeletable = ['PENDING', 'WEIGHING', 'COMPLETED'].includes(ticket.status);
   const settlementEditable = !['REVIEWED', 'VOIDED'].includes(ticket.status);
   const grossRecords = ticket.records.filter(item => item.weighingType === 'GROSS');
   const tareRecords = ticket.records.filter(item => item.weighingType === 'TARE');
@@ -397,7 +410,7 @@ export default function WeighTicketDetailPage() {
           <div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">称重记录</h2><p className="mt-1 text-xs text-muted-foreground">基础流程为毛重、皮重各一次；支持追加多次复磅，历史记录不覆盖</p></div><Scale className="h-5 w-5 text-primary" /></div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b bg-muted/50"><tr><th className="px-3 py-2 text-left">有效</th><th className="px-3 py-2 text-left">序次</th><th className="px-3 py-2 text-left">类型</th><th className="px-3 py-2 text-right">重量</th><th className="px-3 py-2 text-left">来源</th><th className="px-3 py-2 text-left">称重时间</th><th className="px-3 py-2 text-left">操作人/备注</th></tr></thead>
+              <thead className="border-b bg-muted/50"><tr><th className="px-3 py-2 text-left">有效</th><th className="px-3 py-2 text-left">序次</th><th className="px-3 py-2 text-left">类型</th><th className="px-3 py-2 text-right">重量</th><th className="px-3 py-2 text-left">来源</th><th className="px-3 py-2 text-left">称重时间</th><th className="px-3 py-2 text-left">操作人/备注</th>{recordDeletable && <th className="px-3 py-2 text-right">操作</th>}</tr></thead>
               <tbody>{ticket.records.map(item => {
                 const selected = item.weighingType === 'GROSS' ? grossRecordId === item.id : tareRecordId === item.id;
                 return <tr key={item.id} className={`border-b ${selected ? 'bg-primary/5' : ''}`}>
@@ -405,6 +418,7 @@ export default function WeighTicketDetailPage() {
                   <td className="px-3 py-3 font-mono">#{item.sequence}</td><td className="px-3 py-3"><Badge variant="outline">{item.weighingType === 'GROSS' ? '毛重' : '皮重'}</Badge></td>
                   <td className="px-3 py-3 text-right font-medium">{weight(item.weight)}</td><td className="px-3 py-3">{SOURCE[item.dataSource] || item.dataSource}</td>
                   <td className="px-3 py-3">{formatDateTimeToSecond(item.weighedAt)}</td><td className="px-3 py-3"><div>{item.operator.name}</div><div className="text-xs text-muted-foreground">{item.remarks || '-'}</div></td>
+                  {recordDeletable && <td className="px-3 py-3 text-right"><Button variant="ghost" size="sm" disabled={saving} onClick={() => void deleteRecord(item)}><Trash2 className="mr-1 h-4 w-4 text-destructive" />删除</Button></td>}
                 </tr>;
               })}</tbody>
             </table>

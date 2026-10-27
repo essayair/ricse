@@ -84,6 +84,35 @@ describe('WeighTicketService', () => {
     prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
   });
 
+  it('复核前删除有效称重记录，自动选用剩余同类记录并退回称重中', async () => {
+    const records = [
+      { id: 'gross-1', weighingType: 'GROSS', sequence: 1, weight: 130 },
+      { id: 'gross-2', weighingType: 'GROSS', sequence: 2, weight: 128 },
+      { id: 'tare-1', weighingType: 'TARE', sequence: 3, weight: 10 },
+    ];
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      ...ticket, status: 'COMPLETED', waybillId: 'waybill-1', records,
+      selectedGrossRecordId: 'gross-2', selectedTareRecordId: 'tare-1',
+    } as any);
+    jest.spyOn(service, 'syncTaskForWaybill').mockResolvedValue(undefined as any);
+    prisma.weighTicket.findUniqueOrThrow
+      .mockResolvedValueOnce({ ...ticket, selectedGrossRecordId: 'gross-1', selectedTareRecordId: 'tare-1', records: [records[0], records[2]], plannedQuantity: 100, settlementBasis: 'RECEIVING', toleranceRate: 10 } as any)
+      .mockResolvedValueOnce({ ...ticket, status: 'WEIGHING', records: [records[0], records[2]] } as any);
+
+    const result = await service.deleteRecord('ticket-1', 'gross-2', 'user-1');
+    expect(prisma.weighRecord.delete).toHaveBeenCalledWith({ where: { id: 'gross-2' } });
+    expect(prisma.weighTicket.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'WEIGHING', selectedGrossRecordId: 'gross-1' }),
+    }));
+    expect(result.status).toBe('WEIGHING');
+  });
+
+  it('已复核磅单不能删除称重记录', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...ticket, status: 'REVIEWED', records: [{ id: 'gross-1' }] } as any);
+    await expect(service.deleteRecord('ticket-1', 'gross-1', 'user-1')).rejects.toThrow('复核后不能删除');
+    expect(prisma.weighRecord.delete).not.toHaveBeenCalled();
+  });
+
   it('采购运单到达前不能创建收货称重磅单', async () => {
     prisma.waybill.findFirst.mockResolvedValue({ ...waybill, status: 'IN_TRANSIT' } as any);
     await expect(service.create({ waybillId: waybill.id, weighingStage: 'RECEIVING' }, 'user-1'))

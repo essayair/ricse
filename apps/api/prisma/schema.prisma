@@ -593,6 +593,7 @@ model Material {
   commodityForm       String?
   grade               String? // 品级：CaF₂≥97%、CaF₂≥95% 等（保留兼容）
   unit                String    @default("TON")
+  pricingQuantityBasis String  @default("PHYSICAL") // PHYSICAL | DRY_MATTER，物料默认计价数量口径
   spec                String?
   sourceRegion        String?
   packageType         String? // 包装方式：散装 / 吨袋 / 小包装
@@ -966,7 +967,7 @@ model Contract {
   expireAt         DateTime?
   // 结算
   settlementMethod String    @default("DELIVERY")
-  settlementBasis  String? // 结算数量依据：WEIGHT/QUALITY/CONTRACT
+  settlementBasis  String? // 结算数量约定：合同文本，不驱动库存或结算计算
   prepayPct        Decimal?  @db.Decimal(5, 2) // 预付比例(%)
   paymentDays      Int? // 尾款账期（天）
   paymentMethod    String? // 付款方式
@@ -2094,6 +2095,12 @@ model InboundReceipt {
   plateNo                 String?
   plannedQuantity         Decimal   @default(0) @db.Decimal(15, 3)
   receivedQuantity        Decimal?  @db.Decimal(15, 3)
+  legacyReceivedQuantity  Decimal?  @db.Decimal(15, 3)
+  quantitySource          String    @default("NEW") // NEW | LEGACY_UNVERIFIED | HISTORICAL_RECONCILED
+  quantityReconciledAt    DateTime?
+  pricingQuantity         Decimal?  @db.Decimal(15, 3)
+  pricingQuantityBasis    String? // 过账前按物料默认口径计算并冻结
+  measuredMoisturePct     Decimal?  @db.Decimal(7, 4)
   moistureDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
   impurityDeductionWeight Decimal   @default(0) @db.Decimal(15, 3)
   deductionAmount         Decimal   @default(0) @db.Decimal(15, 2)
@@ -2101,6 +2108,9 @@ model InboundReceipt {
   contractQualityEvaluation Json?
   receivedAt              DateTime?
   receiverName            String?
+  qualityExceptionReason  String?
+  qualityExceptionAcceptedBy String?
+  qualityExceptionAcceptedAt DateTime?
   remarks                 String?
   createdBy               String
   createdAt               DateTime  @default(now())
@@ -2135,6 +2145,10 @@ model BusinessInbound {
   materialName   String
   supplierName   String?
   quantity       Decimal  @db.Decimal(15, 3)
+  legacyQuantity Decimal? @db.Decimal(15, 3)
+  pricingQuantity Decimal @default(0) @db.Decimal(15, 3)
+  pricingQuantityBasis String @default("PHYSICAL")
+  measuredMoisturePct Decimal? @db.Decimal(7, 4)
   status         String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
   lotNo          String
   postedAt       DateTime @default(now())
@@ -2173,6 +2187,13 @@ model InventoryLot {
   supplierName           String?
   initialQuantity        Decimal  @db.Decimal(15, 3)
   availableQuantity      Decimal  @db.Decimal(15, 3)
+  legacyInitialQuantity  Decimal? @db.Decimal(15, 3)
+  legacyAvailableQuantity Decimal? @db.Decimal(15, 3)
+  quantityReconciledAt   DateTime?
+  pricingInitialQuantity Decimal @default(0) @db.Decimal(15, 3)
+  pricingAvailableQuantity Decimal @default(0) @db.Decimal(15, 3)
+  pricingQuantityBasis String @default("PHYSICAL")
+  quantitySource String @default("NEW") // NEW | LEGACY_UNVERIFIED | HISTORICAL_RECONCILED
   qualityConclusion      String
   status                 String   @default("AVAILABLE") // AVAILABLE | DEPLETED | LOCKED
   createdAt              DateTime @default(now())
@@ -2208,6 +2229,10 @@ model InventoryLedger {
   businessNo     String
   quantityChange Decimal  @db.Decimal(15, 3)
   balanceAfter   Decimal  @db.Decimal(15, 3)
+  legacyQuantityChange Decimal? @db.Decimal(15, 3)
+  legacyBalanceAfter Decimal? @db.Decimal(15, 3)
+  pricingQuantityChange Decimal @default(0) @db.Decimal(15, 3)
+  pricingBalanceAfter Decimal @default(0) @db.Decimal(15, 3)
   remarks        String?
   createdBy      String
   createdAt      DateTime @default(now())
@@ -2372,8 +2397,10 @@ model ProductionMaterialAllocation {
   inventoryLotId   String
   reservedQuantity Decimal  @db.Decimal(15, 3)
   issuedQuantity   Decimal  @default(0) @db.Decimal(15, 3)
+  issuedPricingQuantity Decimal @default(0) @db.Decimal(15, 3)
   consumedQuantity Decimal  @default(0) @db.Decimal(15, 3)
   returnedQuantity Decimal  @default(0) @db.Decimal(15, 3)
+  returnedPricingQuantity Decimal @default(0) @db.Decimal(15, 3)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -2488,6 +2515,7 @@ model OutboundReceipt {
   plateNo            String?
   plannedQuantity    Decimal   @db.Decimal(15, 3)
   outboundQuantity   Decimal?  @db.Decimal(15, 3)
+  pricingQuantity    Decimal?  @db.Decimal(15, 3)
   varianceQuantity   Decimal?  @db.Decimal(15, 3)
   varianceRate       Decimal?  @db.Decimal(10, 4)
   varianceDecision   String? // SHORT_CONTINUE | SHORT_CLOSE | OVERAGE_APPROVED
@@ -2527,6 +2555,7 @@ model OutboundReceiptAllocation {
   outboundReceiptId String
   inventoryLotId    String
   quantity          Decimal  @db.Decimal(15, 3)
+  pricingQuantity   Decimal? @db.Decimal(15, 3)
   createdAt         DateTime @default(now())
 
   outboundReceipt OutboundReceipt @relation(fields: [outboundReceiptId], references: [id], onDelete: Cascade)
@@ -2547,6 +2576,7 @@ model SalesOutbound {
   materialName   String
   customerName   String?
   quantity       Decimal  @db.Decimal(15, 3)
+  pricingQuantity Decimal @default(0) @db.Decimal(15, 3)
   status         String   @default("POSTED") // POSTED | PARTIALLY_REVERSED | REVERSED | CANCELLED
   postedAt       DateTime @default(now())
   createdBy      String
@@ -2575,6 +2605,8 @@ model SalesOutboundLine {
   inventoryLotId  String
   quantity        Decimal  @db.Decimal(15, 3)
   balanceAfter    Decimal  @db.Decimal(15, 3)
+  pricingQuantity Decimal @default(0) @db.Decimal(15, 3)
+  pricingBalanceAfter Decimal @default(0) @db.Decimal(15, 3)
   createdAt       DateTime @default(now())
 
   salesOutbound SalesOutbound           @relation(fields: [salesOutboundId], references: [id], onDelete: Cascade)
@@ -2635,6 +2667,9 @@ model InventoryReversalLine {
   sourceQuantity            Decimal  @db.Decimal(15, 3)
   quantity                  Decimal  @db.Decimal(15, 3)
   balanceAfter              Decimal? @db.Decimal(15, 3)
+  sourcePricingQuantity     Decimal? @db.Decimal(15, 3)
+  pricingQuantity           Decimal? @db.Decimal(15, 3)
+  pricingBalanceAfter       Decimal? @db.Decimal(15, 3)
   createdAt                 DateTime @default(now())
 
   reversal                InventoryReversal  @relation(fields: [reversalId], references: [id], onDelete: Cascade)

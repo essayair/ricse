@@ -195,6 +195,12 @@ export class WeighTicketController {
     return this.service.addRecords(id, dto.records, userId);
   }
 
+  @Delete(':id/records/:recordId')
+  @ApiOperation({ summary: '复核前删除一条称重记录并重新计算磅单' })
+  deleteRecord(@Param('id') id: string, @Param('recordId') recordId: string, @CurrentUser('id') userId: string) {
+    return this.service.deleteRecord(id, recordId, userId);
+  }
+
   @Patch(':id/effective-records')
   selectRecords(@Param('id') id: string, @Body() data: { grossRecordId: string; tareRecordId: string }, @CurrentUser('id') userId: string) {
     return this.service.selectEffectiveRecords(id, data, userId);

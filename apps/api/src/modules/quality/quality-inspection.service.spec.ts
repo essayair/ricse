@@ -191,21 +191,21 @@ describe('QualityInspectionService', () => {
     }, 'user-1')).rejects.toThrow('必须填写判定原因');
   });
 
-  it('任务最终合格后才以执行口径报告补齐入库依据', async () => {
+  it.each(['PASS', 'DEDUCTION', 'FUSE'])('任务最终结论为 %s 时均同步执行口径报告到入库单', async (conclusion) => {
     jest.spyOn(service, 'findTask').mockResolvedValue({
       id: 'task-1', status: 'PENDING_DECISION', plannedReportCount: 3,
       handlerId: null, handledAt: null,
-      reports: [{ id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS' }],
+      reports: [{ id: 'report-1', status: 'CONFIRMED', conclusion }],
     } as any);
     prisma.qualityTask.update.mockResolvedValue({} as any);
 
     await service.finalizeTask('task-1', {
-      conclusion: 'PASS', basisInspectionId: 'report-1', reason: '合同允许采用单一报告',
+      conclusion, basisInspectionId: 'report-1', reason: '合同允许采用单一报告',
     }, 'user-1');
 
     expect(prisma.qualityTask.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
-        status: 'COMPLETED', finalConclusion: 'PASS', basisInspectionId: 'report-1',
+        status: 'COMPLETED', finalConclusion: conclusion, basisInspectionId: 'report-1',
         finalizedReportCount: 1,
       }),
     }));

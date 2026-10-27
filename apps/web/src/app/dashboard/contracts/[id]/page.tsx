@@ -662,7 +662,7 @@ export default function ContractDetailPage() {
               <Separator className="my-4" />
               <h4 className="text-sm font-semibold mb-3">结算条款</h4>
               <div className="grid grid-cols-3 gap-4 text-sm">
-                <Field label="结算依据" value={c.settlementBasis === 'WEIGHT' ? '地磅净重' : c.settlementBasis === 'QUALITY' ? '质检干重' : '合同量'} />
+                <Field label="结算数量约定" value={{ WEIGHT: '按地磅净重', QUALITY: '按质检干重', CONTRACT: '按合同约定数量' }[c.settlementBasis || ''] || c.settlementBasis || '—'} />
                 <Field label="结算方式" value={settlementMethodLabel(c.settlementMethod)} />
                 <Field label="预付比例" value={c.prepayPct == null ? '—' : `${c.prepayPct}%`} />
                 <Field label="尾款账期" value={c.paymentDays == null ? '—' : `${c.paymentDays} 天`} />

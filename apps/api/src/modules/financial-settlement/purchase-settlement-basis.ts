@@ -54,7 +54,7 @@ export class PurchaseSettlementBasis {
       const selection = w.weightSelections.find(s => s.purpose === 'INVENTORY' && s.weighTicketId === receipt?.weighTicketId), task = w.qualityTask, report = task?.basisInspection;
       const legacySelection = w.weightSelections.find(s => s.purpose === 'SETTLEMENT');
       // 最终采购货款跟随实际入库过账，不另选货款磅单，也不以磅单最新净重覆盖已过账数量。
-      const totalQuantity = Number(posted?.quantity || 0);
+      const totalQuantity = Number(posted?.pricingQuantity ?? posted?.quantity ?? 0);
       const usedQuantity = row.settlementLines.reduce((sum, l) => sum.plus(l.quantity || 0), new Prisma.Decimal(0));
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const reasons: string[] = [];
@@ -72,9 +72,11 @@ export class PurchaseSettlementBasis {
       const basis = { contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
         waybillLineItemId: row.id, weightSelectionId: selection?.id, weight: totalQuantity,
         weighTicketId: receipt?.weighTicketId, ticketUpdatedAt: ticket?.updatedAt,
-        businessInboundId: posted?.id, inboundQuantity: posted?.quantity.toString(), inboundStatus: posted?.status, inboundPostedAt: posted?.postedAt,
+        businessInboundId: posted?.id, inboundQuantity: (posted?.pricingQuantity ?? posted?.quantity)?.toString(), inboundPhysicalQuantity: posted?.quantity?.toString(), inboundStatus: posted?.status, inboundPostedAt: posted?.postedAt,
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, qualityDisposition: task?.qualityDisposition,
         reportId: report?.id, reportUpdatedAt: report?.updatedAt, unitPrice: item?.unitPrice.toString(), deductionPerTon };
+      const priorBasis = { ...basis, inboundQuantity: posted?.quantity?.toString() };
+      delete (priorBasis as Partial<typeof basis>).inboundPhysicalQuantity;
       const legacyBasis = { contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
         waybillLineItemId: row.id, weightSelectionId: legacySelection?.id, weight: Number(legacySelection?.quantity || 0),
         weighTicketId: legacySelection?.weighTicketId, ticketUpdatedAt: legacySelection?.weighTicket.updatedAt,
@@ -90,7 +92,7 @@ export class PurchaseSettlementBasis {
         qualityTaskId: task?.id, taskNo: task?.taskNo, reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo,
         qualityDisposition: task?.qualityDisposition || 'PENDING', qualityReady, qualityAcceptance: task?.qualityAcceptanceSnapshot,
         deductionPerTon, evaluation: task?.contractQualityEvaluation, decisionVersion: task?.decisionVersion,
-        inboundStatuses: w.inboundReceipts.map(r => r.status), signature: signature(basis), legacySignature: signature(legacyBasis),
+        inboundStatuses: w.inboundReceipts.map(r => r.status), signature: signature(basis), priorSignature: signature(priorBasis), legacySignature: signature(legacyBasis),
         available: reasons.length === 0, reasons,
         ...goodsAmounts(remainingQuantity, item?.unitPrice || 0, deductionPerTon),
       };
@@ -106,7 +108,12 @@ export class PurchaseSettlementBasis {
     for (const line of tracked) {
       const current = sources.find(s => s.id === line.waybillLineItemId);
       const old = line.sourceSnapshot as Record<string, any> | null;
-      const sameVersion = current && (current.signature === old?.signature || (!old?.inboundNo && Number(old?.totalQuantity) === current.totalQuantity && current.legacySignature === old?.signature));
+      const sameVersion = current && (
+        current.signature === old?.signature
+        || (old?.inboundNo && old.inboundNo === current.inboundNo && old?.inboundPhysicalQuantity == null
+          && Number(old?.totalQuantity) === current.totalQuantity && current.priorSignature === old?.signature)
+        || (!old?.inboundNo && Number(old?.totalQuantity) === current.totalQuantity && current.legacySignature === old?.signature)
+      );
       if (!current || !current.available || !sameVersion || Number(line.quantity) > current.remainingQuantity) {
         throw new BadRequestException(`结算依据已变更，待复核：${old?.waybillNo || line.orderNo || ''}。请检查磅单、最终检测报告或合同规则后重新确认结算。`);
       }

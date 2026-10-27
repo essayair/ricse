@@ -317,9 +317,7 @@ export class QualityInspectionService {
         handlerId: task.handlerId || userId, handledAt: task.handledAt || new Date(),
       },
     });
-    if (qualityDisposition === 'PASS' || qualityDisposition === 'LEGACY') {
-      await this.inventoryService.createPendingReceiptForConfirmedQuality(basis.id, userId);
-    }
+    await this.inventoryService.createPendingReceiptForConfirmedQuality(basis.id, userId);
     return this.findTask(id, userId, 'quality.manage');
   }
 
@@ -686,7 +684,8 @@ export class QualityInspectionService {
         baseWeight,
         moistureDeductionWeight: deductions.moistureWeight,
         impurityDeductionWeight: deductions.impurityWeight,
-        settlementWeight: Math.max(0, baseWeight - deductions.moistureWeight - deductions.impurityWeight),
+        // 质量超限扣价不扣减实物或计价数量；折干由库存过账按全部实测水分独立计算。
+        settlementWeight: baseWeight,
         deductionAmount: dto.deductionAmount ?? deductions.amount,
         fuseReason,
         remarks: clean(dto.remarks),

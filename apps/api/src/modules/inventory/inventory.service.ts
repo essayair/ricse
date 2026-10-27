@@ -18,15 +18,16 @@ export class InventoryService {
     creator: { select: { id: true, name: true } },
     weighTicket: {
       select: {
-        id: true, ticketNo: true, status: true, settlementWeight: true, netWeight: true,
+        id: true, ticketNo: true, status: true, deletedAt: true, settlementWeight: true, netWeight: true,
         abnormal: true, reviewedAt: true, weighingStage: true, sequence: true,
       },
     },
     qualityInspection: {
       select: {
         id: true, inspectionNo: true, institutionType: true, institutionName: true,
-        reportNo: true, status: true, conclusion: true, settlementWeight: true,
+        reportNo: true, status: true, conclusion: true, resolution: true, settlementWeight: true,
         moistureDeductionWeight: true, impurityDeductionWeight: true, deductionAmount: true,
+        indicators: { select: { code: true, name: true, unit: true, operator: true, standardValue: true, upperValue: true, fuseValue: true, measuredValue: true, result: true }, orderBy: { sort: 'asc' as const } },
         qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } },
       },
     },
@@ -57,7 +58,7 @@ export class InventoryService {
         },
         dispatchNotice: {
           include: {
-            destinationWarehouse: { select: { id: true, manager: true, status: true, deletedAt: true } },
+            destinationWarehouse: { select: { id: true, name: true, address: true, manager: true, status: true, deletedAt: true } },
             warehouse: { select: { id: true, manager: true, status: true, deletedAt: true } },
             order: {
               include: {
@@ -90,8 +91,23 @@ export class InventoryService {
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  private decorateReceipt<T>(receipt: T): T & { workflow: ReturnType<InventoryService['buildWorkflow']>; receiptDefaults: ReturnType<typeof inboundReceiptDefaults> } {
-    return { ...receipt, workflow: this.buildWorkflow(receipt as any), receiptDefaults: inboundReceiptDefaults(receipt as any) };
+  private qualityEvaluationSnapshot(value: unknown) {
+    return value == null ? Prisma.DbNull : value as Prisma.InputJsonValue;
+  }
+
+  private decorateReceipt<T>(receipt: T): T & { workflow: ReturnType<InventoryService['buildWorkflow']>; receiptDefaults: ReturnType<typeof inboundReceiptDefaults>; reportMeasuredMoisturePct: number | null; qualityException: boolean } {
+    const report = (receipt as any).qualityInspection;
+    const moisture = this.readMeasuredMoisture(report?.indicators || []);
+    return { ...receipt, workflow: this.buildWorkflow(receipt as any), receiptDefaults: inboundReceiptDefaults(receipt as any), reportMeasuredMoisturePct: moisture?.toNumber() ?? null,
+      qualityException: Boolean(report && this.isQualityException((receipt as any).acceptanceConclusion, report)) };
+  }
+
+  private isQualityException(disposition: string | null | undefined, report?: { conclusion?: string; indicators?: Array<{ result?: string }>; qualityTask?: { contractQualityEvaluation?: unknown } } | null) {
+    const evaluation = report?.qualityTask?.contractQualityEvaluation as { items?: Array<{ result?: string }> } | null | undefined;
+    return !['PASS', 'LEGACY'].includes(disposition || '')
+      || report?.conclusion === 'FUSE'
+      || (report?.indicators || []).some(indicator => ['FAIL', 'FUSE'].includes(indicator.result || ''))
+      || (evaluation?.items || []).some(item => item.result !== 'PASS');
   }
 
   private buildWorkflow(receipt: any) {
@@ -101,7 +117,7 @@ export class InventoryService {
     const reviewedTickets = activeTickets.filter((ticket: any) => ticket.status === 'REVIEWED');
     const inspections = reviewedTickets.flatMap((ticket: any) => ticket.qualityInspections || []);
     const qualityTask = waybill.qualityTask;
-    const confirmedPass = inspections.find((inspection: any) => inspection.status === 'CONFIRMED' && inspection.conclusion === 'PASS');
+    const confirmedReport = inspections.find((inspection: any) => inspection.status === 'CONFIRMED');
     const inProgressQuality = inspections.some((inspection: any) => ['DRAFT', 'TESTING', 'REPORTED'].includes(inspection.status));
     const confirmedException = inspections.find((inspection: any) => (
       inspection.status === 'CONFIRMED' && ['DEDUCTION', 'FUSE'].includes(inspection.conclusion)
@@ -129,18 +145,23 @@ export class InventoryService {
       stageLabel = weighing ? '过磅处理中' : '待磅单复核';
       blocker = weighing ? '磅单已创建，等待完成有效称重并复核' : '称重已完成，等待复核磅单';
       tone = 'warning';
-    } else if (receipt.qualityInspection?.status === 'CONFIRMED' && ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(qualityTask?.qualityDisposition)) {
-      stage = 'READY_TO_RECEIVE'; stageLabel = qualityTask?.qualityDisposition === 'ACCEPT_WITH_DEDUCTION' ? '扣款接收待收货' : '合格待收货'; blocker = '最终验收依据已确认，可以补齐收货信息并确认收货'; tone = 'success';
+    } else if (receipt.qualityInspection?.status === 'CONFIRMED' && qualityTask?.status === 'COMPLETED' && qualityTask.basisInspectionId === receipt.qualityInspectionId) {
+      const abnormal = this.isQualityException(qualityTask.qualityDisposition, receipt.qualityInspection);
+      stage = 'READY_TO_RECEIVE'; stageLabel = abnormal ? '质检异常待人工确认' : '合格待收货';
+      blocker = abnormal ? '质检存在异常，请核对实测指标并填写人工接收原因；系统不自动阻止入库' : '最终验收依据已确认，可以补齐收货信息并确认收货';
+      tone = abnormal ? 'warning' : 'success';
     } else if (!inspections.length) {
       stage = 'WAITING_QUALITY'; stageLabel = '已过磅待质检'; blocker = qualityTask ? '到货质检任务已生成，等待录入检测报告' : '等待系统生成到货质检任务'; tone = 'warning';
+    } else if (qualityTask?.status === 'COMPLETED' && qualityTask.basisInspectionId) {
+      stage = 'WAITING_ACCEPTANCE_SELECTION'; stageLabel = '待同步质检依据'; blocker = '质检任务已确定最终报告，请采用任务执行口径同步入库单'; tone = 'warning';
     } else if (inProgressQuality) {
       stage = 'QUALITY_IN_PROGRESS'; stageLabel = '质检处理中'; blocker = '质检单尚未确认，等待检测或报告确认'; tone = 'warning';
-    } else if (confirmedPass) {
-      stage = 'WAITING_ACCEPTANCE_SELECTION'; stageLabel = '待确认验收依据'; blocker = '已有合格质检单，请指定最终验收质检单'; tone = 'warning';
     } else if (confirmedException) {
       stage = 'QUALITY_EXCEPTION'; stageLabel = '质检异常';
-      blocker = confirmedException.conclusion === 'FUSE' ? '质检结果为不合格（拒收），禁止入库' : '质检结果为超标扣款，当前规则禁止入库';
+      blocker = '已有异常检测报告，请先在质检任务中选定最终执行口径报告';
       tone = 'danger';
+    } else if (confirmedReport) {
+      stage = 'WAITING_ACCEPTANCE_SELECTION'; stageLabel = '待确定质检依据'; blocker = '已有确认的检测报告，等待质检任务最终判定'; tone = 'warning';
     } else {
       stage = 'WAITING_QUALITY'; stageLabel = '等待质检结论'; blocker = '尚无已确认的最终质检结果'; tone = 'warning';
     }
@@ -163,7 +184,7 @@ export class InventoryService {
         transport: { label: transportLabel, complete: ['ARRIVED', 'SIGNED'].includes(waybill.status) },
         signed: { label: waybill.status === 'SIGNED' ? '已收货' : '待收货', complete: waybill.status === 'SIGNED' },
         weigh: { label: weighLabel, complete: reviewedTickets.length > 0 },
-        quality: { label: qualityLabel, complete: Boolean(receipt.qualityInspection?.status === 'CONFIRMED' && receipt.qualityInspection?.conclusion === 'PASS') },
+        quality: { label: qualityLabel, complete: Boolean(receipt.qualityInspection?.status === 'CONFIRMED' && qualityTask?.status === 'COMPLETED') },
         inbound: { label: receipt.status === 'POSTED' ? '已入账' : receipt.status === 'RECEIVED' ? '已收货' : '待入库', complete: receipt.status === 'POSTED' },
       },
     };
@@ -209,7 +230,7 @@ export class InventoryService {
           waybillId: waybill.id,
           weighTicketId: null,
           qualityInspectionId: null,
-          warehouseId: waybill.dispatchNotice.destinationWarehouseId || waybill.dispatchNotice.warehouseId,
+          warehouseId: waybill.dispatchNotice.destinationWarehouseId,
           status: 'PENDING',
           acceptanceConclusion: null,
           materialName: firstLine.materialName || '未命名物料',
@@ -251,7 +272,7 @@ export class InventoryService {
         weighTickets: {
           some: {
             deletedAt: null, status: 'REVIEWED',
-            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', basisForTasks: { some: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] } } } } },
+            qualityInspections: { some: { deletedAt: null, status: 'CONFIRMED', basisForTasks: { some: { status: 'COMPLETED' } } } },
           },
         },
       },
@@ -262,7 +283,7 @@ export class InventoryService {
           where: { deletedAt: null, status: 'REVIEWED' },
           include: {
             qualityInspections: {
-              where: { deletedAt: null, status: 'CONFIRMED', basisForTasks: { some: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] } } } },
+              where: { deletedAt: null, status: 'CONFIRMED', basisForTasks: { some: { status: 'COMPLETED' } } },
               orderBy: { testedAt: 'desc' },
             },
           },
@@ -295,19 +316,17 @@ export class InventoryService {
     const quality = await this.prisma.qualityInspection.findFirst({
       where: {
         id: dto.qualityInspectionId, deletedAt: null, weighTicket: { waybillId: waybill.id },
-        qualityTask: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] }, basisInspectionId: dto.qualityInspectionId },
+        qualityTask: { status: 'COMPLETED', basisInspectionId: dto.qualityInspectionId },
       },
       include: { qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } } },
     });
     if (!quality || quality.status !== 'CONFIRMED') throw new BadRequestException('请选择该运单下已确认的质检单');
-    if (!['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes((quality as any).qualityTask?.qualityDisposition || '')) {
-      throw new BadRequestException('只有质检结论为“合格”的货物才能入库；按扣款接收的货物需先完成业务确认');
-    }
     const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, status: 'ACTIVE', deletedAt: null } });
     if (!warehouse) throw new BadRequestException('入库仓库不存在或已停用');
-    if (!dto.receiverName.trim()) throw new BadRequestException('请填写收货人');
-    const quantity = this.inventoryQuantity(weighTicket, quality);
-    if (quantity <= 0) throw new BadRequestException('有效磅单净重扣除质检扣减后必须大于 0');
+    const operator = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    if (!operator) throw new BadRequestException('当前操作人不存在');
+    const quantity = this.inventoryQuantity(weighTicket);
+    if (quantity <= 0) throw new BadRequestException('有效磅单净重必须大于 0');
     await this.ensureInventorySelection(waybill.id, weighTicket, userId, '采购入库作业首次选用');
 
     const receipt = await this.prisma.inboundReceipt.create({
@@ -324,8 +343,8 @@ export class InventoryService {
         impurityDeductionWeight: quality.impurityDeductionWeight,
         deductionAmount: quality.deductionAmount, receivedAt: new Date(dto.receivedAt),
         contractQualityDeductionPerTon: (quality as any).qualityTask.qualityDeductionPerTon,
-        contractQualityEvaluation: (quality as any).qualityTask.contractQualityEvaluation as Prisma.InputJsonValue | undefined,
-        receiverName: dto.receiverName.trim(), remarks: dto.remarks?.trim() || null, createdBy: userId,
+        contractQualityEvaluation: this.qualityEvaluationSnapshot((quality as any).qualityTask.contractQualityEvaluation),
+        receiverName: operator.name, remarks: dto.remarks?.trim() || null, createdBy: userId,
       },
       include: this.include,
     });
@@ -338,7 +357,7 @@ export class InventoryService {
         id: qualityInspectionId,
         deletedAt: null,
         status: 'CONFIRMED',
-        qualityTask: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] }, basisInspectionId: qualityInspectionId },
+        qualityTask: { status: 'COMPLETED', basisInspectionId: qualityInspectionId },
       },
       include: { qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } },
         weighTicket: {
@@ -367,32 +386,27 @@ export class InventoryService {
         },
       },
     });
-    if (!quality) throw new BadRequestException('只有最终判定合格或已确认扣款接收的质检报告才能补齐入库作业单验收依据');
+    if (!quality) throw new BadRequestException('请选择质检任务最终采用的已确认检测报告');
 
     const ticket = quality.weighTicket;
     const waybill = ticket.waybill;
     if (waybill.dispatchNotice.type !== 'PURCHASE') return null;
-    if (ticket.status !== 'REVIEWED') throw new BadRequestException('磅单复核后才能确认合格并补齐入库作业单验收依据');
-    if (!['ARRIVED', 'SIGNED'].includes(waybill.status)) {
-      throw new BadRequestException('采购物流运单到达后才能确认合格并补齐入库作业单验收依据');
-    }
 
     const currentSelection = await this.prisma.waybillWeightSelection.findFirst({
       where: { waybillId: waybill.id, purpose: 'INVENTORY', isCurrent: true },
       include: { weighTicket: true },
     });
-    const inventoryTicket = currentSelection?.weighTicket || await this.prisma.weighTicket.findFirst({
+    const candidateTicket = currentSelection?.weighTicket || await this.prisma.weighTicket.findFirst({
       where: {
         waybillId: waybill.id, deletedAt: null, status: 'REVIEWED', weighingStage: 'SHIPPING',
       },
       orderBy: [{ sequence: 'asc' }, { reviewedAt: 'asc' }],
     }) || ticket;
-    if (inventoryTicket.status !== 'REVIEWED' || inventoryTicket.deletedAt) {
-      throw new BadRequestException('请先复核并选用该运单的有效入库磅单');
-    }
-    const quantity = this.inventoryQuantity(inventoryTicket, quality);
-    if (quantity <= 0) throw new BadRequestException('有效磅单净重扣除质检扣减后必须大于 0');
-    if (!currentSelection) {
+    // 质检结论与入库重量分开同步：即使异常报告先判定、磅单尚未复核，也要先记录最终报告。
+    const inventoryTicket = candidateTicket.status === 'REVIEWED' && !candidateTicket.deletedAt
+      && this.inventoryQuantity(candidateTicket) > 0 ? candidateTicket : null;
+    const quantity = inventoryTicket ? this.inventoryQuantity(inventoryTicket) : null;
+    if (!currentSelection && inventoryTicket) {
       await this.ensureInventorySelection(waybill.id, inventoryTicket, userId, '采购默认选用发货称重磅单');
     }
 
@@ -405,17 +419,24 @@ export class InventoryService {
       const updated = await this.prisma.inboundReceipt.update({
         where: { id: existing.id },
         data: {
-          weighTicketId: inventoryTicket.id,
+          ...(inventoryTicket ? { weighTicketId: inventoryTicket.id, receivedQuantity: quantity } : {}),
           qualityInspectionId: quality.id,
-        acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
+          acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
+          contractQualityDeductionPerTon: (quality as any).qualityTask.qualityDeductionPerTon,
+          contractQualityEvaluation: this.qualityEvaluationSnapshot((quality as any).qualityTask.contractQualityEvaluation),
           materialName: quality.materialName,
           materialSpec: quality.materialSpec,
           supplierName: quality.supplierName,
           plateNo: quality.plateNo || waybill.plateNo,
-          receivedQuantity: quantity,
+          pricingQuantity: null,
+          pricingQuantityBasis: null,
+          measuredMoisturePct: null,
           moistureDeductionWeight: quality.moistureDeductionWeight,
           impurityDeductionWeight: quality.impurityDeductionWeight,
           deductionAmount: quality.deductionAmount,
+          qualityExceptionReason: null,
+          qualityExceptionAcceptedBy: null,
+          qualityExceptionAcceptedAt: null,
         },
         include: this.include,
       });
@@ -427,9 +448,9 @@ export class InventoryService {
         data: {
           receiptNo: await this.nextNo('LIR', 'inboundReceipt'),
           waybillId: waybill.id,
-          weighTicketId: inventoryTicket.id,
+          weighTicketId: inventoryTicket?.id || null,
           qualityInspectionId: quality.id,
-          warehouseId: waybill.dispatchNotice.destinationWarehouseId || waybill.dispatchNotice.warehouseId,
+          warehouseId: waybill.dispatchNotice.destinationWarehouseId,
           status: 'PENDING',
           acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
           materialName: quality.materialName,
@@ -442,10 +463,10 @@ export class InventoryService {
           impurityDeductionWeight: quality.impurityDeductionWeight,
           deductionAmount: quality.deductionAmount,
           contractQualityDeductionPerTon: (quality as any).qualityTask.qualityDeductionPerTon,
-          contractQualityEvaluation: (quality as any).qualityTask.contractQualityEvaluation as Prisma.InputJsonValue | undefined,
+          contractQualityEvaluation: this.qualityEvaluationSnapshot((quality as any).qualityTask.contractQualityEvaluation),
           receivedAt: null,
           receiverName: null,
-          remarks: '历史或异常漏单：由到货质检任务最终合格结论兜底创建',
+          remarks: '由到货质检任务最终结论自动补齐验收依据',
           createdBy: userId,
         },
         include: this.include,
@@ -471,47 +492,82 @@ export class InventoryService {
         id: qualityInspectionId,
         deletedAt: null,
         status: 'CONFIRMED',
-        qualityTask: { status: 'COMPLETED', qualityDisposition: { in: ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'] }, basisInspectionId: qualityInspectionId },
-        weighTicket: { waybillId: receipt.waybillId, deletedAt: null, status: 'REVIEWED' },
+        qualityTask: { status: 'COMPLETED', basisInspectionId: qualityInspectionId },
+        weighTicket: { waybillId: receipt.waybillId, deletedAt: null },
       },
       include: { weighTicket: true, qualityTask: { select: { qualityDisposition: true, qualityDeductionPerTon: true, contractQualityEvaluation: true } } },
     });
-    if (!quality) throw new BadRequestException('只能使用本运单到货质检任务最终采用的合格或已确认扣款接收执行口径报告');
-    const inventoryTicket = receipt.weighTicket;
-    if (!inventoryTicket || inventoryTicket.status !== 'REVIEWED') {
-      throw new BadRequestException('请先在物流运单详情中选用已复核的入库磅单');
+    if (!quality) throw new BadRequestException('只能使用本运单到货质检任务最终采用的已确认报告');
+    const currentSelection = await this.prisma.waybillWeightSelection.findFirst({
+      where: { waybillId: receipt.waybillId, purpose: 'INVENTORY', isCurrent: true },
+      include: { weighTicket: true },
+    });
+    const candidateTicket = currentSelection?.weighTicket || receipt.weighTicket || await this.prisma.weighTicket.findFirst({
+      where: { waybillId: receipt.waybillId, deletedAt: null, status: 'REVIEWED', weighingStage: 'SHIPPING' },
+      orderBy: [{ sequence: 'asc' }, { reviewedAt: 'asc' }],
+    }) || quality.weighTicket;
+    const inventoryTicket = candidateTicket.status === 'REVIEWED' && !candidateTicket.deletedAt
+      && this.inventoryQuantity(candidateTicket) > 0 ? candidateTicket : null;
+    const quantity = inventoryTicket ? this.inventoryQuantity(inventoryTicket) : null;
+    if (!currentSelection && inventoryTicket) {
+      await this.ensureInventorySelection(receipt.waybillId, inventoryTicket, userId, '采用最终质检报告时补齐入库磅单');
     }
-    const quantity = this.inventoryQuantity(inventoryTicket, quality);
-    if (quantity <= 0) throw new BadRequestException('有效磅单净重扣除质检扣减后必须大于 0');
     const updated = await this.prisma.inboundReceipt.update({
       where: { id },
       data: {
-        weighTicketId: inventoryTicket.id,
+        ...(inventoryTicket ? { weighTicketId: inventoryTicket.id, receivedQuantity: quantity } : {}),
         qualityInspectionId: quality.id,
         acceptanceConclusion: (quality as any).qualityTask.qualityDisposition,
         contractQualityDeductionPerTon: (quality as any).qualityTask.qualityDeductionPerTon,
-        contractQualityEvaluation: (quality as any).qualityTask.contractQualityEvaluation as Prisma.InputJsonValue | undefined,
+        contractQualityEvaluation: this.qualityEvaluationSnapshot((quality as any).qualityTask.contractQualityEvaluation),
         materialName: quality.materialName,
         materialSpec: quality.materialSpec,
         supplierName: quality.supplierName,
         plateNo: quality.plateNo || receipt.plateNo,
-        receivedQuantity: quantity,
+        pricingQuantity: null,
+        pricingQuantityBasis: null,
+        measuredMoisturePct: null,
         moistureDeductionWeight: quality.moistureDeductionWeight,
         impurityDeductionWeight: quality.impurityDeductionWeight,
         deductionAmount: quality.deductionAmount,
+        qualityExceptionReason: null,
+        qualityExceptionAcceptedBy: null,
+        qualityExceptionAcceptedAt: null,
       },
       include: this.include,
     });
     return this.decorateReceipt(updated);
   }
 
-  private inventoryQuantity(ticket: { netWeight: unknown }, quality: {
-    moistureDeductionWeight: unknown; impurityDeductionWeight: unknown;
-  }) {
-    return Math.max(0,
-      Number(ticket.netWeight || 0)
-      - Number(quality.moistureDeductionWeight || 0)
-      - Number(quality.impurityDeductionWeight || 0));
+  private inventoryQuantity(ticket: { netWeight: unknown }) {
+    return new Prisma.Decimal(String(ticket.netWeight || 0)).toDecimalPlaces(3).toNumber();
+  }
+
+  private readMeasuredMoisture(indicators: Array<{ code: string; name: string; unit: string; measuredValue: Prisma.Decimal | null }>) {
+    const values = indicators.filter(item => /^(MOISTURE|WATER|H2O|水分)$/i.test(item.code.trim()) || item.name.includes('水分'));
+    if (values.length !== 1 || values[0].measuredValue == null || !['%', '％'].includes(values[0].unit.trim())) return null;
+    const moisture = new Prisma.Decimal(values[0].measuredValue);
+    return moisture.gte(0) && moisture.lt(100) ? moisture : null;
+  }
+
+  private async pricingSnapshot(materialId: string, qualityInspectionId: string, physicalQuantity: number) {
+    const material = await this.prisma.material.findUnique({ where: { id: materialId }, select: { pricingQuantityBasis: true, name: true } });
+    if (!material) throw new BadRequestException('入库物料不存在');
+    const basis = material.pricingQuantityBasis;
+    if (!['PHYSICAL', 'DRY_MATTER'].includes(basis)) throw new BadRequestException('物料计价数量口径无效');
+    const report = await this.prisma.qualityInspection.findUnique({
+      where: { id: qualityInspectionId },
+      select: { status: true, indicators: { select: { code: true, name: true, unit: true, measuredValue: true } } },
+    });
+    if (!report || report.status !== 'CONFIRMED') throw new BadRequestException('须先确认最终质检报告');
+    const moisture = this.readMeasuredMoisture(report.indicators);
+    if (basis === 'PHYSICAL') return { pricingQuantity: physicalQuantity, pricingQuantityBasis: basis, measuredMoisturePct: moisture?.toNumber() ?? null };
+    if (!moisture) {
+      throw new BadRequestException(`物料“${material.name}”按折干计价，请在最终采用的质检报告中确认唯一的水分实测值（%）`);
+    }
+    const pricingQuantity = new Prisma.Decimal(physicalQuantity).mul(new Prisma.Decimal(1).minus(moisture.div(100))).toDecimalPlaces(3).toNumber();
+    if (pricingQuantity <= 0) throw new BadRequestException('折干后的计价数量必须大于 0');
+    return { pricingQuantity, pricingQuantityBasis: basis, measuredMoisturePct: moisture.toNumber() };
   }
 
   private async ensureInventorySelection(
@@ -567,7 +623,24 @@ export class InventoryService {
       include: this.include,
     });
     if (!item) throw new NotFoundException('物流入库单不存在');
-    return this.decorateReceipt(item);
+    const operator = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    let pricingPreview: Awaited<ReturnType<InventoryService['pricingSnapshot']>> | null = null;
+    let pricingPreviewError: string | null = null;
+    const materialId = item.waybill.lineItems?.[0]?.materialId;
+    const physicalQuantity = item.weighTicket ? this.inventoryQuantity(item.weighTicket) : 0;
+    if (item.status === 'PENDING' && item.weighTicket?.status === 'REVIEWED'
+      && item.qualityInspection?.status === 'CONFIRMED'
+      && item.waybill.qualityTask?.status === 'COMPLETED'
+      && item.waybill.qualityTask.basisInspectionId === item.qualityInspectionId
+      && materialId && item.qualityInspectionId && physicalQuantity > 0) {
+      try {
+        pricingPreview = await this.pricingSnapshot(materialId, item.qualityInspectionId, physicalQuantity);
+      } catch (error) {
+        if (!(error instanceof BadRequestException)) throw error;
+        pricingPreviewError = error.message;
+      }
+    }
+    return { ...this.decorateReceipt(item), currentOperatorName: operator?.name || null, pricingPreview, pricingPreviewError };
   }
 
   async updatePendingReceipt(id: string, dto: UpdatePendingInboundReceiptDto, userId: string) {
@@ -586,7 +659,6 @@ export class InventoryService {
       data: {
         ...(dto.warehouseId ? { warehouseId: dto.warehouseId } : {}),
         ...(dto.receivedAt ? { receivedAt: new Date(dto.receivedAt) } : {}),
-        ...(dto.receiverName !== undefined ? { receiverName: dto.receiverName.trim() || null } : {}),
         ...(dto.remarks !== undefined ? { remarks: dto.remarks.trim() || null } : {}),
       },
       include: this.include,
@@ -594,20 +666,38 @@ export class InventoryService {
     return this.decorateReceipt(updated);
   }
 
-  async confirmReceipt(id: string, userId: string) {
+  async confirmReceipt(id: string, userId: string, qualityExceptionReason?: string) {
     const item = await this.findReceipt(id, userId, 'inventory.manage');
     if (item.status !== 'PENDING') throw new BadRequestException('只有待入库单可以确认收货');
-    this.assertQualifiedForInventory(item);
+    if (item.qualityInspection && this.isQualityException(item.acceptanceConclusion, item.qualityInspection) && !qualityExceptionReason?.trim()) {
+      throw new BadRequestException('质检指标存在异常，请核对后填写人工确认接收入库的原因');
+    }
+    this.assertQualifiedForInventory(item, qualityExceptionReason);
     if (!item.warehouseId) throw new BadRequestException('请先选择入库仓库');
+    const warehouse = await this.prisma.warehouse.findFirst({ where: { id: item.warehouseId, status: 'ACTIVE', deletedAt: null }, select: { id: true } });
+    if (!warehouse) throw new BadRequestException('入库仓库已停用或不存在，请重新选择');
     if (!item.receivedAt) throw new BadRequestException('请先填写实际收货时间');
-    if (!item.receiverName?.trim()) throw new BadRequestException('请先填写收货人');
+    if (!item.currentOperatorName) throw new BadRequestException('当前操作人不存在');
     const currentWeight = await this.prisma.waybillWeightSelection.findFirst({
       where: { waybillId: item.waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (!currentWeight || currentWeight.weighTicketId !== item.weighTicketId) {
       throw new BadRequestException('入库单关联磅单与当前结算入库磅单不一致，请先在磅单信息详情中完成选用');
     }
-    const updated = await this.prisma.inboundReceipt.update({ where: { id }, data: { status: 'RECEIVED' }, include: this.include });
+    const materialId = item.waybill.lineItems[0]?.materialId;
+    if (!materialId || !item.qualityInspectionId || !item.weighTicket) throw new BadRequestException('入库单缺少物料、磅单或最终质检依据');
+    const physicalQuantity = this.inventoryQuantity(item.weighTicket);
+    if (physicalQuantity <= 0) throw new BadRequestException('有效磅单净重必须大于 0');
+    const pricing = await this.pricingSnapshot(materialId, item.qualityInspectionId, physicalQuantity);
+    const abnormal = this.isQualityException(item.acceptanceConclusion, item.qualityInspection);
+    const updated = await this.prisma.inboundReceipt.update({ where: { id }, data: {
+      status: 'RECEIVED', receivedQuantity: physicalQuantity, ...pricing,
+      receiverName: item.currentOperatorName,
+      qualityExceptionReason: abnormal ? qualityExceptionReason?.trim() : null,
+      qualityExceptionAcceptedBy: abnormal ? userId : null,
+      qualityExceptionAcceptedAt: abnormal ? new Date() : null,
+      quantitySource: 'NEW', quantityReconciledAt: null,
+    }, include: this.include });
     return this.decorateReceipt(updated);
   }
 
@@ -656,6 +746,9 @@ export class InventoryService {
   async postInventory(id: string, userId: string) {
     const receipt = await this.findReceipt(id, userId, 'inventory.manage');
     if (receipt.status !== 'RECEIVED') throw new BadRequestException('确认收货后才能生成业务入库单');
+    if (receipt.quantitySource === 'LEGACY_UNVERIFIED') {
+      throw new BadRequestException('历史收货数量尚未依据选定磅单和最终质检报告核对，不能直接入账；请管理员先执行历史数量核对');
+    }
     this.assertQualifiedForInventory(receipt);
     if (receipt.businessInbound) throw new BadRequestException('该物流入库单已生成业务入库单');
     if (!receipt.warehouseId) throw new BadRequestException('入库单缺少入库仓库');
@@ -675,6 +768,15 @@ export class InventoryService {
     if (!line) throw new BadRequestException('运单缺少物料明细');
     const quantity = Number(receipt.receivedQuantity || 0);
     if (quantity <= 0) throw new BadRequestException('最终入库数量必须大于 0');
+    if (!receipt.qualityInspectionId) throw new BadRequestException('入库单缺少最终质检依据');
+    const pricing = await this.pricingSnapshot(line.materialId, receipt.qualityInspectionId, quantity);
+    if (receipt.pricingQuantity != null && (
+      Number(receipt.pricingQuantity) !== pricing.pricingQuantity
+      || receipt.pricingQuantityBasis !== pricing.pricingQuantityBasis
+      || (receipt.measuredMoisturePct == null
+        ? pricing.pricingQuantityBasis === 'DRY_MATTER' && pricing.measuredMoisturePct != null
+        : Number(receipt.measuredMoisturePct) !== pricing.measuredMoisturePct)
+    )) throw new BadRequestException('确认收货后物料计价口径或最终质检水分发生变化，请先复核入库单，不能直接过账');
     const inboundNo = await this.nextNo('BIN', 'businessInbound');
     const lotNo = `LOT-${inboundNo.replace('BIN-', '')}`;
     await this.prisma.$transaction(async tx => {
@@ -682,7 +784,7 @@ export class InventoryService {
         data: {
           inboundNo, receiptId: receipt.id, warehouseId, ownerPartnerId, businessUnitId,
           materialId: line.materialId, materialName: receipt.materialName,
-          supplierName: receipt.supplierName, quantity, lotNo, createdBy: userId,
+          supplierName: receipt.supplierName, quantity, ...pricing, lotNo, createdBy: userId,
         },
       });
       const lot = await tx.inventoryLot.create({
@@ -690,30 +792,35 @@ export class InventoryService {
           lotNo, businessInboundId: inbound.id, warehouseId, ownerPartnerId, businessUnitId,
           materialId: line.materialId, materialName: receipt.materialName,
           supplierName: receipt.supplierName, initialQuantity: quantity,
-          availableQuantity: quantity, qualityConclusion: receipt.acceptanceConclusion!,
+          availableQuantity: quantity, pricingInitialQuantity: pricing.pricingQuantity,
+          pricingAvailableQuantity: pricing.pricingQuantity, pricingQuantityBasis: pricing.pricingQuantityBasis,
+          qualityConclusion: receipt.acceptanceConclusion!,
         },
       });
       await tx.inventoryLedger.create({
         data: {
           lotId: lot.id, warehouseId, materialId: line.materialId, businessUnitId,
           businessType: 'INBOUND', businessNo: inboundNo, quantityChange: quantity,
-          balanceAfter: quantity, remarks: `由物流入库单 ${receipt.receiptNo} 生成`, createdBy: userId,
+          balanceAfter: quantity, pricingQuantityChange: pricing.pricingQuantity,
+          pricingBalanceAfter: pricing.pricingQuantity, remarks: `由物流入库单 ${receipt.receiptNo} 生成`, createdBy: userId,
         },
       });
-      await tx.inboundReceipt.update({ where: { id: receipt.id }, data: { status: 'POSTED' } });
+      await tx.inboundReceipt.update({ where: { id: receipt.id }, data: { status: 'POSTED', ...pricing } });
     });
     return this.findReceipt(id, userId, 'inventory.manage');
   }
 
-  private assertQualifiedForInventory(receipt: {
-    acceptanceConclusion: string | null;
-    qualityInspection?: { status: string; conclusion: string } | null;
-  }) {
-    if (
-      !['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(receipt.acceptanceConclusion || '')
-      || receipt.qualityInspection?.status !== 'CONFIRMED'
-    ) {
-      throw new BadRequestException('只有已确认合格或按合同扣款接收的货物才能形成系统库存');
+  private assertQualifiedForInventory(receipt: any, qualityExceptionReason?: string) {
+    if (receipt.qualityInspection?.status !== 'CONFIRMED' || !receipt.qualityInspectionId) {
+      throw new BadRequestException('请先选定并确认最终质检报告');
+    }
+    const task = receipt.waybill?.qualityTask;
+    if (task && (task.status !== 'COMPLETED' || task.basisInspectionId !== receipt.qualityInspectionId)) {
+      throw new BadRequestException('当前质检报告不是任务最终采用的报告，请刷新后重试');
+    }
+    if (this.isQualityException(receipt.acceptanceConclusion, receipt.qualityInspection)
+      && !(qualityExceptionReason?.trim() || receipt.qualityExceptionReason?.trim())) {
+      throw new BadRequestException('质检指标存在异常，请核对后填写人工确认接收入库的原因');
     }
   }
 
@@ -737,7 +844,7 @@ export class InventoryService {
         warehouse: { select: { id: true, code: true, name: true } },
         inventoryOwner: { select: { id: true, code: true, name: true } },
         businessUnit: { select: { id: true, code: true, name: true } },
-        material: { select: { code: true, unit: true } },
+        material: { select: { code: true, unit: true, commodityForm: true, spec: true, pricingQuantityBasis: true } },
         businessInbound: { select: { inboundNo: true, postedAt: true } },
         productionCompletion: {
           select: {
@@ -809,6 +916,14 @@ export class InventoryService {
     const totalPhysicalQuantity = lots.reduce((sum, lot) => sum + Number(lot.availableQuantity), 0);
     const totalReservedQuantity = enrichedLots.reduce((sum, lot) => sum + lot.totalReservedQuantity, 0);
     const totalAvailableQuantity = totalPhysicalQuantity - totalReservedQuantity;
+    const quantityTotalsByUnit = [...new Set(lots.map(lot => lot.material.unit))].map(unit => {
+      const rows = enrichedLots.filter(lot => lot.material.unit === unit);
+      return { unit,
+        physicalQuantity: rows.reduce((sum, lot) => sum + Number(lot.availableQuantity), 0),
+        reservedQuantity: rows.reduce((sum, lot) => sum + lot.totalReservedQuantity, 0),
+        availableQuantity: rows.reduce((sum, lot) => sum + lot.availableToPromiseQuantity, 0),
+      };
+    });
     const ownerGroups = new Map<string, any>();
     const businessUnitGroups = new Map<string, any>();
     const warehouseGroups = new Map<string, any>();
@@ -943,6 +1058,7 @@ export class InventoryService {
         totalPhysicalQuantity,
         totalReservedQuantity,
         totalAvailableQuantity,
+        quantityTotalsByUnit,
       },
     };
   }

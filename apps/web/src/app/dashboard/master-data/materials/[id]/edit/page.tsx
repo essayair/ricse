@@ -19,6 +19,7 @@ interface QualityTemplateOption { id: string; code: string; name: string; versio
 interface MaterialDetail {
   id: string; code: string; name: string; referenceType: string; commodityForm: string | null;
   grade: string | null; unit: string; packageType: string | null; status: string;
+  pricingQuantityBasis: string;
   hsCode: string | null; taxCode: string | null; internalCode: string | null;
   qcTemplate: string | null; qualityTemplateId: string | null; qualityTemplate?: QualityTemplateOption | null; isVirtual: boolean; remark: string | null;
   category: { id: string; name: string };
@@ -34,6 +35,7 @@ export default function MaterialEditPage() {
   const id = useParams().id as string;
   const [material, setMaterial] = useState<MaterialDetail | null>(null);
   const [status, setStatus] = useState('ACTIVE');
+  const [pricingQuantityBasis, setPricingQuantityBasis] = useState('PHYSICAL');
   const [qualityTemplates, setQualityTemplates] = useState<QualityTemplateOption[]>([]);
   const [qualityTemplateId, setQualityTemplateId] = useState('');
   const [internalCode, setInternalCode] = useState('');
@@ -48,6 +50,7 @@ export default function MaterialEditPage() {
     api.get<QualityTemplateOption[]>('/quality-standards/templates?status=ACTIVE').then(setQualityTemplates).catch(() => setError('质检模板加载失败'));
     api.get<MaterialDetail>(`/master-data/materials/${id}`).then((data) => {
       setMaterial(data); setStatus(data.status); setQualityTemplateId(data.qualityTemplateId || '');
+      setPricingQuantityBasis(data.pricingQuantityBasis || 'PHYSICAL');
       setInternalCode(data.internalCode || ''); setHsCode(data.hsCode || '');
       setTaxCode(data.taxCode || ''); setIsVirtual(data.isVirtual); setRemark(data.remark || '');
     }).catch(() => setError('物料信息加载失败'));
@@ -57,7 +60,7 @@ export default function MaterialEditPage() {
     setLoading(true); setError('');
     try {
       await api.patch(`/master-data/materials/${id}`, {
-        status, qualityTemplateId: qualityTemplateId || null, internalCode: internalCode.trim() || null,
+        status, pricingQuantityBasis, qualityTemplateId: qualityTemplateId || null, internalCode: internalCode.trim() || null,
         hsCode: hsCode.trim() || null, taxCode: taxCode.trim() || null,
         isVirtual, remark: remark.trim() || null,
       });
@@ -106,6 +109,7 @@ export default function MaterialEditPage() {
         <div><h2 className="font-semibold">管理属性</h2><p className="mt-1 text-xs text-muted-foreground">这些字段不改变物料身份，可按业务需要维护</p></div>
         <div className="grid gap-4 md:grid-cols-3">
           <Field label="状态"><select value={status} onChange={event => setStatus(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="ACTIVE">启用</option><option value="INACTIVE">停用</option></select></Field>
+          <Field label="默认计价数量口径"><select value={pricingQuantityBasis} onChange={event => setPricingQuantityBasis(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="PHYSICAL">按实物数量</option><option value="DRY_MATTER">按实测水分折干</option></select></Field>
           <Field label="质检模板"><select value={qualityTemplateId} onChange={event => setQualityTemplateId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">暂不关联</option>{qualityTemplates.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}（v{item.version}）</option>)}</select></Field>
           <label className="flex items-center gap-2 pt-7 text-sm"><input type="checkbox" checked={isVirtual} onChange={event => setIsVirtual(event.target.checked)} />不参与实物库存</label>
           <Field label="内部编码"><Input value={internalCode} onChange={event => setInternalCode(event.target.value)} className="font-mono" /></Field>

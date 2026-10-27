@@ -174,6 +174,7 @@ export class MasterDataService {
     internalCode?: string;
     qcTemplate?: string;
     qualityTemplateId?: string;
+    pricingQuantityBasis?: string;
     status?: string;
     remark?: string;
   }) {
@@ -183,6 +184,7 @@ export class MasterDataService {
     if (!categoryId) throw new BadRequestException('请选择物料大类');
     const referenceType = (data.referenceType || 'TRADING_GOODS') as MaterialReferenceType;
     if (!MATERIAL_REFERENCE_TYPES[referenceType]) throw new BadRequestException('物料参考类型无效');
+    if (data.pricingQuantityBasis && !['PHYSICAL', 'DRY_MATTER'].includes(data.pricingQuantityBasis)) throw new BadRequestException('计价数量口径无效');
     const category = await this.prisma.materialCategory.findUnique({
       where: { id: categoryId },
       select: { id: true, name: true },
@@ -214,7 +216,8 @@ export class MasterDataService {
     });
     const duplicate = await this.prisma.material.findFirst({
       where: {
-        standardCommodityId: standardCommodity.id, referenceType, deletedAt: null,
+        standardCommodityId: standardCommodity.id, referenceType,
+        pricingQuantityBasis: data.pricingQuantityBasis || 'PHYSICAL', deletedAt: null,
       },
       select: { id: true, code: true, name: true },
     });
@@ -241,6 +244,7 @@ export class MasterDataService {
             hsCode: clean(data.hsCode), taxCode: clean(data.taxCode),
             internalCode: clean(data.internalCode), qcTemplate: clean(data.qcTemplate),
             qualityTemplateId: data.qualityTemplateId || null,
+            pricingQuantityBasis: data.pricingQuantityBasis || 'PHYSICAL',
             status: data.status || 'ACTIVE', remark: clean(data.remark),
           },
           include: { category: true, standardCommodity: true, qualityTemplate: true },
@@ -312,9 +316,17 @@ export class MasterDataService {
 
   async updateMaterial(id: string, data: {
     isVirtual?: boolean; specs?: object; hsCode?: string | null; taxCode?: string | null;
-    internalCode?: string | null; qcTemplate?: string | null; qualityTemplateId?: string | null; status?: string; remark?: string | null;
+    internalCode?: string | null; qcTemplate?: string | null; qualityTemplateId?: string | null; pricingQuantityBasis?: string; status?: string; remark?: string | null;
   }) {
-    await this.findMaterialById(id);
+    const existing = await this.findMaterialById(id);
+    if (data.pricingQuantityBasis && !['PHYSICAL', 'DRY_MATTER'].includes(data.pricingQuantityBasis)) throw new BadRequestException('计价数量口径无效');
+    if (data.pricingQuantityBasis && data.pricingQuantityBasis !== existing.pricingQuantityBasis) {
+      const [contractUse, posted] = await Promise.all([
+        this.prisma.contractLineItem.count({ where: { materialId: id } }),
+        this.prisma.inventoryLot.count({ where: { materialId: id } }),
+      ]);
+      if (contractUse || posted) throw new BadRequestException('该物料已用于合同或库存，计价口径不可直接修改；请建立新业务物料');
+    }
     if (data.qualityTemplateId) {
       const template = await this.prisma.qualityTemplate.findFirst({
         where: { id: data.qualityTemplateId, status: 'ACTIVE' },
@@ -333,6 +345,7 @@ export class MasterDataService {
           internalCode: cleanForUpdate(data.internalCode),
           qcTemplate: cleanForUpdate(data.qcTemplate),
           qualityTemplateId: data.qualityTemplateId === undefined ? undefined : data.qualityTemplateId || null,
+          pricingQuantityBasis: data.pricingQuantityBasis,
           status: data.status,
           remark: cleanForUpdate(data.remark),
         },

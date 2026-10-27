@@ -49,6 +49,7 @@ export default function MaterialNewPage() {
   const [packageType, setPackageType] = useState('散装');
   const [referenceType, setReferenceType] = useState('TRADING_GOODS');
   const [unit, setUnit] = useState('吨');
+  const [pricingQuantityBasis, setPricingQuantityBasis] = useState('PHYSICAL');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [specs, setSpecs] = useState<SpecRow[]>([]);
   const [qualityTemplates, setQualityTemplates] = useState<QualityTemplateOption[]>([]);
@@ -79,6 +80,7 @@ export default function MaterialNewPage() {
       setCoreSpecUnit(standard?.coreSpecUnit || '%');
       setPackageType(standard?.packageType || material.packageType || '散装');
       setUnit(unitLabel(standard?.unit || material.unit || '吨'));
+      setPricingQuantityBasis(material.pricingQuantityBasis || 'PHYSICAL');
       setQualityTemplateId(material.qualityTemplateId || '');
       setHsCode(material.hsCode || '');
       setTaxCode(material.taxCode || '');
@@ -127,7 +129,7 @@ export default function MaterialNewPage() {
         baseName: selectedCategoryName, categoryId, commodityForm: commodityForm.trim(),
         coreSpecName: coreSpecName.trim(), coreSpecOperator,
         coreSpecValue: coreSpecValue.trim(), coreSpecUnit: coreSpecUnit.trim(),
-        packageType, referenceType, unit,
+        packageType, referenceType, unit, pricingQuantityBasis,
         specs: [
           { name: coreSpecName.trim(), operator: coreSpecOperator, value: coreSpecValue.trim(), unit: coreSpecUnit.trim() },
           ...specs.map(({ id: _id, ...row }) => row),
@@ -163,6 +165,7 @@ export default function MaterialNewPage() {
           <Field label="包装方式" required><Select value={packageType} onChange={setPackageType} options={PACKAGE_TYPES.map(value => ({ value, label: value }))} /></Field>
           <Field label="参考类型" required><Select value={referenceType} onChange={setReferenceType} options={REFERENCE_TYPES.map(([value, label]) => ({ value, label }))} /></Field>
           <Field label="计量单位" required><Select value={unit} onChange={setUnit} options={UNITS.map(value => ({ value, label: value }))} /></Field>
+          <Field label="默认计价数量口径" required><Select value={pricingQuantityBasis} onChange={setPricingQuantityBasis} options={[{ value: 'PHYSICAL', label: '按实物数量' }, { value: 'DRY_MATTER', label: '按实测水分折干' }]} /></Field>
           <Field label="物料编码"><Input value={nextCode || '加载中...'} readOnly className="bg-muted/50 font-mono text-muted-foreground" /></Field>
         </div>
         <p className="text-xs text-muted-foreground">商品名称不单独录入，按“所选分类名称 + 商品形态 + 核心规格”自动拼接；包装方式作为独立属性显示。</p>

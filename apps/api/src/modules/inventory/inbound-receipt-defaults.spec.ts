@@ -16,10 +16,10 @@ describe('入库收货信息默认带入', () => {
     },
   };
 
-  it('默认采用目的仓、物流签收时间和收货联系人，读取不修改原记录', () => {
+  it('默认采用目的仓、物流签收时间，但收货人必须是实际操作人', () => {
     const original = JSON.stringify(receipt);
     expect(inboundReceiptDefaults(receipt)).toEqual({
-      warehouseId: 'destination', receivedAt: signedAt, receiverName: '通知收货人', receivedAtSource: 'SIGNED',
+      warehouseId: 'destination', receivedAt: signedAt, receiverName: null, receivedAtSource: 'SIGNED',
     });
     expect(JSON.stringify(receipt)).toBe(original);
   });
@@ -33,10 +33,10 @@ describe('入库收货信息默认带入', () => {
     expect(inboundReceiptDefaults({ ...receipt, waybill: { ...receipt.waybill, status: 'IN_TRANSIT' } }).receivedAt).toBeNull();
   });
 
-  it('没有通知联系人时采用目标仓库负责人', () => {
+  it('不会把目的仓负责人误作为收货操作人', () => {
     expect(inboundReceiptDefaults({ ...receipt, waybill: {
       ...receipt.waybill, dispatchNotice: { ...receipt.waybill.dispatchNotice, destinationContactPerson: '' },
-    } }).receiverName).toBe('目的仓负责人');
+    } }).receiverName).toBeNull();
   });
 
   it('人工保存的仓库、时间、收货人优先，不被上游变化覆盖', () => {
@@ -45,15 +45,15 @@ describe('入库收货信息默认带入', () => {
       .toEqual({ warehouseId: 'manual', receivedAt: savedAt, receiverName: '人工收货人', receivedAtSource: 'SAVED' });
   });
 
-  it('人工改选其他仓库后，不采用原目的仓收货联系人', () => {
+  it('人工改选其他仓库后，也不把仓库负责人当作收货人', () => {
     expect(inboundReceiptDefaults({ ...receipt, warehouseId: 'manual', warehouse: { id: 'manual', manager: '实际仓负责人' } }).receiverName)
-      .toBe('实际仓负责人');
+      .toBeNull();
   });
 
   it.each([{ status: 'INACTIVE' }, { status: 'ACTIVE', deletedAt: arrivedAt }])('不默认选择停用或删除的目的仓 %j', (state) => {
     expect(inboundReceiptDefaults({ ...receipt, waybill: { ...receipt.waybill, dispatchNotice: {
       ...receipt.waybill.dispatchNotice, destinationWarehouse: { id: 'destination', ...state },
-    } } }).warehouseId).toBe('legacy');
+    } } }).warehouseId).toBeNull();
   });
 
   it.each(['RECEIVED', 'POSTED', 'CANCELLED'])('不对 %s 单据补入上游建议值', (status) => {

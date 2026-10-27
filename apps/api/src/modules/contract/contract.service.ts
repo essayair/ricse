@@ -317,7 +317,7 @@ export class ContractService {
     const requiredText: Array<[unknown, string]> = [
       [contract.title, '合同标题'], [contract.externalNo, '外部合同号（无编号请明确填写“无”）'],
       [contract.deliveryMethod, '交货方式'], [contract.deliveryLocation, '交货地点'],
-      [contract.settlementBasis, '结算数量依据'], [contract.settlementMethod, '结算方式'],
+      [contract.settlementBasis, '结算数量约定'], [contract.settlementMethod, '结算方式'],
       [contract.paymentMethod, '付款方式'],
     ];
     const missing = requiredText.find(([value]) => typeof value !== 'string' || !value.trim());

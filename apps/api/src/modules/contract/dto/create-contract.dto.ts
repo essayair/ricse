@@ -169,8 +169,8 @@ export class CreateContractDto {
   deliveryLocation?: string;
 
   // 结算
-  @ApiPropertyOptional({ description: '结算数量依据' })
-  @IsOptional() @IsString()
+  @ApiPropertyOptional({ description: '结算数量约定（文本，不直接驱动库存或结算数量计算）' })
+  @IsOptional() @IsString() @MaxLength(200)
   settlementBasis?: string;
 
   @ApiPropertyOptional({ description: '预付比例' })

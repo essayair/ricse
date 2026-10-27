@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
+import { reconcileLegacyReceipt } from '../prisma/reconcile-legacy-inventory';
 
 /**
  * 这套 e2e 测试跑在本地开发数据库上（没有单独的测试库），因此绝不做
@@ -19,6 +20,23 @@ describe('RICSE API (e2e)', () => {
   // 两处用到内部合作伙伴的 describe 块各自要一个独立的码，否则会撞唯一约束。
   const INTERNAL_CODE = Date.now().toString().slice(-6);
   const INTERNAL_CODE_2 = (Date.now() + 1).toString().slice(-6);
+
+  const approvalFields = async () => {
+    const businessUnit = await prisma.businessUnit.findFirst({ where: { status: 'ACTIVE' } });
+    const department = await prisma.department.findFirst();
+    if (!businessUnit || !department) throw new Error('端到端测试缺少业务单元或部门种子数据');
+    return {
+      businessUnitId: businessUnit.id, departmentId: department.id,
+      externalNo: '无', pricingType: 'FIXED', signedAt: '2026-10-01T00:00:00.000Z',
+      deliveryMethod: '汽运', deliveryLocation: '测试仓库', settlementBasis: '按实际入库数量',
+      settlementMethod: '到货结算', paymentMethod: '银行转账', prepayPct: 0, paymentDays: 0,
+      overfillPct: 10, shortfallPct: 10,
+    };
+  };
+  const attachSignedContract = (contractId: string) => prisma.attachment.create({ data: {
+    contractId, fileName: `e2e-${RUN}-${contractId}.pdf`, originalName: '测试纸质合同.pdf',
+    mimeType: 'application/pdf', size: 16, category: 'SIGNED_CONTRACT',
+  } });
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -131,6 +149,7 @@ describe('RICSE API (e2e)', () => {
       // ContractLineItem/Approval 对 Contract 是 onDelete: Restrict，不会随合同级联删除，
       // 必须先清掉子表才能物理删除测试合同；否则合同（进而物料/分类）会一直卡着删不掉。
       if (createdContractIds.length) {
+        await prisma.attachment.deleteMany({ where: { contractId: { in: createdContractIds } } });
         await prisma.contractLineItem.deleteMany({ where: { contractId: { in: createdContractIds } } });
         await prisma.approval.deleteMany({ where: { contractId: { in: createdContractIds } } });
       }
@@ -261,6 +280,7 @@ describe('RICSE API (e2e)', () => {
           .post('/api/v1/contracts')
           .set('Authorization', `Bearer ${adminToken}`)
           .send({
+            ...await approvalFields(),
             title: `${RUN}-采购合同`,
             type: 'PURCHASE',
             sellerId,
@@ -296,6 +316,7 @@ describe('RICSE API (e2e)', () => {
             .post('/api/v1/contracts')
             .set('Authorization', `Bearer ${adminToken}`)
             .send({
+              ...await approvalFields(),
               title: `${RUN}-状态机测试`,
               type: 'PURCHASE',
               sellerId,
@@ -305,6 +326,7 @@ describe('RICSE API (e2e)', () => {
             });
           contractId = res.body.id;
           createdContractIds.push(contractId);
+          await attachSignedContract(contractId);
         });
 
         it('DRAFT → PENDING_APPROVAL（种子数据已配置四级或签审批流）', async () => {
@@ -401,6 +423,7 @@ describe('RICSE API (e2e)', () => {
           coreSpecUnit: '%',
           packageType: 'BULK',
           unit: 'TON',
+          pricingQuantityBasis: 'DRY_MATTER',
         });
       createdMaterialIds.push(material.body.id);
 
@@ -408,6 +431,7 @@ describe('RICSE API (e2e)', () => {
         .post('/api/v1/contracts')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
+          ...await approvalFields(),
           title: `${RUN}-执行链路合同`,
           type: 'PURCHASE',
           sellerId: seller.body.id,
@@ -416,6 +440,8 @@ describe('RICSE API (e2e)', () => {
           lineItems: [{ materialId: material.body.id, quantity: 20, unit: 'TON', unitPrice: 1000 }],
         });
       contractId = contract.body.id;
+
+      await attachSignedContract(contractId);
 
       await request(app.getHttpServer())
         .patch(`/api/v1/contracts/${contractId}/status`)
@@ -442,13 +468,23 @@ describe('RICSE API (e2e)', () => {
       // 依赖顺序（深→浅）：称重记录/磅单/过磅任务/质检任务/物流入库单 都挂在 Waybill 下；
       // Waybill 挂在 DispatchNotice 下；DispatchNotice 挂在 Order 下；Order 挂在 Contract 下。
       const waybillIds = waybillId ? [waybillId] : [];
+      const inbounds = await prisma.inboundReceipt.findMany({ where: { waybillId: { in: waybillIds } }, select: { id: true } });
+      const businessInbounds = await prisma.businessInbound.findMany({ where: { receiptId: { in: inbounds.map(i => i.id) } }, select: { id: true } });
+      const lots = await prisma.inventoryLot.findMany({ where: { businessInboundId: { in: businessInbounds.map(i => i.id) } }, select: { id: true } });
+      await prisma.inventoryLedger.deleteMany({ where: { lotId: { in: lots.map(i => i.id) } } });
+      await prisma.inventoryLot.deleteMany({ where: { id: { in: lots.map(i => i.id) } } });
+      await prisma.businessInbound.deleteMany({ where: { id: { in: businessInbounds.map(i => i.id) } } });
+      await prisma.inboundReceipt.deleteMany({ where: { id: { in: inbounds.map(i => i.id) } } });
+      const inspections = await prisma.qualityInspection.findMany({ where: { qualityTask: { waybillId: { in: waybillIds } } }, select: { id: true } });
+      await prisma.qualityTask.updateMany({ where: { waybillId: { in: waybillIds } }, data: { basisInspectionId: null } });
+      await prisma.qualityInspectionIndicator.deleteMany({ where: { inspectionId: { in: inspections.map(i => i.id) } } });
+      await prisma.qualityInspection.deleteMany({ where: { id: { in: inspections.map(i => i.id) } } });
+      await prisma.waybillWeightSelection.deleteMany({ where: { waybillId: { in: waybillIds } } });
+      await prisma.attachment.deleteMany({ where: { weighTicket: { waybillId: { in: waybillIds } } } });
       await prisma.weighRecord.deleteMany({ where: { weighTicket: { waybillId: { in: waybillIds } } } });
       await prisma.weighTicket.deleteMany({ where: { waybillId: { in: waybillIds } } });
       await prisma.weighTask.deleteMany({ where: { waybillId: { in: waybillIds } } });
       await prisma.qualityTask.deleteMany({ where: { waybillId: { in: waybillIds } } });
-      const inbounds = await prisma.inboundReceipt.findMany({ where: { waybillId: { in: waybillIds } }, select: { id: true } });
-      await prisma.businessInbound.deleteMany({ where: { receiptId: { in: inbounds.map((i) => i.id) } } });
-      await prisma.inboundReceipt.deleteMany({ where: { id: { in: inbounds.map((i) => i.id) } } });
       await prisma.waybillLineItem.deleteMany({ where: { waybillId: { in: waybillIds } } });
       for (const id of waybillIds) await prisma.waybill.delete({ where: { id } }).catch(() => undefined);
 
@@ -461,6 +497,7 @@ describe('RICSE API (e2e)', () => {
         await prisma.order.delete({ where: { id: orderId } }).catch(() => undefined);
       }
       if (contractId) {
+        await prisma.attachment.deleteMany({ where: { contractId } });
         await prisma.contractLineItem.deleteMany({ where: { contractId } });
         await prisma.approval.deleteMany({ where: { contractId } });
         await prisma.contract.delete({ where: { id: contractId } }).catch(() => undefined);
@@ -622,6 +659,85 @@ describe('RICSE API (e2e)', () => {
       // 10 吨净重与计划数量一致，不应触发磅差异常。
       expect(Number(res.body.netWeight)).toBeCloseTo(10, 3);
       expect(res.body.abnormal).toBe(false);
+    });
+
+    it('最终质检水分驱动折干入库：实物 10 吨、计价 8.8 吨', async () => {
+      const user = await prisma.user.findUniqueOrThrow({ where: { username: 'admin' } });
+      const ticket = await prisma.weighTicket.findFirstOrThrow({ where: { waybillId } });
+      const task = await prisma.qualityTask.findUniqueOrThrow({ where: { waybillId } });
+      const receipt = await prisma.inboundReceipt.findFirstOrThrow({ where: { waybillId } });
+      const warehouse = await prisma.warehouse.findFirstOrThrow({ where: { status: 'ACTIVE' } });
+      await prisma.attachment.create({ data: {
+        weighTicketId: ticket.id, fileName: `e2e-${RUN}-weigh.pdf`, originalName: '测试磅单.pdf',
+        mimeType: 'application/pdf', size: 16, category: 'WEIGH_TICKET',
+      } });
+      await request(app.getHttpServer()).patch(`/api/v1/weigh-tickets/${ticket.id}/status`)
+        .set('Authorization', `Bearer ${adminToken}`).send({ status: 'COMPLETED' }).expect(200);
+      await request(app.getHttpServer()).patch(`/api/v1/weigh-tickets/${ticket.id}/status`)
+        .set('Authorization', `Bearer ${adminToken}`).send({ status: 'REVIEWED' }).expect(200);
+      const report = await prisma.qualityInspection.create({ data: {
+        inspectionNo: `E2E-Q-${RUN}`, qualityTaskId: task.id, weighTicketId: ticket.id,
+        status: 'CONFIRMED', conclusion: 'PASS', institutionName: '端到端测试检测机构', reportNo: `R-${RUN}`,
+        testedAt: new Date(), sampledAt: new Date(), samplerName: '测试取样人', materialName: '萤石精粉', createdBy: user.id,
+        indicators: { create: [{ code: 'MOISTURE', name: '水分', operator: 'LTE', unit: '%', measuredValue: 12, result: 'PASS' }] },
+      } });
+      await prisma.qualityTask.update({ where: { id: task.id }, data: {
+        status: 'COMPLETED', basisInspectionId: report.id, finalConclusion: 'PASS', qualityDisposition: 'PASS',
+      } });
+      await prisma.inboundReceipt.update({ where: { id: receipt.id }, data: {
+        weighTicketId: ticket.id, qualityInspectionId: report.id, acceptanceConclusion: 'PASS',
+        warehouseId: warehouse.id, receivedAt: new Date(), receiverName: '测试收货人',
+      } });
+      const pending = await request(app.getHttpServer()).get(`/api/v1/inbound-receipts/${receipt.id}`)
+        .set('Authorization', `Bearer ${adminToken}`).expect(200);
+      expect(pending.body.reportMeasuredMoisturePct).toBe(12);
+      const confirmed = await request(app.getHttpServer()).patch(`/api/v1/inbound-receipts/${receipt.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`).expect(200);
+      expect(Number(confirmed.body.receivedQuantity)).toBe(10);
+      expect(Number(confirmed.body.pricingQuantity)).toBe(8.8);
+      await request(app.getHttpServer()).post(`/api/v1/inbound-receipts/${receipt.id}/post`)
+        .set('Authorization', `Bearer ${adminToken}`).expect(201);
+      const lot = await prisma.inventoryLot.findFirstOrThrow({ where: { businessInbound: { receiptId: receipt.id } } });
+      expect(Number(lot.availableQuantity)).toBe(10);
+      expect(Number(lot.pricingAvailableQuantity)).toBe(8.8);
+      expect(lot.pricingQuantityBasis).toBe('DRY_MATTER');
+    });
+
+    it('历史已过账且无下游业务的批次，自动根据磅单和质检补全双数量并保留旧值', async () => {
+      const receipt = await prisma.inboundReceipt.findFirstOrThrow({ where: { waybillId } });
+      const inbound = await prisma.businessInbound.findUniqueOrThrow({ where: { receiptId: receipt.id } });
+      const lot = await prisma.inventoryLot.findUniqueOrThrow({ where: { businessInboundId: inbound.id } });
+      const ledger = await prisma.inventoryLedger.findFirstOrThrow({ where: { lotId: lot.id } });
+      await prisma.inboundReceipt.update({ where: { id: receipt.id }, data: {
+        receivedQuantity: 8, legacyReceivedQuantity: 8, pricingQuantity: 8,
+        pricingQuantityBasis: 'PHYSICAL', measuredMoisturePct: null, quantitySource: 'LEGACY_UNVERIFIED',
+      } });
+      await prisma.businessInbound.update({ where: { id: inbound.id }, data: {
+        quantity: 8, legacyQuantity: 8, pricingQuantity: 8, pricingQuantityBasis: 'PHYSICAL', measuredMoisturePct: null,
+      } });
+      await prisma.inventoryLot.update({ where: { id: lot.id }, data: {
+        initialQuantity: 8, availableQuantity: 8, legacyInitialQuantity: 8, legacyAvailableQuantity: 8,
+        pricingInitialQuantity: 8, pricingAvailableQuantity: 8, pricingQuantityBasis: 'PHYSICAL', quantitySource: 'LEGACY_UNVERIFIED',
+      } });
+      await prisma.inventoryLedger.update({ where: { id: ledger.id }, data: {
+        quantityChange: 8, balanceAfter: 8, legacyQuantityChange: 8, legacyBalanceAfter: 8,
+        pricingQuantityChange: 8, pricingBalanceAfter: 8,
+      } });
+      const historical = await prisma.inboundReceipt.findUniqueOrThrow({ where: { id: receipt.id }, include: {
+        weighTicket: true, qualityInspection: { include: { indicators: true } },
+        waybill: { include: { qualityTask: true, lineItems: true, weightSelections: true, dispatchNotice: { include: { order: true } } } },
+        businessInbound: { include: { inventoryLot: true } },
+      } });
+      await expect(reconcileLegacyReceipt(historical, prisma, true)).resolves.toBe('POSTED_RECONCILED');
+      const repaired = await prisma.inventoryLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(Number(repaired.initialQuantity)).toBe(10);
+      expect(Number(repaired.pricingInitialQuantity)).toBe(8.8);
+      expect(Number(repaired.legacyInitialQuantity)).toBe(8);
+      expect(repaired.quantitySource).toBe('HISTORICAL_RECONCILED');
+      const repairedLedger = await prisma.inventoryLedger.findUniqueOrThrow({ where: { id: ledger.id } });
+      expect(Number(repairedLedger.quantityChange)).toBe(10);
+      expect(Number(repairedLedger.pricingQuantityChange)).toBe(8.8);
+      expect(Number(repairedLedger.legacyQuantityChange)).toBe(8);
     });
   });
 });

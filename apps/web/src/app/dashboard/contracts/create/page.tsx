@@ -74,7 +74,7 @@ export default function ContractCreatePage() {
     pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: '', effectiveAt: '', expireAt: '',
-    settlementMethod: '', settlementBasis: 'WEIGHT',
+    settlementMethod: '', settlementBasis: '',
     prepayPct: '0', paymentDays: '30', paymentMethod: 'T/T',
     remarks: '',
   });
@@ -257,7 +257,7 @@ export default function ContractCreatePage() {
       ['sellerId', form.type === 'BILATERAL' ? '上游供应商' : '交易对手方'],
       ['materialId', '物料品种'], ['quantity', '合同数量'], ['unitPrice', '采购/销售单价'],
       ['signedAt', '纸质合同签订日期'],
-      ['deliveryMethod', '交货方式'], ['deliveryLocation', '交货地点'], ['settlementBasis', '结算数量依据'],
+      ['deliveryMethod', '交货方式'], ['deliveryLocation', '交货地点'], ['settlementBasis', '结算数量约定'],
       ['settlementMethod', '结算方式'], ['prepayPct', '预付比例（无预付请填写0）'], ['paymentDays', '尾款账期（无账期请填写0）'],
       ['paymentMethod', '付款方式'],
       ['overfillPct', '溢装比例'], ['shortfallPct', '短装比例'],
@@ -479,10 +479,8 @@ export default function ContractCreatePage() {
         <Card className="p-6 mt-4">
           <SectionTitle>结算条款</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <FormField label="结算数量依据" required>
-              <select value={form.settlementBasis} onChange={e => set('settlementBasis', e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="WEIGHT">地磅净重（推荐）</option><option value="QUALITY">质检干重</option><option value="CONTRACT">合同约定数量</option>
-              </select>
+            <FormField label="结算数量约定" required>
+              <Input value={form.settlementBasis} onChange={e => set('settlementBasis', e.target.value)} maxLength={200} placeholder="如：按到货实物净重；具体货款数量以入库过账为准" />
             </FormField>
             <FormField label="结算方式" required>
               <Input

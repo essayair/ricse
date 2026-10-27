@@ -98,7 +98,7 @@ export default function ContractEditPage() {
     pricingType: 'FIXED', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: '', effectiveAt: '', expireAt: '',
-    settlementMethod: '', settlementBasis: 'WEIGHT',
+    settlementMethod: '', settlementBasis: '',
     prepayPct: '', paymentDays: '30', paymentMethod: 'T/T',
     remarks: '',
   });
@@ -158,7 +158,7 @@ export default function ContractEditPage() {
         effectiveAt: contract.effectiveAt ? contract.effectiveAt.split('T')[0] : '',
         expireAt: contract.expireAt ? contract.expireAt.split('T')[0] : '',
         settlementMethod: settlementMethodLabel(contract.settlementMethod),
-        settlementBasis: contract.settlementBasis || 'WEIGHT',
+        settlementBasis: ({ WEIGHT: '按地磅净重', QUALITY: '按质检干重', CONTRACT: '按合同约定数量' } as Record<string, string>)[contract.settlementBasis || ''] || contract.settlementBasis || '',
         prepayPct: contract.prepayPct == null ? '' : String(contract.prepayPct),
         paymentDays: contract.paymentDays == null ? '' : String(contract.paymentDays),
         paymentMethod: contract.paymentMethod || 'T/T',
@@ -610,12 +610,8 @@ export default function ContractEditPage() {
         <Card className="p-6">
           <SectionTitle>结算条款</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <FormField label="结算数量依据" required>
-              <select value={form.settlementBasis} onChange={e => set('settlementBasis', e.target.value)} className={SELECT_CLS}>
-                <option value="WEIGHT">地磅净重</option>
-                <option value="QUALITY">质检干重</option>
-                <option value="CONTRACT">合同约定数量</option>
-              </select>
+            <FormField label="结算数量约定" required>
+              <Input value={form.settlementBasis} onChange={e => set('settlementBasis', e.target.value)} maxLength={200} placeholder="填写双方约定；不直接控制库存过账数量" />
             </FormField>
             <FormField label="结算方式" required>
               <Input

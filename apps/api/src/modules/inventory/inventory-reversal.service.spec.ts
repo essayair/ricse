@@ -54,6 +54,7 @@ describe('InventoryReversalService', () => {
         id: 'inbound-1',
         inboundNo: 'BIN-001',
         quantity: 100,
+        pricingQuantity: 80,
         inventoryLot: { id: 'lot-1' },
       },
       salesOutbound: null,
@@ -68,22 +69,26 @@ describe('InventoryReversalService', () => {
     prisma.inventoryReversalLine.aggregate.mockResolvedValue({ _sum: { quantity: 0 } } as any);
     prisma.inventoryLot.updateMany.mockResolvedValue({ count: 1 });
     prisma.inventoryLot.findUniqueOrThrow.mockResolvedValue({
-      id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'material-1', availableQuantity: 40,
+      id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'material-1', availableQuantity: 40, pricingAvailableQuantity: 32,
     } as any);
 
     await service.post(reversal.id, 'user-1');
 
     expect(prisma.inventoryLot.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: {
+      data: expect.objectContaining({
         availableQuantity: { decrement: 30 },
         initialQuantity: { decrement: 30 },
-      },
+        pricingAvailableQuantity: { decrement: 24 },
+        pricingInitialQuantity: { decrement: 24 },
+      }),
     }));
     expect(prisma.inventoryLedger.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         businessType: 'INBOUND_REVERSAL',
         quantityChange: -30,
         balanceAfter: 40,
+        pricingQuantityChange: -24,
+        pricingBalanceAfter: 32,
       }),
     }));
   });
@@ -99,13 +104,14 @@ describe('InventoryReversalService', () => {
       salesOutbound: {
         id: 'sales-out-1',
         outboundNo: 'SOUT-001',
-        lines: [{ id: 'source-line-1', quantity: 20 }],
+        lines: [{ id: 'source-line-1', quantity: 20, pricingQuantity: 16 }],
       },
       lines: [{
         id: 'line-1',
         inventoryLotId: 'lot-1',
         sourceSalesOutboundLineId: 'source-line-1',
         sourceQuantity: 20,
+        sourcePricingQuantity: 16,
         quantity: 10,
         inventoryLot: { id: 'lot-1', lotNo: 'LOT-001' },
       }],
@@ -113,20 +119,22 @@ describe('InventoryReversalService', () => {
     prisma.inventoryReversal.findFirst.mockResolvedValue(reversal as any);
     prisma.inventoryReversalLine.aggregate.mockResolvedValue({ _sum: { quantity: 0 } } as any);
     prisma.inventoryLot.findUniqueOrThrow.mockResolvedValue({
-      id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'material-1', availableQuantity: 80,
+      id: 'lot-1', warehouseId: 'warehouse-1', materialId: 'material-1', availableQuantity: 80, pricingAvailableQuantity: 64,
     } as any);
 
     await service.post(reversal.id, 'user-1');
 
     expect(prisma.inventoryLot.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'lot-1' },
-      data: { availableQuantity: { increment: 10 }, status: 'AVAILABLE' },
+      data: { availableQuantity: { increment: 10 }, pricingAvailableQuantity: { increment: 8 }, status: 'AVAILABLE' },
     }));
     expect(prisma.inventoryLedger.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         businessType: 'OUTBOUND_REVERSAL',
         quantityChange: 10,
         balanceAfter: 80,
+        pricingQuantityChange: 8,
+        pricingBalanceAfter: 64,
       }),
     }));
   });

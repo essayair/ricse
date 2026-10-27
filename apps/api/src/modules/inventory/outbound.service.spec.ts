@@ -177,7 +177,7 @@ describe('OutboundService', () => {
         id: 'allocation-1',
         inventoryLotId: 'lot-1',
         quantity: 10,
-        inventoryLot: { id: 'lot-1', lotNo: 'LOT-001' },
+        inventoryLot: { id: 'lot-1', lotNo: 'LOT-001', availableQuantity: 25, pricingAvailableQuantity: 20 },
       }],
     };
     prisma.outboundReceipt.findFirst.mockResolvedValue(receipt as any);
@@ -191,23 +191,26 @@ describe('OutboundService', () => {
     prisma.inventoryLot.findUniqueOrThrow.mockResolvedValue({
       id: 'lot-1',
       availableQuantity: 15,
+      pricingAvailableQuantity: 12,
     } as any);
 
     await service.post(receipt.id, 'user-1');
 
     expect(prisma.inventoryLot.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ availableQuantity: { gte: 10 } }),
-      data: { availableQuantity: { decrement: 10 } },
+      where: expect.objectContaining({ availableQuantity: 25, pricingAvailableQuantity: 20 }),
+      data: { availableQuantity: { decrement: 10 }, pricingAvailableQuantity: { decrement: 8 } },
     }));
     expect(prisma.inventoryLedger.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         businessType: 'OUTBOUND',
         quantityChange: -10,
         balanceAfter: 15,
+        pricingQuantityChange: -8,
+        pricingBalanceAfter: 12,
       }),
     }));
     expect(prisma.outboundReceipt.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: { status: 'POSTED' },
+      data: { status: 'POSTED', pricingQuantity: 8 },
     }));
   });
 });

@@ -21,6 +21,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:reconcile-legacy-inventory": "tsx prisma/reconcile-legacy-inventory.ts",
     "prisma:seed:blank": "tsx prisma/seed-blank.ts",
     "prisma:repair-user-access": "tsx prisma/repair-user-access.ts",
     "test": "jest",
