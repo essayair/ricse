@@ -8,6 +8,21 @@ import { CreatePartnerAddressDto, UpdatePartnerAddressDto } from './dto/partner-
 export class PartnerService {
   constructor(private prisma: PrismaService) {}
 
+  private parsePartnerDate(value: string | null | undefined, label: string): Date | null | undefined {
+    if (value == null) return value;
+    if (typeof value !== 'string') throw new BadRequestException(`${label}格式不正确`);
+    const input = value.trim();
+    if (!input) return null;
+
+    // 日期输入框提交 YYYY-MM-DD；Prisma 的 DateTime 字段需要完整时间或 Date 对象。
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(input);
+    const date = new Date(dateOnly ? `${input}T00:00:00.000Z` : input);
+    if (Number.isNaN(date.getTime()) || (dateOnly && date.toISOString().slice(0, 10) !== input)) {
+      throw new BadRequestException(`${label}格式不正确`);
+    }
+    return date;
+  }
+
   // ========== 合作伙伴 CRUD ==========
 
   async create(data: {
@@ -249,6 +264,8 @@ export class PartnerService {
     if (name) updateData.name = name;
     if (roles) updateData.roles = roles;
     if (status) updateData.status = status;
+    if (data.estDate !== undefined) updateData.estDate = this.parsePartnerDate(data.estDate, '成立日期');
+    if (data.licenseExpiry !== undefined) updateData.licenseExpiry = this.parsePartnerDate(data.licenseExpiry, '资质到期日');
 
     return this.prisma.partner.update({ where: { id }, data: updateData });
   }

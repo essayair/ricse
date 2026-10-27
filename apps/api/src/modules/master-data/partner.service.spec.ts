@@ -29,6 +29,39 @@ describe('PartnerService', () => {
     });
   });
 
+  it('编辑合作伙伴时将日期输入框的值转换为 DateTime', async () => {
+    prisma.partner.findUnique.mockResolvedValue({
+      id: 'partner-1', name: '测试合作伙伴', roles: ['SUPPLIER'], status: 'ACTIVE', deletedAt: null,
+    } as any);
+    prisma.partner.update.mockResolvedValue({ id: 'partner-1' } as any);
+
+    await service.update('partner-1', { estDate: '2026-10-27', licenseExpiry: '2027-12-31' });
+
+    expect(prisma.partner.update).toHaveBeenCalledWith({
+      where: { id: 'partner-1' },
+      data: {
+        estDate: new Date('2026-10-27T00:00:00.000Z'),
+        licenseExpiry: new Date('2027-12-31T00:00:00.000Z'),
+      },
+    });
+  });
+
+  it('允许清空合作伙伴日期，拒绝无效日期', async () => {
+    prisma.partner.findUnique.mockResolvedValue({
+      id: 'partner-1', name: '测试合作伙伴', roles: ['SUPPLIER'], status: 'ACTIVE', deletedAt: null,
+    } as any);
+    prisma.partner.update.mockResolvedValue({ id: 'partner-1' } as any);
+
+    await service.update('partner-1', { estDate: null, licenseExpiry: '' });
+    expect(prisma.partner.update).toHaveBeenCalledWith({
+      where: { id: 'partner-1' }, data: { estDate: null, licenseExpiry: null },
+    });
+
+    await expect(service.update('partner-1', { estDate: '2026-02-30' }))
+      .rejects.toThrow('成立日期格式不正确');
+    expect(prisma.partner.update).toHaveBeenCalledTimes(1);
+  });
+
   it('创建车辆时规范化车牌并保存完整档案', async () => {
     prisma.vehicle.findUnique.mockResolvedValue(null);
     prisma.vehicle.create.mockResolvedValue({ id: 'vehicle-1', plateNo: '浙A12345' } as any);
