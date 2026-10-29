@@ -63,7 +63,7 @@ export function FleetMemberManager({ fleetId, onClose, onChanged }: {
   useEffect(() => {
     try {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      setCanManage(user.role === 'ADMIN' || (user.permissions || []).includes('master_data.manage'));
+      setCanManage(user.role === 'ADMIN' || (user.permissions || []).includes('transport_resource.manage'));
     } catch { setCanManage(false); }
   }, []);
 

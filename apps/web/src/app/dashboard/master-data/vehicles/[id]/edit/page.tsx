@@ -25,7 +25,7 @@ export default function EditVehiclePage() {
   const [vehicle, setVehicle] = useState<VehicleDetail | null>(null);
   const back = () => router.push(`/dashboard/master-data/vehicles/${id}`);
   useEffect(() => {
-    api.get<VehicleDetail>(`/partners/vehicles/${id}`).then(setVehicle).catch((error) => { alert(error.message || '车辆加载失败'); router.push('/dashboard/master-data?tab=vehicles'); });
+    api.get<VehicleDetail>(`/partners/vehicles/${id}`).then(setVehicle).catch((error) => { alert(error.message || '车辆加载失败'); router.push('/dashboard/transport-resources'); });
   }, [id, router]);
 
   const update = async (value: VehicleFormValue) => {

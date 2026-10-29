@@ -101,6 +101,8 @@ function resolveResource(pathname: string, route: ResourceRoute): BreadcrumbItem
 
 function resolveMasterData(pathname: string, params?: BreadcrumbSearchParams): BreadcrumbItem[] | null {
   const root: BreadcrumbItem = { label: '主数据管理' };
+  const transportRoot: BreadcrumbItem = { label: '物流管理' };
+  if (pathname === '/dashboard/transport-resources') return withHome([transportRoot, { label: '运力管理' }]);
   if (pathname === '/dashboard/master-data') {
     const tab = params?.get('tab') || 'partners';
     return withHome([root, { label: MASTER_DATA_TABS[tab] || '合作伙伴' }]);
@@ -115,7 +117,7 @@ function resolveMasterData(pathname: string, params?: BreadcrumbSearchParams): B
   }
 
   if (pathname === '/dashboard/master-data/transport-resources/new') {
-    return withHome([root, { label: '运力管理', href: '/dashboard/master-data?tab=vehicles' }, { label: '新建司机与车辆' }]);
+    return withHome([transportRoot, { label: '运力管理', href: '/dashboard/transport-resources' }, { label: '新建司机与车辆' }]);
   }
 
   // 服务生态列表已并入主数据顶部 Tab（?tab=service-organizations）；新建/编辑/司机管理仍是独立子页面。
@@ -157,18 +159,20 @@ function resolveMasterData(pathname: string, params?: BreadcrumbSearchParams): B
   if (!entityMatch) return null;
   const [, entity, value, edit] = entityMatch;
   const config = entityConfig[entity];
-  const list: BreadcrumbItem = { label: config.label, href: `/dashboard/master-data?tab=${config.tab}` };
-  if (value === 'new') return withHome([root, list, { label: config.create }]);
+  const isTransport = entity === 'vehicles' || entity === 'drivers';
+  const list: BreadcrumbItem = { label: config.label, href: isTransport ? '/dashboard/transport-resources' : `/dashboard/master-data?tab=${config.tab}` };
+  const section = isTransport ? transportRoot : root;
+  if (value === 'new') return withHome([section, list, { label: config.create }]);
   if (edit) {
     const detailExists = entity !== 'warehouses';
     return withHome([
-      root,
+      section,
       list,
       ...(detailExists ? [{ label: config.detail, href: `/dashboard/master-data/${entity}/${value}` }] : []),
       { label: config.edit },
     ]);
   }
-  return withHome([root, list, { label: config.detail }]);
+  return withHome([section, list, { label: config.detail }]);
 }
 
 function resolveProduction(pathname: string): BreadcrumbItem[] | null {

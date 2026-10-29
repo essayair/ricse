@@ -39,6 +39,7 @@ export default function WaybillsPage() {
 }
 
 function waybillQuantity(item: Waybill) {
+  if (Number(item.totalQuantity) <= 0) return '待过磅确认';
   if (!item.lineItems?.length) return `${Number(item.totalQuantity).toLocaleString()} ${unitLabel('TON')}`;
   const totals = new Map<string, number>();
   item.lineItems.forEach(line => totals.set(line.unit, (totals.get(line.unit) || 0) + Number(line.quantity)));

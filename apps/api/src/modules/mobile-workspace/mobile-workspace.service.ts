@@ -397,12 +397,12 @@ export class MobileWorkspaceService {
   }
 
   async createLogisticsVehicle(userId: string, dto: CreateVehicleDto) {
-    await this.access.assertPermission(userId, 'master_data.manage');
+    await this.access.assertPermission(userId, 'transport_resource.manage');
     return this.partners.createVehicle(dto);
   }
 
   async createLogisticsDriver(userId: string, dto: CreateDriverDto) {
-    await this.access.assertPermission(userId, 'master_data.manage');
+    await this.access.assertPermission(userId, 'transport_resource.manage');
     return this.drivers.create(dto);
   }
 

@@ -9,6 +9,7 @@ export type SystemDialogRequest = SystemDialogOptions & {
   kind: 'alert' | 'confirm' | 'prompt';
   message: string;
   defaultValue?: string;
+  validationItems?: Array<{ key: string; message: string }>;
   resolve: (value: boolean | string | null) => void;
 };
 
@@ -80,5 +81,15 @@ export function alertAction(message: string, options: SystemDialogOptions = {}) 
     title: options.title || inferTitle(message, 'alert'),
     confirmText: options.confirmText || '知道了',
     destructive: options.destructive ?? /失败|错误|异常|无权|不能|无法/.test(message),
+  });
+}
+
+export function alertValidationErrors(items: Array<{ key: string; message: string }>) {
+  return dispatch<string | boolean | null>({
+    kind: 'alert',
+    message: '请检查并完善以下内容：',
+    title: `有 ${items.length} 项需要完善`,
+    confirmText: '知道了',
+    validationItems: items,
   });
 }

@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Children, cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, Copy, Plus, Trash2, WandSparkles } from 'lucide-react';
 import { api } from '@/lib/api';
-import { confirmAction } from '@/lib/system-dialog';
+import { alertValidationErrors, confirmAction } from '@/lib/system-dialog';
+import { focusInvalidField, type FieldErrors } from '@/lib/form-validation';
 import { unitLabel } from '@/lib/unit';
 import { dispatchDate, dispatchField, splitDispatchLines } from '@/lib/dispatch-recognition';
 import { Badge } from '@/components/ui/badge';
@@ -34,7 +35,7 @@ interface Driver {
 interface Row {
   clientRowId: string; freightMode: string; carrierPartnerId: string; vehicleId: string;
   plateNo: string; driverMode: 'ARCHIVE' | 'MANUAL'; driverId: string; driverName: string; driverPhone: string;
-  plannedDepartureAt: string; plannedArrivalAt: string; quantities: Record<string, number>; remarks: string;
+  plannedDepartureAt: string; plannedArrivalAt: string; quantities: Record<string, number>; selectedMaterialLineItemId: string; remarks: string;
 }
 interface BatchResult {
   batchRequestId: string; createdCount: number; warnings: string[];
@@ -63,13 +64,14 @@ export default function WaybillCreateForm() {
   const [recognitionResult, setRecognitionResult] = useState('');
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<BatchResult | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     Promise.all([
       api.get<{ items: Notice[] }>('/dispatch-notices?status=ISSUED'),
       api.get<{ items: Notice[] }>('/dispatch-notices?status=IN_PROGRESS'),
       api.get<{ items: Vehicle[] }>('/partners/vehicles?status=ACTIVE&pageSize=100'),
-      api.get<{ items: CarrierProfile[] }>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE&pageSize=200'),
+      api.get<{ items: CarrierProfile[] }>('/transport-resources/carriers'),
       api.get<{ items: Driver[] }>('/drivers?status=ACTIVE&pageSize=200'),
     ]).then(([issued, active, vehicleData, carrierData, driverData]) => {
       setNotices([...issued.items, ...active.items]);
@@ -78,6 +80,7 @@ export default function WaybillCreateForm() {
   }, []);
 
   const selectNotice = useCallback(async (id: string) => {
+    if (id) setFieldErrors(current => { const next = { ...current }; delete next.notice; return next; });
     if (!id) { setData(null); return; }
     try {
       const available = await api.get<Available>(`/waybills/dispatch-notices/${id}/availability`);
@@ -93,7 +96,19 @@ export default function WaybillCreateForm() {
     if (id && notices.some(item => item.id === id) && data?.notice.id !== id) void selectNotice(id);
   }, [notices, params, data?.notice.id, selectNotice]);
 
-  const patchRow = (id: string, patch: Partial<Row>) => setRows(current => current.map(row => row.clientRowId === id ? { ...row, ...patch } : row));
+  const patchRow = (id: string, patch: Partial<Row>) => {
+    setRows(current => current.map(row => row.clientRowId === id ? { ...row, ...patch } : row));
+    const row = rows.find(item => item.clientRowId === id);
+    if (row && fieldErrors[`row-${id}`]) {
+      const issues = rowIssues({ ...row, ...patch }, Boolean(data && data.lineItems.length > 1));
+      setFieldErrors(current => {
+        const next = { ...current };
+        if (issues.length) next[`row-${id}`] = `第 ${rows.indexOf(row) + 1} 行：${issues.join('；')}`;
+        else delete next[`row-${id}`];
+        return next;
+      });
+    }
+  };
   const addRow = () => setRows(current => [...current, blankRow({
     freightMode: current[current.length - 1]?.freightMode || 'SELF', carrierPartnerId: current[current.length - 1]?.carrierPartnerId || '',
     plannedDepartureAt: current[current.length - 1]?.plannedDepartureAt || '', plannedArrivalAt: current[current.length - 1]?.plannedArrivalAt || '',
@@ -186,28 +201,32 @@ export default function WaybillCreateForm() {
   };
 
   const submit = async () => {
-    if (!data) return alert('请选择执行通知');
-    if (!originLocation.trim() || !destinationLocation.trim()) return alert('请填写起运地点和目的地点');
-    if (rows.length > 100) return alert('单次最多创建 100 张物流运单');
-    const errors: string[] = [];
-    rows.forEach((row, index) => {
+    const errors: FieldErrors = {};
+    if (!data) errors.notice = '请选择执行通知';
+    if (data && !originLocation.trim()) errors.origin = '请填写起运地点';
+    if (data && !destinationLocation.trim()) errors.destination = '请填写目的地点';
+    if (rows.length > 100) errors.rows = '单次最多创建 100 张物流运单';
+    if (data) rows.forEach((row, index) => {
       const prefix = `第 ${index + 1} 行`;
-      if (row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId) errors.push(`${prefix}请选择物流承运商`);
-      if (!row.plateNo.trim()) errors.push(`${prefix}请选择车辆或填写临时车牌号`);
-      if (!row.driverName.trim()) errors.push(`${prefix}请选择或填写司机姓名`);
-      if (!row.driverPhone.trim()) errors.push(`${prefix}请填写司机联系电话`);
-      if (!Object.values(row.quantities).some(value => Number(value) > 0)) errors.push(`${prefix}请填写至少一种物料数量`);
-      if (row.plannedDepartureAt && row.plannedArrivalAt && new Date(row.plannedArrivalAt) <= new Date(row.plannedDepartureAt)) errors.push(`${prefix}预计到达时间必须晚于计划发运时间`);
+      const rowErrors = rowIssues(row, Boolean(data && data.lineItems.length > 1));
+      if (rowErrors.length) errors[`row-${row.clientRowId}`] = `${prefix}：${rowErrors.join('；')}`;
     });
-    data.lineItems.forEach(line => {
-      const assigned = assignedTotals.get(line.dispatchNoticeLineItemId) || 0;
-      if (assigned > line.availableQuantity) errors.push(`${line.materialName || line.materialId}分配数量超过剩余可运输数量`);
-    });
-    if (errors.length) return alert(errors.slice(0, 8).join('\n'));
+    setFieldErrors(errors);
+    const entries = Object.entries(errors);
+    if (entries.length) {
+      const selected = await alertValidationErrors(entries.map(([key, message]) => ({ key, message })));
+      focusInvalidField(typeof selected === 'string' ? selected : entries[0][0]);
+      return;
+    }
+    if (!data) return;
 
     const warnings = clientWarnings(rows, vehicles);
+    data.lineItems.forEach(line => {
+      const assigned = assignedTotals.get(line.dispatchNoticeLineItemId) || 0;
+      if (assigned > line.availableQuantity) warnings.push(`${line.materialName || line.materialId}计划参考数量超过通知剩余参考数量；请核对，实际以磅单为准`);
+    });
     if (warnings.length && !await confirmAction(`${warnings.join('\n')}\n\n以上为提示，不会阻止建单。确认继续创建吗？`, { title: '运单创建提示' })) return;
-    if (!await confirmAction(`本次将从执行通知 ${data.notice.noticeNo} 创建 ${rows.length} 张独立物流运单，计划运输合计 ${totalQuantity.toLocaleString()} 吨。确认创建吗？`, { title: '创建物流运单' })) return;
+    if (!await confirmAction(`本次将从执行通知 ${data.notice.noticeNo} 创建 ${rows.length} 张独立物流运单。${totalQuantity > 0 ? `填写的计划参考数量合计 ${totalQuantity.toLocaleString()} 吨；` : '未填写逐车计划数量；'}实际装车和结算数量以磅单为准。确认创建吗？`, { title: '创建物流运单' })) return;
     setSaving(true);
     try {
       const response = await api.post<BatchResult>('/waybills/batch', {
@@ -220,7 +239,7 @@ export default function WaybillCreateForm() {
           originLocation: originLocation.trim(), destinationLocation: destinationLocation.trim(),
           plannedDepartureAt: row.plannedDepartureAt || undefined, plannedArrivalAt: row.plannedArrivalAt || undefined,
           remarks: [commonRemarks.trim(), row.remarks.trim()].filter(Boolean).join('；') || undefined,
-          lineItems: data.lineItems.filter(line => Number(row.quantities[line.dispatchNoticeLineItemId]) > 0).map(line => ({
+          lineItems: data.lineItems.filter(line => Number(row.quantities[line.dispatchNoticeLineItemId]) > 0 || (!Object.values(row.quantities).some(value => Number(value) > 0) && row.selectedMaterialLineItemId === line.dispatchNoticeLineItemId)).map(line => ({
             dispatchNoticeLineItemId: line.dispatchNoticeLineItemId,
             quantity: Number(row.quantities[line.dispatchNoticeLineItemId]),
           })),
@@ -233,20 +252,20 @@ export default function WaybillCreateForm() {
 
   if (result) return <div className="mx-auto max-w-5xl space-y-6">
     <Card className="p-8"><div className="flex items-start gap-4"><CheckCircle2 className="mt-1 h-9 w-9 text-primary" /><div className="min-w-0 flex-1"><h1 className="text-2xl font-bold">物流运单创建完成</h1><p className="mt-2 text-muted-foreground">已成功创建 {result.createdCount} 张独立物流运单，后续可分别进行发运、过磅、质检和签收。</p>{result.warnings.length > 0 && <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">{result.warnings.map(message => <div key={message}>{message}</div>)}</div>}</div></div></Card>
-    <Card className="overflow-hidden"><div className="border-b p-5 font-semibold">本次创建结果</div><div className="divide-y">{result.items.map(item => <button key={item.id} className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-muted/50" onClick={() => router.push(`/dashboard/waybills/${item.id}`)}><div><div className="font-mono text-sm text-primary">{item.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.plateNo} · {item.driverName || '-'} · {Number(item.totalQuantity).toLocaleString()} 吨</div></div><span className="text-sm text-primary">查看运单</span></button>)}</div></Card>
+    <Card className="overflow-hidden"><div className="border-b p-5 font-semibold">本次创建结果</div><div className="divide-y">{result.items.map(item => <button key={item.id} className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-muted/50" onClick={() => router.push(`/dashboard/waybills/${item.id}`)}><div><div className="font-mono text-sm text-primary">{item.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.plateNo} · {item.driverName || '-'} · {Number(item.totalQuantity) > 0 ? `计划参考 ${Number(item.totalQuantity).toLocaleString()} 吨` : '数量待过磅确认'}</div></div><span className="text-sm text-primary">查看运单</span></button>)}</div></Card>
     <div className="flex justify-end gap-3"><Button variant="outline" onClick={() => router.push(`/dashboard/dispatch-notices/${data?.notice.id}`)}>返回执行通知</Button><Button onClick={() => router.push('/dashboard/waybills')}>进入物流运单管理</Button></div>
   </div>;
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">新建物流运单</h1><p className="mt-1 text-sm text-muted-foreground">默认一行，可追加车辆或趟次；车辆、司机确定后创建，初始为待发运</p></div></div></div>
 
-    <Card className="space-y-5 p-6"><div><label className="mb-1 block text-sm font-medium">执行通知 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={data?.notice.id || ''} onChange={event => void selectNotice(event.target.value)}><option value="">请选择</option>{notices.map(notice => <option key={notice.id} value={notice.id}>{notice.order.name} · {notice.noticeNo} · {notice.order.orderNo} · {notice.order.contract.contractNo}</option>)}</select></div>
-      {data && <><div className="grid gap-4 md:grid-cols-2"><Field label="起运地点 *"><Input value={originLocation} onChange={event => setOriginLocation(event.target.value)} /></Field><Field label="目的地点 *"><Input value={destinationLocation} onChange={event => setDestinationLocation(event.target.value)} /></Field></div><div className="space-y-3 rounded-md border p-3"><Button type="button" variant="outline" aria-expanded={batchSettingsOpen} onClick={toggleBatchSettings}>{batchSettingsOpen ? '收起批量设置' : '批量设置（可选）'}</Button>{batchSettingsOpen && <div className="space-y-3"><p className="text-xs text-muted-foreground">仅用于一次修改多行。点击“应用到全部车辆”后生效；各行仍可单独调整，空日期不覆盖已有时间。新增车辆沿用上一行的运输安排。</p><div className="grid gap-4 md:grid-cols-5"><Field label="运输方式"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={defaultFreightMode} onChange={event => { setDefaultFreightMode(event.target.value); if (event.target.value !== 'THIRD_PARTY') setDefaultCarrierPartnerId(''); }}><option value="SELF">自有运力</option><option value="THIRD_PARTY">第三方承运</option><option value="SOCIAL">社会运力</option></select></Field><Field label="物流承运商"><select disabled={defaultFreightMode !== 'THIRD_PARTY'} className="h-10 w-full rounded-md border bg-background px-3 text-sm disabled:opacity-50" value={defaultCarrierPartnerId} onChange={event => setDefaultCarrierPartnerId(event.target.value)}><option value="">请选择</option>{carriers.map(carrier => <option key={carrier.id} value={carrier.partnerId}>{carrier.partner.name}</option>)}</select></Field><Field label="计划发运时间"><Input type="datetime-local" value={defaultDepartureAt} onChange={event => setDefaultDepartureAt(event.target.value)} /></Field><Field label="预计到达时间"><Input type="datetime-local" min={defaultDepartureAt || undefined} value={defaultArrivalAt} onChange={event => setDefaultArrivalAt(event.target.value)} /></Field><div className="flex items-end"><Button className="w-full" type="button" variant="outline" onClick={() => void applyDefaults()}>应用到全部车辆</Button></div></div></div>}</div><Field label="统一备注"><Input value={commonRemarks} onChange={event => setCommonRemarks(event.target.value)} placeholder="将写入本次所有物流运单" /></Field></>}
+    <Card className="space-y-5 p-6"><div data-validation-field="notice" className="scroll-mt-28"><label className="mb-1 block text-sm font-medium">执行通知 *</label><select aria-invalid={!!fieldErrors.notice} className={`h-10 w-full rounded-md border bg-background px-3 text-sm ${fieldErrors.notice ? 'border-destructive bg-destructive/5' : ''}`} value={data?.notice.id || ''} onChange={event => void selectNotice(event.target.value)}><option value="">请选择</option>{notices.map(notice => <option key={notice.id} value={notice.id}>{notice.order.name} · {notice.noticeNo} · {notice.order.orderNo} · {notice.order.contract.contractNo}</option>)}</select>{fieldErrors.notice && <p role="alert" className="mt-1 text-xs text-destructive">{fieldErrors.notice}</p>}</div>
+      {data && <><div className="grid gap-4 md:grid-cols-2"><Field label="起运地点 *" fieldKey="origin" error={fieldErrors.origin}><Input value={originLocation} onChange={event => { setOriginLocation(event.target.value); if (event.target.value.trim()) setFieldErrors(current => { const next = { ...current }; delete next.origin; return next; }); }} /></Field><Field label="目的地点 *" fieldKey="destination" error={fieldErrors.destination}><Input value={destinationLocation} onChange={event => { setDestinationLocation(event.target.value); if (event.target.value.trim()) setFieldErrors(current => { const next = { ...current }; delete next.destination; return next; }); }} /></Field></div><div className="space-y-3 rounded-md border p-3"><Button type="button" variant="outline" aria-expanded={batchSettingsOpen} onClick={toggleBatchSettings}>{batchSettingsOpen ? '收起批量设置' : '批量设置（可选）'}</Button>{batchSettingsOpen && <div className="space-y-3"><p className="text-xs text-muted-foreground">仅用于一次修改多行。点击“应用到全部车辆”后生效；各行仍可单独调整，空日期不覆盖已有时间。新增车辆沿用上一行的运输安排。</p><div className="grid gap-4 md:grid-cols-5"><Field label="运输方式"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={defaultFreightMode} onChange={event => { setDefaultFreightMode(event.target.value); if (event.target.value !== 'THIRD_PARTY') setDefaultCarrierPartnerId(''); }}><option value="SELF">自有运力</option><option value="THIRD_PARTY">第三方承运</option><option value="SOCIAL">社会运力</option></select></Field><Field label="物流承运商"><select disabled={defaultFreightMode !== 'THIRD_PARTY'} className="h-10 w-full rounded-md border bg-background px-3 text-sm disabled:opacity-50" value={defaultCarrierPartnerId} onChange={event => setDefaultCarrierPartnerId(event.target.value)}><option value="">请选择</option>{carriers.map(carrier => <option key={carrier.id} value={carrier.partnerId}>{carrier.partner.name}</option>)}</select></Field><Field label="计划发运时间"><Input type="datetime-local" value={defaultDepartureAt} onChange={event => setDefaultDepartureAt(event.target.value)} /></Field><Field label="预计到达时间"><Input type="datetime-local" min={defaultDepartureAt || undefined} value={defaultArrivalAt} onChange={event => setDefaultArrivalAt(event.target.value)} /></Field><div className="flex items-end"><Button className="w-full" type="button" variant="outline" onClick={() => void applyDefaults()}>应用到全部车辆</Button></div></div></div>}</div><Field label="统一备注"><Input value={commonRemarks} onChange={event => setCommonRemarks(event.target.value)} placeholder="将写入本次所有物流运单" /></Field></>}
     </Card>
 
     {data && <><Card className="space-y-4 p-6"><div className="flex items-center gap-2"><WandSparkles className="h-5 w-5 text-primary" /><div><h2 className="font-semibold">多行调度信息识别</h2><p className="text-xs text-muted-foreground">每辆车一行，建议格式：车牌，司机，手机号，数量吨，承运商。识别后仍需人工核对。</p></div></div><textarea className="min-h-28 w-full rounded-md border bg-background p-3 text-sm" value={recognitionText} onChange={event => setRecognitionText(event.target.value)} placeholder={'甘A12345，张三，13800138000，32吨，某某物流\n甘A56789，李四，13900139000，35吨，某某物流'} /><div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{recognitionResult || '多物料通知只识别车辆信息，物料数量请在下方分别填写。'}</span><Button variant="outline" onClick={recognizeRows}><WandSparkles className="mr-1 h-4 w-4" />识别并生成车辆行</Button></div></Card>
 
-      <Card className="overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b p-5"><div><h2 className="font-semibold">车辆与运输数量</h2><p className="mt-1 text-xs text-muted-foreground">支持已维护车辆和临时车辆；同一车辆多趟运输时请分别保留一行。</p></div><div className="flex gap-2"><Badge variant="secondary">{rows.length} 辆 / 趟</Badge><Button size="sm" onClick={addRow} disabled={rows.length >= 100}><Plus className="mr-1 h-4 w-4" />添加车辆</Button></div></div><div className="overflow-x-auto"><table className="min-w-[1780px] w-full text-sm"><thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="w-24 px-3 py-3">序号</th><th className="w-56 px-3 py-3">运输方式 / 承运商</th><th className="w-64 px-3 py-3">车辆 / 临时车牌</th><th className="w-72 px-3 py-3">司机 / 联系电话</th>{data.lineItems.map(line => <th key={line.dispatchNoticeLineItemId} className="w-44 px-3 py-3 text-right">{line.materialName || line.materialId}<div className="font-normal">剩余 {line.availableQuantity.toLocaleString()} {unitLabel(line.unit)}</div></th>)}<th className="w-56 px-3 py-3">计划时间</th><th className="w-52 px-3 py-3">备注</th></tr></thead><tbody>{rows.map((row, index) => <tr key={row.clientRowId} className="border-b align-top"><td className="px-3 py-3"><div className="font-semibold">{index + 1}</div><div className="mt-2 flex gap-1"><button title="复制此行" className="rounded border p-1 text-muted-foreground hover:text-primary" onClick={() => copyRow(row)}><Copy className="h-3.5 w-3.5" /></button><button title="删除此行" className="rounded border p-1 text-muted-foreground hover:text-destructive" disabled={rows.length === 1} onClick={() => removeRow(row.clientRowId)}><Trash2 className="h-3.5 w-3.5" /></button></div></td><td className="space-y-2 px-3 py-3"><select className="h-9 w-full rounded-md border bg-background px-2" value={row.freightMode} onChange={event => patchRow(row.clientRowId, { freightMode: event.target.value, carrierPartnerId: '', vehicleId: '', plateNo: '', driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '' })}><option value="SELF">自有运力</option><option value="THIRD_PARTY">第三方承运</option><option value="SOCIAL">社会运力</option></select>{row.freightMode === 'THIRD_PARTY' && <select className="h-9 w-full rounded-md border bg-background px-2" value={row.carrierPartnerId} onChange={event => selectCarrier(row, event.target.value)}><option value="">选择承运商</option>{carriers.map(carrier => <option key={carrier.id} value={carrier.partnerId}>{carrier.partner.name}</option>)}</select>}</td><td className="space-y-2 px-3 py-3"><select className="h-9 w-full rounded-md border bg-background px-2" disabled={row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId} value={row.vehicleId} onChange={event => selectVehicle(row, event.target.value)}><option value="">临时车辆 / 手工填写</option>{vehiclesFor(row).map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.plateNo} · 载重 {Number(vehicle.loadCapacity)} 吨</option>)}</select><Input className="h-9" disabled={row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId} value={row.plateNo} onChange={event => patchRow(row.clientRowId, { vehicleId: '', plateNo: event.target.value })} placeholder="车牌号" /></td><td className="space-y-2 px-3 py-3">
+      <Card data-validation-field="rows" className={`overflow-hidden scroll-mt-28 ${fieldErrors.rows ? 'border-destructive' : ''}`}><div className="flex flex-wrap items-center justify-between gap-3 border-b p-5"><div><h2 className="font-semibold">车辆与运输数量</h2><p className="mt-1 text-xs text-muted-foreground">逐车数量为可选的计划参考，装车后以磅单确定实际数量；不填写或超出通知剩余参考数量都不阻止建单。</p>{fieldErrors.rows && <p role="alert" className="mt-1 text-xs text-destructive">{fieldErrors.rows}</p>}</div><div className="flex gap-2"><Badge variant="secondary">{rows.length} 辆 / 趟</Badge><Button size="sm" onClick={addRow} disabled={rows.length >= 100}><Plus className="mr-1 h-4 w-4" />添加车辆</Button></div></div><div className="overflow-x-auto"><table className="min-w-[1780px] w-full text-sm"><thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="w-24 px-3 py-3">序号</th><th className="w-56 px-3 py-3">运输方式 / 承运商</th><th className="w-64 px-3 py-3">车辆 / 临时车牌</th><th className="w-72 px-3 py-3">司机 / 联系电话</th>{data.lineItems.map(line => <th key={line.dispatchNoticeLineItemId} className="w-44 px-3 py-3 text-right">{line.materialName || line.materialId}<div className="font-normal">通知剩余参考 {line.availableQuantity.toLocaleString()} {unitLabel(line.unit)}</div></th>)}<th className="w-56 px-3 py-3">计划时间</th><th className="w-52 px-3 py-3">备注</th></tr></thead><tbody>{rows.map((row, index) => <tr key={row.clientRowId} data-validation-field={`row-${row.clientRowId}`} className={`border-b align-top scroll-mt-28 ${fieldErrors[`row-${row.clientRowId}`] ? 'bg-destructive/5 [&_input]:border-destructive [&_select]:border-destructive' : ''}`}><td className="px-3 py-3"><div className="font-semibold">{index + 1}</div>{fieldErrors[`row-${row.clientRowId}`] && <div role="alert" className="mt-2 w-40 text-xs text-destructive">{fieldErrors[`row-${row.clientRowId}`]}</div>}<div className="mt-2 flex gap-1"><button title="复制此行" className="rounded border p-1 text-muted-foreground hover:text-primary" onClick={() => copyRow(row)}><Copy className="h-3.5 w-3.5" /></button><button title="删除此行" className="rounded border p-1 text-muted-foreground hover:text-destructive" disabled={rows.length === 1} onClick={() => removeRow(row.clientRowId)}><Trash2 className="h-3.5 w-3.5" /></button></div></td><td className="space-y-2 px-3 py-3"><select className="h-9 w-full rounded-md border bg-background px-2" value={row.freightMode} onChange={event => patchRow(row.clientRowId, { freightMode: event.target.value, carrierPartnerId: '', vehicleId: '', plateNo: '', driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '' })}><option value="SELF">自有运力</option><option value="THIRD_PARTY">第三方承运</option><option value="SOCIAL">社会运力</option></select>{row.freightMode === 'THIRD_PARTY' && <select className="h-9 w-full rounded-md border bg-background px-2" value={row.carrierPartnerId} onChange={event => selectCarrier(row, event.target.value)}><option value="">选择承运商</option>{carriers.map(carrier => <option key={carrier.id} value={carrier.partnerId}>{carrier.partner.name}</option>)}</select>}</td><td className="space-y-2 px-3 py-3"><select className="h-9 w-full rounded-md border bg-background px-2" disabled={row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId} value={row.vehicleId} onChange={event => selectVehicle(row, event.target.value)}><option value="">临时车辆 / 手工填写</option>{vehiclesFor(row).map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.plateNo} · 载重 {Number(vehicle.loadCapacity)} 吨</option>)}</select><Input className="h-9" disabled={row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId} value={row.plateNo} onChange={event => patchRow(row.clientRowId, { vehicleId: '', plateNo: event.target.value })} placeholder="车牌号" /></td><td className="space-y-2 px-3 py-3">
   {row.driverMode === 'ARCHIVE' ? <>
     <DriverSelect options={driversFor(row).map(driver => ({ id: driver.id, name: driver.name, phone: driver.phone,
       keywords: [driver.serviceOrganization?.partner.name, ...(driver.fleetLinks || []).filter(({ fleet }) => (!fleet.status || fleet.status === 'ACTIVE') && !fleet.deletedAt).map(({ fleet }) => fleet.name)].filter(Boolean).join(' · '),
@@ -259,16 +278,33 @@ export default function WaybillCreateForm() {
     <button type="button" className="text-xs text-primary hover:underline" onClick={() => patchRow(row.clientRowId, { driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '' })}>从司机档案选择</button>
   </>}
   {row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId && <p className="text-xs text-muted-foreground">请先选择本行物流承运商</p>}
-</td>{data.lineItems.map(line => { const value = row.quantities[line.dispatchNoticeLineItemId] || 0; return <td key={line.dispatchNoticeLineItemId} className="px-3 py-3"><Input className="ml-auto h-9 w-36 text-right" type="number" min="0" max={line.availableQuantity} value={value || ''} onChange={event => patchRow(row.clientRowId, { quantities: { ...row.quantities, [line.dispatchNoticeLineItemId]: Number(event.target.value) } })} placeholder="0" /><div className="mt-1 text-right text-xs text-muted-foreground">{unitLabel(line.unit)}</div></td>; })}<td className="space-y-2 px-3 py-3"><Input className="h-9" type="datetime-local" value={row.plannedDepartureAt} onChange={event => patchRow(row.clientRowId, { plannedDepartureAt: event.target.value })} /><Input className="h-9" type="datetime-local" min={row.plannedDepartureAt || undefined} value={row.plannedArrivalAt} onChange={event => patchRow(row.clientRowId, { plannedArrivalAt: event.target.value })} /></td><td className="px-3 py-3"><textarea className="min-h-20 w-full rounded-md border bg-background p-2 text-sm" value={row.remarks} onChange={event => patchRow(row.clientRowId, { remarks: event.target.value })} /></td></tr>)}</tbody></table></div></Card>
+  {data.lineItems.length > 1 && <label className="block text-xs text-muted-foreground">本车运输物料（未填计划数量时选）
+    <select className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground" value={row.selectedMaterialLineItemId} onChange={event => patchRow(row.clientRowId, { selectedMaterialLineItemId: event.target.value })}>
+      <option value="">请选择物料</option>
+      {data.lineItems.map(line => <option key={line.dispatchNoticeLineItemId} value={line.dispatchNoticeLineItemId}>{line.materialName || line.materialId}</option>)}
+    </select>
+  </label>}
+</td>{data.lineItems.map(line => { const value = row.quantities[line.dispatchNoticeLineItemId] || 0; return <td key={line.dispatchNoticeLineItemId} className="px-3 py-3"><Input className="ml-auto h-9 w-36 text-right" type="number" min="0" value={value || ''} onChange={event => patchRow(row.clientRowId, { quantities: { ...row.quantities, [line.dispatchNoticeLineItemId]: Number(event.target.value) } })} placeholder="可不填" /><div className="mt-1 text-right text-xs text-muted-foreground">{unitLabel(line.unit)} · 计划参考</div></td>; })}<td className="space-y-2 px-3 py-3"><Input className="h-9" type="datetime-local" value={row.plannedDepartureAt} onChange={event => patchRow(row.clientRowId, { plannedDepartureAt: event.target.value })} /><Input className="h-9" type="datetime-local" min={row.plannedDepartureAt || undefined} value={row.plannedArrivalAt} onChange={event => patchRow(row.clientRowId, { plannedArrivalAt: event.target.value })} /></td><td className="px-3 py-3"><textarea className="min-h-20 w-full rounded-md border bg-background p-2 text-sm" value={row.remarks} onChange={event => patchRow(row.clientRowId, { remarks: event.target.value })} /></td></tr>)}</tbody></table></div></Card>
 
-      <Card className="p-5"><div className="flex flex-wrap items-start justify-between gap-5"><div><h2 className="font-semibold">数量分配汇总</h2><div className="mt-3 flex flex-wrap gap-3">{data.lineItems.map(line => { const assigned = assignedTotals.get(line.dispatchNoticeLineItemId) || 0; const remaining = line.availableQuantity - assigned; return <div key={line.dispatchNoticeLineItemId} className={`rounded-md border px-4 py-3 ${remaining < 0 ? 'border-destructive bg-destructive/5' : 'bg-muted/30'}`}><div className="text-xs text-muted-foreground">{line.materialName || line.materialId}</div><div className="mt-1 font-semibold">本次 {assigned.toLocaleString()} / 剩余 {remaining.toLocaleString()} {unitLabel(line.unit)}</div></div>; })}</div></div><div className="text-right"><div className="text-sm text-muted-foreground">本次共 {rows.length} 辆 / 趟</div><div className="mt-1 text-xl font-bold">合计 {totalQuantity.toLocaleString()} 吨</div></div></div></Card>
-      <div className="flex justify-end gap-3"><Button variant="outline" onClick={() => router.back()}>取消</Button><Button disabled={saving || overAllocated || totalQuantity <= 0} onClick={() => void submit()}>{saving ? '正在创建...' : `创建 ${rows.length} 张物流运单`}</Button></div>
+      <Card className="p-5"><div className="flex flex-wrap items-start justify-between gap-5"><div><h2 className="font-semibold">计划数量参考（可不填）</h2><div className="mt-3 flex flex-wrap gap-3">{data.lineItems.map(line => { const assigned = assignedTotals.get(line.dispatchNoticeLineItemId) || 0; const remaining = line.availableQuantity - assigned; return <div key={line.dispatchNoticeLineItemId} className={`rounded-md border px-4 py-3 ${remaining < 0 ? 'border-amber-300 bg-amber-50' : 'bg-muted/30'}`}><div className="text-xs text-muted-foreground">{line.materialName || line.materialId}</div><div className="mt-1 font-semibold">本次参考 {assigned.toLocaleString()} / 通知剩余参考 {remaining.toLocaleString()} {unitLabel(line.unit)}</div></div>; })}</div>{overAllocated && <p className="mt-2 text-xs text-amber-700">计划参考数量超过通知剩余参考数量，建单不受影响；实际数量以磅单为准。</p>}</div><div className="text-right"><div className="text-sm text-muted-foreground">本次共 {rows.length} 辆 / 趟</div><div className="mt-1 text-xl font-bold">{totalQuantity > 0 ? `参考合计 ${totalQuantity.toLocaleString()} 吨` : '数量待过磅确认'}</div></div></div></Card>
+      <div className="flex justify-end gap-3"><Button variant="outline" onClick={() => router.back()}>取消</Button><Button disabled={saving} onClick={() => void submit()}>{saving ? '正在创建...' : `创建 ${rows.length} 张物流运单`}</Button></div>
     </>}
+    {!data && <div className="flex justify-end"><Button onClick={() => void submit()}>创建物流运单</Button></div>}
   </div>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div><label className="mb-1 block text-sm font-medium">{label}</label>{children}</div>; }
-function blankRow(defaults: Partial<Row> = {}): Row { return { clientRowId: makeUuid(), freightMode: 'SELF', carrierPartnerId: '', vehicleId: '', plateNo: '', driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '', plannedDepartureAt: '', plannedArrivalAt: '', quantities: {}, remarks: '', ...defaults }; }
+function Field({ label, children, fieldKey, error }: { label: string; children: React.ReactNode; fieldKey?: string; error?: string }) { return <div data-validation-field={fieldKey} className={`scroll-mt-28 ${error ? '[&_input]:border-destructive [&_input]:bg-destructive/5' : ''}`}><label className="mb-1 block text-sm font-medium">{label}</label>{Children.map(children, child => isValidElement<{ 'aria-invalid'?: boolean; 'aria-describedby'?: string }>(child) ? cloneElement(child, error ? { 'aria-invalid': true, 'aria-describedby': `waybill-error-${fieldKey}` } : {}) : child)}{error && <p id={`waybill-error-${fieldKey}`} role="alert" className="mt-1 text-xs text-destructive">{error}</p>}</div>; }
+function rowIssues(row: Row, multiMaterial: boolean) {
+  const issues: string[] = [];
+  if (row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId) issues.push('请选择物流承运商');
+  if (!row.plateNo.trim()) issues.push('请选择车辆或填写临时车牌号');
+  if (!row.driverName.trim()) issues.push('请选择或填写司机姓名');
+  if (!row.driverPhone.trim()) issues.push('请填写司机联系电话');
+  if (multiMaterial && !Object.values(row.quantities).some(value => Number(value) > 0) && !row.selectedMaterialLineItemId) issues.push('请选择本车运输的物料，计划数量可不填');
+  if (row.plannedDepartureAt && row.plannedArrivalAt && new Date(row.plannedArrivalAt) <= new Date(row.plannedDepartureAt)) issues.push('预计到达时间必须晚于计划发运时间');
+  return issues;
+}
+function blankRow(defaults: Partial<Row> = {}): Row { return { clientRowId: makeUuid(), freightMode: 'SELF', carrierPartnerId: '', vehicleId: '', plateNo: '', driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '', plannedDepartureAt: '', plannedArrivalAt: '', quantities: {}, selectedMaterialLineItemId: '', remarks: '', ...defaults }; }
 function makeUuid() { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, value => { const random = Math.random() * 16 | 0; return (value === 'x' ? random : (random & 0x3) | 0x8).toString(16); }); }
 
 function parseDispatchLine(line: string, data: Available, vehicles: Vehicle[], carriers: CarrierProfile[], drivers: Driver[], defaults: Partial<Row>) {

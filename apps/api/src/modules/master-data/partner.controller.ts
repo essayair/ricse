@@ -58,7 +58,7 @@ export class PartnerController {
 
   // 静态单段路由必须放在 :id 之前，避免 vehicles 被当作合作伙伴 ID。
   @Get('vehicles')
-  @RequirePermission('master_data.view')
+  @RequirePermission('transport_resource.view')
   @ApiOperation({ summary: '车辆列表（分页）' })
   findAllVehicles(
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
@@ -97,7 +97,7 @@ export class PartnerController {
   }
 
   @Get('vehicles/:vehicleId')
-  @RequirePermission('master_data.view')
+  @RequirePermission('transport_resource.view')
   @ApiOperation({ summary: '车辆详情' })
   findOneVehicle(@Param('vehicleId') vehicleId: string) {
     return this.partnerService.findOneVehicle(vehicleId);
@@ -155,21 +155,21 @@ export class PartnerController {
   // ========== 车辆 ==========
 
   @Post('vehicles')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @ApiOperation({ summary: '创建车辆' })
   createVehicle(@Body() dto: CreateVehicleDto) {
     return this.partnerService.createVehicle(dto);
   }
 
   @Patch('vehicles/:vehicleId')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @ApiOperation({ summary: '更新车辆档案和使用状态' })
   updateVehicle(@Param('vehicleId') vehicleId: string, @Body() dto: UpdateVehicleDto) {
     return this.partnerService.updateVehicle(vehicleId, dto);
   }
 
   @Delete('vehicles/:id')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @HttpCode(204)
   @ApiOperation({ summary: '删除车辆' })
   deleteVehicle(@Param('id') id: string) {

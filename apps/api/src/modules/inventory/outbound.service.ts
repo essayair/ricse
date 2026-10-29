@@ -585,7 +585,7 @@ export class OutboundService {
       }
     }
     const planned = Number(waybill.totalQuantity);
-    const varianceQuantity = quantity - planned;
+    const varianceQuantity = planned > 0 ? quantity - planned : 0;
     const varianceRate = planned > 0 ? Math.abs(varianceQuantity) / planned * 100 : 0;
     const orderLine = receipt.outboundOrder.lineItems.find((item: any) => item.materialId === materialId);
     const postedForOrder = await this.prisma.outboundReceipt.aggregate({
@@ -598,7 +598,8 @@ export class OutboundService {
       _sum: { outboundQuantity: true },
     });
     const noticeRemaining = Math.max(0, Number(orderLine?.plannedQuantity || 0) - Number(postedForOrder._sum.outboundQuantity || 0));
-    const requiresDecision = varianceRate > Number(ticket.toleranceRate) || quantity > noticeRemaining + 0.0005;
+    // 逐车建单数量仅为参考；实际出库由选定磅单确定，不以建单估计值触发差异拦截。
+    const requiresDecision = quantity > noticeRemaining + 0.0005;
     return this.prisma.$transaction(async tx => {
       if (!currentWeightSelection) {
         await tx.waybillWeightSelection.create({

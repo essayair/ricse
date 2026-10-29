@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext, createContext, Children, cloneElement, isValidElement } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,14 +11,32 @@ import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachm
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
 import { GradePriceRulesEditor, GradePriceSnapshot, defaultGradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
-import { confirmAction } from '@/lib/system-dialog';
+import { alertValidationErrors, confirmAction } from '@/lib/system-dialog';
+import { focusInvalidField, type FieldErrors } from '@/lib/form-validation';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
 }
 
+const ContractErrorsContext = createContext<FieldErrors>({});
+const fieldKeys: Record<string, string> = {
+  '业务单元（事业部）': 'businessUnitId', '业务部门': 'departmentId', '合同标题': 'title', '外部合同号': 'externalNo',
+  '我方签约主体（内部）': 'signingPartnerId', '上游供应商': 'sellerId', '下游客户': 'buyerId',
+  '物料品种': 'materialId', '合同数量（吨）': 'quantity', '采购单价（元/吨）': 'unitPrice', '销售单价（元/吨）': 'saleUnitPrice',
+  '溢装比例(%)': 'overfillPct', '短装比例(%)': 'shortfallPct', '签订日期': 'signedAt', '生效日期': 'effectiveAt',
+  '到期日期': 'expireAt', '交货方式': 'deliveryMethod', '交货地点': 'deliveryLocation', '结算数量约定': 'settlementBasis',
+  '结算方式': 'settlementMethod', '预付比例(%)': 'prepayPct', '尾款账期（天）': 'paymentDays', '付款方式': 'paymentMethod',
+};
 function FormField({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return <div className="flex flex-col gap-1.5"><label className="text-sm font-medium">{label}{required && <span className="text-destructive ml-0.5">*</span>}</label>{children}</div>;
+  const errors = useContext(ContractErrorsContext);
+  const key = fieldKeys[label] || (/单价（元\/吨/.test(label) ? 'unitPrice' : /交易对手方/.test(label) ? 'sellerId' : '');
+  const error = errors[key];
+  return <div data-validation-field={key || undefined} className={`flex flex-col gap-1.5 scroll-mt-28 ${error ? '[&_input]:border-destructive [&_select]:border-destructive [&_input]:bg-destructive/5 [&_select]:bg-destructive/5' : ''}`}>
+    <label className="text-sm font-medium">{label}{required && <span className="text-destructive ml-0.5">*</span>}</label>
+    {Children.map(children, child => isValidElement<{ 'aria-invalid'?: boolean; 'aria-describedby'?: string }>(child)
+      ? cloneElement(child, error ? { 'aria-invalid': true, 'aria-describedby': `contract-error-${key}` } : {}) : child)}
+    {error && <span id={`contract-error-${key}`} className="text-xs text-destructive" role="alert">{error}</span>}
+  </div>;
 }
 
 function SelectField({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: string[] | { id: string; label: string }[]; placeholder?: string }) {
@@ -66,6 +84,7 @@ export default function ContractCreatePage() {
   const [uploadedAttachments, setUploadedAttachments] = useState<Array<{ id: string; originalName: string }>>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [formErrors, setFormErrors] = useState<FieldErrors>({});
 
   const [form, setForm] = useState({
     type: 'PURCHASE' as string, title: '',
@@ -86,6 +105,8 @@ export default function ContractCreatePage() {
   const set = (k: string, v: string) => {
     setIsDirty(true);
     setForm(f => ({ ...f, [k]: v }));
+    if (k === 'type') setFormErrors({});
+    else if (String(v).trim()) setFormErrors(current => { const next = { ...current }; delete next[k]; return next; });
   };
 
   useEffect(() => {
@@ -264,13 +285,29 @@ export default function ContractCreatePage() {
     if (form.type === 'BILATERAL') {
       required.push(['buyerId', '下游客户'], ['saleUnitPrice', '销售单价']);
     }
-    const missing = required.find(([key]) => !String(form[key as keyof typeof form] ?? '').trim());
-    if (missing) { alert(`请填写${missing[1]}`); return; }
+    const errors: FieldErrors = {};
+    for (const [key, label] of required) {
+      if (!String(form[key as keyof typeof form] ?? '').trim()) errors[key] = `请填写${label}`;
+    }
+    for (const key of ['quantity', 'unitPrice', ...(form.type === 'BILATERAL' ? ['saleUnitPrice'] : [])]) {
+      if (!errors[key] && Number(form[key as keyof typeof form]) <= 0) errors[key] = `${key === 'quantity' ? '合同数量' : key === 'saleUnitPrice' ? '销售单价' : '合同单价'}必须大于0`;
+    }
+    for (const key of ['overfillPct', 'shortfallPct', 'prepayPct']) {
+      const value = Number(form[key as keyof typeof form]);
+      if (!errors[key] && (value < 0 || value > 100)) errors[key] = `${key === 'prepayPct' ? '预付' : key === 'overfillPct' ? '溢装' : '短装'}比例须在0至100之间`;
+    }
+    if (!errors.paymentDays && Number(form.paymentDays) < 0) errors.paymentDays = '尾款账期不能小于0';
+    if (form.expireAt && form.effectiveAt && form.expireAt < form.effectiveAt) errors.expireAt = '到期日期不能早于生效日期';
+    if (files.length + uploadedAttachments.length === 0) errors.attachments = '请至少上传一份合同附件';
+    setFormErrors(errors);
+    const entries = Object.entries(errors);
+    if (entries.length > 0) {
+      const selected = await alertValidationErrors(entries.map(([key, message]) => ({ key, message })));
+      focusInvalidField(typeof selected === 'string' ? selected : entries[0][0]);
+      return;
+    }
     if (form.pricingType === 'GRADE_TIER' && !gradePriceSnapshot?.formulaConfirmed) { alert('请核对纸质合同并确认元/度计算口径'); return; }
     if (form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' && !gradeSalesPriceSnapshot?.formulaConfirmed) { alert('请确认下游销售方向的元/度计算口径'); return; }
-    if (Number(form.quantity) <= 0 || Number(form.unitPrice) <= 0 || (form.type === 'BILATERAL' && Number(form.saleUnitPrice) <= 0)) { alert('合同数量和单价必须大于0'); return; }
-    if ([form.overfillPct, form.shortfallPct, form.prepayPct].some(v => Number(v) < 0 || Number(v) > 100) || Number(form.paymentDays) < 0) { alert('比例须在0至100之间，账期不能小于0'); return; }
-    if (form.expireAt && form.effectiveAt && form.expireAt < form.effectiveAt) { alert('到期日期不能早于生效日期'); return; }
     setSubmitting(true);
     let contractId = draftId;
     try {
@@ -290,6 +327,7 @@ export default function ContractCreatePage() {
   };
 
   return (
+    <ContractErrorsContext.Provider value={formErrors}>
     <div className="space-y-6">
       {leaveDialog}
       <div className="flex items-center justify-between">
@@ -501,13 +539,14 @@ export default function ContractCreatePage() {
         </Card>
 
         {/* Attachments */}
-        <Card className="p-6 mt-4">
+        <Card data-validation-field="attachments" className={`p-6 mt-4 scroll-mt-28 ${formErrors.attachments ? 'border-destructive bg-destructive/5' : ''}`}>
           <SectionTitle>合同附件（必填）</SectionTitle>
+          {formErrors.attachments && <p role="alert" className="mb-2 text-sm text-destructive">{formErrors.attachments}</p>}
           <p className="text-xs text-muted-foreground mb-3">提交审批前至少上传一份纸质合同扫描件或签章文件。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB；草稿可暂不上传。</p>
           <label className="block border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
             <input aria-label="选择合同附件" type="file" multiple disabled={submitting} accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" onChange={(e) => {
               const selectedFiles = selectValidAttachmentFiles(Array.from(e.currentTarget.files || []));
-              if (selectedFiles.length > 0) setIsDirty(true);
+              if (selectedFiles.length > 0) { setIsDirty(true); setFormErrors(current => { const next = { ...current }; delete next.attachments; return next; }); }
               setFiles(prev => [...prev, ...selectedFiles.map(file => ({ file, name: file.name }))]);
               e.target.value = '';
             }} className="hidden" />
@@ -553,5 +592,6 @@ export default function ContractCreatePage() {
         </div>
       </div>
     </div>
+    </ContractErrorsContext.Provider>
   );
 }

@@ -73,6 +73,20 @@ describe('WaybillService', () => {
     }));
   });
 
+  it('单车建单未填写计划数量时保留物料关联且不阻止创建', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.waybill.create.mockResolvedValue({ id: 'waybill-1', waybillNo: 'WB-1' } as any);
+    await service.create({
+      dispatchNoticeId: notice.id, plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001',
+    }, 'user-1');
+    expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        totalQuantity: 0,
+        lineItems: { create: [expect.objectContaining({ dispatchNoticeLineItemId: 'notice-line-1', materialId: 'm-1', quantity: 0 })] },
+      }),
+    }));
+  });
+
   it.each([
     ['车牌', { plateNo: ' ', driverName: '张三', driverPhone: '13800000001' }, '填写车牌号'],
     ['司机', { plateNo: '甘A00001', driverName: ' ', driverPhone: '13800000001' }, '填写司机姓名'],
@@ -166,11 +180,12 @@ describe('WaybillService', () => {
     expect(weighTicketService.ensureTaskForWaybill).toHaveBeenCalledTimes(2);
   });
 
-  it('批量派车按全部车辆汇总校验通知剩余数量', async () => {
+  it('批量派车计划参考数量超过通知剩余量时提示但仍创建', async () => {
     prisma.waybill.findMany.mockResolvedValue([]);
     prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.waybill.create.mockResolvedValue({ id: 'waybill-1', plateNo: '甘A00001', dispatchNotice: { type: 'PURCHASE' } } as any);
 
-    await expect(service.createBatch({
+    const result = await service.createBatch({
       dispatchNoticeId: notice.id,
       batchRequestId: '123e4567-e89b-42d3-a456-426614174000',
       items: [
@@ -185,10 +200,26 @@ describe('WaybillService', () => {
           lineItems: [{ dispatchNoticeLineItemId: 'notice-line-1', quantity: 5 }],
         },
       ],
-    }, 'user-1')).rejects.toThrow('超过剩余可运输数量 10');
+    }, 'user-1');
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(prisma.waybill.create).not.toHaveBeenCalled();
+    expect(result.createdCount).toBe(2);
+    expect(result.warnings.join(' ')).toContain('超过通知剩余参考数量');
+    expect(prisma.waybill.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('批量派车所有车辆均未填写计划数量时照常创建', async () => {
+    prisma.waybill.findMany.mockResolvedValue([]);
+    prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
+    prisma.waybill.create.mockResolvedValue({ id: 'waybill-1', plateNo: '甘A00001', dispatchNotice: { type: 'PURCHASE' } } as any);
+    const result = await service.createBatch({
+      dispatchNoticeId: notice.id,
+      batchRequestId: '123e4567-e89b-42d3-a456-426614174000',
+      items: [{ clientRowId: '123e4567-e89b-42d3-a456-426614174001', plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001' }],
+    }, 'user-1');
+    expect(result.createdCount).toBe(1);
+    expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ totalQuantity: 0, lineItems: { create: [expect.objectContaining({ materialId: 'm-1', quantity: 0 })] } }),
+    }));
   });
 
   it('同一批量请求重复提交时返回原运单而不重复创建', async () => {

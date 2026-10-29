@@ -226,8 +226,8 @@ describe('MobileWorkspaceService', () => {
     await expect(service.createLogisticsVehicle('user-1', vehicle)).resolves.toMatchObject({ id: 'vehicle-1' });
     await expect(service.createLogisticsDriver('user-1', driver)).resolves.toMatchObject({ id: 'driver-1' });
 
-    expect(access.assertPermission).toHaveBeenNthCalledWith(1, 'user-1', 'master_data.manage');
-    expect(access.assertPermission).toHaveBeenNthCalledWith(2, 'user-1', 'master_data.manage');
+    expect(access.assertPermission).toHaveBeenNthCalledWith(1, 'user-1', 'transport_resource.manage');
+    expect(access.assertPermission).toHaveBeenNthCalledWith(2, 'user-1', 'transport_resource.manage');
     expect(partners.createVehicle).toHaveBeenCalledWith(vehicle);
     expect(drivers.create).toHaveBeenCalledWith(driver);
   });

@@ -301,18 +301,6 @@ export class DispatchNoticeService {
           ? '所有有效物流运单完成客户签收后才能完成执行通知'
           : '所有有效物流运单完成收货后才能完成执行通知');
       }
-      const transported = await this.prisma.waybillLineItem.groupBy({
-        by: ['dispatchNoticeLineItemId'],
-        where: {
-          dispatchNoticeLineItem: { dispatchNoticeId: id },
-          waybill: { deletedAt: null, status: { not: 'CANCELLED' } },
-        },
-        _sum: { quantity: true },
-      });
-      const transportedMap = new Map(transported.map(item => [item.dispatchNoticeLineItemId, Number(item._sum.quantity || 0)]));
-      if (notice.lineItems.some(item => (transportedMap.get(item.id) || 0) < Number(item.quantity))) {
-        throw new BadRequestException('物流运单累计数量覆盖全部通知数量后才能完成执行通知');
-      }
     }
     return this.prisma.$transaction(async tx => {
       const updated = await tx.dispatchNotice.update({

@@ -66,6 +66,9 @@ export function SystemDialogProvider({ children }: { children: React.ReactNode }
             <DialogTitle>{request.title}</DialogTitle>
             <DialogDescription className="whitespace-pre-line leading-6 text-foreground/75">{request.message}</DialogDescription>
           </DialogHeader>
+          {request.validationItems && <div className="max-h-64 space-y-1 overflow-y-auto" role="list" aria-label="需要完善的字段">
+            {request.validationItems.map((item, index) => <button key={`${item.key}-${index}`} type="button" role="listitem" onClick={() => finish(item.key)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{index + 1}. {item.message}</button>)}
+          </div>}
           {request.kind === 'prompt' && <textarea
             autoFocus
             rows={4}

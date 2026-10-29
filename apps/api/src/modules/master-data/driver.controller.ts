@@ -14,12 +14,12 @@ export class DriverController {
   constructor(private readonly service: DriverService) {}
 
   @Post()
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @ApiOperation({ summary: '创建物流司机档案' })
   create(@Body() dto: CreateDriverDto) { return this.service.create(dto); }
 
   @Get()
-  @RequirePermission('master_data.view')
+  @RequirePermission('transport_resource.view')
   @ApiOperation({ summary: '司机列表及模糊搜索' })
   findAll(
     @Query('page') page?: string,
@@ -40,15 +40,15 @@ export class DriverController {
   }
 
   @Get(':id')
-  @RequirePermission('master_data.view')
+  @RequirePermission('transport_resource.view')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Patch(':id')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   update(@Param('id') id: string, @Body() dto: UpdateDriverDto) { return this.service.update(id, dto); }
 
   @Delete(':id')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @HttpCode(204)
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

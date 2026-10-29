@@ -211,7 +211,6 @@ export class WaybillService {
   ) {
     const freightMode = item.freightMode || 'SELF';
     const carrier = await this.resolveCarrier(freightMode, item.carrierPartnerId);
-    if (!item.lineItems.length) throw new BadRequestException(`第 ${rowNumber} 行请至少填写一种物料数量`);
     if (item.plannedDepartureAt && item.plannedArrivalAt
       && new Date(item.plannedArrivalAt) <= new Date(item.plannedDepartureAt)) {
       throw new BadRequestException(`第 ${rowNumber} 行预计到达时间必须晚于计划发运时间`);
@@ -240,13 +239,18 @@ export class WaybillService {
 
     const sources = new Map(availability.lineItems.map(source => [source.dispatchNoticeLineItemId, source]));
     const seen = new Set<string>();
-    const lineItems = item.lineItems.map(line => {
+    if (!item.lineItems?.length && availability.lineItems.length > 1) {
+      throw new BadRequestException(`第 ${rowNumber} 行请先选择本车运输的物料，计划数量可不填`);
+    }
+    const requestedLines = item.lineItems?.length
+      ? item.lineItems
+      : availability.lineItems.map(source => ({ dispatchNoticeLineItemId: source.dispatchNoticeLineItemId, quantity: 0 }));
+    const lineItems = requestedLines.map(line => {
       const source = sources.get(line.dispatchNoticeLineItemId);
       if (!source || seen.has(line.dispatchNoticeLineItemId)) {
         throw new BadRequestException(`第 ${rowNumber} 行运单明细无效或重复`);
       }
       seen.add(line.dispatchNoticeLineItemId);
-      if (line.quantity <= 0) throw new BadRequestException(`第 ${rowNumber} 行物料数量必须大于 0`);
       return {
         dispatchNoticeLineItemId: line.dispatchNoticeLineItemId,
         materialId: source.materialId,
@@ -325,7 +329,6 @@ export class WaybillService {
     const availability = await this.getNoticeAvailability(dto.dispatchNoticeId, userId, 'logistics.manage');
     const freightMode = dto.freightMode || 'SELF';
     const carrier = await this.resolveCarrier(freightMode, dto.carrierPartnerId);
-    if (!dto.lineItems.length) throw new BadRequestException('请至少填写一条运单明细');
     if (dto.plannedDepartureAt && dto.plannedArrivalAt
       && new Date(dto.plannedArrivalAt) <= new Date(dto.plannedDepartureAt)) {
       throw new BadRequestException('预计到达时间必须晚于计划发运时间');
@@ -351,13 +354,16 @@ export class WaybillService {
     if (!driverPhone) throw new BadRequestException('创建运单前请填写司机联系电话');
     const sources = new Map(availability.lineItems.map(item => [item.dispatchNoticeLineItemId, item]));
     const seen = new Set<string>();
-    const lines = dto.lineItems.map(item => {
+    if (!dto.lineItems?.length && availability.lineItems.length > 1) {
+      throw new BadRequestException('请先选择本车运输的物料，计划数量可不填');
+    }
+    const requestedLines = dto.lineItems?.length
+      ? dto.lineItems
+      : availability.lineItems.map(source => ({ dispatchNoticeLineItemId: source.dispatchNoticeLineItemId, quantity: 0 }));
+    const lines = requestedLines.map(item => {
       const source = sources.get(item.dispatchNoticeLineItemId);
       if (!source || seen.has(item.dispatchNoticeLineItemId)) throw new BadRequestException('运单明细无效或重复');
       seen.add(item.dispatchNoticeLineItemId);
-      if (item.quantity <= 0 || item.quantity > source.availableQuantity) {
-        throw new BadRequestException(`物料 ${source.materialName || source.materialId} 的运单数量超过剩余可运输数量 ${source.availableQuantity}`);
-      }
       return {
         dispatchNoticeLineItemId: item.dispatchNoticeLineItemId,
         materialId: source.materialId,
@@ -429,14 +435,13 @@ export class WaybillService {
         totals.set(line.dispatchNoticeLineItemId, (totals.get(line.dispatchNoticeLineItemId) || 0) + Number(line.quantity));
       }
     }
+    const warnings: string[] = [];
     for (const [lineId, quantity] of totals) {
       const source = sourceMap.get(lineId)!;
       if (quantity > source.availableQuantity) {
-        throw new BadRequestException(`物料 ${source.materialName || source.materialId} 本次分配 ${quantity}，超过剩余可运输数量 ${source.availableQuantity}`);
+        warnings.push(`物料 ${source.materialName || source.materialId} 本次计划参考数量 ${quantity} 超过通知剩余参考数量 ${source.availableQuantity}，请核对；不影响建单，实际以磅单为准`);
       }
     }
-
-    const warnings: string[] = [];
     prepared.forEach((item, index) => {
       if (item.vehicle?.loadCapacity && item.totalQuantity > Number(item.vehicle.loadCapacity)) {
         warnings.push(`第 ${index + 1} 行计划数量 ${item.totalQuantity} 吨超过车辆登记载重 ${Number(item.vehicle.loadCapacity)} 吨`);
@@ -454,19 +459,6 @@ export class WaybillService {
         where: { id: dto.dispatchNoticeId, deletedAt: null, status: { in: ['ISSUED', 'IN_PROGRESS'] } },
       });
       if (!notice) throw new BadRequestException('执行通知状态已变化，请刷新后重试');
-      const used = await tx.waybillLineItem.groupBy({
-        by: ['dispatchNoticeLineItemId'],
-        where: { waybill: { dispatchNoticeId: dto.dispatchNoticeId, deletedAt: null, status: { not: 'CANCELLED' } } },
-        _sum: { quantity: true },
-      });
-      const usedMap = new Map(used.map(item => [item.dispatchNoticeLineItemId, Number(item._sum.quantity || 0)]));
-      for (const [lineId, quantity] of totals) {
-        const source = sourceMap.get(lineId)!;
-        const remaining = Math.max(0, source.noticeQuantity - (usedMap.get(lineId) || 0));
-        if (quantity > remaining) {
-          throw new BadRequestException(`物料 ${source.materialName || source.materialId} 剩余可运输数量已变为 ${remaining}，请刷新后重新分配`);
-        }
-      }
       const waybillNumbers = await this.reserveWaybillNumbers(tx, prepared.length);
       const items: any[] = [];
       for (const [index, item] of prepared.entries()) {

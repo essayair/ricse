@@ -69,11 +69,10 @@ export function VehicleForm({ initialValue, value, onValueChange, submitLabel, o
 
   useEffect(() => {
     Promise.all([
-      api.get<{ items: PartnerOption[] }>('/partners?pageSize=200&status=ACTIVE'),
-      api.get<{ items: CarrierProfile[] }>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE&pageSize=200'),
+      api.get<{ items: CarrierProfile[]; internalPartners: PartnerOption[] }>('/transport-resources/carriers'),
       showDriverLinks ? api.get<{ items: DriverOption[] }>('/drivers?pageSize=200') : Promise.resolve({ items: [] as DriverOption[] }),
-    ]).then(([partnerData, carrierData, driverData]) => {
-      setInternalPartners((partnerData.items || []).filter(item => item.isInternal));
+    ]).then(([carrierData, driverData]) => {
+      setInternalPartners(carrierData.internalPartners || []);
       setCarriers(carrierData.items || []);
       setDrivers(driverData.items || []);
     }).catch((error) => alert(error.message || '车辆关联主数据加载失败'));
@@ -161,7 +160,7 @@ export function VehicleForm({ initialValue, value, onValueChange, submitLabel, o
     </Card>
 
     {showDriverLinks && <Card className="space-y-4 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">关联司机</h2><p className="mt-1 text-xs text-muted-foreground">一辆车可关联一名主驾和多名副驾；未绑定承运商时可选择无承运商的社会运力司机。</p></div><Link href="/dashboard/master-data?tab=vehicles&resource=driver" className="text-sm text-primary hover:underline">维护司机档案</Link></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">关联司机</h2><p className="mt-1 text-xs text-muted-foreground">一辆车可关联一名主驾和多名副驾；未绑定承运商时可选择无承运商的社会运力司机。</p></div><Link href="/dashboard/transport-resources?resource=driver" className="text-sm text-primary hover:underline">维护司机档案</Link></div>
       <div className="relative max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={driverSearch} onChange={e => setDriverSearch(e.target.value)} placeholder="搜索司机姓名、手机号、准驾车型" /></div>
       {!eligibleDrivers.length ? <div className="rounded-md bg-muted p-5 text-sm text-muted-foreground">当前没有可关联司机，可先到运力管理维护司机档案；车辆也可以暂不关联司机。</div> : <div className="grid gap-3 md:grid-cols-2">{eligibleDrivers.map(driver => {
         const link = form.drivers.find(item => item.driverId === driver.id);

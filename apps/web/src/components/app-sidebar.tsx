@@ -51,6 +51,7 @@ const NAV_ITEMS: NavGroup[] = [
     children: [
       { href: '/dashboard/dispatch', label: '调度看板' },
       { href: '/dashboard/waybills', label: '运单管理' },
+      { href: '/dashboard/transport-resources', label: '运力管理' },
       { href: '/dashboard/logistics-settlements', label: '运费结算单' },
       { href: '/dashboard/logistics-contracts', label: '物流合同' },
     ],
@@ -103,7 +104,6 @@ const BASE_ITEMS: NavGroup[] = [
       { href: '/dashboard/master-data?tab=service-organizations', label: '服务生态' },
       { href: '/dashboard/master-data?tab=materials', label: '物料品类' },
       { href: '/dashboard/master-data?tab=warehouses', label: '仓库库位' },
-      { href: '/dashboard/master-data?tab=vehicles', label: '运力管理' },
       { href: '/dashboard/master-data?tab=price', label: '价格基准' },
       { href: '/dashboard/master-data?tab=quality-standards', label: '质检标准' },
     ],
@@ -187,6 +187,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href.startsWith('/dashboard/contracts')) return 'contract.view';
     if (href.startsWith('/dashboard/orders') || href.startsWith('/dashboard/dispatch-notices')) return 'execution.view';
     if (href.startsWith('/dashboard/logistics-contracts')) return 'logistics.contract.view';
+    if (href.startsWith('/dashboard/transport-resources')) return 'transport_resource.view';
     if (href.startsWith('/dashboard/logistics-settlements')) return 'logistics.settlement.view';
     if (href.startsWith('/dashboard/dispatch') || href.startsWith('/dashboard/waybills')) return 'logistics.view';
     if (href.startsWith('/dashboard/weighbridge') || href.startsWith('/dashboard/quality')) return 'quality.view';
@@ -209,6 +210,11 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
     const [base, qs] = href.split('?');
+    if (base === '/dashboard/transport-resources') {
+      return pathname === base || pathname.startsWith('/dashboard/master-data/vehicles/')
+        || pathname.startsWith('/dashboard/master-data/drivers/')
+        || pathname.startsWith('/dashboard/master-data/transport-resources/');
+    }
 
     // 产业概览是产业数据库的索引页，只在自身路由高亮。
     // 否则它会因为是所有产业子页面的路径前缀，与当前子菜单同时高亮。

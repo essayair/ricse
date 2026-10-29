@@ -40,7 +40,7 @@ export function TransportResourceEditor() {
 
   useEffect(() => {
     let current = true;
-    void api.get<{ items: Carrier[] }>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE&pageSize=200').then(result => {
+    void api.get<{ items: Carrier[] }>('/transport-resources/carriers').then(result => {
       if (!current) return;
       setCarriers(result.items || []);
       const carrier = result.items.find(item => item.id === organizationId);
@@ -72,7 +72,7 @@ export function TransportResourceEditor() {
     window.addEventListener('beforeunload', leave); return () => window.removeEventListener('beforeunload', leave);
   }, [dirty]);
 
-  const back = async () => { if (dirty && !await confirmAction('有未保存的司机或车辆信息，确认离开吗？', { title: '离开运力登记' })) return; router.push('/dashboard/master-data?tab=vehicles'); };
+  const back = async () => { if (dirty && !await confirmAction('有未保存的司机或车辆信息，确认离开吗？', { title: '离开运力登记' })) return; router.push('/dashboard/transport-resources'); };
   const driverPut = (key: keyof typeof driverDefaults, value: string) => { setDirty(true); setDriver(current => ({ ...current, [key]: value })); };
   const chooseDriver = async (id: string) => {
     const version = ++selectionVersion.current.driver; setDirty(true); setSelectedDriver(null); setDriverLoading(Boolean(id));

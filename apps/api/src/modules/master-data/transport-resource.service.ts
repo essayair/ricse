@@ -18,6 +18,24 @@ export class TransportResourceService {
   private readonly logger = new Logger(TransportResourceService.name);
   constructor(private readonly prisma: PrismaService, private readonly access: AccessControlService, private readonly files: FileService) {}
 
+  async carrierOptions() {
+    const [items, internalPartners] = await Promise.all([
+      this.prisma.serviceOrganization.findMany({
+        where: { organizationType: 'LOGISTICS_CARRIER', status: 'ACTIVE', deletedAt: null, partner: { status: 'ACTIVE', deletedAt: null } },
+        select: { id: true, partnerId: true, partner: { select: { id: true, code: true, name: true, isInternal: true, status: true } } },
+        orderBy: { partner: { name: 'asc' } },
+        take: 200,
+      }),
+      this.prisma.partner.findMany({
+        where: { isInternal: true, status: 'ACTIVE', deletedAt: null },
+        select: { id: true, code: true, name: true, isInternal: true, status: true },
+        orderBy: { name: 'asc' },
+        take: 200,
+      }),
+    ]);
+    return { items, internalPartners };
+  }
+
   async parsePayload(raw: string) {
     let value: unknown;
     try { value = JSON.parse(raw); } catch { throw new BadRequestException('提交信息格式不正确，请刷新页面后重试'); }
@@ -46,7 +64,7 @@ export class TransportResourceService {
   }
 
   async create(dto: CreateTransportResourceDto, fileGroups: ResourceFiles, userId: string) {
-    await this.access.assertPermission(userId, 'master_data.manage');
+    await this.access.assertPermission(userId, 'transport_resource.manage');
     if (dto.driverId && dto.newDriver) throw new BadRequestException('司机请选择新建或已有档案之一');
     if (dto.vehicleId && dto.newVehicle) throw new BadRequestException('车辆请选择新建或已有档案之一');
     if (!dto.driverId && !dto.newDriver && !dto.vehicleId && !dto.newVehicle) throw new BadRequestException('请至少完整填写一名司机或一辆车辆');
@@ -98,7 +116,7 @@ export class TransportResourceService {
   }
 
   private async requireRecord(kind: string, id: string, userId: string, manage = false): Promise<Kind> {
-    await this.access.assertPermission(userId, manage ? 'master_data.manage' : 'master_data.view');
+    await this.access.assertPermission(userId, manage ? 'transport_resource.manage' : 'transport_resource.view');
     if (kind !== 'drivers' && kind !== 'vehicles') throw new BadRequestException('不支持的运力档案类型');
     const exists = kind === 'drivers'
       ? await this.prisma.driver.findFirst({ where: { id, deletedAt: null }, select: { id: true } })

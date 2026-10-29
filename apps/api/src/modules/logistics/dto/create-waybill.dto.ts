@@ -9,7 +9,7 @@ export class CreateWaybillLineDto {
   dispatchNoticeLineItemId: string;
 
   @IsNumber()
-  @Min(0.001)
+  @Min(0)
   quantity: number;
 }
 
@@ -31,10 +31,11 @@ export class WaybillCreateFieldsDto {
   @IsOptional() @IsDateString() plannedArrivalAt?: string;
   @IsOptional() @IsString() remarks?: string;
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateWaybillLineDto)
-  lineItems: CreateWaybillLineDto[];
+  lineItems?: CreateWaybillLineDto[];
 }
 
 export class CreateWaybillDto extends WaybillCreateFieldsDto {

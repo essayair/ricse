@@ -8,6 +8,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { unitLabel } from '@/lib/unit';
 import { PartnerAddressDialog, type PartnerAddress } from '@/components/partner-address-dialog';
+import { alertValidationErrors } from '@/lib/system-dialog';
+import { focusInvalidField, type FieldErrors } from '@/lib/form-validation';
 
 interface Order { id: string; orderNo: string; name: string; type: string; status: string; contract: { contractNo: string; title: string } }
 interface Available {
@@ -45,6 +47,7 @@ export default function CreateDispatchNoticePage() {
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [addressTarget, setAddressTarget] = useState<'origin' | 'destination' | null>(null);
   const [canManageAddresses, setCanManageAddresses] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     try {
@@ -62,6 +65,7 @@ export default function CreateDispatchNoticePage() {
   }, []);
 
   const selectOrder = async (id: string) => {
+    if (id) setErrors(current => { const next = { ...current }; delete next.order; return next; });
     if (!id) {
       setData(null);
       setOrigin(EMPTY_LOCATION);
@@ -98,9 +102,19 @@ export default function CreateDispatchNoticePage() {
   const total = useMemo(() => Object.values(quantities).reduce((sum, value) => sum + (value || 0), 0), [quantities]);
 
   const submit = async () => {
-    if (!data) return alert('请选择执行批次');
-    if (!origin.location.trim()) return alert('请填写起运地址，或快速选择仓库/合作伙伴地址');
-    if (!destination.location.trim()) return alert('请填写目的地址，或快速选择仓库/合作伙伴地址');
+    const next: FieldErrors = {};
+    if (!data) next.order = '请选择执行批次';
+    if (data && !origin.location.trim()) next.origin = '请填写起运地址，或选择仓库/合作伙伴地址';
+    if (data && !destination.location.trim()) next.destination = '请填写目的地址，或选择仓库/合作伙伴地址';
+    if (data && !data.lineItems.some(item => Number(quantities[item.orderLineItemId]) > 0)) next.quantities = '请填写至少一项本次通知数量';
+    setErrors(next);
+    const entries = Object.entries(next);
+    if (entries.length) {
+      const selected = await alertValidationErrors(entries.map(([key, message]) => ({ key, message })));
+      focusInvalidField(typeof selected === 'string' ? selected : entries[0][0]);
+      return;
+    }
+    if (!data) return;
     const inventoryWarehouseId = data.order.type === 'PURCHASE' ? destination.warehouseId : origin.warehouseId;
     const lineItems = data.lineItems.filter(item => quantities[item.orderLineItemId] > 0).map(item => ({ orderLineItemId: item.orderLineItemId, quantity: quantities[item.orderLineItemId] }));
     try {
@@ -121,7 +135,7 @@ export default function CreateDispatchNoticePage() {
   return <div className="mx-auto max-w-5xl space-y-6">
     <div><h1 className="text-2xl font-bold">新建执行通知</h1><p className="mt-1 text-sm text-muted-foreground">采购生成供应商发货指令，销售生成销售发货通知单</p></div>
     <Card className="space-y-5 p-6">
-      <div><label className="mb-1 block text-sm font-medium">合同执行批次 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={data?.order.id || ''} onChange={e => void selectOrder(e.target.value)}><option value="">请选择</option>{orders.map(item => <option key={item.id} value={item.id}>{item.name} · {item.orderNo} · {item.contract.contractNo}</option>)}</select></div>
+      <div data-validation-field="order" className="scroll-mt-28"><label className="mb-1 block text-sm font-medium">合同执行批次 *</label><select aria-invalid={!!errors.order} aria-describedby={errors.order ? 'dispatch-error-order' : undefined} className={`h-10 w-full rounded-md border bg-background px-3 text-sm ${errors.order ? 'border-destructive bg-destructive/5' : ''}`} value={data?.order.id || ''} onChange={e => void selectOrder(e.target.value)}><option value="">请选择</option>{orders.map(item => <option key={item.id} value={item.id}>{item.name} · {item.orderNo} · {item.contract.contractNo}</option>)}</select>{errors.order && <p id="dispatch-error-order" role="alert" className="mt-1 text-xs text-destructive">{errors.order}</p>}</div>
       {data && <>
         <div className="grid gap-4 md:grid-cols-3">
           <div><label className="mb-1 block text-sm font-medium">单据类型</label><Input disabled value={data.order.type === 'PURCHASE' ? '供应商发货指令' : '销售发货通知单'} /></div>
@@ -134,7 +148,8 @@ export default function CreateDispatchNoticePage() {
             label={data.order.type === 'PURCHASE' ? '起运地点（供应商发货地）' : '起运地点'}
             placeholder={data.order.type === 'PURCHASE' ? '请填写起运地址' : '可选择仓库或我方地址快速填入，也可直接填写'}
             value={origin}
-            onChange={setOrigin}
+            onChange={value => { setOrigin(value); if (value.location.trim()) setErrors(current => { const next = { ...current }; delete next.origin; return next; }); }}
+            fieldKey="origin" error={errors.origin}
             warehouses={warehouses}
             partners={data.order.type === 'PURCHASE'
               ? addressGroups('供应商地址', data.locationOptions.counterparty)
@@ -145,7 +160,8 @@ export default function CreateDispatchNoticePage() {
             label={data.order.type === 'PURCHASE' ? '目的地' : '目的地（客户收货地）'}
             placeholder={data.order.type === 'PURCHASE' ? '可选择仓库或我方地址快速填入，也可直接填写' : '请填写客户收货地址'}
             value={destination}
-            onChange={setDestination}
+            onChange={value => { setDestination(value); if (value.location.trim()) setErrors(current => { const next = { ...current }; delete next.destination; return next; }); }}
+            fieldKey="destination" error={errors.destination}
             warehouses={warehouses}
             partners={data.order.type === 'PURCHASE'
               ? addressGroups('我方主体地址', data.locationOptions.internalPartner)
@@ -153,11 +169,11 @@ export default function CreateDispatchNoticePage() {
             onAddPartnerAddress={canManageAddresses && data.order.type === 'SALES' ? () => setAddressTarget('destination') : undefined}
           />
         </div>
-        <div><h2 className="mb-2 font-semibold">通知明细</h2><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-3 py-2 text-left">物料</th><th className="px-3 py-2 text-right">批次数量</th><th className="px-3 py-2 text-right">剩余可通知</th><th className="px-3 py-2 text-right">本次通知数量</th></tr></thead><tbody>{data.lineItems.map(item => <tr key={item.orderLineItemId} className="border-b"><td className="px-3 py-2">{item.materialName || item.materialId}</td><td className="px-3 py-2 text-right">{item.batchQuantity} {unitLabel(item.unit)}</td><td className="px-3 py-2 text-right">{item.availableQuantity} {unitLabel(item.unit)}</td><td className="px-3 py-2"><Input className="ml-auto w-36 text-right" type="number" min="0" max={item.availableQuantity} value={quantities[item.orderLineItemId] || 0} onChange={e => setQuantities(current => ({ ...current, [item.orderLineItemId]: Number(e.target.value) }))} /></td></tr>)}</tbody></table><div className="mt-3 text-right font-bold">通知总数量：{total.toLocaleString()} 吨</div></div>
+        <div data-validation-field="quantities" className="scroll-mt-28"><h2 className="mb-2 font-semibold">通知明细</h2><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-3 py-2 text-left">物料</th><th className="px-3 py-2 text-right">批次数量</th><th className="px-3 py-2 text-right">剩余可通知</th><th className="px-3 py-2 text-right">本次通知数量</th></tr></thead><tbody>{data.lineItems.map(item => <tr key={item.orderLineItemId} className="border-b"><td className="px-3 py-2">{item.materialName || item.materialId}</td><td className="px-3 py-2 text-right">{item.batchQuantity} {unitLabel(item.unit)}</td><td className="px-3 py-2 text-right">{item.availableQuantity} {unitLabel(item.unit)}</td><td className="px-3 py-2"><Input className={`ml-auto w-36 text-right ${errors.quantities ? 'border-destructive bg-destructive/5' : ''}`} type="number" min="0" max={item.availableQuantity} value={quantities[item.orderLineItemId] || 0} onChange={e => { setQuantities(current => ({ ...current, [item.orderLineItemId]: Number(e.target.value) })); setErrors(current => { const next = { ...current }; delete next.quantities; return next; }); }} /></td></tr>)}</tbody></table>{errors.quantities && <p role="alert" className="mt-2 text-xs text-destructive">{errors.quantities}</p>}<div className="mt-3 text-right font-bold">通知总数量：{total.toLocaleString()} 吨</div></div>
         <div><label className="mb-1 block text-sm font-medium">备注</label><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={remarks} onChange={e => setRemarks(e.target.value)} /></div>
       </>}
     </Card>
-    <div className="flex justify-end gap-3"><Button variant="outline" onClick={() => router.back()}>取消</Button><Button disabled={!data} onClick={() => void submit()}>创建执行通知</Button></div>
+    <div className="flex justify-end gap-3"><Button variant="outline" onClick={() => router.back()}>取消</Button><Button onClick={() => void submit()}>创建执行通知</Button></div>
     {data?.locationOptions.counterparty && <PartnerAddressDialog
       open={addressTarget !== null}
       partnerId={data.locationOptions.counterparty.id}
@@ -178,7 +194,7 @@ function addressGroups(label: string, partner: AddressPartner | null): AddressGr
   return partner ? [{ label, partner }] : [];
 }
 
-function LocationField({ label, placeholder, value, onChange, warehouses, partners, onAddPartnerAddress }: {
+function LocationField({ label, placeholder, value, onChange, warehouses, partners, onAddPartnerAddress, fieldKey, error }: {
   label: string;
   placeholder: string;
   value: LocationValue;
@@ -186,6 +202,8 @@ function LocationField({ label, placeholder, value, onChange, warehouses, partne
   warehouses: Warehouse[];
   partners: AddressGroup[];
   onAddPartnerAddress?: () => void;
+  fieldKey: string;
+  error?: string;
 }) {
   const sourceValue = value.sourceType === 'WAREHOUSE' ? `warehouse:${value.warehouseId}` : value.sourceType === 'PARTNER_ADDRESS' ? `partner:${value.partnerAddressId}` : '';
   const selectSource = (selected: string) => {
@@ -202,7 +220,7 @@ function LocationField({ label, placeholder, value, onChange, warehouses, partne
     if (address) onChange({ location: address.fullAddress, contactPerson: address.contactPerson, contactPhone: address.contactPhone, sourceType: 'PARTNER_ADDRESS', warehouseId: '', partnerAddressId: id });
   };
   return (
-    <div>
+    <div data-validation-field={fieldKey} className="scroll-mt-28">
       <label className="mb-1 block text-sm font-medium">{label} *</label>
       <select
         className="mb-2 h-9 w-full rounded-md border bg-muted/30 px-3 text-sm"
@@ -220,11 +238,15 @@ function LocationField({ label, placeholder, value, onChange, warehouses, partne
         </optgroup>)}
       </select>
       <Input
+        aria-invalid={!!error}
+        aria-describedby={error ? `dispatch-error-${fieldKey}` : undefined}
+        className={error ? 'border-destructive bg-destructive/5' : undefined}
         value={value.location}
         onChange={(event) => onChange({ ...value, location: event.target.value })}
         placeholder={placeholder}
         required
       />
+      {error && <p id={`dispatch-error-${fieldKey}`} role="alert" className="mt-1 text-xs text-destructive">{error}</p>}
       <div className="mt-2 grid grid-cols-2 gap-2"><Input value={value.contactPerson} onChange={event => onChange({ ...value, contactPerson: event.target.value })} placeholder="联系人（可填写）" /><Input value={value.contactPhone} onChange={event => onChange({ ...value, contactPhone: event.target.value })} placeholder="联系方式（可填写）" /></div>
       <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground"><span>选择后自动拼接为完整地址，仍可修改并保存本次地址快照</span>{onAddPartnerAddress && <button type="button" className="font-medium text-primary hover:underline" onClick={onAddPartnerAddress}>新增合作伙伴地址</button>}</div>
     </div>

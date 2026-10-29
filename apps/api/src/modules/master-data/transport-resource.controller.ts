@@ -16,12 +16,16 @@ import { recognizeTransportResource } from './transport-resource-recognition';
 export class TransportResourceController {
   constructor(private readonly service: TransportResourceService) {}
 
+  @Get('carriers')
+  @RequirePermission('transport_resource.view')
+  carrierOptions() { return this.service.carrierOptions(); }
+
   @Post('recognize')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   recognize(@Body() dto: RecognizeTransportResourceDto) { return recognizeTransportResource(dto.text); }
 
   @Post()
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileFieldsInterceptor([{ name: 'driverAttachments', maxCount: 6 }, { name: 'vehicleAttachments', maxCount: 6 }], { limits: { fileSize: 20 * 1024 * 1024, files: 12, fields: 1, fieldSize: 64 * 1024 } }))
   async create(@Body('payload') payload: string, @UploadedFiles() files: ResourceFiles, @CurrentUser('id') userId: string) {
@@ -29,20 +33,20 @@ export class TransportResourceController {
   }
 
   @Post(':kind/:id/attachments')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   upload(@Param('kind') kind: string, @Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser('id') userId: string) {
     return this.service.upload(kind, id, file, userId);
   }
 
   @Get(':kind/:id/attachments/:attachmentId/view-url')
-  @RequirePermission('master_data.view')
+  @RequirePermission('transport_resource.view')
   view(@Param('kind') kind: string, @Param('id') id: string, @Param('attachmentId') attachmentId: string, @CurrentUser('id') userId: string) {
     return this.service.attachment(kind, id, attachmentId, userId);
   }
 
   @Delete(':kind/:id/attachments/:attachmentId')
-  @RequirePermission('master_data.manage')
+  @RequirePermission('transport_resource.manage')
   @HttpCode(204)
   remove(@Param('kind') kind: string, @Param('id') id: string, @Param('attachmentId') attachmentId: string, @CurrentUser('id') userId: string) {
     return this.service.attachment(kind, id, attachmentId, userId, true);
