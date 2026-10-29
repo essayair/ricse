@@ -25,6 +25,15 @@ export class LogisticsSettlementController {
     return this.service.listCandidateWaybills({ periodStart, periodEnd }, userId);
   }
 
+  @Post('candidate-waybills/:id/carrier')
+  bindCandidateCarrier(
+    @Param('id') id: string,
+    @Body('carrierPartnerId') carrierPartnerId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.bindCandidateCarrier(id, carrierPartnerId, userId);
+  }
+
   @Post()
   create(@Body() dto: CreateLogisticsSettlementDto, @CurrentUser('id') userId: string) {
     return this.service.create(dto, userId);

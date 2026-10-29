@@ -98,7 +98,34 @@ export class LogisticsSettlementService {
 
   async options(userId: string) {
     await this.accessControl.assertPermission(userId, 'logistics.settlement.manage');
-    return { payers: await this.prisma.partner.findMany({ where: { isInternal: true, status: 'ACTIVE', deletedAt: null }, select: { id: true, name: true, code: true }, orderBy: { code: 'asc' } }) };
+    const [payers, carriers] = await Promise.all([
+      this.prisma.partner.findMany({ where: { isInternal: true, status: 'ACTIVE', deletedAt: null }, select: { id: true, name: true, code: true }, orderBy: { code: 'asc' } }),
+      this.prisma.serviceOrganization.findMany({
+        where: { organizationType: 'LOGISTICS_CARRIER', status: 'ACTIVE', deletedAt: null, partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } } },
+        select: { partner: { select: { id: true, name: true, code: true } } },
+        orderBy: { partner: { code: 'asc' } },
+      }),
+    ]);
+    return { payers, carriers: carriers.map(item => item.partner) };
+  }
+
+  async bindCandidateCarrier(id: string, carrierPartnerId: string, userId: string) {
+    await this.accessControl.assertPermission(userId, 'logistics.settlement.manage');
+    if (!carrierPartnerId?.trim()) throw new BadRequestException('请选择物流承运商');
+    const scope = await this.accessControl.getWaybillScope(userId, 'logistics.settlement.manage');
+    const carrier = await this.prisma.serviceOrganization.findFirst({
+      where: { partnerId: carrierPartnerId, organizationType: 'LOGISTICS_CARRIER', status: 'ACTIVE', deletedAt: null,
+        partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } } },
+      include: { partner: { select: { id: true, name: true } } },
+    });
+    if (!carrier) throw new BadRequestException('所选物流承运商不存在、已停用或合作伙伴不具备供应商角色');
+    const result = await this.prisma.waybill.updateMany({
+      where: { AND: [scope, { id, deletedAt: null, status: 'SIGNED', freightMode: 'SOCIAL', carrierPartnerId: null,
+        logisticsSettlementLines: { none: { settlement: { status: { not: 'VOIDED' }, deletedAt: null } } } }] },
+      data: { carrierPartnerId: carrier.partner.id, carrierName: carrier.partner.name },
+    });
+    if (!result.count) throw new BadRequestException('运单不在可结算范围内、已绑定承运商或已加入结算单，请刷新后重试');
+    return { id, carrierPartnerId: carrier.partner.id, carrierName: carrier.partner.name };
   }
 
   async listCandidateWaybills(query: { periodStart?: string; periodEnd?: string }, userId: string) {
@@ -110,7 +137,7 @@ export class LogisticsSettlementService {
     return Promise.all(rows.map(async w => ({
       id: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo, signedAt: w.signedAt, departedAt: w.departedAt,
       originLocation: w.originLocation, destinationLocation: w.destinationLocation, carrierPartnerId: w.carrierPartnerId, carrierName: w.carrierName,
-      carrierPending: !w.carrierPartnerId, payerPartner: w.dispatchNotice.order.contract.signingPartner,
+      freightMode: w.freightMode, carrierPending: !w.carrierPartnerId, payerPartner: w.dispatchNotice.order.contract.signingPartner,
       businessUnit: w.dispatchNotice.order.contract.businessUnit, businessType: w.dispatchNotice.order.type,
       materialName: w.lineItems.map(l => l.materialName || l.materialId).join('、'),
       tickets: w.weighTickets.filter(t => Number(t.netWeight) > 0).map(t => ({ id: t.id, ticketNo: t.ticketNo, weighingStage: t.weighingStage, grossWeight: t.grossWeight, tareWeight: t.tareWeight, netWeight: t.netWeight, ticketDate: t.ticketDate })),

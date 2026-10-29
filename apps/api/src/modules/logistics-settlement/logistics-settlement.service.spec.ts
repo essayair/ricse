@@ -37,6 +37,24 @@ describe('物流结算独立计量、调价留痕与付款主体', () => {
     prisma.logisticsSettlement.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'ls', ...data, lines: data.lines.createMany.data.map((l: any, i: number) => ({ id: 'new' + i, ...l })) }) as any);
     prisma.logisticsSettlementLine.update.mockImplementation(({ data }: any) => Promise.resolve({ ...settlement().lines[0], ...data }) as any);
   });
+  it('结算经办人可为未绑定的社会运力运单补绑有效承运商，不要求运单管理权限', async () => {
+    prisma.serviceOrganization.findFirst.mockResolvedValue({ partner: { id: 'carrier', name: '承运公司' } } as any);
+    prisma.waybill.updateMany.mockResolvedValue({ count: 1 });
+    await expect(service.bindCandidateCarrier('w', 'carrier', 'u')).resolves.toMatchObject({ carrierPartnerId: 'carrier', carrierName: '承运公司' });
+    expect(access.assertPermission).toHaveBeenCalledWith('u', 'logistics.settlement.manage');
+    expect(prisma.waybill.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { AND: [{}, expect.objectContaining({ id: 'w', status: 'SIGNED', freightMode: 'SOCIAL', carrierPartnerId: null })] },
+      data: { carrierPartnerId: 'carrier', carrierName: '承运公司' },
+    }));
+  });
+  it('结算补绑拒绝无效承运商及已绑定或已结算的运单', async () => {
+    await expect(service.bindCandidateCarrier('w', '', 'u')).rejects.toThrow('请选择物流承运商');
+    prisma.serviceOrganization.findFirst.mockResolvedValue(null);
+    await expect(service.bindCandidateCarrier('w', 'invalid', 'u')).rejects.toThrow('不存在');
+    prisma.serviceOrganization.findFirst.mockResolvedValue({ partner: { id: 'carrier', name: '承运公司' } } as any);
+    prisma.waybill.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.bindCandidateCarrier('w', 'carrier', 'u')).rejects.toThrow('不在可结算范围内');
+  });
   it('采购默认使用入库磅单，而不是另选的货款磅单；不修改库存或货款选用记录', async () => {
     await service.create(dto(), 'u');
     const data = (prisma.logisticsSettlement.create.mock.calls[0][0] as any).data;
