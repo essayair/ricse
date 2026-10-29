@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderService } from './order.service';
+import { UpdateOrderDto } from './dto/update-order.dto';
 
 @ApiTags('合同执行批次管理')
 @ApiBearerAuth()
@@ -56,13 +57,7 @@ export class OrderController {
 
   @Patch(':id')
   @ApiOperation({ summary: '修改草稿执行批次' })
-  update(@Param('id') id: string, @Body() data: {
-    name?: string;
-    plannedDate?: string;
-    deliveryLocation?: string;
-    remarks?: string;
-    lineItems?: Array<{ contractLineItemId: string; quantity: number }>;
-  }, @CurrentUser('id') userId: string) {
+  update(@Param('id') id: string, @Body() data: UpdateOrderDto, @CurrentUser('id') userId: string) {
     return this.service.update(id, data, userId);
   }
 

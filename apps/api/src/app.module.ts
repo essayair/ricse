@@ -21,8 +21,9 @@ import { MonitorModule } from './modules/monitor/monitor.module';
 import { FinancialSettlementModule } from './modules/financial-settlement/financial-settlement.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { IndustryDatabaseModule } from './modules/industry-database/industry-database.module';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { BusinessOperationInterceptor } from './modules/common/business-operation.interceptor';
+import { PrismaExceptionFilter } from './modules/common/prisma-exception.filter';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { BusinessOperationInterceptor } from './modules/common/business-operatio
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: BusinessOperationInterceptor },
+    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
   ],
 })
 export class AppModule {}

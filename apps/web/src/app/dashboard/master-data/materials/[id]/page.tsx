@@ -85,17 +85,17 @@ export default function MaterialDetailPage() {
             <Info label="物料编码" value={material.code} mono />
             <Info label="平台标准编码" value={standard?.code || '历史数据'} mono />
             <Info label="参考类型" value={REFERENCE_LABELS[material.referenceType] || material.referenceType} />
-            <Info label="商品形态" value={standard?.commodityForm || material.commodityForm} />
+            <Info label="商品形态/规格" value={standard?.commodityForm || material.commodityForm} />
             <Info label="包装方式" value={standard?.packageType || material.packageType} />
             <Info label="计量单位" value={unitLabel(standard?.unit || material.unit)} />
           </div>
         </Card>
 
         <Card className="space-y-4 p-6">
-          <div><h2 className="font-semibold">规格标准定义</h2><p className="mt-1 text-xs text-muted-foreground">第一项为参与商品名称与查重的核心规格</p></div>
+          <div><h2 className="font-semibold">规格标准定义</h2><p className="mt-1 text-xs text-muted-foreground">第一项为参与标准商品查重的核心指标，不自动拼入商品名称</p></div>
           {specificationItems.length === 0 ? <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">暂无规格指标</div> : <div className="overflow-x-auto rounded-md border">
             <table className="w-full min-w-[560px] text-sm"><thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3">类型</th><th className="px-4 py-3">指标名称</th><th className="px-4 py-3">比较符</th><th className="px-4 py-3">指标值</th><th className="px-4 py-3">单位</th></tr></thead>
-              <tbody>{specificationItems.map((item, index) => <tr key={`${item.name}-${index}`} className="border-t"><td className="px-4 py-3">{index === 0 ? <Badge variant="outline">核心规格</Badge> : '其他指标'}</td><td className="px-4 py-3 font-medium">{item.name || '-'}</td><td className="px-4 py-3">{item.operator || '-'}</td><td className="px-4 py-3">{item.value || '-'}</td><td className="px-4 py-3">{item.unit || '-'}</td></tr>)}</tbody>
+              <tbody>{specificationItems.map((item, index) => <tr key={`${item.name}-${index}`} className="border-t"><td className="px-4 py-3">{index === 0 ? <Badge variant="outline">核心指标</Badge> : '其他指标'}</td><td className="px-4 py-3 font-medium">{item.name || '-'}</td><td className="px-4 py-3">{item.operator || '-'}</td><td className="px-4 py-3">{item.value || '-'}</td><td className="px-4 py-3">{item.unit || '-'}</td></tr>)}</tbody>
             </table>
           </div>}
         </Card>

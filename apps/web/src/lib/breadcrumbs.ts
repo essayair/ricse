@@ -203,6 +203,19 @@ function resolveWeighbridge(pathname: string): BreadcrumbItem[] | null {
   return null;
 }
 
+function resolveQualityReports(pathname: string): BreadcrumbItem[] | null {
+  const base = '/dashboard/quality/reports';
+  if (pathname !== base && !pathname.startsWith(`${base}/`)) return null;
+  const section: BreadcrumbItem = { label: '磅单质检' };
+  const list: BreadcrumbItem = { label: '检测报告', href: base };
+  if (pathname === base) return withHome([section, { label: '检测报告' }]);
+  if (pathname === `${base}/new`) return withHome([section, list, { label: '录入检测报告' }]);
+  if (/^\/dashboard\/quality\/reports\/[^/]+$/.test(pathname)) {
+    return withHome([section, list, { label: '检测报告详情' }]);
+  }
+  return null;
+}
+
 function resolveOrganization(pathname: string, params?: BreadcrumbSearchParams): BreadcrumbItem[] | null {
   const root: BreadcrumbItem = { label: '组织数据' };
   if (pathname === '/dashboard/org') {
@@ -316,6 +329,8 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
   if (production) return { items: production, supported: true };
   const weighbridge = resolveWeighbridge(pathname);
   if (weighbridge) return { items: weighbridge, supported: true };
+  const qualityReports = resolveQualityReports(pathname);
+  if (qualityReports) return { items: qualityReports, supported: true };
 
   for (const route of RESOURCE_ROUTES) {
     const items = resolveResource(pathname, route);

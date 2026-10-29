@@ -112,6 +112,41 @@ describe('ContractService', () => {
       expect(result.defaultDepartmentId).toBe('dept-1');
       expect(result.departments).toHaveLength(2);
     });
+
+    it('合同主体选项不受合作伙伴列表默认每页 20 条限制', async () => {
+      const partners = Array.from({ length: 21 }, (_, index) => ({
+        id: `partner-${index + 1}`, code: String(index + 1), name: `主体${index + 1}`,
+        roles: ['SUPPLIER', 'CUSTOMER'], isInternal: index === 20,
+      }));
+      prisma.partner.findMany.mockResolvedValue(partners as any);
+
+      const result = await service.getFormOptions('user-1');
+
+      expect(result.partners).toHaveLength(21);
+      expect(result.partners).toContainEqual(expect.objectContaining({ id: 'partner-21', isInternal: true }));
+      expect(prisma.partner.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { deletedAt: null, status: 'ACTIVE' },
+        select: expect.objectContaining({ id: true, code: true, name: true, roles: true, isInternal: true }),
+      }));
+      expect(prisma.partner.findMany.mock.calls[0][0]).not.toHaveProperty('take');
+    });
+
+    it('外部账号只能取得自身和内部主体，且不暴露内部主体联系人', async () => {
+      accessControl.assertPermission.mockResolvedValue({
+        isExternal: true, externalPartnerId: 'external-self', user: {},
+      } as any);
+      prisma.partner.findMany.mockResolvedValue([
+        { id: 'external-self', isInternal: false, contactPerson: '外部经办人', contactPhone: '13800000000' },
+        { id: 'internal-1', isInternal: true, contactPerson: '内部经办人', contactPhone: '13900000000' },
+      ] as any);
+
+      const result = await service.getFormOptions('external-user');
+
+      expect(prisma.partner.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { deletedAt: null, status: 'ACTIVE', OR: [{ id: 'external-self' }, { isInternal: true }] },
+      }));
+      expect(result.partners[1]).toEqual(expect.objectContaining({ contactPerson: null, contactPhone: null }));
+    });
   });
 
   describe('create', () => {
@@ -473,9 +508,9 @@ describe('ContractService', () => {
       expect(prisma.approvalFlow.findUnique).not.toHaveBeenCalled();
     });
 
-    it('当前阶段拒绝基差或不定价合同提交', async () => {
+    it('拒绝尚未支持的基差或不定价合同提交', async () => {
       prisma.contract.findFirst.mockResolvedValue({ ...mockContract, pricingType: 'BASIS' } as any);
-      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('当前仅支持固定价格（一口价）合同');
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('请选择有效的合同定价类型');
       expect(prisma.approvalFlow.findUnique).not.toHaveBeenCalled();
     });
 

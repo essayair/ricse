@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ServiceOrganizationInput, ServiceOrganizationService } from './service-organization.service';
+import { ServiceOrganizationService } from './service-organization.service';
 import { PermissionGuard } from '../common/permission.guard';
 import { RequirePermission } from '../common/require-permission.decorator';
+import { CreateServiceOrganizationDto, UpdateServiceOrganizationDto } from './dto/service-organization.dto';
 
 @ApiTags('服务生态')
 @ApiBearerAuth()
@@ -15,7 +16,7 @@ export class ServiceOrganizationController {
   @Post()
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建物流承运商、质检机构、仓储与港口或加工服务商档案' })
-  create(@Body() dto: ServiceOrganizationInput) {
+  create(@Body() dto: CreateServiceOrganizationDto) {
     return this.service.create(dto);
   }
 
@@ -44,7 +45,7 @@ export class ServiceOrganizationController {
 
   @Patch(':id')
   @RequirePermission('master_data.manage')
-  update(@Param('id') id: string, @Body() dto: Partial<ServiceOrganizationInput>) {
+  update(@Param('id') id: string, @Body() dto: UpdateServiceOrganizationDto) {
     return this.service.update(id, dto);
   }
 }

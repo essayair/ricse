@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
 
 export class CreateSettlementLineDto {
   @IsString()
@@ -75,6 +75,14 @@ export class CreateFinancialSettlementDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   adjustmentAmount?: number;
+
+  /** 品位分档价格为不含税元/度；结算人明确填写本次适用税率。 */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  taxRatePct?: number;
 
   @IsOptional()
   @IsDateString()

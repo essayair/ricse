@@ -14,6 +14,7 @@ import { unitLabel } from '@/lib/unit';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
+import { GradePriceRulesEditor, GradePriceSnapshot, defaultGradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -51,6 +52,8 @@ interface LineItem {
   salesUnitPrice: string;
   remarks: string;
   qualityRulesSnapshot?: any;
+  priceRulesSnapshot?: GradePriceSnapshot | null;
+  salesPriceRulesSnapshot?: GradePriceSnapshot | null;
 }
 
 interface DepartmentItem {
@@ -70,6 +73,7 @@ interface ContractFormOptions {
   defaultBusinessUnitId?: string | null;
   departments: DepartmentItem[];
   businessUnits: Array<{ id: string; code: string; name: string; companyId: string; isDefault?: boolean }>;
+  partners: Array<{ id: string; code: string; name: string; roles: string[]; isInternal: boolean; contactPerson?: string | null; contactPhone?: string | null }>;
 }
 
 export default function ContractEditPage() {
@@ -79,7 +83,6 @@ export default function ContractEditPage() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [partners, setPartners] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
   const [internalPartners, setInternalPartners] = useState<any[]>([]);
   const [supplierPartners, setSupplierPartners] = useState<any[]>([]);
@@ -116,20 +119,14 @@ export default function ContractEditPage() {
   useEffect(() => {
     Promise.all([
       api.get<any>(`/contracts/${contractId}`),
-      api.get<{ items: any[] }>('/partners?role=SUPPLIER'),
-      api.get<{ items: any[] }>('/partners?role=CUSTOMER'),
-      api.get<{ items: any[] }>('/partners'),
       api.get<{ items: any[] }>('/master-data/materials'),
       api.get<ContractFormOptions>('/contracts/form-options'),
       api.get<CurrentUserProfile>('/auth/profile'),
-    ]).then(([contract, supplierData, customerData, allData, materialData, formOptions, profile]) => {
-      const suppliers = supplierData.items || [];
-      const customers = customerData.items || [];
-      const all = allData.items || [];
+    ]).then(([contract, materialData, formOptions, profile]) => {
+      const all = formOptions.partners || [];
       const companyId = contract.companyId || profile.companyId;
-      setPartners(all);
-      setSupplierPartners(suppliers);
-      setCustomerPartners(customers);
+      setSupplierPartners(all.filter(p => p.roles?.includes('SUPPLIER')));
+      setCustomerPartners(all.filter(p => p.roles?.includes('CUSTOMER')));
       setInternalPartners(all.filter((p: any) => p.isInternal));
       setMaterials(materialData.items || []);
       setDepartments(companyId
@@ -181,6 +178,8 @@ export default function ContractEditPage() {
           salesUnitPrice: String(item.salesUnitPrice || ''),
           remarks: item.remarks || '',
           qualityRulesSnapshot: item.qualityRulesSnapshot || null,
+          priceRulesSnapshot: item.priceRulesSnapshot || null,
+          salesPriceRulesSnapshot: item.salesPriceRulesSnapshot || null,
         })));
       }
     }).catch(e => {
@@ -197,6 +196,8 @@ export default function ContractEditPage() {
       if (key === 'materialId') {
         const m = materials.find((x: any) => x.id === value);
         next[idx].qualityRulesSnapshot = null;
+        next[idx].priceRulesSnapshot = null;
+        next[idx].salesPriceRulesSnapshot = null;
         if (m) { next[idx].materialName = m.name; next[idx].unit = m.unit || 'TON'; }
       }
       return next;
@@ -260,6 +261,8 @@ export default function ContractEditPage() {
           ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(item.salesUnitPrice) } : {}),
           remarks: item.remarks || undefined,
           qualityRulesSnapshot: item.qualityRulesSnapshot || undefined,
+          priceRulesSnapshot: form.pricingType === 'GRADE_TIER' ? item.priceRulesSnapshot || undefined : undefined,
+          salesPriceRulesSnapshot: form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' ? item.salesPriceRulesSnapshot || undefined : undefined,
         })),
       });
       if (pendingAttachments.length > 0) await uploadAttachments();
@@ -504,7 +507,7 @@ export default function ContractEditPage() {
                   <Input className="mt-1" value={unitLabel(item.unit)} onChange={e => updateLineItem(idx, 'unit', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground">{form.type === 'BILATERAL' ? '采购单价' : form.type === 'PURCHASE' ? '采购单价' : '销售单价'}(元/吨) <span className="text-destructive">*</span></label>
+                  <label className="text-xs text-muted-foreground">{form.pricingType === 'GRADE_TIER' ? '预计单价（元/吨）' : form.type === 'BILATERAL' ? '采购单价(元/吨)' : form.type === 'PURCHASE' ? '采购单价(元/吨)' : '销售单价(元/吨)'} <span className="text-destructive">*</span></label>
                   <Input className="mt-1" type="number" step="0.01" value={item.unitPrice} onChange={e => updateLineItem(idx, 'unitPrice', e.target.value)} />
                 </div>
                 {form.type === 'BILATERAL' && (
@@ -546,6 +549,7 @@ export default function ContractEditPage() {
                   setLineItems(current => current.map((line, index) => index === idx ? { ...line, qualityRulesSnapshot: snapshot } : line));
                 }}
               />
+              {form.pricingType === 'GRADE_TIER' && <><div className="text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={item.priceRulesSnapshot || defaultGradePriceSnapshot} onChange={snapshot => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, priceRulesSnapshot: snapshot } : line)); }} />{form.type === 'BILATERAL' && <><div className="mt-4 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={item.salesPriceRulesSnapshot || defaultGradePriceSnapshot} onChange={snapshot => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, salesPriceRulesSnapshot: snapshot } : line)); }} /></>}</>}
               </div>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
@@ -558,9 +562,10 @@ export default function ContractEditPage() {
             <FormField label="定价类型" required>
               <select value={form.pricingType} onChange={e => set('pricingType', e.target.value)} className={SELECT_CLS}>
                 <option value="FIXED">固定价格（一口价）</option>
-                {form.pricingType !== 'FIXED' && <option value={form.pricingType}>历史定价方式（仅查看，提交前请改为一口价）</option>}
+                <option value="GRADE_TIER">按 CaF₂ 品位分档计价</option>
+                {!['FIXED', 'GRADE_TIER'].includes(form.pricingType) && <option value={form.pricingType}>历史定价方式</option>}
               </select>
-              {form.pricingType !== 'FIXED' && <span className="text-xs text-amber-700">当前合同为历史定价方式；本阶段新提交仅支持固定价格，请确认纸质合同后改为一口价。</span>}
+              {form.pricingType === 'GRADE_TIER' && <span className="text-xs text-amber-700">行项单价与总额仅作预计，实际按确认的品位档位结算。</span>}
             </FormField>
             <FormField label="溢装比例(%)" required>
               <Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} />

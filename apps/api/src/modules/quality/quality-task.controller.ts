@@ -24,6 +24,7 @@ import { FinalizeQualityTaskDto } from './dto/finalize-quality-task.dto';
 import { UpdateQualityTaskSamplingDto } from './dto/update-quality-task-sampling.dto';
 import { CreateQualitySampleDto, UpdateQualitySampleDto } from './dto/quality-sample.dto';
 import { QualityInspectionService } from './quality-inspection.service';
+import { AcceptContractDeductionDto } from './dto/accept-contract-deduction.dto';
 
 @ApiTags('质检任务')
 @ApiBearerAuth()
@@ -236,7 +237,7 @@ export class QualityTaskController {
   @ApiOperation({ summary: '确认按合同扣款接收货物并生成待入库单' })
   acceptContractDeduction(
     @Param('id') id: string,
-    @Body() body: { reason?: string; decisionVersion?: number },
+    @Body() body: AcceptContractDeductionDto,
     @CurrentUser('id') userId: string,
   ) {
     return this.service.acceptContractDeduction(id, body.reason || '', userId, body.decisionVersion);

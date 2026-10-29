@@ -941,10 +941,10 @@ function MasterDataPageInner() {
         {/* 商品物料 */}
         {tab === 'materials' && (
           <DataTable
-            headers={['业务编码 / 标准编码', '商品名称 / 形态', '参考类型 / 包装', '状态', '商品分类', '核心规格', '单位', '质检模板', '操作']}
+            headers={['业务编码 / 标准编码', '商品名称 / 形态规格', '参考类型 / 包装', '状态', '商品分类', '核心指标', '单位', '质检模板', '操作']}
             rows={materials.map((m) => [
               <div key="c"><div className="font-mono text-xs">{m.code}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.standardCommodity?.code || '历史物料'}</div></div>,
-              <div key="n"><Link href={`/dashboard/master-data/materials/${m.id}`} className="font-medium hover:text-primary hover:underline">{m.standardCommodity?.name || m.name}</Link><div className="mt-1 max-w-56 truncate text-xs text-muted-foreground">{m.commodityForm || '未设置形态'}</div></div>,
+              <div key="n"><Link href={`/dashboard/master-data/materials/${m.id}`} className="font-medium hover:text-primary hover:underline">{m.name}</Link><div className="mt-1 max-w-56 truncate text-xs text-muted-foreground">{m.commodityForm || '未设置形态/规格'}</div></div>,
               <div key="rt"><div className="text-xs">{MATERIAL_REFERENCE_LABELS[m.referenceType] || m.referenceType || '贸易商品'}</div><div className="mt-1 text-xs text-muted-foreground">{m.packageType || '未设置包装'}</div></div>,
               <StatusBadge key="s" status={m.status} />,
               <Badge key="cat" variant="outline" className="text-xs">{m.category?.name || '-'}</Badge>,

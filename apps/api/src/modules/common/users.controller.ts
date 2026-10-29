@@ -6,6 +6,7 @@ import { PermissionGuard } from './permission.guard';
 import { RequirePermission } from './require-permission.decorator';
 import { CurrentUser } from './current-user.decorator';
 import { AdminGuard } from './admin.guard';
+import { CreateUserDto, ResetPasswordDto, UpdateUserDto } from './dto/user.dto';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
 
@@ -19,11 +20,7 @@ export class UsersController {
 
   @Post()
   @ApiOperation({ summary: '创建用户（开通账号）' })
-  create(@Body() dto: {
-    username: string; password: string; name: string; role?: string;
-    employeeId?: string; companyId?: string; businessGroupId?: string;
-    businessUnitIds?: string[]; defaultBusinessUnitId?: string;
-  }, @CurrentUser('id') operatedBy?: string) {
+  create(@Body() dto: CreateUserDto, @CurrentUser('id') operatedBy?: string) {
     if (!dto.username || !USERNAME_PATTERN.test(dto.username.trim())) {
       throw new BadRequestException('用户名须以字母或数字开头，可包含字母、数字、点、下划线和短横线，长度3-50位');
     }
@@ -50,7 +47,7 @@ export class UsersController {
   @ApiOperation({ summary: '更新用户（状态/名称/用户名）' })
   update(
     @Param('id') id: string,
-    @Body() dto: { status?: string; name?: string; username?: string; phone?: string; email?: string },
+    @Body() dto: UpdateUserDto,
     @CurrentUser('id') operatedBy?: string,
   ) {
     if (dto.username !== undefined) {
@@ -65,7 +62,7 @@ export class UsersController {
   @ApiOperation({ summary: '管理员重置用户密码' })
   async resetPassword(
     @Param('id') id: string,
-    @Body() dto: { password: string },
+    @Body() dto: ResetPasswordDto,
     @CurrentUser('id') operatedBy?: string,
   ) {
     if (!dto.password || dto.password.length < 6) {

@@ -541,7 +541,11 @@ export class AccessControlService {
   }
 
   async getQualityInspectionScope(userId: string, permissionCode = 'quality.view'): Promise<Prisma.QualityInspectionWhereInput> {
-    return { weighTicket: await this.getWeighTicketScope(userId, permissionCode) };
+    return { OR: [
+      { weighTicket: await this.getWeighTicketScope(userId, permissionCode) },
+      { contract: await this.getContractScope(userId, permissionCode) },
+      { contractId: null, createdBy: userId },
+    ] };
   }
 
   async getQualityTaskScope(userId: string, permissionCode = 'quality.view'): Promise<Prisma.QualityTaskWhereInput> {

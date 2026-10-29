@@ -222,7 +222,11 @@ export class OrgService {
     }
     return this.prisma.department.update({
       where: { id },
-      data: { ...data, name: data.name === undefined ? undefined : this.normalizeName(data.name, '部门名称') },
+      data: {
+        name: data.name === undefined ? undefined : this.normalizeName(data.name, '部门名称'),
+        parentId: data.parentId,
+        sort: data.sort,
+      },
     });
   }
 

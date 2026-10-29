@@ -95,11 +95,11 @@ export default function MaterialEditPage() {
           <ReadOnly label="业务物料编码" value={material.code} mono />
           <ReadOnly label="平台标准编码" value={standard?.code || '历史数据'} mono />
           <ReadOnly label="参考类型" value={REFERENCE_LABELS[material.referenceType] || material.referenceType} />
-          <ReadOnly label="商品名称（系统拼接）" value={standard?.name || material.name} className="md:col-span-2" />
+          <ReadOnly label="商品名称（系统拼接）" value={material.name} className="md:col-span-2" />
           <ReadOnly label="商品分类" value={material.category?.name || '-'} />
           <ReadOnly label="商品品名" value={standard?.baseName || material.name} />
-          <ReadOnly label="商品形态" value={standard?.commodityForm || material.commodityForm || '-'} />
-          <ReadOnly label="核心规格" value={coreSpec} />
+          <ReadOnly label="商品形态/规格" value={standard?.commodityForm || material.commodityForm || '-'} />
+          <ReadOnly label="核心指标" value={coreSpec} />
           <ReadOnly label="包装方式" value={standard?.packageType || material.packageType || '-'} />
           <ReadOnly label="计量单位" value={unitLabel(standard?.unit || material.unit)} />
         </div>

@@ -27,6 +27,19 @@ describe('逐车质量结算来源与版本', () => {
     const rows = await service.sources('c', 'u');
     expect(rows[0]).toMatchObject({ available: true, totalQuantity: 100, remainingQuantity: 40, totalAmount: 78400, deductionPerTon: 40 });
   });
+  it('逐车结算来源带出入库日期、磅单三重和实测水分，并计算参考干基', async () => {
+    const receipt = source.waybill.inboundReceipts[0];
+    receipt.receivedAt = new Date('2026-07-23T09:00:00+08:00');
+    receipt.weighTicket.grossWeight = new Prisma.Decimal(125);
+    receipt.weighTicket.tareWeight = new Prisma.Decimal(23);
+    receipt.businessInbound.measuredMoisturePct = new Prisma.Decimal(8.7);
+    receipt.businessInbound.pricingQuantityBasis = 'DRY_MATTER';
+
+    const row = (await service.sources('c', 'u'))[0];
+
+    expect(row).toMatchObject({ inboundDate: receipt.receivedAt, grossWeight: 125, tareWeight: 23,
+      netWeight: 102, measuredMoisturePct: 8.7, dryQuantity: 93.126, pricingQuantityBasis: 'DRY_MATTER' });
+  });
   it('未入库过账或入库已冲销时不能编制最终货物应付，不影响提前付款入口', async () => {
     source.waybill.inboundReceipts[0].status = 'RECEIVED';
     const row = (await service.sources('c', 'u'))[0];
@@ -64,5 +77,44 @@ describe('逐车质量结算来源与版本', () => {
   it('存在未映射的历史批次结算时阻止同货物重复确认应付', async () => {
     prisma.financialSettlement.findMany.mockResolvedValue([{ settlementScope: 'BATCH', lines: [{ orderId: 'o', waybillLineItemId: null }] }] as any);
     expect((await service.sources('c', 'u'))[0].reasons.join('；')).toContain('历史应付');
+  });
+
+  it('萤石矿分档价按最终报告实测品位计价，不用通用质检阈值误拒收', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', lineItems: [{
+      id: 'cl', materialName: '萤石矿', unitPrice: new Prisma.Decimal(500), priceRulesSnapshot: {
+        version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
+        selectedSpec: 'FRAGMENT', formulaConfirmed: true, moistureMaxPct: 5, exceptionHandling: 'MANUAL_REVIEW',
+        bands: [{ lower: 35, upper: 40, rates: { FRAGMENT: 23.2, RUN_OF_MINE: 23.2 } }],
+      },
+    }] } as any);
+    source.waybill.inboundReceipts[0].businessInbound.pricingQuantityBasis = 'PHYSICAL';
+    source.waybill.qualityTask.qualityDisposition = 'REVIEW_REQUIRED';
+    source.waybill.qualityTask.qualityDeductionPerTon = new Prisma.Decimal(0);
+    source.waybill.qualityTask.basisInspection.indicators = [
+      { code: 'CAF2', unit: '%', measuredValue: new Prisma.Decimal(37) },
+      { code: 'MOISTURE', unit: '%', measuredValue: new Prisma.Decimal(4) },
+    ];
+
+    const row = (await service.sources('c', 'u'))[0];
+    expect(row).toMatchObject({ available: true, unitPrice: 858.4, qualityReady: true, gradePrice: { status: 'READY', gradePct: 37, rate: 23.2 } });
+  });
+
+  it('水分超过分档合同上限时转人工确认，不自动生成金额', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', lineItems: [{
+      id: 'cl', materialName: '萤石矿', unitPrice: new Prisma.Decimal(500), priceRulesSnapshot: {
+        version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
+        selectedSpec: 'FRAGMENT', formulaConfirmed: true, moistureMaxPct: 5, exceptionHandling: 'MANUAL_REVIEW',
+        bands: [{ lower: 35, upper: 40, rates: { FRAGMENT: 23.2, RUN_OF_MINE: 23.2 } }],
+      },
+    }] } as any);
+    source.waybill.inboundReceipts[0].businessInbound.pricingQuantityBasis = 'PHYSICAL';
+    source.waybill.qualityTask.basisInspection.indicators = [
+      { code: 'CAF2', unit: '%', measuredValue: new Prisma.Decimal(37) },
+      { code: 'MOISTURE', unit: '%', measuredValue: new Prisma.Decimal(6) },
+    ];
+
+    const row = (await service.sources('c', 'u'))[0];
+    expect(row.available).toBe(false);
+    expect(row.reasons.join('；')).toContain('水分 6% 超过合同上限 5%');
   });
 });

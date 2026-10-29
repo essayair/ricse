@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, HttpCode } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, HttpCode, Ip } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
@@ -14,8 +14,8 @@ export class AuthController {
 
   @Post('login')
   @ApiOperation({ summary: '使用用户名或员工手机号登录' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto.username, dto.password);
+  login(@Body() dto: LoginDto, @Ip() ip: string) {
+    return this.authService.login(dto.username, dto.password, ip);
   }
 
   @Post('register')

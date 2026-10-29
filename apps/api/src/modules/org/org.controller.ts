@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/current-user.decorator';
 import { PermissionGuard } from '../common/permission.guard';
 import { RequirePermission } from '../common/require-permission.decorator';
 import { AdminGuard } from '../common/admin.guard';
+import { CreateBusinessGroupDto, CreateBusinessUnitDto, CreateCompanyDto, CreateDepartmentDto, CreateEmployeeDto, ReorderDepartmentsDto, UpdateBusinessGroupDto, UpdateBusinessUnitDto, UpdateCompanyDto, UpdateDepartmentDto, UpdateEmployeeDto } from './dto/org.dto';
 
 @ApiTags('组织数据')
 @ApiBearerAuth()
@@ -19,7 +20,7 @@ export class OrgController {
   @Post('companies')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '创建企业（从合作伙伴拉取基本信息）' })
-  createCompany(@Body() dto: { partnerId: string; parentId?: string }) {
+  createCompany(@Body() dto: CreateCompanyDto) {
     return this.orgService.createCompany(dto);
   }
 
@@ -47,7 +48,7 @@ export class OrgController {
   @Patch('companies/:id')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '更新企业' })
-  updateCompany(@Param('id') id: string, @Body() dto: { name?: string; shortName?: string; status?: string; parentId?: string }) {
+  updateCompany(@Param('id') id: string, @Body() dto: UpdateCompanyDto) {
     return this.orgService.updateCompany(id, dto);
   }
 
@@ -56,7 +57,7 @@ export class OrgController {
   @Post('departments')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '创建部门' })
-  createDepartment(@Body() dto: { name: string; companyId: string; parentId?: string; sort?: number }) {
+  createDepartment(@Body() dto: CreateDepartmentDto) {
     return this.orgService.createDepartment(dto);
   }
 
@@ -77,14 +78,14 @@ export class OrgController {
   @Patch('departments/reorder')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '批量调整部门顺序' })
-  reorderDepartments(@Body() dto: { companyId: string; orderedIds: string[] }) {
+  reorderDepartments(@Body() dto: ReorderDepartmentsDto) {
     return this.orgService.reorderDepartments(dto.companyId, dto.orderedIds);
   }
 
   @Patch('departments/:id')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '更新部门' })
-  updateDepartment(@Param('id') id: string, @Body() dto: { name?: string; parentId?: string; sort?: number }) {
+  updateDepartment(@Param('id') id: string, @Body() dto: UpdateDepartmentDto) {
     return this.orgService.updateDepartment(id, dto);
   }
 
@@ -101,10 +102,7 @@ export class OrgController {
   @Post('employees')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '创建员工' })
-  createEmployee(@Body() dto: {
-    name: string; departmentId: string; companyId: string; phone: string;
-    position?: string; email?: string; status?: string;
-  }, @CurrentUser('id') operatedBy: string) {
+  createEmployee(@Body() dto: CreateEmployeeDto, @CurrentUser('id') operatedBy: string) {
     return this.orgService.createEmployee(dto, operatedBy);
   }
 
@@ -135,10 +133,7 @@ export class OrgController {
   @ApiOperation({ summary: '更新员工信息' })
   updateEmployee(
     @Param('id') id: string,
-    @Body() dto: {
-      name?: string; departmentId?: string; companyId?: string;
-      phone?: string; position?: string; email?: string; status?: string;
-    },
+    @Body() dto: UpdateEmployeeDto,
     @CurrentUser('id') operatedBy: string,
   ) {
     return this.orgService.updateEmployee(id, dto, operatedBy);
@@ -157,7 +152,7 @@ export class OrgController {
   @Post('business-groups')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '创建业务组' })
-  createBusinessGroup(@Body() dto: { name: string; description?: string; companyIds?: string[] }) {
+  createBusinessGroup(@Body() dto: CreateBusinessGroupDto) {
     return this.orgService.createBusinessGroup(dto);
   }
 
@@ -171,7 +166,7 @@ export class OrgController {
   @Patch('business-groups/:id')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '更新业务组' })
-  updateBusinessGroup(@Param('id') id: string, @Body() dto: { name?: string; description?: string; companyIds?: string[] }) {
+  updateBusinessGroup(@Param('id') id: string, @Body() dto: UpdateBusinessGroupDto) {
     return this.orgService.updateBusinessGroup(id, dto);
   }
 
@@ -188,10 +183,7 @@ export class OrgController {
   @Post('business-units')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '创建业务单元' })
-  createBusinessUnit(@Body() dto: {
-    name: string; type?: string; companyId?: string; parentId?: string;
-    profitCenterCode?: string; status?: string; description?: string;
-  }) {
+  createBusinessUnit(@Body() dto: CreateBusinessUnitDto) {
     return this.orgService.createBusinessUnit(dto);
   }
 
@@ -205,10 +197,7 @@ export class OrgController {
   @Patch('business-units/:id')
   @RequirePermission('organization.manage')
   @ApiOperation({ summary: '更新业务单元' })
-  updateBusinessUnit(@Param('id') id: string, @Body() dto: {
-    name?: string; type?: string; companyId?: string; parentId?: string | null;
-    profitCenterCode?: string | null; status?: string; description?: string | null;
-  }) {
+  updateBusinessUnit(@Param('id') id: string, @Body() dto: UpdateBusinessUnitDto) {
     return this.orgService.updateBusinessUnit(id, dto);
   }
 

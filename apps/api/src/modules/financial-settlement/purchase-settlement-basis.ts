@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { evaluateGradePrice, readMeasuredPct } from '../contract/grade-price-rules';
 import { goodsAmounts } from './payment-balance';
 
 export const snapshotJson = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
@@ -41,7 +42,7 @@ export class PurchaseSettlementBasis {
         waybill: { include: {
           lineItems: true, dispatchNotice: { include: { order: true } },
           weightSelections: { where: { isCurrent: true }, include: { weighTicket: true }, orderBy: { selectedAt: 'desc' } },
-          qualityTask: { include: { basisInspection: true } },
+          qualityTask: { include: { basisInspection: { include: { indicators: true } } } },
           inboundReceipts: { where: { deletedAt: null, status: { not: 'CANCELLED' } }, include: { weighTicket: true, businessInbound: true }, orderBy: { createdAt: 'desc' } },
         } },
       }, orderBy: { createdAt: 'asc' },
@@ -55,6 +56,12 @@ export class PurchaseSettlementBasis {
       const legacySelection = w.weightSelections.find(s => s.purpose === 'SETTLEMENT');
       // 最终采购货款跟随实际入库过账，不另选货款磅单，也不以磅单最新净重覆盖已过账数量。
       const totalQuantity = Number(posted?.pricingQuantity ?? posted?.quantity ?? 0);
+      const measuredMoisturePct = posted?.measuredMoisturePct == null
+        ? readMeasuredPct(report?.indicators || [], 'MOISTURE')
+        : Number(posted.measuredMoisturePct);
+      const netWeight = ticket?.netWeight == null ? null : Number(ticket.netWeight);
+      const dryQuantity = netWeight == null || measuredMoisturePct == null ? null
+        : new Prisma.Decimal(netWeight).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(measuredMoisturePct).div(100))).toDecimalPlaces(3).toNumber();
       const usedQuantity = row.settlementLines.reduce((sum, l) => sum.plus(l.quantity || 0), new Prisma.Decimal(0));
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const reasons: string[] = [];
@@ -63,18 +70,32 @@ export class PurchaseSettlementBasis {
       if (!ticket || ticket.deletedAt || ticket.status !== 'REVIEWED') reasons.push('请先核对入库过账关联的结算入库磅单');
       if (!item) reasons.push('无法匹配合同物料行');
       if (!task || task.deletedAt || task.status !== 'COMPLETED' || !report || report.deletedAt || report.status !== 'CONFIRMED') reasons.push('请先完成最终质检判定');
-      if (task && !['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition)) reasons.push(task.qualityDisposition === 'DEDUCTION_PENDING' ? '请由结算或付款申请人员确认按合同扣款接收' : '当前质量结果为拒收或待判定，不能正常结算');
       if (legacyContract || legacyOrders.has(order.id)) reasons.push('存在未映射到具体货物的历史应付，请先复核并处理重叠结算');
       if (remainingQuantity <= 0) reasons.push('该来源数量已全部结算或被结算草稿占用');
       if (!['TON', '吨', 't'].includes(row.unit)) reasons.push('当前自动质量扣款仅支持已明确以吨计价的物料');
+      const isGradeTier = contract.pricingType === 'GRADE_TIER';
+      const gradePrice = isGradeTier && item?.priceRulesSnapshot
+        ? evaluateGradePrice(item.priceRulesSnapshot, (item.priceRulesSnapshot as any).selectedSpec, remainingQuantity, report?.indicators || [])
+        : null;
+      // 矿石分档价本身以实测品位决定价格；若合同没有另设质量拒收/扣款条款，
+      // 不把旧的通用质检模板阈值误当作矿石交易的拒收线。
+      const gradePriceCanSettle = isGradeTier && !task?.contractQualitySnapshot && gradePrice?.status === 'READY';
+      if (task && !gradePriceCanSettle && !['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition)) {
+        reasons.push(task.qualityDisposition === 'DEDUCTION_PENDING' ? '请由结算或付款申请人员确认按合同扣款接收' : '当前质量结果为拒收或待判定，不能正常结算');
+      }
+      if (isGradeTier && posted && posted.pricingQuantityBasis !== 'PHYSICAL') reasons.push('萤石矿品位分档价应按实物吨结算，请核对物料计价数量口径');
+      if (isGradeTier && !item?.priceRulesSnapshot) reasons.push('合同物料缺少品位分档价格表');
+      if (isGradeTier && gradePrice?.status === 'REVIEW_REQUIRED') reasons.push(...gradePrice.reasons);
       const deductionPerTon = task && ['DEDUCTION_PENDING', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition) ? Number(task.qualityDeductionPerTon || 0) : 0;
-      const qualityReady = Boolean(task && !task.deletedAt && task.status === 'COMPLETED' && report && !report.deletedAt && report.status === 'CONFIRMED' && ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition));
+      const qualityReady = Boolean(task && !task.deletedAt && task.status === 'COMPLETED' && report && !report.deletedAt && report.status === 'CONFIRMED' && (gradePriceCanSettle || ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition)));
       const basis = { contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
         waybillLineItemId: row.id, weightSelectionId: selection?.id, weight: totalQuantity,
         weighTicketId: receipt?.weighTicketId, ticketUpdatedAt: ticket?.updatedAt,
         businessInboundId: posted?.id, inboundQuantity: (posted?.pricingQuantity ?? posted?.quantity)?.toString(), inboundPhysicalQuantity: posted?.quantity?.toString(), inboundStatus: posted?.status, inboundPostedAt: posted?.postedAt,
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, qualityDisposition: task?.qualityDisposition,
-        reportId: report?.id, reportUpdatedAt: report?.updatedAt, unitPrice: item?.unitPrice.toString(), deductionPerTon };
+        reportId: report?.id, reportUpdatedAt: report?.updatedAt, unitPrice: item?.unitPrice.toString(), deductionPerTon,
+        gradePrice: gradePrice?.status === 'READY' ? { gradePct: gradePrice.gradePct, moisturePct: gradePrice.moisturePct, band: gradePrice.band, spec: gradePrice.spec, rate: gradePrice.rate, unitPriceExTax: gradePrice.unitPrice } : null,
+        priceRulesSnapshot: isGradeTier ? item?.priceRulesSnapshot : null };
       const priorBasis = { ...basis, inboundQuantity: posted?.quantity?.toString() };
       delete (priorBasis as Partial<typeof basis>).inboundPhysicalQuantity;
       const legacyBasis = { contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
@@ -86,15 +107,22 @@ export class PurchaseSettlementBasis {
         id: row.id, waybillLineItemId: row.id, waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo,
         orderId: order.id, orderNo: order.orderNo, orderName: order.name, orderStatus: order.status, waybillStatus: w.status,
         contractLineItemId: item?.id, materialName: row.materialName || item?.materialName, unit: row.unit,
-        totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity, unitPrice: Number(item?.unitPrice || 0),
+        totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity,
+        unitPrice: gradePrice?.status === 'READY' ? gradePrice.unitPrice : Number(item?.unitPrice || 0),
+        pricingType: contract.pricingType || 'FIXED', gradePrice,
         weightSelectionId: selection?.id, weighTicketId: receipt?.weighTicketId, ticketNo: ticket?.ticketNo,
         inboundNo: posted?.inboundNo, inboundPostedAt: posted?.postedAt,
+        inboundDate: receipt?.receivedAt || posted?.postedAt || null,
+        grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight),
+        tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
+        netWeight, measuredMoisturePct, dryQuantity,
+        pricingQuantityBasis: posted?.pricingQuantityBasis || 'PHYSICAL',
         qualityTaskId: task?.id, taskNo: task?.taskNo, reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo,
         qualityDisposition: task?.qualityDisposition || 'PENDING', qualityReady, qualityAcceptance: task?.qualityAcceptanceSnapshot,
         deductionPerTon, evaluation: task?.contractQualityEvaluation, decisionVersion: task?.decisionVersion,
         inboundStatuses: w.inboundReceipts.map(r => r.status), signature: signature(basis), priorSignature: signature(priorBasis), legacySignature: signature(legacyBasis),
         available: reasons.length === 0, reasons,
-        ...goodsAmounts(remainingQuantity, item?.unitPrice || 0, deductionPerTon),
+        ...goodsAmounts(remainingQuantity, gradePrice?.status === 'READY' ? gradePrice.unitPrice : item?.unitPrice || 0, deductionPerTon),
       };
     });
   }

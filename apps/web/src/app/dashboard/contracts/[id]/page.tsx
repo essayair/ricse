@@ -15,6 +15,7 @@ import { openStoredAttachment } from '@/lib/attachment-preview';
 import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
+import { GradePriceRulesView, GradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
 import { StatusText } from '@/components/status-text';
 import { confirmAction } from '@/lib/system-dialog';
 import {
@@ -70,7 +71,7 @@ interface ContractDetail {
   seller: { id: string; code: string; name: string; roles: string[] } | null;
   buyer: { id: string; code: string; name: string; roles: string[] } | null;
   attachments?: Array<{ id: string; originalName: string; mimeType: string; size: number; category: string }>;
-  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; salesUnitPrice?: string | null; salesTotalPrice?: string | null; remarks?: string | null; qualityRulesSnapshot?: any }>;
+  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; salesUnitPrice?: string | null; salesTotalPrice?: string | null; remarks?: string | null; qualityRulesSnapshot?: any; priceRulesSnapshot?: GradePriceSnapshot | null; salesPriceRulesSnapshot?: GradePriceSnapshot | null }>;
   approvals: Approval[];
   fulfillment: { directions: FulfillmentDirection[] };
   orders: Array<{
@@ -708,6 +709,7 @@ export default function ContractDetailPage() {
           )}
           {c.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <div className="mt-5 space-y-3"><h3 className="text-sm font-semibold">物料质量结算规则（合同快照）</h3>{c.lineItems.filter(line => line.qualityRulesSnapshot?.items?.length).map(line => <div key={line.id} className="rounded-md border p-3"><div className="mb-2 text-sm font-medium">{line.materialName || '合同物料'} · {line.qualityRulesSnapshot.templateName || '质检模板'}{line.qualityRulesSnapshot.templateVersion ? ` V${line.qualityRulesSnapshot.templateVersion}` : ''}</div><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="py-2">指标 / 标准</th><th>偏差处理</th><th>扣款标准</th><th>拒收条件</th></tr></thead><tbody>{line.qualityRulesSnapshot.items.map((rule: any, index: number) => <tr key={`${rule.code}-${index}`} className="border-b last:border-0"><td className="py-2">{rule.symbol || rule.name} {rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? `–${rule.upperValue}` : ''} {rule.unit}</td><td>{rule.deductionMode === 'PER_STEP' ? `按步长 ${rule.deductionStep}` : rule.deductionMode === 'FLAT' ? '固定扣款' : '按标准验收'}</td><td>{rule.deductionMode === 'NONE' ? '—' : `${rule.deductionAmount ?? '待填'} 元/吨`}</td><td>{rule.rejectOperator && rule.rejectOperator !== 'NONE' ? `${rule.rejectOperator} ${rule.rejectValue}` : '未设置'}</td></tr>)}</tbody></table></div></div>)}</div>}
           {!c.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <p className="mt-3 text-xs text-muted-foreground">未配置结构化质量结算规则；存量合同按原合同约定处理，不自动套用新模板。</p>}
+          {c.pricingType === 'GRADE_TIER' && c.lineItems.map(line => <div key={`price-${line.id}`}><GradePriceRulesView value={line.priceRulesSnapshot} title={`${line.materialName || '合同物料'}采购/单边价格条款`} />{c.type === 'BILATERAL' && <GradePriceRulesView value={line.salesPriceRulesSnapshot} title={`${line.materialName || '合同物料'}销售价格条款`} />}</div>)}
         </CardContent>
       </Card>
 
@@ -726,7 +728,7 @@ export default function ContractDetailPage() {
                   <th className="pb-2">物料</th>
                   <th className="pb-2">数量</th>
                   <th className="pb-2">单位</th>
-                  <th className="pb-2">{c.type === 'BILATERAL' ? '采购单价' : c.type === 'PURCHASE' ? '采购单价' : '销售单价'}</th>
+                  <th className="pb-2">{c.pricingType === 'GRADE_TIER' ? '预计单价' : c.type === 'BILATERAL' ? '采购单价' : c.type === 'PURCHASE' ? '采购单价' : '销售单价'}</th>
                   {c.type === 'BILATERAL' && <th className="pb-2">销售单价</th>}
                   <th className="pb-2">行项备注</th>
                   <th className="pb-2 text-right">{c.type === 'BILATERAL' ? '采购小计' : '小计'}</th>

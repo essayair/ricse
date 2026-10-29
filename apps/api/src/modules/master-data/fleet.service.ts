@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateFleetDto, UpdateFleetDto } from './dto/fleet.dto';
+import { resolvePagination } from '../common/pagination';
 
 @Injectable()
 export class FleetService {
@@ -45,8 +46,7 @@ export class FleetService {
   }
 
   async findAll(params: { page?: number; pageSize?: number; status?: string; search?: string; carrierPartnerId?: string }) {
-    const page = params.page || 1;
-    const pageSize = params.pageSize || 20;
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 20 });
     const where: Prisma.FleetWhereInput = {
       deletedAt: null,
       ...(params.status ? { status: params.status } : {}),
@@ -62,7 +62,7 @@ export class FleetService {
     const [items, total] = await Promise.all([
       this.prisma.fleet.findMany({
         where, include: this.include, orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize, take: pageSize,
+        skip, take: pageSize,
       }),
       this.prisma.fleet.count({ where }),
     ]);

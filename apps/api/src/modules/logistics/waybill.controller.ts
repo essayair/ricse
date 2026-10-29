@@ -7,6 +7,7 @@ import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { BatchCreateWaybillDto, CreateWaybillDto } from './dto/create-waybill.dto';
 import { WaybillReceiptAttachmentCategory, WaybillService } from './waybill.service';
+import { AssignWaybillDto } from './dto/assign-waybill.dto';
 
 @ApiTags('物流运单与调度')
 @ApiBearerAuth()
@@ -82,11 +83,7 @@ export class WaybillController {
   }
 
   @Patch(':id/assignment')
-  assign(@Param('id') id: string, @Body() data: {
-    freightMode?: string; vehicleId?: string | null; driverId?: string | null; carrierPartnerId?: string | null; carrierName?: string | null;
-    plateNo?: string | null; driverName?: string | null; driverPhone?: string | null;
-    plannedDepartureAt?: string; plannedArrivalAt?: string;
-  }, @CurrentUser('id') userId: string) {
+  assign(@Param('id') id: string, @Body() data: AssignWaybillDto, @CurrentUser('id') userId: string) {
     return this.service.assign(id, data, userId);
   }
 

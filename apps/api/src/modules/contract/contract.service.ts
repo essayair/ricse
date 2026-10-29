@@ -3,8 +3,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractStatusDto } from './dto/update-status.dto';
 import { Prisma } from '@prisma/client';
+import { parseGradePriceRules } from './grade-price-rules';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { AccessControlService } from '../access-control/access-control.service';
+import { resolvePagination } from '../common/pagination';
 
 type QuantityValue = { quantity: unknown; unit: string };
 type ApprovalContractContext = {
@@ -171,16 +173,35 @@ export class ContractService {
     const access = await this.accessControl.assertPermission(userId, 'contract.create');
     const companyId = access.user?.company?.id || access.user?.employee?.companyId || null;
     const defaultDepartmentId = access.user?.employee?.departmentId || null;
-    const departments = await this.prisma.department.findMany({
-      where: companyId ? { companyId } : undefined,
-      select: {
-        id: true,
-        name: true,
-        companyId: true,
-        company: { select: { id: true, name: true } },
-      },
-      orderBy: [{ companyId: 'asc' }, { sort: 'asc' }, { name: 'asc' }],
-    });
+    const [departments, partners] = await Promise.all([
+      this.prisma.department.findMany({
+        where: companyId ? { companyId } : undefined,
+        select: {
+          id: true,
+          name: true,
+          companyId: true,
+          company: { select: { id: true, name: true } },
+        },
+        orderBy: [{ companyId: 'asc' }, { sort: 'asc' }, { name: 'asc' }],
+      }),
+      this.prisma.partner.findMany({
+        where: {
+          deletedAt: null,
+          status: 'ACTIVE',
+          ...(access.isExternal ? {
+            OR: [
+              { id: access.externalPartnerId || '__NO_ACCESS__' },
+              { isInternal: true },
+            ],
+          } : {}),
+        },
+        select: {
+          id: true, code: true, name: true, roles: true, isInternal: true,
+          contactPerson: true, contactPhone: true,
+        },
+        orderBy: [{ code: 'asc' }, { name: 'asc' }],
+      }),
+    ]);
     const availableBusinessUnits = (await this.accessControl.getBusinessUnitOptions(userId, 'contract.create')) || [];
     const businessUnits = availableBusinessUnits;
     const defaultBusinessUnitId = businessUnits.find((item: any) => item.isDefault)?.id
@@ -191,6 +212,11 @@ export class ContractService {
       defaultBusinessUnitId,
       departments,
       businessUnits,
+      partners: access.isExternal
+        ? partners.map((partner) => partner.isInternal
+          ? { ...partner, contactPerson: null, contactPhone: null }
+          : partner)
+        : partners,
     };
   }
 
@@ -299,6 +325,8 @@ export class ContractService {
         salesUnitPrice: unknown;
         deliveryDate?: Date | null;
         qualityRulesSnapshot?: unknown;
+        priceRulesSnapshot?: unknown;
+        salesPriceRulesSnapshot?: unknown;
       }>;
       businessUnitId?: string | null;
     },
@@ -325,7 +353,7 @@ export class ContractService {
     if (!['PURCHASE', 'SALES', 'BILATERAL'].includes(contract.type)) {
       throw new BadRequestException('请选择有效的合同类型');
     }
-    if (contract.pricingType !== 'FIXED') throw new BadRequestException('当前仅支持固定价格（一口价）合同');
+    if (!['FIXED', 'GRADE_TIER'].includes(contract.pricingType || '')) throw new BadRequestException('请选择有效的合同定价类型');
     const validDate = (value: Date | null | undefined) => value instanceof Date && !Number.isNaN(value.getTime());
     if (!validDate(contract.signedAt)) throw new BadRequestException('请填写纸质合同签订日期');
     if (!contract.attachments?.length) throw new BadRequestException('请至少上传一份合同附件后再提交审批');
@@ -363,6 +391,12 @@ export class ContractService {
       || (contract.type === 'BILATERAL' && (item.salesUnitPrice == null || !Number.isFinite(Number(item.salesUnitPrice)) || Number(item.salesUnitPrice) <= 0))
     ));
     if (invalidLine) throw new BadRequestException('请完整填写货物、数量和单价');
+    if (contract.pricingType === 'GRADE_TIER') {
+      for (const line of contract.lineItems) {
+        parseGradePriceRules(line.priceRulesSnapshot);
+        if (contract.type === 'BILATERAL') parseGradePriceRules(line.salesPriceRulesSnapshot);
+      }
+    }
     const materials = await client.material.findMany({
       where: { id: { in: contract.lineItems.map(item => item.materialId) }, deletedAt: null },
       select: { id: true, name: true, categoryId: true, qualityTemplateId: true, qualityTemplate: { select: { status: true } } },
@@ -501,6 +535,8 @@ export class ContractService {
               deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
               remarks: item.remarks,
               qualityRulesSnapshot: item.qualityRulesSnapshot as Prisma.InputJsonValue | undefined,
+              priceRulesSnapshot: item.priceRulesSnapshot as Prisma.InputJsonValue | undefined,
+              salesPriceRulesSnapshot: item.salesPriceRulesSnapshot as Prisma.InputJsonValue | undefined,
             })),
           },
         },
@@ -534,9 +570,7 @@ export class ContractService {
     dateFrom?: string;
     dateTo?: string;
   }, userId?: string) {
-    const page = params.page || 1;
-    const pageSize = Math.min(params.pageSize || 20, 100);
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 20, maxPageSize: 100 });
 
     const where: Prisma.ContractWhereInput = { deletedAt: null };
 
@@ -732,6 +766,8 @@ export class ContractService {
               salesUnitPrice: true,
               deliveryDate: true,
               qualityRulesSnapshot: true,
+              priceRulesSnapshot: true,
+              salesPriceRulesSnapshot: true,
             },
           },
         },
@@ -940,6 +976,8 @@ export class ContractService {
             salesUnitPrice: true,
             deliveryDate: true,
             qualityRulesSnapshot: true,
+            priceRulesSnapshot: true,
+            salesPriceRulesSnapshot: true,
           },
         },
       },
@@ -1295,6 +1333,8 @@ export class ContractService {
         quantity: number; unit?: string;
         unitPrice: number; salesUnitPrice?: number; deliveryDate?: string; remarks?: string;
         qualityRulesSnapshot?: Record<string, unknown>;
+        priceRulesSnapshot?: Record<string, unknown>;
+        salesPriceRulesSnapshot?: Record<string, unknown>;
       }>;
     },
     userId?: string,
@@ -1369,6 +1409,8 @@ export class ContractService {
               deliveryDate: item.deliveryDate ? new Date(item.deliveryDate) : null,
               remarks: item.remarks,
               qualityRulesSnapshot: item.qualityRulesSnapshot as Prisma.InputJsonValue | undefined,
+              priceRulesSnapshot: item.priceRulesSnapshot as Prisma.InputJsonValue | undefined,
+              salesPriceRulesSnapshot: item.salesPriceRulesSnapshot as Prisma.InputJsonValue | undefined,
             })),
           });
         }
@@ -1473,6 +1515,13 @@ export class ContractService {
     }
   }
 
+  /** 附件是提交审批的凭证：仅草稿或已驳回合同可以上传、删除或改名，审批中及生效后保持不变。 */
+  assertAttachmentsEditable(status: string | null | undefined) {
+    if (!status || !['DRAFT', 'REJECTED'].includes(status)) {
+      throw new BadRequestException('合同已提交审批或已生效，附件作为审批凭证不能再上传、删除或修改');
+    }
+  }
+
   createAttachment(data: { contractId: string; fileName: string; originalName: string; mimeType: string; size: number; category: string }) {
     return this.prisma.attachment.create({ data });
   }
@@ -1489,6 +1538,7 @@ export class ContractService {
         contractId: { not: null },
         contract: contractScope,
       },
+      include: { contract: { select: { status: true } } },
     });
   }
 

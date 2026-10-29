@@ -61,6 +61,7 @@ const NAV_ITEMS: NavGroup[] = [
     children: [
       { href: '/dashboard/weighbridge', label: '磅单管理' },
       { href: '/dashboard/quality', label: '质检管理' },
+      { href: '/dashboard/quality/reports', label: '检测报告' },
     ],
   },
   {
@@ -213,6 +214,11 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     // 否则它会因为是所有产业子页面的路径前缀，与当前子菜单同时高亮。
     if (base === '/dashboard/industry-database' && !qs) {
       return pathname === base;
+    }
+
+    // 检测报告有独立二级入口，避免报告页面同时高亮“质检管理”。
+    if (base === '/dashboard/quality' && !qs && pathname.startsWith('/dashboard/quality/reports')) {
+      return false;
     }
 
     // 收款单仍归属应收管理；应付各功能均有自己的二级入口。

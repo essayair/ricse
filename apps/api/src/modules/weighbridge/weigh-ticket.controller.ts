@@ -11,6 +11,7 @@ import { CreateWeighRecordsDto } from './dto/create-weigh-records.dto';
 import { CreateWeighTicketDto } from './dto/create-weigh-ticket.dto';
 import { SelectWaybillWeightDto } from './dto/select-waybill-weight.dto';
 import { WeighTicketService } from './weigh-ticket.service';
+import { SelectEffectiveRecordsDto, UpdateWeighSettlementDto, UpdateWeighTicketInfoDto, UpdateWeighTicketStatusDto, UpdateWeighTicketWaybillDto } from './dto/update-weigh-ticket.dto';
 
 @ApiTags('磅单管理')
 @ApiBearerAuth()
@@ -202,22 +203,19 @@ export class WeighTicketController {
   }
 
   @Patch(':id/effective-records')
-  selectRecords(@Param('id') id: string, @Body() data: { grossRecordId: string; tareRecordId: string }, @CurrentUser('id') userId: string) {
+  selectRecords(@Param('id') id: string, @Body() data: SelectEffectiveRecordsDto, @CurrentUser('id') userId: string) {
     return this.service.selectEffectiveRecords(id, data, userId);
   }
 
   @Patch(':id/settlement')
-  updateSettlement(@Param('id') id: string, @Body() data: {
-    settlementBasis: string; shippingWeight?: number; customerWeight?: number;
-    thirdPartyWeight?: number; manualWeight?: number; toleranceRate?: number;
-  }, @CurrentUser('id') userId: string) {
+  updateSettlement(@Param('id') id: string, @Body() data: UpdateWeighSettlementDto, @CurrentUser('id') userId: string) {
     return this.service.updateSettlement(id, data, userId);
   }
 
   @Patch(':id/status')
   updateStatus(
     @Param('id') id: string,
-    @Body() data: { status: string; reviewRemark?: string },
+    @Body() data: UpdateWeighTicketStatusDto,
     @CurrentUser('id') userId: string,
   ) {
     return this.service.updateStatus(id, data.status, userId, data.reviewRemark);
@@ -231,11 +229,7 @@ export class WeighTicketController {
 
   @Patch(':id/info')
   @ApiOperation({ summary: '修改磅单基本凭证信息' })
-  updateInfo(@Param('id') id: string, @Body() data: {
-    ticketDate: string; plateNo: string; materialName: string; materialSpec: string;
-    shipperName: string; receiverName: string; packageCount: number;
-    driverName: string; weighmasterName: string; remarks?: string;
-  }, @CurrentUser('id') userId: string) {
+  updateInfo(@Param('id') id: string, @Body() data: UpdateWeighTicketInfoDto, @CurrentUser('id') userId: string) {
     return this.service.updateInfo(id, data, userId);
   }
 
@@ -243,7 +237,7 @@ export class WeighTicketController {
   @ApiOperation({ summary: '在磅单复核前调整关联物流运单' })
   updateWaybill(
     @Param('id') id: string,
-    @Body() data: { waybillId: string; additionReason?: string },
+    @Body() data: UpdateWeighTicketWaybillDto,
     @CurrentUser('id') userId: string,
   ) {
     if (!data.waybillId) throw new BadRequestException('请选择物流运单');

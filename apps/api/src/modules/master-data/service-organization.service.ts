@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { resolvePagination } from '../common/pagination';
 
 export const SERVICE_ORGANIZATION_TYPES = [
   'LOGISTICS_CARRIER',
@@ -137,8 +138,7 @@ export class ServiceOrganizationService {
     pageSize?: number;
   }) {
     if (params.type) this.validateType(params.type);
-    const page = params.page || 1;
-    const pageSize = Math.min(params.pageSize || 50, 200);
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 50, maxPageSize: 200 });
     const where: any = { deletedAt: null };
     if (params.type) where.organizationType = params.type;
     if (params.status) where.status = params.status;
@@ -156,7 +156,7 @@ export class ServiceOrganizationService {
         where,
         include: { partner: true },
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
       }),
       this.prisma.serviceOrganization.count({ where }),

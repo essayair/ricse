@@ -26,6 +26,11 @@ import { CreatePartnerAddressDto } from '../master-data/dto/partner-address.dto'
 import { CreateDriverDto } from '../master-data/dto/driver.dto';
 import { CreateVehicleDto } from '../master-data/dto/vehicle.dto';
 import { BatchCreateWaybillDto } from '../logistics/dto/create-waybill.dto';
+import { AssignWaybillDto } from '../logistics/dto/assign-waybill.dto';
+import { SelectEffectiveRecordsDto, UpdateWeighTicketStatusDto } from '../weighbridge/dto/update-weigh-ticket.dto';
+import { SelectWaybillWeightDto } from '../weighbridge/dto/select-waybill-weight.dto';
+import { UpdateQualityStatusDto } from '../quality/dto/update-quality-status.dto';
+import { ResolveOutboundVarianceDto } from '../inventory/dto/resolve-outbound-variance.dto';
 
 @ApiTags('小程序企业工作台')
 @ApiBearerAuth()
@@ -289,12 +294,7 @@ export class MobileWorkspaceController {
   @Patch('waybills/:id/assignment')
   assignWaybill(
     @Param('id') id: string,
-    @Body() data: {
-      freightMode?: string; vehicleId?: string | null; driverId?: string | null;
-      carrierPartnerId?: string | null; plateNo?: string | null;
-      driverName?: string | null; driverPhone?: string | null;
-      plannedDepartureAt?: string; plannedArrivalAt?: string;
-    },
+    @Body() data: AssignWaybillDto,
     @CurrentUser('id') userId: string,
   ) {
     return this.waybillService.assign(id, data, userId);
@@ -327,7 +327,7 @@ export class MobileWorkspaceController {
   @Patch('weigh-tickets/:id/effective-records')
   selectEffectiveWeighRecords(
     @Param('id') id: string,
-    @Body() data: { grossRecordId: string; tareRecordId: string },
+    @Body() data: SelectEffectiveRecordsDto,
     @CurrentUser('id') userId: string,
   ) {
     if (!data.grossRecordId || !data.tareRecordId) throw new BadRequestException('请选择有效毛重和皮重记录');
@@ -337,7 +337,7 @@ export class MobileWorkspaceController {
   @Patch('weigh-tickets/:id/status')
   updateWeighStatus(
     @Param('id') id: string,
-    @Body() data: { status: string; reviewRemark?: string },
+    @Body() data: UpdateWeighTicketStatusDto,
     @CurrentUser('id') userId: string,
   ) {
     if (!['COMPLETED', 'REVIEWED', 'VOIDED'].includes(data.status)) throw new BadRequestException('小程序不支持该磅单状态操作');
@@ -347,7 +347,7 @@ export class MobileWorkspaceController {
   @Patch('weigh-files/:waybillId/effective-ticket')
   selectEffectiveWeighTicket(
     @Param('waybillId') waybillId: string,
-    @Body() data: { weighTicketId: string; reason?: string; purpose?: string },
+    @Body() data: SelectWaybillWeightDto,
     @CurrentUser('id') userId: string,
   ) {
     if (!data.weighTicketId) throw new BadRequestException('请选择执行磅单');
@@ -464,7 +464,7 @@ export class MobileWorkspaceController {
   @Patch('quality-inspections/:id/status')
   confirmQualityInspection(
     @Param('id') id: string,
-    @Body() data: { status: string; resolution?: string },
+    @Body() data: UpdateQualityStatusDto,
     @CurrentUser('id') userId: string,
   ) {
     if (!['CONFIRMED', 'VOIDED'].includes(data.status)) throw new BadRequestException('小程序不支持该检测报告状态操作');
@@ -566,7 +566,7 @@ export class MobileWorkspaceController {
   @Patch('outbound-receipts/:id/variance')
   resolveOutboundVariance(
     @Param('id') id: string,
-    @Body() data: { decision: string; reason: string },
+    @Body() data: ResolveOutboundVarianceDto,
     @CurrentUser('id') userId: string,
   ) { return this.outboundService.resolveVariance(id, data, userId); }
 

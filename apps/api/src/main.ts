@@ -8,6 +8,8 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   app.setGlobalPrefix('api/v1');
+  // 生产环境经宿主机 nginx 与容器 nginx 两层代理：信任本机与内网代理地址，使 req.ip 取到真实客户端 IP（登录限流依赖）。
+  app.getHttpAdapter().getInstance().set('trust proxy', process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal');
 
   const configuredOrigins = (process.env.CORS_ORIGIN
     || 'http://localhost:3001,http://127.0.0.1:3001,http://[::1]:3001')

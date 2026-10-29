@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import * as bcrypt from 'bcryptjs';
+import { comparePassword, hashPassword } from './password-hasher';
 import { isExternalBusinessPermission } from './external-permission-policy';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
@@ -29,7 +29,7 @@ export class UsersService {
     const existing = await this.prisma.user.findUnique({ where: { username } });
     if (existing) throw new ConflictException('用户名已存在');
 
-    const hashed = await bcrypt.hash(data.password, 10);
+    const hashed = await hashPassword(data.password);
     const roleCode = data.role || 'USER';
     if (roleCode !== 'USER') {
       const operatorIsAdmin = options.operatedBy
@@ -229,7 +229,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
-        id: true, username: true, name: true, role: true, status: true,
+        id: true, username: true, name: true, role: true, status: true, tokenVersion: true,
         employeeId: true, companyId: true, businessGroupId: true, createdAt: true,
         businessUnits: { include: { businessUnit: true }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }] },
         employee: {
@@ -266,7 +266,7 @@ export class UsersService {
 
   async findByRefreshToken(refreshToken: string, userId?: string) {
     const select = {
-      id: true, username: true, name: true, role: true, status: true, refreshToken: true,
+      id: true, username: true, name: true, role: true, status: true, refreshToken: true, tokenVersion: true,
       employee: { select: { status: true } },
       company: { select: { status: true } },
     } as const;
@@ -278,7 +278,7 @@ export class UsersService {
       : await this.prisma.user.findMany({ where: { refreshToken: { not: null } }, select });
 
     for (const user of users) {
-      if (user.refreshToken && (await bcrypt.compare(refreshToken, user.refreshToken))) {
+      if (user.refreshToken && (await comparePassword(refreshToken, user.refreshToken))) {
         return user;
       }
     }
@@ -313,7 +313,7 @@ export class UsersService {
   async clearRefreshToken(userId: string) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { refreshToken: null },
+      data: { refreshToken: null, tokenVersion: { increment: 1 } },
     });
   }
 
@@ -427,11 +427,11 @@ export class UsersService {
     if (!newPassword || newPassword.length < 6) throw new BadRequestException('密码至少6位');
     const exists = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!exists) throw new NotFoundException('用户不存在');
-    const hashed = await bcrypt.hash(newPassword, 10);
+    const hashed = await hashPassword(newPassword);
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.user.update({
         where: { id },
-        data: { password: hashed, refreshToken: null },
+        data: { password: hashed, refreshToken: null, tokenVersion: { increment: 1 } },
         select: { id: true, username: true, name: true },
       });
       if (operatedBy) {

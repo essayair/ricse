@@ -22,7 +22,7 @@ interface Report {
   baseWeight: string | null; moistureDeductionWeight: string; impurityDeductionWeight: string; settlementWeight: string | null;
   deductionAmount: string; remarks: string | null; indicators: Indicator[]; attachments: Attachment[];
   creator: { name: string }; confirmer: { name: string } | null; confirmedAt: string | null;
-  weighTicket: { id: string; ticketNo: string; status: string };
+  weighTicket: { id: string; ticketNo: string; status: string } | null;
   qualitySample?: { id: string; sampleNo: string; sampleLabel: string | null } | null;
 }
 interface Sample {
@@ -46,7 +46,7 @@ interface Task {
     weighTickets: Array<{ id: string; ticketNo: string; status: string; weighingStage: string; sequence: number; netWeight: string | null; settlementWeight: string | null }>;
     weightSelections: Array<{ purpose: string; weighTicketId: string; quantity: string }>;
     inboundReceipts: Array<{ id: string; receiptNo: string; status: string; qualityInspectionId: string | null }>;
-    dispatchNotice: { type: string; noticeNo: string; warehouse: { name: string } | null; order: { id: string; name: string; orderNo: string; contract: { contractNo: string; title: string; seller: { name: string } | null; buyer: { name: string } | null; signingPartner: { name: string } | null } } };
+    dispatchNotice: { type: string; noticeNo: string; warehouse: { name: string } | null; order: { id: string; name: string; orderNo: string; contract: { id: string; contractNo: string; title: string; seller: { name: string } | null; buyer: { name: string } | null; signingPartner: { name: string } | null } } };
   };
 }
 
@@ -83,6 +83,8 @@ export default function QualityTaskDetailPage() {
   const [evidenceCategory, setEvidenceCategory] = useState('SAMPLING_PHOTO');
   const [evidenceSource, setEvidenceSource] = useState('WEB_UPLOAD');
   const [saving, setSaving] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkCandidates, setLinkCandidates] = useState<Array<{ id: string; inspectionNo: string; reportNo: string; institutionName: string; materialName: string; contractId: string | null; status: string }>>([]);
   const [canAccept, setCanAccept] = useState(false);
   useEffect(() => { try { const u = JSON.parse(localStorage.getItem('user') || '{}'); setCanAccept(u.role === 'ADMIN' || u.permissions?.includes('settlement.quality.accept') || u.permissions?.includes('settlement.manage')); } catch {} }, []);
 
@@ -126,6 +128,27 @@ export default function QualityTaskDetailPage() {
     setSaving(true);
     try { await api.patch(`/quality-inspections/${report.id}/status`, { status: 'CONFIRMED', resolution }); await load(); }
     catch (error: any) { alert(error.message || '检测报告确认失败'); }
+    finally { setSaving(false); }
+  };
+
+  const searchReports = async () => {
+    try {
+      const result = await api.get<{ items: typeof linkCandidates }>(`/quality-inspections?search=${encodeURIComponent(linkSearch.trim())}&pageSize=100`);
+      setLinkCandidates(result.items.filter(report => report.status !== 'VOIDED' && (!report.contractId || report.contractId === item?.waybill.dispatchNotice.order.contract.id) && !item?.reports.some(existing => existing.id === report.id)));
+    } catch (error: any) { alert(error.message || '检测报告搜索失败'); }
+  };
+  const linkExisting = async (reportId: string) => {
+    if (!item) return;
+    setSaving(true);
+    try { await api.post(`/quality-inspections/${reportId}/tasks/${item.id}`, {}); setLinkCandidates([]); setLinkSearch(''); await load(); }
+    catch (error: any) { alert(error.message || '关联检测报告失败'); }
+    finally { setSaving(false); }
+  };
+  const unlinkExisting = async (reportId: string) => {
+    if (!item || !await confirmAction('解除这辆车与检测报告的关联？', { title: '解除检测报告关联' })) return;
+    setSaving(true);
+    try { await api.delete(`/quality-inspections/${reportId}/tasks/${item.id}`); await load(); }
+    catch (error: any) { alert(error.message || '解除关联失败'); }
     finally { setSaving(false); }
   };
 
@@ -352,13 +375,14 @@ export default function QualityTaskDetailPage() {
     </Card>
 
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="font-semibold">机构检测报告</h2><p className="mt-1 text-xs text-muted-foreground">每份报告必须选择上方已登记的一个样品，并对应一家检测机构。</p></div><div className="flex items-center gap-2"><Badge variant="secondary">{item.reports.length} / 计划 {item.plannedReportCount}</Badge><Button disabled={!eligibleTicket || !item.samples.length || item.status === 'VOIDED'} title={!item.samples.length ? '请先登记样品' : undefined} onClick={() => router.push(`/dashboard/quality/create?taskId=${item.id}&weighTicketId=${eligibleTicket?.id || ''}`)}><Plus className="mr-1 h-4 w-4" />添加检测报告</Button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="font-semibold">机构检测报告</h2><p className="mt-1 text-xs text-muted-foreground">本任务可使用独立录入的混样报告；同一份报告也可关联实际参与混样的其他车辆。</p></div><div className="flex items-center gap-2"><Badge variant="secondary">{item.reports.length} / 计划 {item.plannedReportCount}</Badge><Button disabled={!eligibleTicket || !item.samples.length || item.status === 'VOIDED'} title={!item.samples.length ? '请先登记样品' : undefined} onClick={() => router.push(`/dashboard/quality/create?taskId=${item.id}&weighTicketId=${eligibleTicket?.id || ''}`)}><Plus className="mr-1 h-4 w-4" />添加检测报告</Button></div></div>
+      <div className="space-y-2 border-t p-5"><div className="flex flex-wrap gap-2"><Input className="max-w-sm" value={linkSearch} onChange={event => setLinkSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void searchReports(); }} placeholder="按报告编号、机构或物料查找已有报告" /><Button variant="outline" onClick={() => void searchReports()}>查找并关联</Button><Button variant="ghost" onClick={() => router.push('/dashboard/quality/reports/new')}>先录入独立报告</Button></div>{linkCandidates.map(report => <div key={report.id} className="flex items-center justify-between border-b py-2 text-sm"><span>{report.inspectionNo} · {report.reportNo} · {report.institutionName} · {report.materialName}</span><Button size="sm" disabled={saving} onClick={() => void linkExisting(report.id)}>关联本任务</Button></div>)}</div>
       {!item.reports.length ? <div className="border-t p-12 text-center text-muted-foreground"><FlaskConical className="mx-auto mb-2 h-8 w-8 opacity-40" />尚未录入检测报告<br /><span className="text-xs">完成磅单称重后，可在本板块添加第一份报告。</span></div> : <div className="space-y-5 border-t p-5">{item.reports.map((report, index) => {
         const editable = !['CONFIRMED', 'VOIDED'].includes(report.status);
         return <Card key={report.id} className={`overflow-hidden ${report.id === basisInspectionId ? 'ring-2 ring-primary/30' : ''}`}>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/30 p-4"><div className="flex items-start gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{index + 1}</div><div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{report.institutionName}</span><Badge variant="outline">{INSTITUTION[report.institutionType] || report.institutionType}</Badge><StatusText status={report.conclusion}>{CONCLUSION[report.conclusion]}</StatusText></div><div className="mt-1 font-mono text-xs text-muted-foreground">{report.inspectionNo} · 报告 {report.reportNo} · 样品 {report.sampleNo || '-'}</div></div></div><div className="flex items-center gap-2"><StatusText status={report.status}>{REPORT_STATUS[report.status]}</StatusText>{report.status === 'REPORTED' && <Button size="sm" disabled={saving} onClick={() => void confirmReport(report)}>确认报告有效</Button>}{editable && <Button size="sm" variant="outline" disabled={saving} onClick={() => void voidReport(report)}>作废填错报告</Button>}</div></div>
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/30 p-4"><div className="flex items-start gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{index + 1}</div><div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{report.institutionName}</span><Badge variant="outline">{INSTITUTION[report.institutionType] || report.institutionType}</Badge><StatusText status={report.conclusion}>{CONCLUSION[report.conclusion]}</StatusText></div><div className="mt-1 font-mono text-xs text-muted-foreground">{report.inspectionNo} · 报告 {report.reportNo} · 样品 {report.sampleNo || '-'}</div></div></div><div className="flex items-center gap-2"><StatusText status={report.status}>{REPORT_STATUS[report.status]}</StatusText><Button size="sm" variant="ghost" onClick={() => router.push(`/dashboard/quality/reports/${report.id}`)}>查看报告</Button>{report.status === 'REPORTED' && <Button size="sm" disabled={saving} onClick={() => void confirmReport(report)}>确认报告有效</Button>}{report.id !== item.basisInspection?.id && <Button size="sm" variant="outline" disabled={saving} onClick={() => void unlinkExisting(report.id)}>解除关联</Button>}{editable && <Button size="sm" variant="outline" disabled={saving} onClick={() => void voidReport(report)}>作废填错报告</Button>}</div></div>
           <div className="grid gap-5 p-4 lg:grid-cols-[1.5fr_1fr]">
-            <div><div className="grid gap-3 sm:grid-cols-4"><Info label="检测时间" value={formatDateTimeToSecond(report.testedAt)} /><Info label="取样人" value={report.samplerName} /><Info label="关联磅单" value={report.weighTicket.ticketNo} /><Info label="录入人" value={report.creator.name} /></div><div className="mt-4 overflow-x-auto"><table className="min-w-[640px] w-full text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-3 py-2">指标</th><th className="px-3 py-2">标准</th><th className="px-3 py-2">检测值</th><th className="px-3 py-2">判定</th></tr></thead><tbody>{report.indicators.map(indicator => <tr key={indicator.id} className="border-b"><td className="px-3 py-2 font-medium">{indicator.name}</td><td className="px-3 py-2">{qualityStandard(indicator)}</td><td className="px-3 py-2 text-primary">{measure(indicator.measuredValue, indicator.unit)}</td><td className="px-3 py-2">{indicator.result === 'PASS' ? '合格' : indicator.result === 'FAIL' ? '超标' : indicator.result === 'FUSE' ? '拒收' : '待判定'}</td></tr>)}</tbody></table></div></div>
+            <div><div className="grid gap-3 sm:grid-cols-4"><Info label="检测时间" value={formatDateTimeToSecond(report.testedAt)} /><Info label="取样人" value={report.samplerName} /><Info label="来源磅单" value={report.weighTicket?.ticketNo || '混样报告（不归属于单车磅单）'} /><Info label="录入人" value={report.creator.name} /></div><div className="mt-4 overflow-x-auto"><table className="min-w-[640px] w-full text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-3 py-2">指标</th><th className="px-3 py-2">标准</th><th className="px-3 py-2">检测值</th><th className="px-3 py-2">判定</th></tr></thead><tbody>{report.indicators.map(indicator => <tr key={indicator.id} className="border-b"><td className="px-3 py-2 font-medium">{indicator.name}</td><td className="px-3 py-2">{qualityStandard(indicator)}</td><td className="px-3 py-2 text-primary">{measure(indicator.measuredValue, indicator.unit)}</td><td className="px-3 py-2">{indicator.result === 'PASS' ? '合格' : indicator.result === 'FAIL' ? '超标' : indicator.result === 'FUSE' ? '拒收' : '待判定'}</td></tr>)}</tbody></table></div></div>
             <div className="space-y-3"><div className="flex items-center justify-between"><span className="text-sm font-medium">检测报告附件</span>{editable && <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-2 text-xs text-primary"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={saving} onChange={event => { void uploadReportAttachment(report.id, event.currentTarget.files); event.currentTarget.value = ''; }} /><Upload className="mr-1 h-3.5 w-3.5" />上传</label>}</div>{report.attachments.length ? report.attachments.map(attachment => <div key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-md border p-2"><button className="flex min-w-0 flex-1 items-center gap-2 text-left hover:bg-muted" onClick={() => void viewAttachment(attachment.id)}><FileText className="h-4 w-4 text-primary" /><span className="min-w-0 flex-1 truncate text-sm">{attachment.originalName}</span><Eye className="h-4 w-4 text-muted-foreground" /></button>{editable && <Button size="sm" variant="ghost" disabled={saving} onClick={() => void deleteReportAttachment(attachment)}>删除</Button>}</div>) : <div className="rounded-md border border-dashed p-5 text-center text-xs text-muted-foreground">暂无检测报告附件</div>}<div className="rounded-md bg-muted/40 p-3 text-xs"><div className="flex justify-between"><span>报告参考重量</span><b>{weight(report.baseWeight)}</b></div><div className="mt-2 flex justify-between"><span>预计扣款</span><b>¥{Number(report.deductionAmount).toLocaleString()}</b></div></div></div>
           </div>
         </Card>;

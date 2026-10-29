@@ -2,7 +2,8 @@ import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/c
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
-import * as bcrypt from 'bcryptjs';
+import { LoginThrottleService } from './login-throttle.service';
+import { comparePassword, hashPassword, TIMING_EQUALIZER_HASH } from './password-hasher';
 
 @Injectable()
 export class AuthService {
@@ -12,15 +13,18 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private loginThrottle: LoginThrottleService,
   ) {}
 
-  async login(identifier: string, password: string) {
+  async login(identifier: string, password: string, ip?: string) {
     const user = await this.usersService.findByLoginIdentifier(identifier);
-    if (!user) throw new UnauthorizedException('用户名、手机号或密码错误');
+    const attempt = await this.loginThrottle.acquire(this.loginThrottle.accountKey(user?.id, identifier), ip);
 
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) throw new UnauthorizedException('用户名、手机号或密码错误');
+    // 账号不存在时也比对一次固定哈希，使两条路径耗时一致，不能据此判断账号是否存在。
+    const valid = await comparePassword(password, user?.password ?? TIMING_EQUALIZER_HASH);
+    if (!user || !valid) throw new UnauthorizedException('用户名、手机号或密码错误');
 
+    await this.loginThrottle.succeed(attempt);
     await this.usersService.assertActiveForAuthentication(user.id);
     return this.generateTokens(user);
   }
@@ -67,10 +71,10 @@ export class AuthService {
     await this.usersService.clearRefreshToken(userId);
   }
 
-  private async generateTokens(user: { id: string; username: string; role: string; name: string }) {
+  private async generateTokens(user: { id: string; username: string; role: string; name: string; tokenVersion?: number }) {
     const access = await this.usersService.getActiveAccess(user.id);
     const primaryRole = access.roles.includes(user.role) ? user.role : access.roles[0] || 'USER';
-    const payload = { sub: user.id, username: user.username, role: primaryRole };
+    const payload = { sub: user.id, username: user.username, role: primaryRole, tokenVersion: user.tokenVersion ?? 0 };
     const refreshPayload = { sub: user.id, type: 'refresh' };
 
     const accessToken = this.jwtService.sign(payload);
@@ -79,7 +83,7 @@ export class AuthService {
       expiresIn: this.refreshTokenExpiry,
     });
     // 新登录令牌立即持久化，避免返回给前端后尚不可刷新的竞态窗口。
-    const refreshHash = await bcrypt.hash(refreshToken, 10);
+    const refreshHash = await hashPassword(refreshToken);
     await this.usersService.setRefreshToken(user.id, refreshHash);
 
     return {

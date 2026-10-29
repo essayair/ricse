@@ -13,7 +13,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-class CreateContractLineItemDto {
+export class CreateContractLineItemDto {
   @ApiProperty({ description: '物料 ID' })
   @IsString()
   materialId: string;
@@ -58,6 +58,13 @@ class CreateContractLineItemDto {
   @IsOptional()
   @IsObject()
   qualityRulesSnapshot?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: '按 CaF₂ 品位分档计价的合同价格快照' })
+  @IsOptional() @IsObject()
+  priceRulesSnapshot?: Record<string, unknown>;
+  @ApiPropertyOptional({ description: '双边合同销售方向品位分档价格快照' })
+  @IsOptional() @IsObject()
+  salesPriceRulesSnapshot?: Record<string, unknown>;
 }
 
 export class CreateContractDto {

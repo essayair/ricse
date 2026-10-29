@@ -4,6 +4,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { AccessControlService } from './access-control.service';
 import { AdminGuard } from '../common/admin.guard';
 import { CurrentUser } from '../common/current-user.decorator';
+import { CreateRoleDto, ReplaceRolePermissionsDto, ReplaceUserAssignmentsDto, UpdateRoleDto } from './dto/access-control.dto';
 
 @ApiTags('角色与权限')
 @ApiBearerAuth()
@@ -20,13 +21,7 @@ export class AccessControlController {
 
   @Post('roles')
   @ApiOperation({ summary: '创建角色' })
-  createRole(@Body() dto: {
-    code: string;
-    name: string;
-    description?: string;
-    type?: string;
-    permissionIds?: string[];
-  }) {
+  createRole(@Body() dto: CreateRoleDto) {
     return this.service.createRole(dto);
   }
 
@@ -34,7 +29,7 @@ export class AccessControlController {
   @ApiOperation({ summary: '修改角色' })
   updateRole(
     @Param('id') id: string,
-    @Body() dto: { name?: string; description?: string; type?: string; status?: string },
+    @Body() dto: UpdateRoleDto,
   ) {
     return this.service.updateRole(id, dto);
   }
@@ -43,7 +38,7 @@ export class AccessControlController {
   @ApiOperation({ summary: '替换角色权限' })
   replaceRolePermissions(
     @Param('id') id: string,
-    @Body() dto: { permissionIds: string[] },
+    @Body() dto: ReplaceRolePermissionsDto,
   ) {
     return this.service.replaceRolePermissions(id, dto.permissionIds || []);
   }
@@ -64,17 +59,7 @@ export class AccessControlController {
   @ApiOperation({ summary: '配置用户角色与数据范围' })
   replaceUserAssignments(
     @Param('id') id: string,
-    @Body() dto: {
-      assignments: Array<{
-        roleId: string;
-        scopeType: string;
-        targetCompanyIds?: string[];
-        targetBusinessUnitIds?: string[];
-        expiresAt?: string | null;
-      }>;
-      businessUnitIds?: string[];
-      defaultBusinessUnitId?: string | null;
-    },
+    @Body() dto: ReplaceUserAssignmentsDto,
     @CurrentUser('id') currentUserId: string,
   ) {
     return this.service.replaceUserAssignments(id, dto.assignments || [], currentUserId, {

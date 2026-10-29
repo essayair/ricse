@@ -4,6 +4,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { MasterDataService } from './master-data.service';
 import { PermissionGuard } from '../common/permission.guard';
 import { RequirePermission } from '../common/require-permission.decorator';
+import { CreateMaterialCategoryDto, CreateMaterialDto, CreateWarehouseDto, UpdateMaterialCategoryDto, UpdateMaterialDto, UpdateWarehouseDto } from './dto/master-data.dto';
 
 @ApiTags('主数据管理')
 @ApiBearerAuth()
@@ -17,7 +18,7 @@ export class MasterDataController {
   @Post('material-categories')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建物料分类' })
-  createCategory(@Body() dto: { name: string; parentId?: string; sort?: number }) {
+  createCategory(@Body() dto: CreateMaterialCategoryDto) {
     return this.masterDataService.createCategory(dto);
   }
 
@@ -31,7 +32,7 @@ export class MasterDataController {
   @Patch('material-categories/:id')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '更新物料分类' })
-  updateCategory(@Param('id') id: string, @Body() dto: { name?: string; parentId?: string | null; sort?: number }) {
+  updateCategory(@Param('id') id: string, @Body() dto: UpdateMaterialCategoryDto) {
     return this.masterDataService.updateCategory(id, dto);
   }
 
@@ -54,14 +55,7 @@ export class MasterDataController {
   @Post('materials')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建物料' })
-  createMaterial(@Body() dto: {
-    code?: string; name?: string; baseName?: string; categoryId: string;
-    commodityForm?: string; coreSpecName?: string; coreSpecOperator?: string;
-    coreSpecValue?: string; coreSpecUnit?: string; referenceType?: string; grade?: string;
-    unit?: string; spec?: string; sourceRegion?: string; packageType?: string;
-    isVirtual?: boolean; specs?: object; hsCode?: string; taxCode?: string;
-    internalCode?: string; qcTemplate?: string; qualityTemplateId?: string; pricingQuantityBasis?: string; status?: string; remark?: string;
-  }) {
+  createMaterial(@Body() dto: CreateMaterialDto) {
     return this.masterDataService.createMaterial(dto);
   }
 
@@ -89,10 +83,7 @@ export class MasterDataController {
   @Patch('materials/:id')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '更新物料' })
-  updateMaterial(@Param('id') id: string, @Body() dto: {
-    isVirtual?: boolean; specs?: object; hsCode?: string | null; taxCode?: string | null;
-    internalCode?: string | null; qcTemplate?: string | null; qualityTemplateId?: string | null; pricingQuantityBasis?: string; status?: string; remark?: string | null;
-  }) {
+  updateMaterial(@Param('id') id: string, @Body() dto: UpdateMaterialDto) {
     return this.masterDataService.updateMaterial(id, dto);
   }
 
@@ -108,10 +99,7 @@ export class MasterDataController {
   @Post('warehouses')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建仓库' })
-  createWarehouse(@Body() dto: {
-    code: string; name: string; type?: string; partnerId?: string;
-    address?: string; manager?: string; managerPhone?: string; remark?: string;
-  }) {
+  createWarehouse(@Body() dto: CreateWarehouseDto) {
     return this.masterDataService.createWarehouse(dto);
   }
 
@@ -132,11 +120,7 @@ export class MasterDataController {
   @Patch('warehouses/:id')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '更新仓库' })
-  updateWarehouse(@Param('id') id: string, @Body() dto: {
-    name?: string; type?: string; partnerId?: string;
-    address?: string; manager?: string; managerPhone?: string;
-    status?: string; remark?: string;
-  }) {
+  updateWarehouse(@Param('id') id: string, @Body() dto: UpdateWarehouseDto) {
     return this.masterDataService.updateWarehouse(id, dto);
   }
 

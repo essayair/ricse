@@ -51,7 +51,7 @@ async function main() {
       const ticket = await tx.weighTicket.create({ data: { ticketNo: `${tag}_B`, waybillId: waybill.id, direction: 'INBOUND', status: 'REVIEWED', plannedQuantity: 100, netWeight: 100, settlementWeight: 100, createdBy: user.id } });
       await tx.waybillWeightSelection.create({ data: { waybillId: waybill.id, weighTicketId: ticket.id, purpose: 'SETTLEMENT', quantity: 100, selectedBy: user.id } });
       const task = await tx.qualityTask.create({ data: { taskNo: `${tag}_Q`, waybillId: waybill.id, createdBy: user.id } });
-      const report = await tx.qualityInspection.create({ data: { inspectionNo: `${tag}_R`, qualityTaskId: task.id, weighTicketId: ticket.id, institutionName: '模拟检测机构', reportNo: `${tag}_REPORT`, testedAt: new Date(), sampledAt: new Date(), samplerName: '模拟取样人', materialName: '模拟萤石精粉', conclusion: 'DEDUCTION', status: 'CONFIRMED', settlementWeight: 100, createdBy: user.id } });
+      const report = await tx.qualityInspection.create({ data: { inspectionNo: `${tag}_R`, qualityTaskId: task.id, weighTicketId: ticket.id, institutionName: '模拟检测机构', reportNo: `${tag}_REPORT`, testedAt: new Date(), sampledAt: new Date(), samplerName: '模拟取样人', materialName: '模拟萤石精粉', conclusion: 'DEDUCTION', status: 'CONFIRMED', settlementWeight: 100, createdBy: user.id, taskLinks: { create: { qualityTaskId: task.id, linkedBy: user.id } } } });
       await tx.qualityTask.update({ where: { id: task.id }, data: { status: 'COMPLETED', basisInspectionId: report.id, decisionVersion: 1, finalConclusion: 'DEDUCTION', qualityDisposition: 'DEDUCTION_PENDING', qualityDeductionPerTon: 40 } });
 
       const bank = { ourBankAccount: own.bankAccounts[0].accountNo, ourBankAccountName: own.name, ourBankName: '模拟付款银行', counterpartyBankAccount: seller.bankAccounts[0].accountNo, counterpartyBankAccountName: seller.name, counterpartyBankName: '模拟收款银行' };
@@ -73,7 +73,7 @@ async function main() {
       assert.equal((await new PurchaseSettlementBasis(db, access).sources(contract.id, user.id))[0].available, false);
       const receipt = await tx.inboundReceipt.findFirstOrThrow({ where: { waybillId: waybill.id, deletedAt: null } });
       await inventory.updatePendingReceipt(receipt.id, { warehouseId: warehouse.id, receivedAt: new Date().toISOString(), receiverName: '模拟收货人' }, user.id);
-      await inventory.confirmReceipt(receipt.id, user.id);
+      await inventory.confirmReceipt(receipt.id, user.id, '冒烟验证：扣款报告人工确认入库');
       await inventory.postInventory(receipt.id, user.id);
       const sources = await new PurchaseSettlementBasis(db, access).sources(contract.id, user.id);
       assert.equal(sources[0].available, true, sources[0].reasons.join('；'));

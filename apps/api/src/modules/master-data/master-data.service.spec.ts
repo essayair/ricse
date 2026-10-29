@@ -181,7 +181,7 @@ describe('MasterDataService', () => {
       await expect(service.generateNextMaterialCode()).resolves.toBe('TRD000013');
     });
 
-    it('无相同标准商品时自动创建并生成名称与编码', async () => {
+    it('无相同标准商品时创建名称与编码，但不自动拼入核心指标', async () => {
       prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
       prisma.standardCommodity.findUnique.mockResolvedValue(null);
       prisma.standardCommodity.findMany.mockResolvedValue([] as any);
@@ -199,17 +199,17 @@ describe('MasterDataService', () => {
       });
 
       expect(prisma.standardCommodity.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ name: '萤石精粉-CaF₂≥97%' }),
+        data: expect.objectContaining({ name: '萤石精粉' }),
       }));
       expect(prisma.material.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ code: 'TRD000001', standardCommodityId: 'std-1' }),
+        data: expect.objectContaining({ code: 'TRD000001', name: '萤石精粉', standardCommodityId: 'std-1' }),
       }));
     });
 
     it('结构化建档以所选分类名称生成商品名称', async () => {
       prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1', name: '萤石' } as any);
       prisma.material.findMany.mockResolvedValue([] as any);
-      prisma.material.create.mockResolvedValue({ ...mockMaterial, name: '萤石精粉-CaF₂≥97%' } as any);
+      prisma.material.create.mockResolvedValue({ ...mockMaterial, name: '萤石精粉' } as any);
 
       await service.createMaterial({
         categoryId: 'cat-1', baseName: '不应使用的手工名称', commodityForm: '精粉',
@@ -218,7 +218,7 @@ describe('MasterDataService', () => {
       });
 
       expect(prisma.material.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ name: '萤石精粉-CaF₂≥97%' }),
+        data: expect.objectContaining({ name: '萤石精粉' }),
       }));
     });
 
@@ -287,11 +287,22 @@ describe('MasterDataService', () => {
   });
 
   describe('标准商品规则', () => {
-    it('商品名称按品名、形态和核心规格拼接，不包含包装', () => {
+    it('商品名称只按分类与商品形态/规格拼接，核心指标和包装不自动拼入', () => {
       expect(buildStandardCommodityName({
         baseName: '萤石', commodityForm: '精粉', coreSpecName: 'CaF₂',
         coreSpecOperator: '≥', coreSpecValue: '97', coreSpecUnit: '%', packageType: '1吨吨袋',
+      })).toBe('萤石精粉');
+      expect(buildStandardCommodityName({
+        baseName: '萤石', commodityForm: '精粉-CaF₂≥97%', coreSpecName: 'CaF₂',
+        coreSpecOperator: '≥', coreSpecValue: '97', coreSpecUnit: '%', packageType: '1吨吨袋',
       })).toBe('萤石精粉-CaF₂≥97%');
+    });
+
+    it('核心指标仍参与标准商品查重', () => {
+      const base = { categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉', coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecUnit: '%', packageType: '散装', unit: '吨' };
+      expect(buildStandardCommodityFingerprint({ ...base, coreSpecValue: '97' })).not.toBe(
+        buildStandardCommodityFingerprint({ ...base, coreSpecValue: '95' }),
+      );
     });
 
     it('查重指纹忽略空格和大小写', () => {

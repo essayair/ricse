@@ -61,7 +61,6 @@ export default function QualityPage() {
       <h1 className="text-2xl font-bold">质检管理</h1>
       <p className="mt-1 text-sm text-muted-foreground">统一管理质检任务、取样记录、机构检测报告、质检单和最终质量结论</p>
     </div>
-
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <Summary label="全部任务" value={data?.pagination.total || 0} />
       <Summary label="待取样" value={items.filter(item => item.status === 'PENDING_SAMPLING').length} />

@@ -9,7 +9,7 @@ import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
-import { CreateQualityInspectionDto } from './dto/create-quality-inspection.dto';
+import { CreateQualityInspectionDto, CreateStandaloneQualityReportDto } from './dto/create-quality-inspection.dto';
 import { UpdateQualityStatusDto } from './dto/update-quality-status.dto';
 import { QualityInspectionService } from './quality-inspection.service';
 
@@ -24,6 +24,12 @@ export class QualityInspectionController {
   @ApiOperation({ summary: '从已完成磅单创建质检单' })
   create(@Body() dto: CreateQualityInspectionDto, @CurrentUser('id') userId: string) {
     return this.service.create(dto, userId);
+  }
+
+  @Post('standalone')
+  @ApiOperation({ summary: '先录入独立检测报告，稍后关联质检任务' })
+  createStandalone(@Body() dto: CreateStandaloneQualityReportDto, @CurrentUser('id') userId: string) {
+    return this.service.createStandalone(dto, userId);
   }
 
   @Get()
@@ -47,6 +53,18 @@ export class QualityInspectionController {
     @Query('qualityTaskId') qualityTaskId?: string,
   ) {
     return this.service.eligibleWeighTickets(userId, qualityTaskId);
+  }
+
+  @Post(':id/tasks/:taskId')
+  @ApiOperation({ summary: '把独立检测报告关联到同范围质检任务' })
+  linkTask(@Param('id') id: string, @Param('taskId') taskId: string, @CurrentUser('id') userId: string) {
+    return this.service.linkReport(id, taskId, userId);
+  }
+
+  @Delete(':id/tasks/:taskId')
+  @ApiOperation({ summary: '解除检测报告与任务关联；全部解除后释放归属范围' })
+  unlinkTask(@Param('id') id: string, @Param('taskId') taskId: string, @CurrentUser('id') userId: string) {
+    return this.service.unlinkReport(id, taskId, userId);
   }
 
   @Get('attachments/:id/view-url')

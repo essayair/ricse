@@ -17,8 +17,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; username: string; role: string }) {
+  async validate(payload: { sub: string; username: string; role: string; tokenVersion?: number }) {
     const user = await this.usersService.findById(payload.sub);
+    if (!user) throw new UnauthorizedException('账号不存在');
+    // 老版本令牌未包含版本号，按初始版本 0 处理；登出后同样立即失效。
+    if ((payload.tokenVersion ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('登录状态已失效，请重新登录');
+    }
     if (
       !user
       || user.status !== 'ACTIVE'

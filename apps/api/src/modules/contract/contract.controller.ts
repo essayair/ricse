@@ -11,6 +11,7 @@ import { UpdateContractStatusDto } from './dto/update-status.dto';
 import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
 import { prepareAttachmentUpload } from '../common/attachment-upload';
+import { UpdateContractDto } from './dto/update-contract.dto';
 
 @ApiTags('合同管理')
 @ApiBearerAuth()
@@ -65,7 +66,7 @@ export class ContractController {
   }
 
   @Get('form-options')
-  @ApiOperation({ summary: '合同表单选项（含当前员工默认业务部门）' })
+  @ApiOperation({ summary: '合同表单选项（含完整启用主体、当前员工默认业务部门）' })
   getFormOptions(@CurrentUser('id') userId: string) {
     return this.contractService.getFormOptions(userId);
   }
@@ -116,7 +117,8 @@ export class ContractController {
     if (!file) throw new BadRequestException('请选择文件');
     const prepared = prepareAttachmentUpload(file, requestedName);
     if (!prepared) throw new BadRequestException('文件内容无法识别，仅支持 JPG/PNG/WEBP/PDF 格式');
-    await this.contractService.findOne(contractId, userId, 'contract.edit');
+    const contract = await this.contractService.findOne(contractId, userId, 'contract.edit');
+    this.contractService.assertAttachmentsEditable(contract.status);
     const { originalName, mimeType } = prepared;
     const result = await this.fileService.upload(file.buffer, originalName, mimeType);
     try {
@@ -148,6 +150,7 @@ export class ContractController {
   async deleteAttachment(@Param('id') id: string, @CurrentUser('id') userId: string) {
     const attachment = await this.contractService.findAttachmentById(id, userId, 'contract.edit');
     if (!attachment) return;
+    this.contractService.assertAttachmentsEditable(attachment.contract?.status);
     try {
       await this.fileService.delete(attachment.fileName);
     } catch {
@@ -168,6 +171,7 @@ export class ContractController {
     if (name.length > 255) throw new BadRequestException('附件名称不能超过 255 个字符');
     const attachment = await this.contractService.findAttachmentById(id, userId, 'contract.edit');
     if (!attachment) throw new BadRequestException('附件不存在');
+    this.contractService.assertAttachmentsEditable(attachment.contract?.status);
     return this.contractService.renameAttachment(id, name);
   }
 
@@ -185,24 +189,7 @@ export class ContractController {
   @ApiOperation({ summary: '编辑合同（仅草稿/已驳回状态）' })
   update(
     @Param('id') id: string,
-    @Body() dto: {
-      title?: string; type?: string; totalAmount?: number; sellerId?: string | null; buyerId?: string | null;
-      signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; businessUnitId?: string | null; externalNo?: string;
-      contactPerson?: string; contactPhone?: string;
-      pricingType?: string; overfillPct?: number; shortfallPct?: number;
-      deliveryMethod?: string; deliveryLocation?: string;
-      signedAt?: string; effectiveAt?: string; expireAt?: string;
-      settlementMethod?: string; settlementBasis?: string;
-      prepayPct?: number; paymentDays?: number; paymentMethod?: string;
-      moistureRule?: string; impurityRule?: string; remarks?: string;
-      draftData?: Record<string, unknown>;
-      lineItems?: Array<{
-        materialId: string; materialName?: string;
-        quantity: number; unit?: string;
-        unitPrice: number; salesUnitPrice?: number; deliveryDate?: string; remarks?: string;
-        qualityRulesSnapshot?: Record<string, unknown>;
-      }>;
-    },
+    @Body() dto: UpdateContractDto,
     @CurrentUser('id') userId?: string,
   ) {
     return this.contractService.update(id, dto, userId);

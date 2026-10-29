@@ -117,6 +117,48 @@ describe('RICSE API (e2e)', () => {
 
       expect(res.body.username).toBe(username);
     });
+
+    it('退出登录后旧访问令牌和刷新令牌均不可用，重新登录恢复访问', async () => {
+      const first = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ username, password })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/profile')
+        .set('Authorization', `Bearer ${first.body.token}`)
+        .expect(200);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${first.body.token}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/profile')
+        .set('Authorization', `Bearer ${first.body.token}`)
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: first.body.refreshToken })
+        .expect(401);
+
+      const second = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ username, password })
+        .expect(201);
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/profile')
+        .set('Authorization', `Bearer ${second.body.token}`)
+        .expect(200);
+      const refreshed = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: second.body.refreshToken })
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/profile')
+        .set('Authorization', `Bearer ${refreshed.body.token}`)
+        .expect(200);
+    });
   });
 
   /**

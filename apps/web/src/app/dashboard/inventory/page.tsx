@@ -110,7 +110,7 @@ export default function InventoryPage() {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Summary label="实物库存" value={onlyUnit ? weight(onlyUnit.physicalQuantity, onlyUnit.unit) : '按单位查看'} />
-        <Summary label="计价余量" value={onlyPricingGroup ? weight(onlyPricingGroup.quantity, onlyPricingGroup.unit) : '按商品查看'} hint={onlyPricingGroup ? pricingBasisLabel(onlyPricingGroup.basis) : '不同商品或计价口径不合并'} />
+        <Summary label="结算数量" value={onlyPricingGroup ? weight(onlyPricingGroup.quantity, onlyPricingGroup.unit) : '按商品查看'} hint={onlyPricingGroup ? pricingBasisLabel(onlyPricingGroup.basis) : '不同商品或计价口径不合并'} />
         <Summary label="业务预占" value={onlyUnit ? weight(onlyUnit.reservedQuantity, onlyUnit.unit) : '按单位查看'} />
         <Summary label="可用实物" value={onlyUnit ? weight(onlyUnit.availableQuantity, onlyUnit.unit) : '按单位查看'} />
       </div>
@@ -121,7 +121,7 @@ export default function InventoryPage() {
         <Summary label="物料种类" value={data.summary.materialCount || 0} />
         <Summary label="涉及仓库" value={data.summary.warehouseCount || 0} />
       </div>
-      {(data.summary.quantityTotalsByUnit?.length > 1 || pricingGroups.size > 1 || data.summary.materialCount > 1) && <Card className="space-y-1 p-4 text-sm text-muted-foreground">{data.summary.quantityTotalsByUnit?.length > 1 && <div>实物库存按单位：{data.summary.quantityTotalsByUnit.map((row: any) => weight(row.physicalQuantity, row.unit)).join(' · ')}</div>}{pricingGroups.size > 1 && <div>计价余量按口径：{[...pricingGroups.values()].map(row => `${pricingBasisLabel(row.basis)} ${weight(row.quantity, row.unit)}`).join(' · ')}</div>}{data.summary.materialCount > 1 && <div>不同商品的计价余量请查看下方商品库存明细，不在总览卡片中合并。</div>}</Card>}
+      {(data.summary.quantityTotalsByUnit?.length > 1 || pricingGroups.size > 1 || data.summary.materialCount > 1) && <Card className="space-y-1 p-4 text-sm text-muted-foreground">{data.summary.quantityTotalsByUnit?.length > 1 && <div>实物库存按单位：{data.summary.quantityTotalsByUnit.map((row: any) => weight(row.physicalQuantity, row.unit)).join(' · ')}</div>}{pricingGroups.size > 1 && <div>结算数量按口径：{[...pricingGroups.values()].map(row => `${pricingBasisLabel(row.basis)} ${weight(row.quantity, row.unit)}`).join(' · ')}</div>}{data.summary.materialCount > 1 && <div>不同商品的结算数量请查看下方商品库存明细，不在总览卡片中合并。</div>}</Card>}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
         <Input
@@ -165,10 +165,10 @@ export default function InventoryPage() {
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="border-b p-4"><div className="font-semibold">商品库存明细{selectedScope ? ` · ${selectedScope.label}` : ''}</div><div className="mt-1 text-xs text-muted-foreground">按商品、业务单元、库存主体和仓库分别展示实物与计价余量；点击上方维度行可缩小范围。</div></div>
+        <div className="border-b p-4"><div className="font-semibold">商品库存明细{selectedScope ? ` · ${selectedScope.label}` : ''}</div><div className="mt-1 text-xs text-muted-foreground">按商品、业务单元、库存主体和仓库分别展示实物与结算数量；点击上方维度行可缩小范围。</div></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1240px] text-sm">
-            <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">商品名称</th><th className="p-3">业务单元（事业部）</th><th className="p-3">库存主体</th><th className="p-3">仓库位置</th><th className="p-3 text-right">实物数量</th><th className="p-3 text-right">计价余量</th><th className="p-3 text-right">业务预占</th><th className="p-3 text-right">可用实物</th><th className="p-3 text-right">批次数</th></tr></thead>
+            <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">商品名称</th><th className="p-3">业务单元（事业部）</th><th className="p-3">库存主体</th><th className="p-3">仓库位置</th><th className="p-3 text-right">实物数量</th><th className="p-3 text-right">结算数量</th><th className="p-3 text-right">业务预占</th><th className="p-3 text-right">可用实物</th><th className="p-3 text-right">批次数</th></tr></thead>
             <tbody>{materialLocationRows.map((row: any) => <tr key={row.key} className="border-b last:border-0 hover:bg-muted/30">
               <td className="p-3"><div className="font-medium">{row.materialName}</div><div className="mt-1 text-xs text-muted-foreground">{row.materialCode} · {pricingBasisLabel(row.basis)}</div></td>
               <td className="p-3">{row.businessUnitName}</td>
@@ -186,7 +186,7 @@ export default function InventoryPage() {
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="border-b p-4"><div className="font-semibold">库存批次{selectedScope ? ` · ${selectedScope.label}` : ''}</div><div className="mt-1 text-xs text-muted-foreground">按批次核对商品、货权与仓库，并对照实物余额和计价余量。</div></div>
+        <div className="border-b p-4"><div className="font-semibold">库存批次{selectedScope ? ` · ${selectedScope.label}` : ''}</div><div className="mt-1 text-xs text-muted-foreground">按批次核对商品、货权与仓库，并对照实物余额和结算数量。</div></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-sm">
             <thead className="border-b bg-muted/50 text-left">
@@ -196,7 +196,7 @@ export default function InventoryPage() {
                 <th className="min-w-[110px] p-3">仓库</th>
                 <th className="min-w-[105px] p-3">状态 / 质检</th>
                 <th className="min-w-[115px] p-3 text-right">实物余额</th>
-                <th className="min-w-[115px] p-3 text-right">计价余量</th>
+                <th className="min-w-[115px] p-3 text-right">结算数量</th>
                 <th className="min-w-[115px] p-3 text-right">业务预占</th>
                 <th className="min-w-[115px] p-3 text-right">可用实物</th>
                 <th className="min-w-[160px] p-3">来源</th>
@@ -241,8 +241,8 @@ export default function InventoryPage() {
                 <th className="min-w-48 whitespace-nowrap px-4 py-3 font-medium">商品名称</th>
                 <th className="min-w-36 whitespace-nowrap px-4 py-3 text-right font-medium">实物变动</th>
                 <th className="min-w-36 whitespace-nowrap px-4 py-3 text-right font-medium">实物余额</th>
-                <th className="min-w-36 whitespace-nowrap px-4 py-3 text-right font-medium">计价变动</th>
-                <th className="min-w-36 whitespace-nowrap px-4 py-3 text-right font-medium">计价余额</th>
+                <th className="min-w-36 whitespace-nowrap px-4 py-3 text-right font-medium">结算数量变动</th>
+                <th className="min-w-36 whitespace-nowrap px-4 py-3 text-right font-medium">结算数量余额</th>
                 <th className="min-w-28 whitespace-nowrap px-4 py-3 font-medium">操作人</th>
               </tr>
             </thead>

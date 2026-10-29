@@ -141,23 +141,16 @@ describe('AccessControlService', () => {
       }],
     } as any);
 
+    const contractScope = { OR: [
+      { sellerId: 'partner-1' }, { buyerId: 'partner-1' }, { signingPartnerId: 'partner-1' },
+      { status: 'DRAFT', creator: { companyId: 'external-company' } },
+    ] };
     await expect(service.getQualityInspectionScope('external-user')).resolves.toEqual({
-      weighTicket: {
-        waybill: {
-          dispatchNotice: {
-            order: {
-              contract: {
-                OR: [
-                  { sellerId: 'partner-1' },
-                  { buyerId: 'partner-1' },
-                  { signingPartnerId: 'partner-1' },
-                  { status: 'DRAFT', creator: { companyId: 'external-company' } },
-                ],
-              },
-            },
-          },
-        },
-      },
+      OR: [
+        { weighTicket: { waybill: { dispatchNotice: { order: { contract: contractScope } } } } },
+        { contract: contractScope },
+        { contractId: null, createdBy: 'external-user' },
+      ],
     });
   });
 

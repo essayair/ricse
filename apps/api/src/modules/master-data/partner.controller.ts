@@ -14,6 +14,7 @@ import { PermissionGuard } from '../common/permission.guard';
 import { RequirePermission } from '../common/require-permission.decorator';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
 import { CreatePartnerAddressDto, UpdatePartnerAddressDto } from './dto/partner-address.dto';
+import { CreateBankAccountDto, CreatePartnerDto, UpdatePartnerDto } from './dto/partner.dto';
 
 @ApiTags('合作伙伴')
 @ApiBearerAuth()
@@ -36,22 +37,7 @@ export class PartnerController {
   @Post()
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '创建合作伙伴' })
-  create(@Body() dto: {
-    code?: string; name: string; shortName?: string; shortCode?: string;
-    taxId?: string; orgType?: string; category?: string;
-    legalPerson?: string; legalPersonType?: string; legalIdCard?: string;
-    controller?: string; controllerTitle?: string; controllerPhone?: string;
-    contactPerson?: string; contactPhone?: string;
-    isInternal?: boolean;
-    country?: string; province?: string; city?: string; address?: string; bizAddress?: string;
-    sourceRegion?: string; estDate?: string; regCapital?: number;
-    regCurrency?: string; revenueScale?: string; groupName?: string; isParent?: boolean;
-    taxType?: string; taxRating?: string; invoiceType?: string; relatedPartyType?: string;
-    industry?: string; corpType?: string;
-    licenseType?: string; licenseExpiry?: string;
-    bizScope?: string; mainBiz?: string; tradingGoods?: string; equityStructure?: string; intro?: string;
-    creditLimit?: number; roles: string[]; remark?: string;
-  }, @CurrentUser('id') userId: string) {
+  create(@Body() dto: CreatePartnerDto, @CurrentUser('id') userId: string) {
     return this.partnerService.create(dto, userId);
   }
 
@@ -127,23 +113,7 @@ export class PartnerController {
   @Patch(':id')
   @RequirePermission('master_data.manage')
   @ApiOperation({ summary: '更新合作伙伴（code/taxId/isInternal 不可修改）' })
-  update(@Param('id') id: string, @Body() dto: {
-    name?: string; shortName?: string | null; shortCode?: string | null;
-    orgType?: string | null; category?: string | null;
-    legalPerson?: string | null; legalPersonType?: string | null; legalIdCard?: string | null;
-    controller?: string | null; controllerTitle?: string | null; controllerPhone?: string | null;
-    contactPerson?: string | null; contactPhone?: string | null;
-    country?: string | null; province?: string | null; city?: string | null;
-    address?: string | null; bizAddress?: string | null; sourceRegion?: string | null;
-    estDate?: string | null; regCapital?: number | null; regCurrency?: string | null;
-    revenueScale?: string | null; groupName?: string | null; isParent?: boolean | null;
-    taxType?: string | null; taxRating?: string | null; invoiceType?: string | null;
-    relatedPartyType?: string | null; industry?: string | null; corpType?: string | null;
-    licenseType?: string | null; licenseExpiry?: string | null;
-    bizScope?: string | null; mainBiz?: string | null; tradingGoods?: string | null;
-    equityStructure?: string | null; intro?: string | null;
-    creditLimit?: number | null; roles?: string[]; status?: string; remark?: string | null;
-  }) {
+  update(@Param('id') id: string, @Body() dto: UpdatePartnerDto) {
     return this.partnerService.update(id, dto);
   }
 
@@ -162,7 +132,7 @@ export class PartnerController {
   @ApiOperation({ summary: '添加银行账户' })
   createBankAccount(
     @Param('partnerId') partnerId: string,
-    @Body() dto: { accountName: string; accountNo: string; bankName: string; bankCode?: string; accountType?: string; isDefault?: boolean },
+    @Body() dto: CreateBankAccountDto,
   ) {
     return this.partnerService.createBankAccount({ ...dto, partnerId });
   }

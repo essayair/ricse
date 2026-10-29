@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateDriverDto, UpdateDriverDto } from './dto/driver.dto';
+import { resolvePagination } from '../common/pagination';
 
 @Injectable()
 export class DriverService {
@@ -112,8 +113,7 @@ export class DriverService {
     page?: number; pageSize?: number; status?: string; search?: string;
     serviceOrganizationId?: string; carrierPartnerId?: string; internal?: boolean; fleetId?: string;
   }) {
-    const page = params.page || 1;
-    const pageSize = Math.min(params.pageSize || 50, 200);
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 50, maxPageSize: 200 });
     const where: Prisma.DriverWhereInput = { deletedAt: null };
     if (params.status) where.status = params.status;
     // serviceOrganizationId=NONE 表示仅筛选"无承运商"司机（社会运力专用）。
@@ -139,7 +139,7 @@ export class DriverService {
         where,
         include: this.include,
         orderBy: [{ status: 'asc' }, { name: 'asc' }],
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
       }),
       this.prisma.driver.count({ where }),

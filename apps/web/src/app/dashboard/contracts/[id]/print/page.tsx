@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
+import { GradePriceRulesView, GradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
 
 interface Approval {
   id: string;
@@ -71,6 +72,8 @@ interface ContractPrintDetail {
     salesTotalPrice?: string | null;
     remarks?: string | null;
     qualityRulesSnapshot?: any;
+    priceRulesSnapshot?: GradePriceSnapshot | null;
+    salesPriceRulesSnapshot?: GradePriceSnapshot | null;
   }>;
   approvals?: Approval[];
   attachments?: Array<{ id: string; originalName: string; category: string; size: number; createdAt?: string }>;
@@ -201,6 +204,7 @@ export default function ContractPrintPage() {
         </div>
         {item.lineItems.filter(line => line.qualityRulesSnapshot?.items?.length).map((line, index) => <div key={line.id} className="mt-3"><div className="mb-1 text-[11px] font-semibold">{index + 1}. {line.materialName || '合同物料'}质量结算规则（{line.qualityRulesSnapshot.templateName || '质检模板'} V{line.qualityRulesSnapshot.templateVersion || 1}）</div><table className="w-full border-collapse text-[9px]"><thead><tr className="bg-slate-100"><Th>检测指标 / 合同标准</Th><Th>扣款方式</Th><Th>扣款标准</Th><Th>拒收条件</Th></tr></thead><tbody>{line.qualityRulesSnapshot.items.map((rule: any, ruleIndex: number) => <tr key={`${rule.code}-${ruleIndex}`}><Td>{rule.symbol || rule.name} {rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? `–${rule.upperValue}` : ''} {rule.unit}</Td><Td>{rule.deductionMode === 'PER_STEP' ? `每 ${rule.deductionStep} 偏差` : rule.deductionMode === 'FLAT' ? (rule.deductionCondition === 'IN_RANGE' ? `区间 ${rule.deductionLowerValue}-${rule.deductionUpperValue}` : '固定扣款') : '按标准验收'}</Td><Td>{rule.deductionMode === 'NONE' ? '—' : `${rule.deductionAmount ?? '—'} 元/吨`}</Td><Td>{rule.rejectOperator && rule.rejectOperator !== 'NONE' ? `${rule.rejectOperator} ${rule.rejectValue}` : '未设置'}</Td></tr>)}</tbody></table></div>)}
         {!item.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <p className="mt-2 text-[10px]">未配置结构化质量结算规则；存量合同按原合同约定处理。</p>}
+        {item.lineItems.map(line => <div key={`price-${line.id}`}><GradePriceRulesView value={line.priceRulesSnapshot} title={`${line.materialName || '合同物料'}采购/单边品位价格`} />{item.type === 'BILATERAL' && <GradePriceRulesView value={line.salesPriceRulesSnapshot} title={`${line.materialName || '合同物料'}销售品位价格`} />}</div>)}
       </PrintSection>
 
       <PrintSection title="四、审批流程">

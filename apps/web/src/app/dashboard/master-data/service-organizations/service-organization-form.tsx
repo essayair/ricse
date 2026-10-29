@@ -50,13 +50,14 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
       api.get<Organization>(`/service-organizations/${id}`).then(item => {
         setOrganizationType(item.organizationType);
         setTransportModes(item.transportModes || []);
-        setForm(Object.fromEntries(Object.entries({
-          ...empty,
+        // 只回填表单自身字段；接口返回的 id、时间戳、关联对象等不能随保存请求回传。
+        const loaded: Record<string, unknown> = {
           ...item,
           licenseExpiry: item.licenseExpiry?.slice(0, 10) || '',
           storageCapacity: item.storageCapacity || '',
           reportCycleDays: item.reportCycleDays?.toString() || '',
-        }).map(([key, value]) => [key, value == null ? '' : String(value)])));
+        };
+        setForm(Object.fromEntries(Object.keys(empty).map(key => [key, loaded[key] == null ? '' : String(loaded[key])])));
       }).catch(error => alert(error.message));
     }
   }, [id]);

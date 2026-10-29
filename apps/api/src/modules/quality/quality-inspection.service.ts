@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { InventoryService } from '../inventory/inventory.service';
-import { CreateQualityInspectionDto, QualityIndicatorDto } from './dto/create-quality-inspection.dto';
+import { CreateQualityInspectionDto, CreateStandaloneQualityReportDto, QualityIndicatorDto } from './dto/create-quality-inspection.dto';
 import { CreateQualitySampleDto, UpdateQualitySampleDto } from './dto/quality-sample.dto';
 import { evaluateContractQualityRules } from './contract-quality-rules';
 
@@ -22,6 +22,8 @@ export class QualityInspectionService {
     attachments: { orderBy: { createdAt: 'desc' as const } },
     qualitySample: { select: { id: true, sampleNo: true, sampleLabel: true } },
     qualityTask: { select: { id: true, taskNo: true, status: true, finalConclusion: true } },
+    contract: { select: { id: true, contractNo: true, title: true } },
+    taskLinks: { where: { unlinkedAt: null }, include: { qualityTask: { select: { id: true, taskNo: true, status: true, waybillId: true } } }, orderBy: { linkedAt: 'asc' as const } },
     inboundReceipts: {
       where: { deletedAt: null, status: { not: 'CANCELLED' } },
       select: { id: true, receiptNo: true, status: true },
@@ -99,6 +101,18 @@ export class QualityInspectionService {
       },
       orderBy: { createdAt: 'asc' as const },
     },
+    reportLinks: {
+      where: { unlinkedAt: null, inspection: { deletedAt: null } },
+      include: { inspection: { include: {
+        creator: { select: { id: true, name: true } },
+        confirmer: { select: { id: true, name: true } },
+        indicators: { orderBy: { sort: 'asc' as const } },
+        attachments: { orderBy: { createdAt: 'desc' as const } },
+        qualitySample: { select: { id: true, sampleNo: true, sampleLabel: true } },
+        weighTicket: { select: { id: true, ticketNo: true, status: true } },
+      } } },
+      orderBy: { linkedAt: 'asc' as const },
+    },
     waybill: {
       include: {
         lineItems: { orderBy: { createdAt: 'asc' as const } },
@@ -140,6 +154,13 @@ export class QualityInspectionService {
       },
     },
   };
+
+  private withLinkedReports<T extends { reports: Array<{ id: string }>; reportLinks?: Array<{ inspection: { id: string } }> }>(task: T) {
+    const reports = new Map<string, T['reports'][number]>();
+    for (const report of task.reports) reports.set(report.id, report);
+    for (const link of task.reportLinks || []) reports.set(link.inspection.id, link.inspection as T['reports'][number]);
+    return { ...task, reports: [...reports.values()] };
+  }
 
   private async generateNo() {
     const now = new Date();
@@ -257,13 +278,15 @@ export class QualityInspectionService {
         { waybill: { dispatchNotice: { order: { contract: { businessUnit: { code: { contains: search, mode: 'insensitive' } } } } } } },
         { reports: { some: { institutionName: { contains: search, mode: 'insensitive' } } } },
         { reports: { some: { reportNo: { contains: search, mode: 'insensitive' } } } },
+        { reportLinks: { some: { unlinkedAt: null, inspection: { institutionName: { contains: search, mode: 'insensitive' } } } } },
+        { reportLinks: { some: { unlinkedAt: null, inspection: { reportNo: { contains: search, mode: 'insensitive' } } } } },
       ];
     }
     const [items, total] = await Promise.all([
       this.prisma.qualityTask.findMany({ where, include: this.taskInclude, skip: (page - 1) * pageSize, take: pageSize, orderBy: { createdAt: 'desc' } }),
       this.prisma.qualityTask.count({ where }),
     ]);
-    return { items, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
+    return { items: items.map(item => this.withLinkedReports(item)), pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
 
   async findTask(id: string, userId: string, permission = 'quality.view') {
@@ -273,7 +296,76 @@ export class QualityInspectionService {
       where: { id, deletedAt: null, AND: [scope] }, include: this.taskInclude,
     });
     if (!task) throw new NotFoundException('质检任务不存在');
-    return task;
+    return this.withLinkedReports(task);
+  }
+
+  /** 首次关联确定报告范围；同一份报告可被范围内的多项车辆任务引用。 */
+  async linkReport(inspectionId: string, taskId: string, userId: string) {
+    const report = await this.findOne(inspectionId, userId, 'quality.manage');
+    const task = await this.findTask(taskId, userId, 'quality.manage');
+    if (report.status === 'VOIDED' || task.status === 'VOIDED') throw new BadRequestException('已作废的报告或任务不能关联');
+    const contract = task.waybill.dispatchNotice.order.contract;
+    const supplierId = task.waybill.dispatchNotice.type === 'SALES'
+      ? contract.signingPartner?.id : contract.seller?.id;
+    const businessUnitId = contract.businessUnit?.id;
+    if (!supplierId || !businessUnitId) throw new BadRequestException('合同缺少供方或业务单元，不能关联检测报告');
+    const materialIds = task.waybill.lineItems.map(line => line.materialId);
+    if (report.materialId && !materialIds.includes(report.materialId)) throw new BadRequestException('检测报告物料与所选车辆不一致');
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "quality_inspections" WHERE "id" = ${inspectionId} FOR UPDATE`;
+      const current = await tx.qualityInspection.findUnique({ where: { id: inspectionId }, include: { taskLinks: { where: { unlinkedAt: null } } } });
+      if (!current || current.deletedAt) throw new NotFoundException('检测报告不存在');
+      if (current.materialId && !materialIds.includes(current.materialId)) throw new BadRequestException('检测报告物料与所选车辆不一致');
+      if (current.taskLinks.length && (
+        current.contractId !== contract.id || current.supplierId !== supplierId || current.businessUnitId !== businessUnitId
+      )) throw new BadRequestException('检测报告只能关联同一合同、供方和业务单元的质检任务');
+      if (!current.taskLinks.length && current.contractId && current.contractId !== contract.id) {
+        throw new BadRequestException('报告预选合同与质检任务不一致；请先清除错误归属');
+      }
+      await tx.qualityInspection.update({ where: { id: inspectionId }, data: {
+        contractId: contract.id, supplierId, businessUnitId,
+        materialId: current.materialId || materialIds[0] || null,
+      } });
+      await tx.qualityInspectionTaskLink.upsert({
+        where: { inspectionId_qualityTaskId: { inspectionId, qualityTaskId: taskId } },
+        create: { inspectionId, qualityTaskId: taskId, linkedBy: userId },
+        update: { linkedBy: userId, linkedAt: new Date(), unlinkedBy: null, unlinkedAt: null },
+      });
+      if (current.status === 'CONFIRMED') await tx.qualityTask.update({ where: { id: taskId }, data: {
+        status: task.status === 'COMPLETED' ? 'RECHECK_REQUIRED' : 'PENDING_DECISION',
+      } });
+    });
+    return this.findTask(taskId, userId, 'quality.manage');
+  }
+
+  async unlinkReport(inspectionId: string, taskId: string, userId: string) {
+    await this.findOne(inspectionId, userId, 'quality.manage');
+    const task = await this.findTask(taskId, userId, 'quality.manage');
+    if (task.basisInspectionId === inspectionId) throw new BadRequestException('该报告已作为任务最终判定依据，请先办理判定更正');
+    const receiptCount = await this.prisma.inboundReceipt.count({ where: {
+      qualityInspectionId: inspectionId, waybillId: task.waybillId, deletedAt: null, status: { not: 'CANCELLED' },
+    } });
+    if (receiptCount) throw new BadRequestException('该报告已被入库单引用，不能直接解除关联');
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "quality_inspections" WHERE "id" = ${inspectionId} FOR UPDATE`;
+      const link = await tx.qualityInspectionTaskLink.findUnique({ where: { inspectionId_qualityTaskId: { inspectionId, qualityTaskId: taskId } } });
+      if (!link || link.unlinkedAt) throw new BadRequestException('该任务未关联此检测报告');
+      const currentTask = await tx.qualityTask.findUnique({ where: { id: taskId }, select: { basisInspectionId: true, waybillId: true } });
+      if (!currentTask) throw new NotFoundException('质检任务不存在');
+      if (currentTask?.basisInspectionId === inspectionId) throw new BadRequestException('该报告已作为任务最终判定依据，请先办理判定更正');
+      const activeReceipt = await tx.inboundReceipt.count({ where: {
+        qualityInspectionId: inspectionId, waybillId: currentTask?.waybillId, deletedAt: null, status: { not: 'CANCELLED' },
+      } });
+      if (activeReceipt) throw new BadRequestException('该报告已被入库单引用，不能直接解除关联');
+      await tx.qualityInspectionTaskLink.update({ where: { id: link.id }, data: { unlinkedBy: userId, unlinkedAt: new Date() } });
+      const activeCount = await tx.qualityInspectionTaskLink.count({ where: { inspectionId, unlinkedAt: null } });
+      const report = await tx.qualityInspection.findUniqueOrThrow({ where: { id: inspectionId } });
+      await tx.qualityInspection.update({ where: { id: inspectionId }, data: {
+        ...(report.qualityTaskId === taskId ? { qualityTaskId: null, qualitySampleId: null, weighTicketId: null } : {}),
+        ...(activeCount === 0 ? { contractId: null, supplierId: null, businessUnitId: null, qualityTaskId: null, qualitySampleId: null, weighTicketId: null } : {}),
+      } });
+    });
+    return this.findTask(taskId, userId, 'quality.manage');
   }
 
   async finalizeTask(id: string, data: { conclusion: string; basisInspectionId: string; reason?: string }, userId: string) {
@@ -317,7 +409,7 @@ export class QualityInspectionService {
         handlerId: task.handlerId || userId, handledAt: task.handledAt || new Date(),
       },
     });
-    await this.inventoryService.createPendingReceiptForConfirmedQuality(basis.id, userId);
+    await this.inventoryService.createPendingReceiptForConfirmedQuality(basis.id, userId, task.id);
     return this.findTask(id, userId, 'quality.manage');
   }
 
@@ -337,7 +429,7 @@ export class QualityInspectionService {
         qualityAcceptanceSnapshot: { userId, name: context.user.name, acceptedAt: new Date().toISOString(), reason: reason.trim(), decisionVersion: task.decisionVersion, basisInspectionId: task.basisInspectionId } },
     });
     if (!updated.count) throw new BadRequestException('质检依据已变更或已处理，请刷新后重试');
-    await this.inventoryService.createPendingReceiptForConfirmedQuality(task.basisInspectionId!, userId);
+    await this.inventoryService.createPendingReceiptForConfirmedQuality(task.basisInspectionId!, userId, task.id);
     return this.findTask(id, userId, permission);
   }
 
@@ -664,6 +756,11 @@ export class QualityInspectionService {
         qualityTaskId: task.id,
         qualitySampleId: sample.id,
         weighTicketId: ticket.id,
+        contractId: contract.id,
+        supplierId: isPurchase ? contract.sellerId : contract.signingPartnerId,
+        businessUnitId: contract.businessUnitId,
+        materialId: ticket.waybill.lineItems[0]?.materialId || null,
+        taskLinks: { create: { qualityTaskId: task.id, linkedBy: userId } },
         status: dto.submit ? 'REPORTED' : 'DRAFT',
         conclusion,
         dataSource: dto.dataSource || 'MANUAL',
@@ -736,6 +833,68 @@ export class QualityInspectionService {
     return inspection;
   }
 
+  async createStandalone(dto: CreateStandaloneQualityReportDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
+    const material = await this.prisma.material.findFirst({ where: { id: dto.materialId, deletedAt: null, status: 'ACTIVE' } });
+    if (!material) throw new BadRequestException('请选择有效物料');
+    if (!dto.reportNo?.trim() || !dto.samplerName?.trim()) throw new BadRequestException('请填写报告编号和取样人');
+    if (!dto.indicators?.length) throw new BadRequestException('请至少填写一个检测指标');
+    if (new Set(dto.indicators.map(item => item.code.trim())).size !== dto.indicators.length) throw new BadRequestException('检测指标不能重复');
+    if (dto.submit && dto.indicators.some(item => item.measuredValue === undefined)) throw new BadRequestException('提交报告前请填写全部实测指标');
+    let institutionName = dto.institutionName?.trim() || '';
+    let institutionPartnerId: string | null = null;
+    if (['PARTNER', 'THIRD_PARTY'].includes(dto.institutionType)) {
+      const profile = await this.prisma.serviceOrganization.findFirst({ where: {
+        partnerId: dto.institutionPartnerId,
+        organizationType: 'QUALITY_INSTITUTION', status: 'ACTIVE', deletedAt: null,
+        partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } },
+      }, include: { partner: { select: { id: true, name: true } } } });
+      if (!profile) throw new BadRequestException('请选择已维护且启用的质检机构');
+      institutionName = profile.partner.name;
+      institutionPartnerId = profile.partner.id;
+    }
+    if (!institutionName) throw new BadRequestException('请填写检测机构名称');
+    const indicatorIds = [...new Set(dto.indicators.map(item => item.indicatorDefinitionId).filter(Boolean) as string[])];
+    const methodIds = [...new Set(dto.indicators.map(item => item.methodId).filter(Boolean) as string[])];
+    const [definitions, methods, allowedLinks] = await Promise.all([
+      this.prisma.qualityIndicatorDefinition.findMany({ where: { id: { in: indicatorIds }, status: 'ACTIVE' } }),
+      this.prisma.qualityMethod.findMany({ where: { id: { in: methodIds }, status: 'ACTIVE' } }),
+      this.prisma.qualityIndicatorMethod.findMany({ where: { indicatorId: { in: indicatorIds }, methodId: { in: methodIds }, status: 'ACTIVE' } }),
+    ]);
+    if (definitions.length !== indicatorIds.length || methods.length !== methodIds.length) throw new BadRequestException('检测指标或方法不存在、已停用');
+    const allowed = new Set(allowedLinks.map(link => `${link.indicatorId}:${link.methodId}`));
+    const definitionMap = new Map(definitions.map(item => [item.id, item]));
+    const methodMap = new Map(methods.map(item => [item.id, item]));
+    const evaluated = dto.indicators.map((item, index) => {
+      if (item.methodId && (!item.indicatorDefinitionId || !allowed.has(`${item.indicatorDefinitionId}:${item.methodId}`))) {
+        throw new BadRequestException(`检测方法未关联到指标“${item.name}”`);
+      }
+      const definition = item.indicatorDefinitionId ? definitionMap.get(item.indicatorDefinitionId) : null;
+      const method = item.methodId ? methodMap.get(item.methodId) : null;
+      return { ...item, code: definition?.code || item.code, name: definition?.name || item.name,
+        methodCode: method?.code || item.methodCode, methodName: method?.name || item.methodName,
+        result: evaluateIndicator(item), sort: index };
+    });
+    return this.prisma.qualityInspection.create({ data: {
+      inspectionNo: await this.generateNo(),
+      materialId: material.id, materialName: material.name, materialSpec: material.spec,
+      samplingGroupNo: clean(dto.samplingGroupNo), sampleNo: clean(dto.sampleNo),
+      sampledAt: new Date(dto.sampledAt), samplerName: dto.samplerName.trim(), samplingMethod: clean(dto.samplingMethod),
+      testedAt: new Date(dto.testedAt), reportNo: dto.reportNo.trim(),
+      institutionType: dto.institutionType, institutionPartnerId, institutionName,
+      status: dto.submit ? 'REPORTED' : 'DRAFT',
+      conclusion: dto.submit ? evaluateConclusion(evaluated) : 'PENDING',
+      remarks: clean(dto.remarks), createdBy: userId,
+      indicators: { create: evaluated.map(item => ({
+        code: item.code.trim(), name: item.name.trim(), operator: item.operator,
+        indicatorDefinitionId: item.indicatorDefinitionId || null, methodId: item.methodId || null,
+        methodCode: clean(item.methodCode), methodName: clean(item.methodName),
+        standardValue: item.standardValue, upperValue: item.upperValue, fuseValue: item.fuseValue,
+        unit: item.unit || '%', measuredValue: item.measuredValue, result: item.result, sort: item.sort,
+      })) },
+    }, include: this.include });
+  }
+
   async findAll(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.view');
     const scope = await this.accessControl.getQualityInspectionScope(userId, 'quality.view');
@@ -778,14 +937,14 @@ export class QualityInspectionService {
       include: this.include,
     });
     if (!item) throw new NotFoundException('质检单不存在');
-    const relatedInspections = await this.prisma.qualityInspection.findMany({
+    const relatedInspections = item.weighTicketId ? await this.prisma.qualityInspection.findMany({
       where: { weighTicketId: item.weighTicketId, deletedAt: null, id: { not: item.id } },
       select: {
         id: true, inspectionNo: true, institutionType: true, institutionName: true,
         reportNo: true, testedAt: true, status: true, conclusion: true,
       },
       orderBy: { testedAt: 'desc' },
-    });
+    }) : [];
     return { ...item, relatedInspections };
   }
 
@@ -802,18 +961,8 @@ export class QualityInspectionService {
     if (status === 'CONFIRMED' && item.conclusion === 'FUSE' && !resolution?.trim()) {
       throw new BadRequestException('拒收质检单确认时必须填写处理方案');
     }
-    if (
-      status === 'CONFIRMED'
-      && item.conclusion === 'PASS'
-      && item.weighTicket.waybill.dispatchNotice.type === 'PURCHASE'
-    ) {
-      if (item.weighTicket.status !== 'REVIEWED') {
-        throw new BadRequestException('采购磅单复核后才能确认质检合格并补齐入库作业单验收依据');
-      }
-      if (!['ARRIVED', 'SIGNED'].includes(item.weighTicket.waybill.status)) {
-        throw new BadRequestException('采购物流运单到达后才能确认质检合格并补齐入库作业单验收依据');
-      }
-    }
+    // 检测报告是独立检测事实，确认报告不以任何一辆车的磅单/到达状态为前提；
+    // 任务最终判定和入库过账仍分别校验其车辆磅单与现场状态。
     await this.prisma.qualityInspection.update({
       where: { id },
       data: {
@@ -823,14 +972,12 @@ export class QualityInspectionService {
       },
     });
     if (status === 'CONFIRMED') {
-      await this.prisma.qualityTask.update({
-        where: { id: item.qualityTask.id },
-        data: {
-          status: item.qualityTask.status === 'COMPLETED' ? 'RECHECK_REQUIRED' : 'PENDING_DECISION',
-          handlerId: userId,
-          handledAt: new Date(),
-        },
-      });
+      for (const link of item.taskLinks || []) {
+        await this.prisma.qualityTask.update({ where: { id: link.qualityTaskId }, data: {
+          status: link.qualityTask.status === 'COMPLETED' ? 'RECHECK_REQUIRED' : 'PENDING_DECISION',
+          handlerId: userId, handledAt: new Date(),
+        } });
+      }
     }
     return this.findOne(id, userId, 'quality.manage');
   }

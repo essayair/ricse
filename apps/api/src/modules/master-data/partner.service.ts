@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
 import { CreatePartnerAddressDto, UpdatePartnerAddressDto } from './dto/partner-address.dto';
+import { resolvePagination } from '../common/pagination';
 
 @Injectable()
 export class PartnerService {
@@ -48,6 +49,7 @@ export class PartnerService {
     address?: string;
     bizAddress?: string;
     sourceRegion?: string;
+    regNo?: string;
     estDate?: string;
     regCapital?: number;
     regCurrency?: string;
@@ -123,7 +125,8 @@ export class PartnerService {
         address: data.address,
         bizAddress: data.bizAddress,
         sourceRegion: data.sourceRegion,
-        estDate: data.estDate ? new Date(data.estDate) : undefined,
+        regNo: data.regNo,
+        estDate: this.parsePartnerDate(data.estDate, '成立日期') ?? undefined,
         regCapital: data.regCapital,
         regCurrency: data.regCurrency,
         revenueScale: data.revenueScale,
@@ -136,7 +139,7 @@ export class PartnerService {
         industry: data.industry,
         corpType: data.corpType,
         licenseType: data.licenseType,
-        licenseExpiry: data.licenseExpiry ? new Date(data.licenseExpiry) : undefined,
+        licenseExpiry: this.parsePartnerDate(data.licenseExpiry, '资质到期日') ?? undefined,
         bizScope: data.bizScope,
         mainBiz: data.mainBiz,
         tradingGoods: data.tradingGoods,
@@ -157,9 +160,7 @@ export class PartnerService {
     role?: string;
     status?: string;
   }) {
-    const page = params.page || 1;
-    const pageSize = params.pageSize || 20;
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 20 });
 
     const where: Prisma.PartnerWhereInput = { deletedAt: null };
     if (params.role) where.roles = { has: params.role };
@@ -522,9 +523,7 @@ export class PartnerService {
     page?: number; pageSize?: number; status?: string; ownerId?: string;
     ownerType?: string; vehicleType?: string; search?: string;
   }) {
-    const page = params.page || 1;
-    const pageSize = Math.min(params.pageSize || 20, 200);
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 20, maxPageSize: 200 });
 
     const where: Prisma.VehicleWhereInput = { deletedAt: null };
     if (params.status) where.status = params.status;

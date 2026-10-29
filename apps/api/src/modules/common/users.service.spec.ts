@@ -43,6 +43,15 @@ describe('UsersService', () => {
     });
   });
 
+  it('退出登录时原子清除刷新令牌并递增访问令牌版本', async () => {
+    await service.clearRefreshToken('user-1');
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { refreshToken: null, tokenVersion: { increment: 1 } },
+    });
+  });
+
   it('后台账号必须关联员工和企业', async () => {
     await expect(service.create({ username: 'employee01', password: 'secret123', name: '员工' }))
       .rejects.toThrow('后台账号必须关联员工和所属企业');

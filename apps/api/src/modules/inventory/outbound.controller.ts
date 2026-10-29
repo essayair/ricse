@@ -11,6 +11,7 @@ import { normalizeUploadFilename } from '../common/filename-encoding';
 import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
 import { CreateOutboundReceiptDto } from './dto/create-outbound-receipt.dto';
 import { OutboundService } from './outbound.service';
+import { ResolveOutboundVarianceDto } from './dto/resolve-outbound-variance.dto';
 
 @ApiTags('销售出库与库存扣减')
 @ApiBearerAuth()
@@ -120,7 +121,7 @@ export class OutboundReceiptController {
   @Patch(':id/variance')
   resolveVariance(
     @Param('id') id: string,
-    @Body() data: { decision: string; reason: string },
+    @Body() data: ResolveOutboundVarianceDto,
     @CurrentUser('id') userId: string,
   ) {
     return this.service.resolveVariance(id, data, userId);

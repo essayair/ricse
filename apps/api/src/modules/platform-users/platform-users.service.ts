@@ -2,14 +2,14 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LinkableAccountQueryDto, PlatformUserQueryDto } from './dto/platform-user.dto';
+import { resolvePagination } from '../common/pagination';
 
 @Injectable()
 export class PlatformUsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(query: PlatformUserQueryDto) {
-    const pageNo = query.pageNo || 1;
-    const pageSize = query.pageSize || 20;
+    const { page: pageNo, pageSize, skip } = resolvePagination(query.pageNo, query.pageSize, { defaultPageSize: 20 });
     const search = query.search?.trim();
     const where: Prisma.WechatIdentityWhereInput = {
       ...(query.status ? { status: query.status } : {}),
@@ -46,7 +46,7 @@ export class PlatformUsersService {
           _count: { select: { bindingLogs: true } },
         },
         orderBy: { createdAt: 'desc' },
-        skip: (pageNo - 1) * pageSize,
+        skip,
         take: pageSize,
       }),
     ]);

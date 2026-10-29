@@ -19,6 +19,7 @@ model User {
   email           String?
   status          String   @default("ACTIVE") // ACTIVE | DISABLED
   refreshToken    String?
+  tokenVersion    Int      @default(0) // 退出登录时递增，使此前签发的访问令牌失效
   companyId       String? // 所属企业
   businessGroupId String? // 所属业务组
   employeeId      String?  @unique // 关联员工档案（一对一）
@@ -981,6 +982,7 @@ model Contract {
 
   lineItems            ContractLineItem[]
   approvals            Approval[]
+  qualityInspections   QualityInspection[]
   attachments          Attachment[]
   creator              User                  @relation("ContractCreator", fields: [createdBy], references: [id])
   seller               Partner?              @relation("ContractSeller", fields: [sellerId], references: [id])
@@ -1017,6 +1019,8 @@ model ContractLineItem {
   deliveryDate    DateTime?
   remarks         String?
   qualityRulesSnapshot Json? // 合同签订时的物料质量结算规则快照；不随质检模板后续变更
+  priceRulesSnapshot Json? // 合同品位分档价格快照；固定价合同为空
+  salesPriceRulesSnapshot Json? // 双边合同下游销售方向的分档价格快照
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1813,8 +1817,8 @@ model LogisticsPaymentAllocation {
   reversedAt DateTime?
   reversedBy String?
   reversalReason String?
-  settlement LogisticsSettlement @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
-  fundTransaction FundTransaction @relation(fields: [fundTransactionId], references: [id], onDelete: Restrict)
+  settlement LogisticsSettlement @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict, map: "logistics_payment_allocations_settlement_fkey")
+  fundTransaction FundTransaction @relation(fields: [fundTransactionId], references: [id], onDelete: Restrict, map: "logistics_payment_allocations_fund_fkey")
   @@index([logisticsSettlementId])
   @@index([fundTransactionId])
   @@map("logistics_payment_allocations")
@@ -1938,6 +1942,7 @@ model QualityTask {
   decider         User?               @relation("QualityTaskDecider", fields: [decidedBy], references: [id])
   basisInspection QualityInspection?  @relation("QualityTaskBasisInspection", fields: [basisInspectionId], references: [id])
   reports         QualityInspection[] @relation("QualityTaskReports")
+  reportLinks     QualityInspectionTaskLink[]
   samples         QualitySample[]
   qualityTemplate QualityTemplate?    @relation(fields: [qualityTemplateId], references: [id])
   attachments     Attachment[]
@@ -1984,9 +1989,14 @@ model QualitySample {
 model QualityInspection {
   id                      String    @id @default(cuid())
   inspectionNo            String    @unique
-  qualityTaskId           String
+  qualityTaskId           String? // 兼容旧报告的首个任务；新报告通过关联表绑定多任务
   qualitySampleId         String?
-  weighTicketId           String
+  weighTicketId           String? // 旧报告的来源磅单；混样报告不能强制归属于单车磅单
+  contractId              String? // 首次绑定后锁定合同范围；全部解绑后可清空
+  supplierId              String? // 首次绑定后锁定供方
+  businessUnitId          String? // 首次绑定后锁定事业部
+  materialId              String? // 独立报告的物料选择；旧报告保留名称快照
+  samplingGroupNo         String? // 多车混合取样编号
   status                  String    @default("DRAFT") // DRAFT | TESTING | REPORTED | CONFIRMED | VOIDED
   conclusion              String    @default("PENDING") // PENDING | PASS | DEDUCTION | FUSE
   dataSource              String    @default("MANUAL") // DEVICE | MANUAL | OCR
@@ -2022,10 +2032,12 @@ model QualityInspection {
   updatedAt               DateTime  @updatedAt
   deletedAt               DateTime?
 
-  qualityTask        QualityTask                  @relation("QualityTaskReports", fields: [qualityTaskId], references: [id])
+  qualityTask        QualityTask?                 @relation("QualityTaskReports", fields: [qualityTaskId], references: [id], onDelete: Restrict)
+  contract           Contract?                    @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  taskLinks          QualityInspectionTaskLink[]
   qualitySample      QualitySample?               @relation(fields: [qualitySampleId], references: [id], onDelete: SetNull)
   basisForTasks      QualityTask[]                @relation("QualityTaskBasisInspection")
-  weighTicket        WeighTicket                  @relation(fields: [weighTicketId], references: [id])
+  weighTicket        WeighTicket?                 @relation(fields: [weighTicketId], references: [id], onDelete: Restrict)
   creator            User                         @relation("QualityInspectionCreator", fields: [createdBy], references: [id])
   confirmer          User?                        @relation("QualityInspectionConfirmer", fields: [confirmedBy], references: [id])
   institutionPartner Partner?                     @relation("QualityInstitutionPartner", fields: [institutionPartnerId], references: [id])
@@ -2035,6 +2047,7 @@ model QualityInspection {
 
   @@index([inspectionNo])
   @@index([qualityTaskId])
+  @@index([contractId, supplierId, businessUnitId])
   @@index([qualitySampleId])
   @@index([weighTicketId])
   @@index([status])
@@ -2045,6 +2058,23 @@ model QualityInspection {
   @@index([testedAt])
   @@index([sampledAt])
   @@map("quality_inspections")
+}
+
+/// 一份检测报告可供同一合同、供方、事业部内多辆车的质检任务共同引用。
+model QualityInspectionTaskLink {
+  id           String   @id @default(cuid())
+  inspectionId String
+  qualityTaskId String
+  linkedBy     String
+  linkedAt     DateTime @default(now())
+  unlinkedBy   String?
+  unlinkedAt   DateTime?
+  inspection   QualityInspection @relation(fields: [inspectionId], references: [id], onDelete: Restrict)
+  qualityTask  QualityTask @relation(fields: [qualityTaskId], references: [id], onDelete: Restrict)
+
+  @@unique([inspectionId, qualityTaskId])
+  @@index([qualityTaskId])
+  @@map("quality_inspection_task_links")
 }
 
 model QualityInspectionIndicator {

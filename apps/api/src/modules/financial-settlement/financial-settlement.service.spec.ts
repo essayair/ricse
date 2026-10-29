@@ -2,6 +2,7 @@ import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { FinancialSettlementService } from './financial-settlement.service';
+import { PurchaseSettlementBasis } from './purchase-settlement-basis';
 
 describe('FinancialSettlementService payment approvals', () => {
   const prisma = mockDeep<PrismaService>();
@@ -37,6 +38,30 @@ describe('FinancialSettlementService payment approvals', () => {
   it('新采购最终结算不能绕过入库过账改用计划批次数量，提前付款走申请', async () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller', buyerId: 'owner' } as any);
     await expect(service.create({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'BATCH' }, 'u')).rejects.toThrow('按批次提前付款');
+  });
+
+  it('品位分档采购结算要求明确填写税率，不使用合同预计单价', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller' } as any);
+    await expect(service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: [{ orderId: 'o', waybillLineItemId: 'w' }] }, 'u'))
+      .rejects.toThrow('填写并确认本次结算适用税率');
+  });
+
+  it('按实测 37 度、23.20 元/度、10 吨、13% 税率生成含税结算预览', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller' } as any);
+    const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue([{
+      id: 'w', orderId: 'o', available: true, remainingQuantity: 10, unitPrice: 858.4, deductionPerTon: 0,
+      gradePrice: { status: 'READY', gradePct: 37, moisturePct: 3, band: { lower: 35, upper: 40 }, spec: 'FRAGMENT', rate: 23.2, unitPrice: 858.4, amountExTax: 8584 },
+      waybillNo: 'WB-1', orderNo: 'O-1', orderName: '测试批次', unit: 'TON', qualityTaskId: 'q', weightSelectionId: 'ws',
+      contractLineItemId: 'line-1', reasons: [],
+    }] as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'line-1', quantity: 100, materialName: '萤石矿' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+
+    const result = await service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', taxRatePct: 13, lines: [{ orderId: 'o', waybillLineItemId: 'w', quantity: 10 }] }, 'u');
+
+    expect(result.grossAmount).toBe(9699.92);
+    expect(result.lines[0].sourceSnapshot).toMatchObject({ amountExTax: 8584, taxAmount: 1115.92, taxRatePct: 13 });
+    sources.mockRestore();
   });
 
   it('管理员读取付款单时不把空合同范围嵌入可空关系过滤', async () => {

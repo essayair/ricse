@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { resolvePagination } from '../common/pagination';
 
 export const MATERIAL_REFERENCE_TYPES = {
   TRADING_GOODS: { prefix: 'TRD', label: '贸易商品' },
@@ -36,9 +37,7 @@ export function buildStandardCommodityName(data: {
   coreSpecOperator?: string; coreSpecValue?: string; coreSpecUnit?: string;
   packageType?: string;
 }) {
-  const base = `${data.baseName.trim()}${(data.commodityForm || '').trim()}`;
-  const coreSpec = `${(data.coreSpecName || '').trim()}${(data.coreSpecOperator || '').trim()}${(data.coreSpecValue || '').trim()}${(data.coreSpecUnit || '').trim()}`;
-  return [base, coreSpec].filter(Boolean).join('-');
+  return `${data.baseName.trim()}${(data.commodityForm || '').trim()}`;
 }
 
 @Injectable()
@@ -208,7 +207,7 @@ export class MasterDataService {
     const packageType = clean(data.packageType) || '';
     const unit = clean(data.unit) || '吨';
     if (data.baseName && (!commodityForm || !coreSpecName || !coreSpecValue || !coreSpecUnit || !packageType)) {
-      throw new BadRequestException('请完整填写商品形态、核心规格及包装方式');
+      throw new BadRequestException('请完整填写商品形态/规格、核心指标及包装方式');
     }
     const standardCommodity = await this.findOrCreateStandardCommodity({
       categoryId, baseName, commodityForm, coreSpecName, coreSpecOperator,
@@ -272,9 +271,7 @@ export class MasterDataService {
     search?: string;
     categoryId?: string;
   }) {
-    const page = params.page || 1;
-    const pageSize = params.pageSize || 20;
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 20 });
 
     const where: Prisma.MaterialWhereInput = { deletedAt: null };
     if (params.categoryId) where.categoryId = params.categoryId;

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { resolvePagination } from '../common/pagination';
 
 const TRANSITIONS: Record<string, string[]> = {
   DRAFT: ['CONFIRMED', 'CANCELLED'],
@@ -146,8 +147,7 @@ export class OrderService {
   async findAll(params: { page?: number; pageSize?: number; status?: string; type?: string; search?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'execution.view');
     const scope = await this.accessControl.getOrderScope(userId, 'execution.view');
-    const page = params.page || 1;
-    const pageSize = Math.min(params.pageSize || 20, 100);
+    const { page, pageSize, skip } = resolvePagination(params.page, params.pageSize, { defaultPageSize: 20, maxPageSize: 100 });
     const where: Prisma.OrderWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.type) where.type = params.type;
@@ -165,7 +165,7 @@ export class OrderService {
       this.prisma.order.findMany({
         where,
         include: this.include,
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
       }),

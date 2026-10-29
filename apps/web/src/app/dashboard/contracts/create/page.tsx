@@ -10,6 +10,7 @@ import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-prev
 import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachment-file';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
+import { GradePriceRulesEditor, GradePriceSnapshot, defaultGradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
 import { confirmAction } from '@/lib/system-dialog';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -41,6 +42,7 @@ interface ContractFormOptions {
   defaultBusinessUnitId?: string | null;
   departments: DepartmentItem[];
   businessUnits: Array<{ id: string; code: string; name: string; companyId: string; isDefault?: boolean }>;
+  partners: Array<{ id: string; code: string; name: string; roles: string[]; isInternal: boolean; contactPerson?: string | null; contactPhone?: string | null }>;
 }
 
 export default function ContractCreatePage() {
@@ -51,7 +53,6 @@ export default function ContractCreatePage() {
     return `contract-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   });
   const [submitting, setSubmitting] = useState(false);
-  const [partners, setPartners] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
   const [internalPartners, setInternalPartners] = useState<any[]>([]);
   const [supplierPartners, setSupplierPartners] = useState<any[]>([]);
@@ -60,7 +61,7 @@ export default function ContractCreatePage() {
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [businessUnits, setBusinessUnits] = useState<ContractFormOptions['businessUnits']>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
-  const [departmentError, setDepartmentError] = useState('');
+  const [optionsError, setOptionsError] = useState('');
   const [files, setFiles] = useState<Array<{ file: File; name: string }>>([]);
   const [uploadedAttachments, setUploadedAttachments] = useState<Array<{ id: string; originalName: string }>>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -79,6 +80,8 @@ export default function ContractCreatePage() {
     remarks: '',
   });
   const [qualityRulesSnapshot, setQualityRulesSnapshot] = useState<any>(null);
+  const [gradePriceSnapshot, setGradePriceSnapshot] = useState<GradePriceSnapshot | null>(null);
+  const [gradeSalesPriceSnapshot, setGradeSalesPriceSnapshot] = useState<GradePriceSnapshot | null>(null);
 
   const set = (k: string, v: string) => {
     setIsDirty(true);
@@ -86,23 +89,13 @@ export default function ContractCreatePage() {
   };
 
   useEffect(() => {
-    // 并行加载：供应商+客户+内部企业
-    Promise.all([
-      api.get<{ items: any[] }>('/partners?role=SUPPLIER'),
-      api.get<{ items: any[] }>('/partners?role=CUSTOMER'),
-      api.get<{ items: any[] }>('/partners'),
-    ]).then(([supplierRes, customerRes, allRes]) => {
-      const suppliers = supplierRes?.items || [];
-      const customers = customerRes?.items || [];
-      const all = allRes?.items || [];
-      setPartners(all);
-      setAllPartners(all);
-      setSupplierPartners(suppliers);
-      setCustomerPartners(customers);
-      setInternalPartners(all.filter((p: any) => p.isInternal));
-    }).catch(() => {});
     api.get<{ items: any[] }>('/master-data/materials').then(d => setMaterials(d.items || [])).catch(()=>{});
     api.get<ContractFormOptions>('/contracts/form-options').then((options) => {
+      const all = options.partners || [];
+      setAllPartners(all);
+      setSupplierPartners(all.filter(p => p.roles?.includes('SUPPLIER')));
+      setCustomerPartners(all.filter(p => p.roles?.includes('CUSTOMER')));
+      setInternalPartners(all.filter(p => p.isInternal));
       setDepartments(options.departments || []);
       setBusinessUnits(options.businessUnits || []);
       setForm(current => ({
@@ -110,9 +103,9 @@ export default function ContractCreatePage() {
         departmentId: current.departmentId || options.defaultDepartmentId || '',
         businessUnitId: current.businessUnitId || options.defaultBusinessUnitId || '',
       }));
-      setDepartmentError('');
+      setOptionsError('');
     }).catch((error: Error) => {
-      setDepartmentError(error.message || '业务部门加载失败');
+      setOptionsError(`合同主体和业务部门加载失败：${error.message || '请刷新页面重试'}`);
     }).finally(() => setDepartmentsLoading(false));
   }, []);
 
@@ -136,6 +129,8 @@ export default function ContractCreatePage() {
     const m = materials.find(x => x.id === id);
     set('materialId', id);
     setQualityRulesSnapshot(null);
+    setGradePriceSnapshot(null);
+    setGradeSalesPriceSnapshot(null);
     if (m) { set('materialName', m.name); set('unit', m.unit || 'TON'); }
   };
 
@@ -174,6 +169,8 @@ export default function ContractCreatePage() {
         unitPrice: form.unitPrice,
         salesUnitPrice: form.saleUnitPrice,
         qualityRulesSnapshot,
+        priceRulesSnapshot: form.pricingType === 'GRADE_TIER' ? gradePriceSnapshot : null,
+        salesPriceRulesSnapshot: form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' ? gradeSalesPriceSnapshot : null,
       }],
     },
     lineItems: completeLine ? [{
@@ -182,6 +179,8 @@ export default function ContractCreatePage() {
       unitPrice: Number(form.unitPrice),
       ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(form.saleUnitPrice) } : {}),
       qualityRulesSnapshot: qualityRulesSnapshot || undefined,
+      priceRulesSnapshot: form.pricingType === 'GRADE_TIER' ? gradePriceSnapshot || undefined : undefined,
+      salesPriceRulesSnapshot: form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' ? gradeSalesPriceSnapshot || undefined : undefined,
     }] : [],
     });
   };
@@ -267,7 +266,8 @@ export default function ContractCreatePage() {
     }
     const missing = required.find(([key]) => !String(form[key as keyof typeof form] ?? '').trim());
     if (missing) { alert(`请填写${missing[1]}`); return; }
-    if (form.pricingType !== 'FIXED') { alert('当前仅支持固定价格（一口价）合同'); return; }
+    if (form.pricingType === 'GRADE_TIER' && !gradePriceSnapshot?.formulaConfirmed) { alert('请核对纸质合同并确认元/度计算口径'); return; }
+    if (form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' && !gradeSalesPriceSnapshot?.formulaConfirmed) { alert('请确认下游销售方向的元/度计算口径'); return; }
     if (Number(form.quantity) <= 0 || Number(form.unitPrice) <= 0 || (form.type === 'BILATERAL' && Number(form.saleUnitPrice) <= 0)) { alert('合同数量和单价必须大于0'); return; }
     if ([form.overfillPct, form.shortfallPct, form.prepayPct].some(v => Number(v) < 0 || Number(v) > 100) || Number(form.paymentDays) < 0) { alert('比例须在0至100之间，账期不能小于0'); return; }
     if (form.expireAt && form.effectiveAt && form.expireAt < form.effectiveAt) { alert('到期日期不能早于生效日期'); return; }
@@ -302,6 +302,7 @@ export default function ContractCreatePage() {
           <Button onClick={handleSubmit} disabled={submitting}><Save className="h-4 w-4 mr-1" />{submitting ? '提交中...' : '提交审批'}</Button>
         </div>
       </div>
+      {optionsError && <div role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">{optionsError}</div>}
 
       <div className="max-w-4xl">
         {/* 合同类型 + 基本信息 */}
@@ -338,8 +339,8 @@ export default function ContractCreatePage() {
                     </option>
                   ))}
                 </select>
-                <span className={`text-xs ${departmentError ? 'text-destructive' : 'text-muted-foreground'}`}>
-                  {departmentError || '默认带入发起人所属部门，可按实际业务调整并用于部门审批节点'}
+                <span className={`text-xs ${optionsError ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  {optionsError ? '请先恢复表单选项后再选择业务部门' : '默认带入发起人所属部门，可按实际业务调整并用于部门审批节点'}
                 </span>
               </FormField>
             </div>
@@ -425,11 +426,9 @@ export default function ContractCreatePage() {
               </select>
             </FormField>
             <FormField label="合同数量（吨）" required><Input type="number" value={form.quantity} onChange={e => set('quantity', e.target.value)} step="0.001" /></FormField>
-            <FormField label="定价类型" required>
-              <Input value="固定价格（一口价）" readOnly />
-            </FormField>
+            <FormField label="定价类型" required><select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.pricingType} onChange={e => { set('pricingType', e.target.value); if (e.target.value === 'GRADE_TIER') { if (!gradePriceSnapshot) setGradePriceSnapshot(defaultGradePriceSnapshot); if (!gradeSalesPriceSnapshot) setGradeSalesPriceSnapshot(defaultGradePriceSnapshot); } }}><option value="FIXED">固定价格（一口价）</option><option value="GRADE_TIER">按 CaF₂ 品位分档计价</option></select></FormField>
             {form.type !== 'BILATERAL' && (
-              <FormField label={`${form.type === 'PURCHASE' ? '采购' : '销售'}单价（元/吨）`} required><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
+              <FormField label={form.pricingType === 'GRADE_TIER' ? '预计单价（元/吨，仅用于合同金额预估）' : `${form.type === 'PURCHASE' ? '采购' : '销售'}单价（元/吨）`} required><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
             )}
             <FormField label="溢装比例(%)" required><Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} /></FormField>
             <FormField label="短装比例(%)" required><Input type="number" min="0" max="100" step="0.01" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} /></FormField>
@@ -440,6 +439,7 @@ export default function ContractCreatePage() {
               <FormField label="销售单价（元/吨）" required><Input type="number" min="0" value={form.saleUnitPrice} onChange={e => set('saleUnitPrice', e.target.value)} step="0.01" /></FormField>
             </div>
           )}
+          {form.pricingType === 'GRADE_TIER' && <><div className="mt-4 text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={gradePriceSnapshot} onChange={snapshot => { setIsDirty(true); setGradePriceSnapshot(snapshot); }} />{form.type === 'BILATERAL' && <><div className="mt-5 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={gradeSalesPriceSnapshot} onChange={snapshot => { setIsDirty(true); setGradeSalesPriceSnapshot(snapshot); }} /></>}</>}
           <QualityRulesEditor
             materialId={form.materialId}
             scene={form.type === 'SALES' ? 'SALES' : 'PURCHASE'}

@@ -49,3 +49,22 @@ export class CreateQualityInspectionDto {
   @Type(() => QualityIndicatorDto)
   indicators: QualityIndicatorDto[];
 }
+
+/** 不依赖单车任务或磅单的独立实验室检测报告。 */
+export class CreateStandaloneQualityReportDto {
+  @IsString() materialId: string;
+  @IsOptional() @IsString() @MaxLength(100) samplingGroupNo?: string;
+  @IsDateString() sampledAt: string;
+  @IsString() @MaxLength(100) samplerName: string;
+  @IsOptional() @IsString() @MaxLength(100) samplingMethod?: string;
+  @IsOptional() @IsString() @MaxLength(100) sampleNo?: string;
+  @IsIn(['OUR', 'PARTNER', 'THIRD_PARTY', 'OTHER']) institutionType: string;
+  @IsOptional() @IsString() institutionPartnerId?: string;
+  @IsOptional() @IsString() @MaxLength(200) institutionName?: string;
+  @IsString() @MaxLength(100) reportNo: string;
+  @IsDateString() testedAt: string;
+  @IsOptional() @IsString() @MaxLength(2000) remarks?: string;
+  @IsOptional() @IsBoolean() submit?: boolean;
+  @IsArray() @ValidateNested({ each: true }) @Type(() => QualityIndicatorDto)
+  indicators: QualityIndicatorDto[];
+}

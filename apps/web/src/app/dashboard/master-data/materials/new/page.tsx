@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronDown, ChevronUp, Info, Plus, Save, X } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -100,13 +100,7 @@ export default function MaterialNewPage() {
     ...(category.children || []).map((child) => ({ value: child.id, label: `└ ${child.name}`, name: child.name })),
   ]);
   const selectedCategoryName = flatCategories.find(category => category.value === categoryId)?.name || '';
-  const standardName = useMemo(() => {
-    const base = `${selectedCategoryName.trim()}${commodityForm.trim()}`;
-    const core = coreSpecName.trim() && coreSpecValue.trim()
-      ? `${coreSpecName.trim()}${coreSpecOperator}${coreSpecValue.trim()}${coreSpecUnit.trim()}`
-      : '';
-    return [base, core].filter(Boolean).join('-');
-  }, [selectedCategoryName, commodityForm, coreSpecName, coreSpecOperator, coreSpecValue, coreSpecUnit]);
+  const standardName = `${selectedCategoryName.trim()}${commodityForm.trim()}`;
 
   const addSpec = () => {
     rowSequence += 1;
@@ -115,7 +109,7 @@ export default function MaterialNewPage() {
 
   const handleSubmit = async () => {
     if (!categoryId || !selectedCategoryName || !commodityForm.trim() || !coreSpecName.trim() || !coreSpecValue.trim() || !coreSpecUnit.trim() || !packageType || !referenceType || !unit) {
-      setError('请完整填写商品分类、形态、核心规格、包装、参考类型和计量单位');
+      setError('请完整填写商品分类、商品形态/规格、核心指标、包装、参考类型和计量单位');
       return;
     }
     if (specs.some(row => !row.name.trim() || !row.value.trim())) {
@@ -160,26 +154,26 @@ export default function MaterialNewPage() {
         <div><h2 className="font-semibold">商品基本定义</h2><p className="mt-1 text-xs text-muted-foreground">参考类型只用于编码、检索和统计，不限制采购、销售或加工使用</p></div>
         <div className="grid gap-4 md:grid-cols-3">
           <Field label="商品分类" required><Select value={categoryId} onChange={setCategoryId} options={flatCategories} placeholder="请选择分类" /></Field>
-          <Field label="商品名称（系统拼接）"><Input value={standardName || '选择分类并填写形态、核心规格后生成'} readOnly className="bg-muted/50 font-medium" /></Field>
-          <Field label="商品形态" required><Input value={commodityForm} onChange={event => setCommodityForm(event.target.value)} placeholder="如：精粉、原矿、块矿" /></Field>
+          <Field label="商品名称（系统拼接）"><Input value={standardName || '选择分类并填写商品形态/规格后生成'} readOnly className="bg-muted/50 font-medium" /></Field>
+          <Field label="商品形态/规格" required><Input value={commodityForm} onChange={event => setCommodityForm(event.target.value)} placeholder="如：精粉；需要在名称中体现指标时可填精粉-CaF₂≥97%" /></Field>
           <Field label="包装方式" required><Select value={packageType} onChange={setPackageType} options={PACKAGE_TYPES.map(value => ({ value, label: value }))} /></Field>
           <Field label="参考类型" required><Select value={referenceType} onChange={setReferenceType} options={REFERENCE_TYPES.map(([value, label]) => ({ value, label }))} /></Field>
           <Field label="计量单位" required><Select value={unit} onChange={setUnit} options={UNITS.map(value => ({ value, label: value }))} /></Field>
           <Field label="默认计价数量口径" required><Select value={pricingQuantityBasis} onChange={setPricingQuantityBasis} options={[{ value: 'PHYSICAL', label: '按实物数量' }, { value: 'DRY_MATTER', label: '按实测水分折干' }]} /></Field>
           <Field label="物料编码"><Input value={nextCode || '加载中...'} readOnly className="bg-muted/50 font-mono text-muted-foreground" /></Field>
         </div>
-        <p className="text-xs text-muted-foreground">商品名称不单独录入，按“所选分类名称 + 商品形态 + 核心规格”自动拼接；包装方式作为独立属性显示。</p>
+        <p className="text-xs text-muted-foreground">商品名称按“所选分类名称 + 商品形态/规格”自动拼接；核心指标和包装方式不会自动进入名称。需要体现指标时，可自行写入商品形态/规格。</p>
       </Card>
 
       <Card className="space-y-5 p-6">
-        <div><h2 className="font-semibold">规格标准定义</h2><p className="mt-1 text-xs text-muted-foreground">核心规格参与商品名称拼接和标准商品查重；其他指标作为质量与单据标准保留</p></div>
+        <div><h2 className="font-semibold">规格标准定义</h2><p className="mt-1 text-xs text-muted-foreground">核心指标用于标准商品查重与质量记录，不自动拼入商品名称；其他指标作为质量与单据标准保留</p></div>
         <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2.5">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <p className="text-xs text-foreground">规格参数会显示在合同、质检、入出库等单据中，请按行业标准录入，如 CaF₂≥97%、水分≤10%。</p>
         </div>
         <div className="space-y-2">
           <div className="grid grid-cols-[80px_1fr_72px_96px_72px_36px] items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
-            <span className="text-center text-xs font-medium text-primary">核心规格</span>
+            <span className="text-center text-xs font-medium text-primary">核心指标</span>
             <Input value={coreSpecName} onChange={event => setCoreSpecName(event.target.value)} placeholder="指标，如 CaF₂" />
             <Select value={coreSpecOperator} onChange={setCoreSpecOperator} options={OPERATORS.map(value => ({ value, label: value }))} />
             <Input value={coreSpecValue} onChange={event => setCoreSpecValue(event.target.value)} placeholder="数值" />

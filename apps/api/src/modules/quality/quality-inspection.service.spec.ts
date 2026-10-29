@@ -119,6 +119,7 @@ describe('QualityInspectionService', () => {
         },
       },
       qualityTask: { id: 'task-1', status: 'INSPECTING' },
+      taskLinks: [{ qualityTaskId: 'task-1', qualityTask: { status: 'INSPECTING' } }],
     };
     jest.spyOn(service, 'findOne').mockResolvedValue(item as any);
     prisma.qualityInspection.update.mockResolvedValue({} as any);
@@ -210,6 +211,64 @@ describe('QualityInspectionService', () => {
       }),
     }));
     expect(inventoryService.createPendingReceiptForConfirmedQuality)
-      .toHaveBeenCalledWith('report-1', 'user-1');
+      .toHaveBeenCalledWith('report-1', 'user-1', 'task-1');
+  });
+
+  it('首次关联检测报告锁定合同、供方、业务单元，多车可共用同一报告', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ id: 'report-1', status: 'REPORTED', materialId: 'material-1' } as any);
+    jest.spyOn(service, 'findTask').mockResolvedValue({
+      id: 'task-1', status: 'PENDING_DECISION',
+      waybill: { lineItems: [{ materialId: 'material-1' }], dispatchNotice: {
+        type: 'PURCHASE', order: { contract: { id: 'contract-1', seller: { id: 'supplier-1' }, businessUnit: { id: 'unit-1' } } },
+      } },
+    } as any);
+    (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<any>) => callback(prisma));
+    prisma.qualityInspection.findUnique.mockResolvedValue({ id: 'report-1', taskLinks: [], materialId: 'material-1' } as any);
+
+    await service.linkReport('report-1', 'task-1', 'user-1');
+
+    expect(prisma.qualityInspection.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ contractId: 'contract-1', supplierId: 'supplier-1', businessUnitId: 'unit-1' }),
+    }));
+    expect(prisma.qualityInspectionTaskLink.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { inspectionId_qualityTaskId: { inspectionId: 'report-1', qualityTaskId: 'task-1' } },
+    }));
+  });
+
+  it('已关联其他合同的检测报告不能跨合同复用', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ id: 'report-1', status: 'REPORTED', materialId: 'material-1' } as any);
+    jest.spyOn(service, 'findTask').mockResolvedValue({
+      id: 'task-2', status: 'PENDING_DECISION',
+      waybill: { lineItems: [{ materialId: 'material-1' }], dispatchNotice: {
+        type: 'PURCHASE', order: { contract: { id: 'contract-2', seller: { id: 'supplier-1' }, businessUnit: { id: 'unit-1' } } },
+      } },
+    } as any);
+    (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<any>) => callback(prisma));
+    prisma.qualityInspection.findUnique.mockResolvedValue({
+      id: 'report-1', taskLinks: [{ id: 'link-1' }], contractId: 'contract-1', supplierId: 'supplier-1', businessUnitId: 'unit-1',
+    } as any);
+
+    await expect(service.linkReport('report-1', 'task-2', 'user-1')).rejects.toThrow('同一合同、供方和业务单元');
+    expect(prisma.qualityInspectionTaskLink.upsert).not.toHaveBeenCalled();
+  });
+
+  it('解除最后一个关联后释放报告范围，保留关联历史', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ id: 'report-1' } as any);
+    jest.spyOn(service, 'findTask').mockResolvedValue({ id: 'task-1', waybillId: 'waybill-1', basisInspectionId: null } as any);
+    prisma.inboundReceipt.count.mockResolvedValue(0);
+    (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<any>) => callback(prisma));
+    prisma.qualityInspectionTaskLink.findUnique.mockResolvedValue({ id: 'link-1', unlinkedAt: null } as any);
+    prisma.qualityTask.findUnique.mockResolvedValue({ basisInspectionId: null, waybillId: 'waybill-1' } as any);
+    prisma.qualityInspectionTaskLink.count.mockResolvedValue(0);
+    prisma.qualityInspection.findUniqueOrThrow.mockResolvedValue({ qualityTaskId: 'task-1' } as any);
+
+    await service.unlinkReport('report-1', 'task-1', 'user-1');
+
+    expect(prisma.qualityInspectionTaskLink.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { unlinkedBy: 'user-1', unlinkedAt: expect.any(Date) },
+    }));
+    expect(prisma.qualityInspection.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ contractId: null, supplierId: null, businessUnitId: null }),
+    }));
   });
 });

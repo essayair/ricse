@@ -420,6 +420,7 @@ export class FinancialSettlementService {
       const plannedPaymentAmount = money(paid + contract.paymentRequests.reduce((sum, item) => sum + requestCommitment(item), 0));
       return {
         id: contract.id, contractNo: contract.contractNo, title: contract.title, type: contract.type,
+        pricingType: contract.pricingType, amountIsEstimate: contract.pricingType === 'GRADE_TIER',
         amount, settledTotal, remainingSettleable: money(Math.max(0, amount - settledTotal)), advanceBalance: money(advances),
         quantity: contract.lineItems.reduce((sum, line) => sum + Number(line.quantity), 0),
         unit: units.length === 1 ? units[0] : undefined,
@@ -508,6 +509,9 @@ export class FinancialSettlementService {
   async create(dto: CreateFinancialSettlementDto, userId: string): Promise<SettlementResult> {
     if (!this.transactional) return this.withContractLock(dto.contractId, service => service.create(dto, userId));
     const contract = await this.accessibleContract(dto.contractId, dto.direction, userId, 'settlement.create');
+    if (contract.pricingType === 'GRADE_TIER' && !(dto.direction === 'PAYABLE' && ['GOODS', 'CONTRACT_FINAL'].includes(dto.settlementScope))) {
+      throw new BadRequestException('品位分档合同的预计单价不能直接用于批次或合同金额结算；请按已入库货物和最终检测结果编制采购结算单');
+    }
     if (!contract.signingPartnerId || !contract.businessUnitId) throw new BadRequestException('合同缺少我方签约主体或业务单元，不能生成结算单');
     const counterpartyId = this.counterpartyId(contract, dto.direction);
     if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方，不能生成结算单');
@@ -614,6 +618,8 @@ export class FinancialSettlementService {
 
   private async createGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false): Promise<any> {
     if (!dto.lines?.length || dto.lines.some(l => !l.waybillLineItemId)) throw new BadRequestException('请勾选本次结算的具体运单货物');
+    const gradeTier = contract.pricingType === 'GRADE_TIER';
+    if (gradeTier && dto.taxRatePct == null) throw new BadRequestException('品位分档价格为不含税价，请填写并确认本次结算适用税率');
     const ids = dto.lines.map(l => l.waybillLineItemId!);
     if (new Set(ids).size !== ids.length) throw new BadRequestException('同一货物来源不能重复选择');
     const sources = await new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create');
@@ -622,13 +628,29 @@ export class FinancialSettlementService {
       if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于该批次'}`);
       const qty = input.quantity ?? source.remainingQuantity;
       if (qty <= 0 || qty > source.remainingQuantity) throw new BadRequestException(`${source.waybillNo}本次结算数量超过剩余可结算数量`);
-      if (input.unitPrice != null && new Prisma.Decimal(input.unitPrice).comparedTo(source.unitPrice) !== 0) throw new BadRequestException('实际货物结算单价取自合同，价格变化请先确认合同变更或使用有说明的结算调整');
+      if (gradeTier && source.gradePrice?.status !== 'READY') throw new BadRequestException(`${source.waybillNo}的品位或水分需人工确认，暂不能自动形成正式结算`);
+      if (gradeTier && source.deductionPerTon) throw new BadRequestException(`${source.waybillNo}还存在质量扣价规则，请先由业务与财务确认分档价和扣价的含税计算顺序`);
+      if (input.unitPrice != null && new Prisma.Decimal(input.unitPrice).comparedTo(source.unitPrice) !== 0) throw new BadRequestException('实际货物结算单价取自合同及检测报告，价格变化请先确认合同变更或使用有说明的结算调整');
       if (Number(input.adjustmentAmount || 0) !== 0 && !input.remarks?.trim()) throw new BadRequestException('其他结算调整须填写原因，不得重复录入系统已计算的质量扣款');
-      const amounts = goodsAmounts(qty, source.unitPrice, source.deductionPerTon, input.adjustmentAmount || 0);
+      const amounts = gradeTier
+        ? (() => {
+          const exTax = new Prisma.Decimal(qty).mul(source.unitPrice).toDecimalPlaces(2);
+          const tax = exTax.mul(new Prisma.Decimal(dto.taxRatePct!).div(100)).toDecimalPlaces(2);
+          const gross = exTax.plus(tax);
+          return { quantity: new Prisma.Decimal(qty).toDecimalPlaces(3).toNumber(), grossAmount: gross.toNumber(),
+            qualityDeductionAmount: 0, adjustmentAmount: money(input.adjustmentAmount || 0),
+            totalAmount: gross.plus(input.adjustmentAmount || 0).toDecimalPlaces(2).toNumber(),
+            taxAmount: tax.toNumber(), amountExTax: exTax.toNumber() };
+        })()
+        : goodsAmounts(qty, source.unitPrice, source.deductionPerTon, input.adjustmentAmount || 0);
       if (amounts.totalAmount <= 0) throw new BadRequestException('扣款后货物结算金额须大于零，超额扣款请先复核合同规则和处置');
       return { orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
         waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
-        sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, ...amounts }), unit: source.unit, unitPrice: source.unitPrice, ...amounts, remarks: input.remarks?.trim() };
+        sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, ...amounts,
+          ...(gradeTier ? { taxRatePct: dto.taxRatePct, pricingFormula: '结算吨数 × CaF₂实测百分数数值 × 档位元/度单价 × (1 + 税率)' } : {}) }),
+        unit: source.unit, unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(dto.taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
+        quantity: amounts.quantity, grossAmount: amounts.grossAmount, qualityDeductionAmount: amounts.qualityDeductionAmount,
+        adjustmentAmount: amounts.adjustmentAmount, totalAmount: amounts.totalAmount, remarks: input.remarks?.trim() };
     });
     const contractItems = await this.prisma.contractLineItem.findMany({ where: { contractId: contract.id } });
     const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'PAYABLE', deletedAt: null, status: { not: 'VOIDED' } } } });
