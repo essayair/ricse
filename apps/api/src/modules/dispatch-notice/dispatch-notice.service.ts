@@ -68,6 +68,9 @@ export class DispatchNoticeService {
       },
     });
     if (!order) throw new NotFoundException('执行批次不存在');
+    if (['TERMINATED', 'VOIDED', 'CLOSED'].includes(order.contract.status)) {
+      throw new BadRequestException('合同已终止或作废，不能再创建执行通知');
+    }
     if (!['CONFIRMED', 'DISPATCHED'].includes(order.status)) {
       throw new BadRequestException('仅已确认或执行中的批次可以建立执行通知');
     }
@@ -165,7 +168,13 @@ export class DispatchNoticeService {
       };
     });
     const noticeNo = await this.generateNo(order.type);
-    return this.prisma.dispatchNotice.create({
+    return this.prisma.$transaction(async tx => {
+      const current = await tx.contract.updateMany({
+        where: { id: order.contractId, deletedAt: null, status: { in: ['APPROVED', 'EXECUTING'] } },
+        data: { status: 'EXECUTING' },
+      });
+      if (current.count !== 1) throw new BadRequestException('合同已终止或状态已变化，不能创建执行通知');
+      return tx.dispatchNotice.create({
       data: {
         noticeNo,
         orderId: order.id,
@@ -192,6 +201,7 @@ export class DispatchNoticeService {
         lineItems: { create: lines },
       },
       include: this.include,
+      });
     });
   }
 

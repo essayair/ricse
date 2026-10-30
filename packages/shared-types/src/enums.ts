@@ -6,6 +6,8 @@ export enum ContractStatus {
   REJECTED = 'REJECTED',
   EXECUTING = 'EXECUTING',
   COMPLETED = 'COMPLETED',
+  CLOSED = 'CLOSED',
+  TERMINATED = 'TERMINATED',
   VOIDED = 'VOIDED',
 }
 

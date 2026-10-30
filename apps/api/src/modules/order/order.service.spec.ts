@@ -41,6 +41,7 @@ describe('OrderService', () => {
     service = module.get(OrderService);
     prisma.order.count.mockResolvedValue(0);
     prisma.orderLineItem.groupBy.mockResolvedValue([] as any);
+    prisma.contract.updateMany.mockResolvedValue({ count: 1 } as any);
     prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
   });
 
@@ -59,8 +60,8 @@ describe('OrderService', () => {
     expect(prisma.order.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ name: '7月第一批采购', totalAmount: 10000, type: 'PURCHASE' }),
     }));
-    expect(prisma.contract.update).toHaveBeenCalledWith({
-      where: { id: contract.id },
+    expect(prisma.contract.updateMany).toHaveBeenCalledWith({
+      where: { id: contract.id, deletedAt: null, status: 'APPROVED' },
       data: { status: 'EXECUTING' },
     });
   });
@@ -98,6 +99,13 @@ describe('OrderService', () => {
       type: 'PURCHASE',
       lineItems: [{ contractLineItemId: 'line-1', quantity: 20 }],
     }, 'user-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('已终止合同不能创建执行批次', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ ...contract, status: 'TERMINATED' } as any);
+    await expect(service.create({ name: '终止后新批次', contractId: contract.id, type: 'PURCHASE', lineItems: [{ contractLineItemId: 'line-1', quantity: 1 }] }, 'user-1'))
+      .rejects.toThrow('仅已通过或执行中的合同');
+    expect(prisma.order.create).not.toHaveBeenCalled();
   });
 
   it('累计数量不能超过合同数量', async () => {

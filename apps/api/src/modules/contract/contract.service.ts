@@ -669,14 +669,16 @@ export class ContractService {
       canWithdraw: contract.status === 'PENDING_APPROVAL'
         && contract.createdBy === userId
         && permissions.includes('contract.submit'),
-      canVoid: !['CLOSED', 'VOIDED'].includes(contract.status) && permissions.includes('contract.void'),
+      canVoid: ['DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'TERMINATED'].includes(contract.status) && permissions.includes('contract.void'),
+      canTerminate: ['APPROVED', 'EXECUTING', 'COMPLETED'].includes(contract.status) && permissions.includes('contract.void'),
       canStartExecution: contract.status === 'APPROVED' && permissions.includes('execution.manage'),
       canComplete: contract.status === 'EXECUTING' && permissions.includes('execution.manage'),
-      canClose: ['EXECUTING', 'COMPLETED'].includes(contract.status) && permissions.includes('execution.manage'),
+      canClose: contract.status === 'COMPLETED' && permissions.includes('execution.manage'),
       canDelete: (contract.status === 'DRAFT'
+        && !contract.approvals?.length
+        && !contract.orders?.length
         && permissions.includes('contract.edit')
-        && (context.isAdmin || contract.createdBy === userId))
-        || (contract.status === 'VOIDED' && context.isAdmin && permissions.includes('contract.delete')),
+        && (context.isAdmin || contract.createdBy === userId)),
     };
   }
 
@@ -717,6 +719,7 @@ export class ContractService {
       EXECUTING: 'execution.manage',
       COMPLETED: 'execution.manage',
       CLOSED: 'execution.manage',
+      TERMINATED: 'contract.void',
       VOIDED: 'contract.void',
     };
     const access = await this.accessControl.assertPermission(
@@ -726,6 +729,7 @@ export class ContractService {
     const scope = await this.accessControl.getContractScope(user.id, permissionByStatus[status] || 'contract.edit');
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "contracts" WHERE id = ${id} FOR UPDATE`);
       const contract = await tx.contract.findFirst({
         where: { id, deletedAt: null, AND: [scope] },
         select: {
@@ -775,6 +779,13 @@ export class ContractService {
       if (!contract) throw new NotFoundException('合同不存在');
 
       this.validateTransition(contract.status, status);
+
+      if (status === 'TERMINATED') {
+        await this.cancelUnstartedContractWork(tx, id);
+      }
+      if (status === 'VOIDED' && contract.status === 'TERMINATED') {
+        await this.assertContractWorkSettled(tx, id);
+      }
 
       if (status === 'DRAFT' && contract.status === 'PENDING_APPROVAL' && !access.isAdmin && contract.createdBy !== user.id) {
         throw new ForbiddenException('只有合同创建人或系统管理员可以撤回审批');
@@ -1477,34 +1488,31 @@ export class ContractService {
   async remove(id: string, user: { id: string; role: string }) {
     const contract = await this.findOne(id, user.id, 'contract.view');
 
-    if (contract.status === 'DRAFT') {
-      const editAccess = await this.accessControl.assertPermission(user.id, 'contract.edit');
-      if (!editAccess.isAdmin && contract.createdBy !== user.id) {
-        throw new ForbiddenException('仅合同创建人或系统管理员可以删除草稿');
-      }
-    } else if (contract.status === 'VOIDED') {
-      const deleteAccess = await this.accessControl.assertPermission(user.id, 'contract.delete');
-      if (!deleteAccess.isAdmin) {
-        throw new ForbiddenException('仅系统管理员可以删除已作废合同');
-      }
-    } else {
-      throw new BadRequestException('仅草稿可以直接删除；其他合同必须先作废，再由系统管理员删除');
+    if (contract.status !== 'DRAFT' || contract.approvals?.length || contract.orders?.length) {
+      throw new BadRequestException('合同已进入审批或业务流程，不能删除；请按流程终止或作废并保留记录');
+    }
+    const editAccess = await this.accessControl.assertPermission(user.id, 'contract.edit');
+    if (!editAccess.isAdmin && contract.createdBy !== user.id) {
+      throw new ForbiddenException('仅合同创建人或系统管理员可以删除未进入流程的草稿');
     }
 
-    return this.prisma.contract.update({
-      where: { id },
+    const result = await this.prisma.contract.updateMany({
+      where: { id, status: 'DRAFT', deletedAt: null, approvals: { none: {} }, orders: { none: {} } },
       data: { deletedAt: new Date() },
     });
+    if (result.count !== 1) throw new BadRequestException('合同状态或关联单据已变化，不能删除，请刷新后重试');
+    return { id, deleted: true };
   }
 
   private validateTransition(current: string, next: string) {
     const transitions: Record<string, string[]> = {
       DRAFT:            ['PENDING_APPROVAL', 'VOIDED'],
       PENDING_APPROVAL: ['APPROVED', 'REJECTED', 'DRAFT', 'VOIDED'],
-      APPROVED:         ['EXECUTING', 'VOIDED'],
-      EXECUTING:        ['COMPLETED', 'CLOSED', 'VOIDED'],
+      APPROVED:         ['EXECUTING', 'TERMINATED'],
+      EXECUTING:        ['COMPLETED', 'TERMINATED'],
       REJECTED:         ['DRAFT', 'VOIDED'],
-      COMPLETED:        ['CLOSED'],
+      COMPLETED:        ['CLOSED', 'TERMINATED'],
+      TERMINATED:       ['VOIDED'],
       CLOSED:           [],
       VOIDED:           [],
     };
@@ -1512,6 +1520,87 @@ export class ContractService {
     const allowed = transitions[current] || [];
     if (!allowed.includes(next)) {
       throw new BadRequestException(`不能从 ${current} 变更为 ${next}`);
+    }
+  }
+
+  /** 终止只撤销尚未发生现场作业的任务；称重、收发货、质检和资金凭证均保留待人工收尾。 */
+  private async cancelUnstartedContractWork(tx: Prisma.TransactionClient, contractId: string) {
+    const orders = await tx.order.findMany({
+      where: { contractId, deletedAt: null },
+      select: {
+        id: true, status: true,
+        settlementLines: { select: { id: true }, take: 1 },
+        paymentRequests: { select: { id: true }, take: 1 },
+        dispatchNotices: {
+          where: { deletedAt: null },
+          select: {
+            id: true, status: true,
+            outboundOrder: { select: { id: true, actualQuantity: true } },
+            waybills: {
+              where: { deletedAt: null },
+              select: {
+                id: true, status: true,
+                weighTask: { select: { status: true } },
+                weighTickets: { where: { deletedAt: null }, select: { id: true, status: true, _count: { select: { records: true, attachments: true } } } },
+                qualityTask: { select: { id: true } },
+                inboundReceipts: { where: { deletedAt: null }, select: { status: true, receivedQuantity: true } },
+                outboundReceipts: { where: { deletedAt: null }, select: { status: true, weighTicketId: true, _count: { select: { allocations: true } } } },
+                logisticsSettlementLines: { select: { id: true }, take: 1 },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    for (const order of orders) {
+      for (const notice of order.dispatchNotices) {
+        for (const waybill of notice.waybills) {
+          const unstarted = waybill.status === 'PENDING'
+            && (!waybill.weighTask || waybill.weighTask.status === 'PENDING_WEIGHING')
+            && !waybill.qualityTask
+            && !waybill.logisticsSettlementLines.length
+            && waybill.weighTickets.every(ticket => ticket.status === 'PENDING' && !ticket._count.records && !ticket._count.attachments)
+            && waybill.inboundReceipts.every(receipt => receipt.status === 'PENDING' && receipt.receivedQuantity === null)
+            && waybill.outboundReceipts.every(receipt => receipt.status === 'PENDING' && !receipt.weighTicketId && !receipt._count.allocations);
+          if (!unstarted) continue;
+          await tx.weighTicket.updateMany({ where: { waybillId: waybill.id, status: 'PENDING', deletedAt: null }, data: { status: 'VOIDED' } });
+          await tx.weighTask.updateMany({ where: { waybillId: waybill.id, status: 'PENDING_WEIGHING', deletedAt: null }, data: { status: 'VOIDED' } });
+          await tx.inboundReceipt.updateMany({ where: { waybillId: waybill.id, status: 'PENDING', deletedAt: null }, data: { status: 'CANCELLED' } });
+          await tx.outboundReceipt.updateMany({ where: { waybillId: waybill.id, status: 'PENDING', deletedAt: null }, data: { status: 'CANCELLED' } });
+          await tx.waybill.updateMany({ where: { id: waybill.id, status: 'PENDING', deletedAt: null }, data: { status: 'CANCELLED' } });
+        }
+        const activeWaybills = await tx.waybill.count({ where: { dispatchNoticeId: notice.id, deletedAt: null, status: { not: 'CANCELLED' } } });
+        if (activeWaybills || !['DRAFT', 'ISSUED', 'IN_PROGRESS'].includes(notice.status)
+          || (notice.outboundOrder && Number(notice.outboundOrder.actualQuantity) !== 0)) continue;
+        await tx.dispatchNotice.updateMany({ where: { id: notice.id, status: notice.status, deletedAt: null }, data: { status: 'CANCELLED' } });
+        if (notice.outboundOrder) {
+          await tx.outboundOrderLine.updateMany({ where: { outboundOrderId: notice.outboundOrder.id }, data: { reservedQuantity: 0 } });
+          await tx.outboundOrder.update({ where: { id: notice.outboundOrder.id }, data: { status: 'CANCELLED', reservedQuantity: 0, shortageQuantity: 0 } });
+        }
+      }
+      if (!['DRAFT', 'CONFIRMED', 'DISPATCHED'].includes(order.status)
+        || order.settlementLines.length || order.paymentRequests.length) continue;
+      const activeNotices = await tx.dispatchNotice.count({ where: { orderId: order.id, deletedAt: null, status: { not: 'CANCELLED' } } });
+      if (!activeNotices) await tx.order.updateMany({ where: { id: order.id, status: order.status, deletedAt: null }, data: { status: 'CANCELLED' } });
+    }
+  }
+
+  private async assertContractWorkSettled(tx: Prisma.TransactionClient, contractId: string) {
+    const [orders, notices, waybills, inbound, outbound, weighing, quality, settlements, requests, funds] = await Promise.all([
+      tx.order.count({ where: { contractId, deletedAt: null, status: { in: ['DRAFT', 'CONFIRMED', 'DISPATCHED'] } } }),
+      tx.dispatchNotice.count({ where: { order: { contractId }, deletedAt: null, status: { in: ['DRAFT', 'ISSUED', 'IN_PROGRESS'] } } }),
+      tx.waybill.count({ where: { dispatchNotice: { order: { contractId } }, deletedAt: null, status: { in: ['PENDING', 'IN_TRANSIT', 'ARRIVED'] } } }),
+      tx.inboundReceipt.count({ where: { waybill: { dispatchNotice: { order: { contractId } } }, deletedAt: null, status: { notIn: ['POSTED', 'CANCELLED'] } } }),
+      tx.outboundReceipt.count({ where: { waybill: { dispatchNotice: { order: { contractId } } }, deletedAt: null, status: { notIn: ['POSTED', 'CANCELLED'] } } }),
+      tx.weighTask.count({ where: { waybill: { dispatchNotice: { order: { contractId } } }, deletedAt: null, status: { notIn: ['COMPLETED', 'VOIDED'] } } }),
+      tx.qualityTask.count({ where: { waybill: { dispatchNotice: { order: { contractId } } }, deletedAt: null, status: { notIn: ['COMPLETED', 'VOIDED'] } } }),
+      tx.financialSettlement.count({ where: { contractId, status: { in: ['DRAFT', 'CONFIRMED', 'PARTIALLY_SETTLED'] } } }),
+      tx.paymentRequest.count({ where: { contractId, status: { in: ['DRAFT', 'BUSINESS_CONFIRMED', 'PENDING_APPROVAL', 'APPROVED', 'PARTIALLY_PAID'] } } }),
+      tx.fundTransaction.count({ where: { contractId, status: { notIn: ['ALLOCATED', 'VOIDED'] } } }),
+    ]);
+    if (orders || notices || waybills || inbound || outbound || weighing || quality || settlements || requests || funds) {
+      throw new BadRequestException(`合同仍有待收尾业务（批次 ${orders}、通知 ${notices}、运单 ${waybills}、入库 ${inbound}、出库 ${outbound}、过磅 ${weighing}、质检 ${quality}、结算 ${settlements}、付款申请 ${requests}、资金单 ${funds}）；请先处理并保留已发生的业务记录，再作废合同`);
     }
   }
 

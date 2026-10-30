@@ -32,6 +32,7 @@ interface Contract {
   buyer: { name: string } | null;
   lineItems: Array<{ materialName: string; quantity: string; unit: string }>;
   orders: Array<{ dispatchNotices: Array<{ _count?: { waybills: number } }> }>;
+  approvals?: Array<{ id: string }>;
   fulfillment: { directions: FulfillmentDirection[] };
   allowedPermissions?: string[];
 }
@@ -54,6 +55,7 @@ const STATUS_MAP: Record<string, { label: string }> = {
   EXECUTING: { label: '执行中' },
   COMPLETED: { label: '已完成' },
   CLOSED: { label: '已关闭' },
+  TERMINATED: { label: '已终止' },
   VOIDED: { label: '已作废' },
 };
 
@@ -89,12 +91,11 @@ export default function ContractsPage() {
   }, [businessUnitFilter, searchTerm, statusFilter, typeFilter]);
 
   const handleDelete = async (contract: Contract) => {
-    if (!['DRAFT', 'VOIDED'].includes(contract.status)) {
-      alert('仅草稿可以直接删除；其他合同必须先作废');
+    if (contract.status !== 'DRAFT' || contract.approvals?.length || contract.orders?.length) {
+      alert('合同已进入审批或业务流程，不能删除；请按流程终止或作废并保留记录');
       return;
     }
-    const statusLabel = contract.status === 'DRAFT' ? '草稿' : '已作废合同';
-    if (!await confirmAction(`确定删除${statusLabel}“${contract.contractNo}”吗？删除后将不再出现在合同列表中。`)) return;
+    if (!await confirmAction(`确定删除草稿“${contract.contractNo}”吗？删除后将不再出现在合同列表中。`)) return;
     try {
       await api.delete(`/contracts/${contract.id}`);
       fetchContracts();
@@ -187,7 +188,7 @@ export default function ContractsPage() {
         </div>
         {/* 状态筛选 */}
         <div className="flex items-center gap-1.5">
-          {['', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'VOIDED'].map((s) => (
+          {['', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED', 'VOIDED'].map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
@@ -282,12 +283,11 @@ export default function ContractsPage() {
                         <Package className="mr-1 h-3.5 w-3.5" />新建执行批次
                       </Button>
                     ) : (
-                      (c.status === 'DRAFT' && c.allowedPermissions?.includes('contract.edit') && (userRole === 'ADMIN' || c.creator?.id === currentUserId))
-                      || (c.status === 'VOIDED' && userRole === 'ADMIN' && c.allowedPermissions?.includes('contract.delete'))
+                      (c.status === 'DRAFT' && !c.approvals?.length && !c.orders?.length && c.allowedPermissions?.includes('contract.edit') && (userRole === 'ADMIN' || c.creator?.id === currentUserId))
                     ) ? (
                       <button onClick={(e) => { e.stopPropagation(); void handleDelete(c); }}
                         className="text-destructive hover:bg-destructive/10 rounded p-1"
-                        title={c.status === 'DRAFT' ? '删除草稿' : '删除已作废合同'}>
+                        title="删除草稿">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     ) : <span className="text-muted-foreground">—</span>}

@@ -1152,10 +1152,64 @@ describe('ContractService', () => {
       await expect(service.updateStatus('test-id', { status: 'COMPLETED' }, adminUser)).resolves.toBeDefined();
     });
 
-    it('EXECUTING → VOIDED', async () => {
+    it('EXECUTING 不可直接作废，必须先终止', async () => {
       await setupContract('EXECUTING');
-      prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
-      await expect(service.updateStatus('test-id', { status: 'VOIDED' }, adminUser)).resolves.toBeDefined();
+      await expect(service.updateStatus('test-id', { status: 'VOIDED' }, adminUser)).rejects.toThrow(BadRequestException);
+    });
+
+    it('EXECUTING → TERMINATED 自动取消空任务', async () => {
+      await setupContract('EXECUTING');
+      prisma.order.findMany.mockResolvedValue([{
+        id: 'order-1', status: 'DISPATCHED', settlementLines: [], paymentRequests: [],
+        dispatchNotices: [{
+          id: 'notice-1', status: 'IN_PROGRESS', outboundOrder: { id: 'outbound-1', actualQuantity: 0 },
+          waybills: [{
+            id: 'waybill-1', status: 'PENDING', weighTask: { status: 'PENDING_WEIGHING' },
+            weighTickets: [{ id: 'ticket-1', status: 'PENDING', _count: { records: 0, attachments: 0 } }],
+            qualityTask: null, inboundReceipts: [], outboundReceipts: [], logisticsSettlementLines: [],
+          }],
+        }],
+      }] as any);
+      prisma.waybill.count.mockResolvedValue(0);
+      prisma.dispatchNotice.count.mockResolvedValue(0);
+      await expect(service.updateStatus('test-id', { status: 'TERMINATED' }, adminUser)).resolves.toBeDefined();
+      expect(prisma.order.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { contractId: 'test-id', deletedAt: null } }));
+      expect(prisma.weighTicket.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'VOIDED' } }));
+      expect(prisma.waybill.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'CANCELLED' } }));
+      expect(prisma.dispatchNotice.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'CANCELLED' } }));
+      expect(prisma.outboundOrderLine.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { reservedQuantity: 0 } }));
+      expect(prisma.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'CANCELLED' } }));
+    });
+
+    it('终止时保留已有称重记录的运单，等待人工收尾', async () => {
+      await setupContract('EXECUTING');
+      prisma.order.findMany.mockResolvedValue([{
+        id: 'order-1', status: 'DISPATCHED', settlementLines: [], paymentRequests: [],
+        dispatchNotices: [{ id: 'notice-1', status: 'IN_PROGRESS', outboundOrder: null, waybills: [{
+          id: 'waybill-1', status: 'PENDING', weighTask: { status: 'IN_PROGRESS' },
+          weighTickets: [{ id: 'ticket-1', status: 'WEIGHING', _count: { records: 1, attachments: 0 } }],
+          qualityTask: null, inboundReceipts: [], outboundReceipts: [], logisticsSettlementLines: [],
+        }] }],
+      }] as any);
+      prisma.waybill.count.mockResolvedValue(1);
+      await expect(service.updateStatus('test-id', { status: 'TERMINATED' }, adminUser)).resolves.toBeDefined();
+      expect(prisma.waybill.updateMany).not.toHaveBeenCalled();
+      expect(prisma.dispatchNotice.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('TERMINATED 有未收尾运单时不可作废', async () => {
+      await setupContract('TERMINATED');
+      prisma.order.count.mockResolvedValue(0);
+      prisma.dispatchNotice.count.mockResolvedValue(0);
+      prisma.waybill.count.mockResolvedValue(1);
+      prisma.inboundReceipt.count.mockResolvedValue(0);
+      prisma.outboundReceipt.count.mockResolvedValue(0);
+      prisma.weighTask.count.mockResolvedValue(0);
+      prisma.qualityTask.count.mockResolvedValue(0);
+      prisma.financialSettlement.count.mockResolvedValue(0);
+      prisma.paymentRequest.count.mockResolvedValue(0);
+      prisma.fundTransaction.count.mockResolvedValue(0);
+      await expect(service.updateStatus('test-id', { status: 'VOIDED' }, adminUser)).rejects.toThrow('待收尾业务');
     });
 
     // 非法路径
@@ -1217,13 +1271,16 @@ describe('ContractService', () => {
   describe('remove', () => {
     it('合同创建人可以直接删除自己的草稿', async () => {
       prisma.contract.findFirst.mockResolvedValue({ ...mockContract, createdBy: 'user-2', status: 'DRAFT' } as any);
-      prisma.contract.update.mockResolvedValue({ ...mockContract, createdBy: 'user-2', deletedAt: new Date() } as any);
+      prisma.contract.updateMany.mockResolvedValue({ count: 1 } as any);
 
       await expect(service.remove(
         'test-id',
         { id: 'user-2', role: 'SALESPERSON' },
       )).resolves.toBeDefined();
       expect(accessControl.assertPermission).toHaveBeenCalledWith('user-2', 'contract.edit');
+      expect(prisma.contract.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ status: 'DRAFT', approvals: { none: {} }, orders: { none: {} } }),
+      }));
     });
 
     it('普通用户不能删除他人草稿', async () => {
@@ -1236,23 +1293,30 @@ describe('ContractService', () => {
       expect(prisma.contract.update).not.toHaveBeenCalled();
     });
 
-    it('未作废的非草稿合同不能删除', async () => {
+    it('进入审批流程的合同不能删除', async () => {
       prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'PENDING_APPROVAL' } as any);
 
       await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' }))
-        .rejects.toThrow('仅草稿可以直接删除；其他合同必须先作废');
+        .rejects.toThrow('不能删除');
       expect(prisma.contract.update).not.toHaveBeenCalled();
     });
 
-    it('管理员可以软删除已作废合同', async () => {
-      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
-      prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'VOIDED', deletedAt: new Date() } as any);
+    it('审批撤回后的草稿不能删除', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'DRAFT', approvals: [{ id: 'approval-1' }] } as any);
+      await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' })).rejects.toThrow('不能删除');
+      expect(prisma.contract.update).not.toHaveBeenCalled();
+    });
 
-      await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' })).resolves.toBeDefined();
-      expect(prisma.contract.update).toHaveBeenCalledWith({
-        where: { id: 'test-id' },
-        data: { deletedAt: expect.any(Date) },
-      });
+    it('已有执行批次的草稿不能删除', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'DRAFT', orders: [{ id: 'order-1' }] } as any);
+      await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' })).rejects.toThrow('不能删除');
+      expect(prisma.contract.update).not.toHaveBeenCalled();
+    });
+
+    it('管理员也不能删除已作废合同，必须保留业务追溯', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'VOIDED' } as any);
+      await expect(service.remove('test-id', { id: 'user-1', role: 'ADMIN' })).rejects.toThrow('不能删除');
+      expect(prisma.contract.update).not.toHaveBeenCalled();
     });
   });
 });

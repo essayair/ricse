@@ -122,6 +122,11 @@ export class OrderService {
     const totalAmount = lines.reduce((sum, item) => sum + Number(item.totalPrice), 0);
 
     return this.prisma.$transaction(async (tx) => {
+      const current = await tx.contract.updateMany({
+        where: { id: contract.id, deletedAt: null, status: contract.status },
+        data: { status: 'EXECUTING' },
+      });
+      if (current.count !== 1) throw new BadRequestException('合同状态已变化，不能创建执行批次，请刷新后重试');
       const order = await tx.order.create({
         data: {
           orderNo,
@@ -137,9 +142,6 @@ export class OrderService {
         },
         include: this.include,
       });
-      if (contract.status === 'APPROVED') {
-        await tx.contract.update({ where: { id: contract.id }, data: { status: 'EXECUTING' } });
-      }
       return order;
     });
   }

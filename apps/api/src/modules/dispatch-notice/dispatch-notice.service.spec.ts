@@ -18,7 +18,7 @@ describe('DispatchNoticeService', () => {
   const order = {
     id: 'order-1', orderNo: 'PC-001', type: 'PURCHASE', status: 'CONFIRMED',
     deliveryLocation: '目的地',
-    contract: { id: 'contract-1' },
+    contractId: 'contract-1', contract: { id: 'contract-1', status: 'EXECUTING' },
     lineItems: [{ id: 'line-1', materialId: 'm-1', materialName: '物料', quantity: 10, unit: 'TON' }],
   };
 
@@ -36,6 +36,8 @@ describe('DispatchNoticeService', () => {
     prisma.dispatchNotice.count.mockResolvedValue(0);
     prisma.dispatchNoticeLineItem.groupBy.mockResolvedValue([] as any);
     prisma.warehouse.count.mockResolvedValue(1);
+    prisma.contract.updateMany.mockResolvedValue({ count: 1 } as any);
+    prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
   });
 
   it('从已确认采购执行批次创建供应商发货指令', async () => {
@@ -90,5 +92,12 @@ describe('DispatchNoticeService', () => {
       destinationLocation: '',
       lineItems: [{ orderLineItemId: 'line-1', quantity: 3 }],
     }, 'user-1')).rejects.toThrow('目的地点不能为空');
+  });
+
+  it('合同终止后不能继续建立执行通知', async () => {
+    prisma.order.findFirst.mockResolvedValue({ ...order, contract: { id: 'contract-1', status: 'TERMINATED' } } as any);
+    await expect(service.create({ orderId: order.id, originLocation: '起点', destinationLocation: '终点', lineItems: [{ orderLineItemId: 'line-1', quantity: 1 }] }, 'user-1'))
+      .rejects.toThrow('合同已终止或作废');
+    expect(prisma.dispatchNotice.create).not.toHaveBeenCalled();
   });
 });

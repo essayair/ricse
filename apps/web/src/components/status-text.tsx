@@ -89,6 +89,7 @@ const STATUS_TONES: Record<string, StatusTone> = {
   OTHERS_REJECTED: 'destructive',
   FAILED: 'destructive',
   VOIDED: 'destructive',
+  TERMINATED: 'destructive',
   SCRAPPED: 'destructive',
   SCRAP: 'destructive',
   INVALID: 'destructive',

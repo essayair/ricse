@@ -81,7 +81,7 @@ interface ContractPrintDetail {
 
 const STATUS: Record<string, string> = {
   DRAFT: '草稿', PENDING_APPROVAL: '审批中', APPROVED: '审批通过', REJECTED: '已驳回',
-  EXECUTING: '执行中', COMPLETED: '已完成', CLOSED: '已关闭', VOIDED: '已作废',
+  EXECUTING: '执行中', COMPLETED: '已完成', CLOSED: '已关闭', TERMINATED: '已终止', VOIDED: '已作废',
 };
 const TYPE: Record<string, string> = { PURCHASE: '采购合同', SALES: '销售合同', BILATERAL: '双边合同' };
 const PRICING: Record<string, string> = { FIXED: '一口价', BASIS: '基差定价', FLOATING: '不定价' };

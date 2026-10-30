@@ -35,7 +35,7 @@ describe('WaybillService', () => {
   const notice = {
     id: 'notice-1', noticeNo: 'PI-20260717-0001', status: 'ISSUED',
     originLocation: '起点', destinationLocation: '终点', warehouse: null,
-    order: { id: 'order-1', contract: { id: 'contract-1' } },
+    order: { id: 'order-1', contractId: 'contract-1', contract: { id: 'contract-1', status: 'EXECUTING' } },
     lineItems: [{ id: 'notice-line-1', materialId: 'm-1', materialName: '物料', quantity: 10, unit: 'TON' }],
   };
 
@@ -54,6 +54,7 @@ describe('WaybillService', () => {
     }).compile();
     service = module.get(WaybillService);
     prisma.waybill.count.mockResolvedValue(0);
+    prisma.contract.updateMany.mockResolvedValue({ count: 1 } as any);
     prisma.$queryRaw.mockResolvedValue([] as any);
     prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
     prisma.waybillLineItem.groupBy.mockResolvedValue([] as any);
@@ -71,6 +72,13 @@ describe('WaybillService', () => {
     expect(prisma.waybill.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ totalQuantity: 5, status: 'PENDING', plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001' }),
     }));
+  });
+
+  it('合同终止后不能继续建立物流运单', async () => {
+    prisma.dispatchNotice.findFirst.mockResolvedValue({ ...notice, order: { ...notice.order, contract: { id: 'contract-1', status: 'TERMINATED' } } } as any);
+    await expect(service.create({ dispatchNoticeId: notice.id, plateNo: '甘A00001', driverName: '张三', driverPhone: '13800000001' }, 'user-1'))
+      .rejects.toThrow('合同已终止或作废');
+    expect(prisma.waybill.create).not.toHaveBeenCalled();
   });
 
   it('单车建单未填写计划数量时保留物料关联且不阻止创建', async () => {

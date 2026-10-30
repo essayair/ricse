@@ -302,6 +302,9 @@ export class WaybillService {
       },
     });
     if (!notice) throw new NotFoundException('执行通知不存在');
+    if (['TERMINATED', 'VOIDED', 'CLOSED'].includes(notice.order.contract.status)) {
+      throw new BadRequestException('合同已终止或作废，不能再创建物流运单');
+    }
     if (!['ISSUED', 'IN_PROGRESS'].includes(notice.status)) {
       throw new BadRequestException('仅已下达或执行中的通知可以建立物流运单');
     }
@@ -374,6 +377,11 @@ export class WaybillService {
     });
     const notice = availability.notice;
     const created = await this.prisma.$transaction(async tx => {
+      const current = await tx.contract.updateMany({
+        where: { id: notice.order.contractId, deletedAt: null, status: { in: ['APPROVED', 'EXECUTING'] } },
+        data: { status: 'EXECUTING' },
+      });
+      if (current.count !== 1) throw new BadRequestException('合同已终止或状态已变化，不能创建物流运单');
       const [waybillNo] = await this.reserveWaybillNumbers(tx, 1);
       return tx.waybill.create({
         data: {
@@ -454,9 +462,14 @@ export class WaybillService {
     });
 
     const created = await this.prisma.$transaction(async tx => {
+      const current = await tx.contract.updateMany({
+        where: { id: availability.notice.order.contractId, deletedAt: null, status: { in: ['APPROVED', 'EXECUTING'] } },
+        data: { status: 'EXECUTING' },
+      });
+      if (current.count !== 1) throw new BadRequestException('合同已终止或状态已变化，不能创建物流运单');
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "dispatch_notices" WHERE id = ${dto.dispatchNoticeId} FOR UPDATE`);
       const notice = await tx.dispatchNotice.findFirst({
-        where: { id: dto.dispatchNoticeId, deletedAt: null, status: { in: ['ISSUED', 'IN_PROGRESS'] } },
+        where: { id: dto.dispatchNoticeId, deletedAt: null, status: { in: ['ISSUED', 'IN_PROGRESS'] }, order: { contract: { status: { in: ['APPROVED', 'EXECUTING'] } } } },
       });
       if (!notice) throw new BadRequestException('执行通知状态已变化，请刷新后重试');
       const waybillNumbers = await this.reserveWaybillNumbers(tx, prepared.length);

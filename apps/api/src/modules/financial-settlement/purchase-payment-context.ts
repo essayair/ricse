@@ -26,7 +26,7 @@ export class PurchasePaymentContext {
     const paidAmount = decimalMoney(funds.reduce((sum, f) => sum.plus(f.amount).minus(f.refundedAmount), new Prisma.Decimal(0)));
     const unpaidCommitment = decimalMoney(pending.reduce((sum, r) => sum.plus(requestCommitment(r)), new Prisma.Decimal(0)));
     const formalAmount = decimalMoney(settlements.reduce((sum, s) => sum.plus(s.totalAmount), new Prisma.Decimal(0)));
-    const contractLimit = ['COMPLETED', 'CLOSED'].includes(contract.status) && settlements.length && sources.every(s => s.available || s.remainingQuantity === 0)
+    const contractLimit = ['COMPLETED', 'CLOSED', 'TERMINATED'].includes(contract.status) && settlements.length && sources.every(s => s.available || s.remainingQuantity === 0)
       ? formalAmount : Math.max(nominalAmount, formalAmount);
     const availableContract = decimalMoney(Math.max(0, contractLimit - paidAmount - unpaidCommitment));
     const fundRows = funds.map(f => {
@@ -56,9 +56,9 @@ export class PurchasePaymentContext {
   async validate(request: any, userId: string, permission: string, financeSubmit = false) {
     if (request.businessType !== 'PURCHASE') return null;
     const context = await this.load(request.contractId, userId, permission, request.id);
-    if (!['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'].includes(context.contract.status)) throw new BadRequestException('合同尚未审批生效或已作废，不能继续付款');
+    if (!['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED'].includes(context.contract.status)) throw new BadRequestException('合同尚未审批生效或已作废，不能继续付款');
     if (request.basisType === 'LEGACY') return context; // 保留老单据，不补造新合同付款条件。
-    if (['COMPLETED', 'CLOSED'].includes(context.contract.status) && !request.settlementId && ['ADVANCE', 'PROGRESS'].includes(request.paymentStage)) throw new BadRequestException('合同已结束，请按已确认采购结算办理剩余货款，不再新增预付款或阶段备款');
+    if (['COMPLETED', 'CLOSED', 'TERMINATED'].includes(context.contract.status) && !request.settlementId && ['ADVANCE', 'PROGRESS'].includes(request.paymentStage)) throw new BadRequestException('合同已结束，请按已确认采购结算办理剩余货款，不再新增预付款或阶段备款');
     if (!request.purpose?.trim() || !request.conditionText?.trim()) throw new BadRequestException('请填写付款用途和本次付款条件说明');
     if (['SETTLEMENT', 'FINAL'].includes(request.paymentStage) && !request.settlementId) throw new BadRequestException('结算款和尾款请先关联已确认的采购结算单；提前付款请选择预付款或阶段款');
     if (request.basisType === 'BATCH' && !request.orderId) throw new BadRequestException('按执行批次申请时请选择执行批次');

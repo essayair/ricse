@@ -99,6 +99,7 @@ interface AvailableActions {
   canApprove: boolean;
   canWithdraw: boolean;
   canVoid: boolean;
+  canTerminate: boolean;
   canStartExecution: boolean;
   canComplete: boolean;
   canClose: boolean;
@@ -125,6 +126,7 @@ const STATUS_MAP: Record<string, { label: string }> = {
   EXECUTING:        { label: '执行中' },
   COMPLETED:        { label: '已完成' },
   CLOSED:           { label: '已关闭' },
+  TERMINATED:       { label: '已终止' },
   VOIDED:           { label: '已作废' },
 };
 
@@ -139,7 +141,7 @@ type ContractAction = {
   needsComment?: boolean;
 };
 
-const PROTECTED_STATUS_ACTIONS = new Set(['EXECUTING', 'COMPLETED', 'CLOSED']);
+const PROTECTED_STATUS_ACTIONS = new Set(['EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED']);
 
 const PROTECTED_ACTION_COPY: Record<string, { title: string; description: string; acknowledgement: string }> = {
   EXECUTING: {
@@ -156,6 +158,11 @@ const PROTECTED_ACTION_COPY: Record<string, { title: string; description: string
     title: '确认关闭合同？',
     description: '关闭后合同进入归档状态，不能再新建执行批次或继续生成下游业务单据。',
     acknowledgement: '',
+  },
+  TERMINATED: {
+    title: '确认终止合同执行？',
+    description: '系统仅自动取消尚未开始的批次、通知和现场任务；已发生的运输、过磅、出入库与资金业务保留，需人工收尾后才能作废合同。',
+    acknowledgement: '我已核对未完成业务，确认终止后不再开展新的履约',
   },
 };
 
@@ -513,8 +520,7 @@ export default function ContractDetailPage() {
   };
 
   const handleDelete = async () => {
-    const statusLabel = contract?.status === 'DRAFT' ? '草稿' : '已作废合同';
-    if (!await confirmAction(`确定删除${statusLabel}“${contract?.contractNo || ''}”吗？删除后将不再出现在合同列表中。`)) return;
+    if (!await confirmAction(`确定删除草稿“${contract?.contractNo || ''}”吗？删除后将不再出现在合同列表中。`)) return;
     try {
       await api.delete(`/contracts/${params.id}`);
       router.push('/dashboard/contracts');
@@ -529,7 +535,7 @@ export default function ContractDetailPage() {
       setProtectedAction(action);
       return;
     }
-    if (action.next === 'VOIDED' && !await confirmAction('确定作废此合同吗？作废后不能恢复，如需删除还必须由系统管理员操作。')) {
+    if (action.next === 'VOIDED' && !await confirmAction('确定作废此合同吗？已发生的业务记录会保留，作废后不能恢复或删除。')) {
       return;
     }
     if (action.needsComment) {
@@ -566,7 +572,8 @@ export default function ContractDetailPage() {
     ...(availableActions?.canStartExecution ? [{ next: 'EXECUTING', label: '开始执行', variant: 'default' as const }] : []),
     ...(availableActions?.canComplete ? [{ next: 'COMPLETED', label: '标记完成', variant: 'default' as const }] : []),
     ...(availableActions?.canClose ? [{ next: 'CLOSED', label: c.status === 'COMPLETED' ? '归档关闭' : '关闭', variant: 'outline' as const }] : []),
-    ...(availableActions?.canVoid ? [{ next: 'VOIDED', label: c.status === 'EXECUTING' ? '终止并作废' : '作废', variant: 'destructive' as const }] : []),
+    ...(availableActions?.canTerminate ? [{ next: 'TERMINATED', label: '终止执行', variant: 'destructive' as const }] : []),
+    ...(availableActions?.canVoid ? [{ next: 'VOIDED', label: '作废合同', variant: 'destructive' as const }] : []),
   ];
   const canEdit = Boolean(availableActions?.canEdit);
   const canDelete = Boolean(availableActions?.canDelete);
@@ -595,7 +602,7 @@ export default function ContractDetailPage() {
       <div className="flex items-center justify-between">
         <button onClick={() => router.push('/dashboard/contracts')} className="text-sm text-primary hover:underline">&larr; 返回合同列表</button>
         <div className="flex gap-2">
-          <PurchasePaymentShortcut contractId={c.id} enabled={['PURCHASE', 'BILATERAL'].includes(c.type) && ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'].includes(c.status)}/>
+          <PurchasePaymentShortcut contractId={c.id} enabled={['PURCHASE', 'BILATERAL'].includes(c.type) && ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED'].includes(c.status)}/>
           <Link href={`/dashboard/contracts/${c.id}/print`}>
             <Button variant="outline" size="sm"><Printer className="h-4 w-4 mr-1" />打印存档</Button>
           </Link>
@@ -613,13 +620,18 @@ export default function ContractDetailPage() {
           )}
           {canDelete && (
             <Button variant="destructive" size="sm" onClick={() => void handleDelete()}>
-              <Trash2 className="h-4 w-4 mr-1" />{c.status === 'DRAFT' ? '删除草稿' : '删除合同'}
+              <Trash2 className="h-4 w-4 mr-1" />删除草稿
             </Button>
           )}
         </div>
       </div>
 
       {/* Header */}
+      {c.status === 'TERMINATED' && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          合同已终止，不再创建新的履约任务。已发生的过磅、质检、出入库及资金业务仍需按原单据人工收尾；全部处理完成后，可在下方作废合同。
+        </div>
+      )}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between">
           <div>

@@ -245,7 +245,7 @@ export class DashboardService {
   }
 
   private contractStatus(status: string) {
-    return ({ DRAFT: '保存为草稿', PENDING_APPROVAL: '已提交审批', APPROVED: '已通过', REJECTED: '已驳回', EXECUTING: '执行中', COMPLETED: '已完成', CLOSED: '已关闭', VOIDED: '已作废' } as Record<string, string>)[status] || status;
+    return ({ DRAFT: '保存为草稿', PENDING_APPROVAL: '已提交审批', APPROVED: '已通过', REJECTED: '已驳回', EXECUTING: '执行中', COMPLETED: '已完成', CLOSED: '已关闭', TERMINATED: '已终止', VOIDED: '已作废' } as Record<string, string>)[status] || status;
   }
 
   private waybillStatus(status: string, type: string) {

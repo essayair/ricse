@@ -377,7 +377,7 @@ export class FinancialSettlementService {
     });
     if (!contract) throw new NotFoundException('合同不存在或不在当前数据权限范围内');
     this.assertDirection(contract.type, direction);
-    if (!['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'].includes(contract.status)) throw new BadRequestException('合同尚未审批生效或已作废，不能办理资金结算');
+    if (!['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED'].includes(contract.status)) throw new BadRequestException('合同尚未审批生效或已作废，不能办理资金结算');
     return contract;
   }
 
@@ -387,7 +387,7 @@ export class FinancialSettlementService {
     const scope = await this.accessControl.getContractScope(userId, 'settlement.view');
     const types = direction === 'PAYABLE' ? ['PURCHASE', 'BILATERAL'] : ['SALES', 'BILATERAL'];
     const contracts = await this.prisma.contract.findMany({
-      where: { deletedAt: null, type: { in: types }, status: { in: ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'] }, AND: [scope] },
+      where: { deletedAt: null, type: { in: types }, status: { in: ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED'] }, AND: [scope] },
       include: {
         seller: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
         buyer: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
@@ -760,7 +760,7 @@ export class FinancialSettlementService {
       where: {
         deletedAt: null,
         type: { in: ['PURCHASE', 'SALES', 'BILATERAL'] },
-        status: { in: ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED'] },
+        status: { in: ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED', 'VOIDED'] },
         AND: [contractScope],
       },
       include: {
