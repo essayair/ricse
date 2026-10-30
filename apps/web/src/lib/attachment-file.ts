@@ -26,6 +26,36 @@ export function selectValidAttachmentFiles(files: File[]): File[] {
   return files.filter(file => !attachmentFileError(file));
 }
 
+const CLIPBOARD_EXTENSION: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf',
+};
+
+function namedClipboardFile(file: File): File {
+  if (/\.(jpe?g|png|webp|pdf)$/i.test(file.name)) return file;
+  const extension = CLIPBOARD_EXTENSION[file.type];
+  return extension ? new File([file], `粘贴附件-${Date.now()}.${extension}`, { type: file.type }) : file;
+}
+
+export function pastedAttachmentFiles(data: DataTransfer): File[] {
+  const files = Array.from(data.files);
+  if (files.length) return files.map(namedClipboardFile);
+  return Array.from(data.items).filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => Boolean(file)).map(namedClipboardFile);
+}
+
+export async function readClipboardAttachmentFiles(): Promise<File[]> {
+  if (!navigator.clipboard?.read) throw new Error('浏览器不支持直接读取剪贴板，请点击附件区域后按 Ctrl/⌘+V 粘贴');
+  const items = await navigator.clipboard.read();
+  const files: File[] = [];
+  for (const item of items) {
+    const type = item.types.find(value => CLIPBOARD_EXTENSION[value]);
+    if (!type) continue;
+    const blob = await item.getType(type);
+    files.push(new File([blob], `粘贴附件-${Date.now()}-${files.length + 1}.${CLIPBOARD_EXTENSION[type]}`, { type }));
+  }
+  if (!files.length) throw new Error('剪贴板中没有可上传的图片或 PDF');
+  return files;
+}
+
 export async function attachmentUploadError(response: Response, fileName: string): Promise<string> {
   if (response.status === 413) return `${fileName} 上传失败：单个文件不能超过 20 MB`;
   const text = await response.text();

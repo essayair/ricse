@@ -206,6 +206,22 @@ describe('WeighTicketService', () => {
     });
   });
 
+  it('磅差异常经确认后不再把过磅任务保持在异常状态', async () => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, status: 'ARRIVED', plateNo: '甘A12345', totalQuantity: 100 } as any);
+    prisma.weighTask.findUnique.mockResolvedValueOnce({ id: 'task-1', plannedQuantity: 100, status: 'IN_PROGRESS' } as any);
+    prisma.waybill.findUnique.mockResolvedValueOnce({ status: 'ARRIVED', weighTickets: [{ status: 'REVIEWED', abnormal: true }], weightSelections: [{ id: 'selection-1' }] } as any);
+    await service.syncTaskForWaybill(waybill.id, 'user-1');
+    expect(prisma.weighTask.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'COMPLETED' } });
+  });
+
+  it('待确认的异常磅单仍在任务中提示异常', async () => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, status: 'ARRIVED', plateNo: '甘A12345', totalQuantity: 100 } as any);
+    prisma.weighTask.findUnique.mockResolvedValueOnce({ id: 'task-1', plannedQuantity: 100, status: 'IN_PROGRESS' } as any);
+    prisma.waybill.findUnique.mockResolvedValueOnce({ status: 'ARRIVED', weighTickets: [{ status: 'COMPLETED', abnormal: true }], weightSelections: [] } as any);
+    await service.syncTaskForWaybill(waybill.id, 'user-1');
+    expect(prisma.weighTask.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'EXCEPTION' } });
+  });
+
   it('销售运单允许在发运前创建出库磅单', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       ...waybill,
@@ -383,12 +399,21 @@ describe('WeighTicketService', () => {
       .rejects.toThrow('完成称重前必须上传至少一份磅单附件');
   });
 
-  it('异常磅单复核必须填写处理意见', async () => {
-    prisma.weighTicket.findFirst.mockResolvedValue({
-      ...ticket, status: 'COMPLETED', abnormal: true,
-    } as any);
-    await expect(service.updateStatus(ticket.id, 'REVIEWED', 'user-1', ' '))
-      .rejects.toThrow('异常磅单复核必须填写处理意见');
+  it('异常磅单可一键按实际磅单复核', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...ticket, status: 'COMPLETED', abnormal: true, waybillId: 'waybill-1' } as any);
+    jest.spyOn(service, 'syncTaskForWaybill').mockResolvedValue(undefined as any);
+    jest.spyOn(service as any, 'applyDefaultSelections').mockResolvedValue(undefined);
+    prisma.weighTicket.update.mockResolvedValueOnce({ ...ticket, status: 'REVIEWED' } as any);
+    await service.updateStatus(ticket.id, 'REVIEWED', 'user-1', ' ');
+    expect(prisma.weighTicket.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ reviewRemark: '按实际磅单' }) }));
+  });
+
+  it('待复核磅单可返回称重中修改', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...ticket, status: 'COMPLETED', waybillId: 'waybill-1' } as any);
+    jest.spyOn(service, 'syncTaskForWaybill').mockResolvedValue(undefined as any);
+    prisma.weighTicket.update.mockResolvedValueOnce({ ...ticket, status: 'WEIGHING' } as any);
+    await expect(service.updateStatus(ticket.id, 'WEIGHING', 'user-1')).resolves.toMatchObject({ status: 'WEIGHING' });
+    expect(prisma.weighTicket.update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'WEIGHING' } }));
   });
 
   it('其他结算口径必须填写对应重量', async () => {

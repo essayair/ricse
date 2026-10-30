@@ -305,12 +305,11 @@ export default function WeighTicketDetailPage() {
   };
 
   const transition = async (status: string) => {
-    const label = status === 'COMPLETED' ? '完成称重' : status === 'REVIEWED' ? '复核通过' : '作废';
-    if (status === 'REVIEWED' && ticket?.abnormal && !reviewRemark.trim()) return alert('异常磅单复核必须填写处理意见');
-    if (!await confirmAction(`确定${label}当前磅单？`, { title: `${label}磅单确认` })) return;
+    const label = status === 'COMPLETED' ? '完成称重' : status === 'REVIEWED' ? '复核通过' : status === 'WEIGHING' ? '返回修改' : '作废';
+    if (status !== 'WEIGHING' && !(status === 'REVIEWED' && ticket?.abnormal) && !await confirmAction(`确定${label}当前磅单？`, { title: `${label}磅单确认` })) return;
     setSaving(true);
     try {
-      applyTicket(await api.patch<WeighTicket>(`/weigh-tickets/${id}/status`, { status, reviewRemark: reviewRemark || undefined }));
+      applyTicket(await api.patch<WeighTicket>(`/weigh-tickets/${id}/status`, { status, reviewRemark: status === 'REVIEWED' && ticket?.abnormal ? '按实际磅单' : reviewRemark || undefined }));
     } catch (error: any) {
       alert(error.message || '状态更新失败');
     } finally {
@@ -380,15 +379,15 @@ export default function WeighTicketDetailPage() {
       </div>
     </div>
 
-    {ticket.abnormal && <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" /><div><div className="font-medium text-destructive">称重净重与计划数量偏差超过 {number(ticket.toleranceRate)}%</div><div className="mt-1 text-muted-foreground">请核对称重记录和有效记录选择。磅单进入待复核后，请直接在下方醒目的异常复核区填写原因和处理意见。</div></div></div>}
+    {ticket.abnormal && <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" /><div><div className="font-medium text-destructive">称重净重与计划数量偏差超过 {number(ticket.toleranceRate)}%</div><div className="mt-1 text-muted-foreground">请核对称重记录和有效记录；若数据无误，可按实际磅单确认并继续。</div></div></div>}
 
     {ticket.status === 'COMPLETED' && <Card className={`space-y-4 border-2 p-5 ${ticket.abnormal ? 'border-destructive/50 bg-destructive/5' : 'border-primary/30 bg-primary/5'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">{ticket.abnormal ? <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-primary" />}<div><h2 className={`font-semibold ${ticket.abnormal ? 'text-destructive' : ''}`}>{ticket.abnormal ? '磅差异常复核' : '磅单复核'}</h2><p className="mt-1 text-sm text-muted-foreground">{ticket.abnormal ? `当前磅差 ${signedWeight(ticket.varianceWeight)}，偏差率 ${number(ticket.varianceRate)}%，超过容差 ${number(ticket.toleranceRate)}%。请说明异常原因及处理结果后再复核。` : '称重已完成，请核对数据；如有补充说明可填写后提交复核。'}</p></div></div>
-        {ticket.abnormal ? <Badge variant="destructive">必须填写意见</Badge> : <StatusText status="PENDING_REVIEW">待复核</StatusText>}
+        <div className="flex items-start gap-3">{ticket.abnormal ? <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-primary" />}<div><h2 className={`font-semibold ${ticket.abnormal ? 'text-destructive' : ''}`}>{ticket.abnormal ? '磅差异常提醒' : '磅单复核'}</h2><p className="mt-1 text-sm text-muted-foreground">{ticket.abnormal ? `当前磅差 ${signedWeight(ticket.varianceWeight)}，偏差率 ${number(ticket.varianceRate)}%，超过容差 ${number(ticket.toleranceRate)}%。请核对数据后选择返回修改或按实际磅单继续。` : '称重已完成，请核对数据；如有补充说明可填写后提交复核。'}</p></div></div>
+        <StatusText status="PENDING_REVIEW">待复核</StatusText>
       </div>
-      <div><label className="mb-2 block text-sm font-medium">复核意见{ticket.abnormal && <span className="ml-1 text-destructive">*</span>}</label><textarea autoFocus={ticket.abnormal} className={`min-h-28 w-full rounded-md border bg-background p-3 text-sm outline-none focus:ring-2 ${ticket.abnormal ? 'border-destructive/50 focus:ring-destructive/20' : 'focus:ring-primary/20'}`} value={reviewRemark} onChange={event => setReviewRemark(event.target.value)} placeholder={ticket.abnormal ? '请填写偏差原因、核查过程和最终处理意见（必填）' : '可填写复核说明'} /><div className="mt-1 text-right text-xs text-muted-foreground">已输入 {reviewRemark.trim().length} 字</div></div>
-      <div className="flex justify-end"><Button disabled={saving || (ticket.abnormal && !reviewRemark.trim())} onClick={() => void transition('REVIEWED')}><CheckCircle2 className="mr-2 h-4 w-4" />{saving ? '提交中...' : ticket.abnormal ? '填写意见并复核通过' : '复核通过'}</Button></div>
+      {ticket.abnormal ? <div className="rounded-md border bg-background p-3 text-sm">处理方式：按实际磅单</div> : <div><label className="mb-2 block text-sm font-medium">复核意见（选填）</label><textarea className="min-h-28 w-full rounded-md border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-primary/20" value={reviewRemark} onChange={event => setReviewRemark(event.target.value)} placeholder="可填写复核说明" /></div>}
+      <div className="flex justify-end gap-2">{ticket.abnormal && <Button variant="outline" disabled={saving} onClick={() => void transition('WEIGHING')}>返回修改</Button>}<Button disabled={saving} onClick={() => void transition('REVIEWED')}><CheckCircle2 className="mr-2 h-4 w-4" />{saving ? '提交中...' : ticket.abnormal ? '确认并继续' : '复核通过'}</Button></div>
     </Card>}
 
     {ticket.status === 'REVIEWED' && <Card className={`p-5 ${ticket.abnormal ? 'border-destructive/30' : ''}`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">复核结果</h2><StatusText status="REVIEWED">已复核</StatusText></div><div className="grid gap-4 sm:grid-cols-3"><SmallField label="复核人" value={ticket.reviewer?.name || '-'} /><SmallField label="复核时间" value={formatDateTimeToSecond(ticket.reviewedAt)} /><SmallField label="处理意见" value={ticket.reviewRemark || '-'} /></div></Card>}

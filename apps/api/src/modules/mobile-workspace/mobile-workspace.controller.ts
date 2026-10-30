@@ -340,7 +340,7 @@ export class MobileWorkspaceController {
     @Body() data: UpdateWeighTicketStatusDto,
     @CurrentUser('id') userId: string,
   ) {
-    if (!['COMPLETED', 'REVIEWED', 'VOIDED'].includes(data.status)) throw new BadRequestException('小程序不支持该磅单状态操作');
+    if (!['WEIGHING', 'COMPLETED', 'REVIEWED', 'VOIDED'].includes(data.status)) throw new BadRequestException('小程序不支持该磅单状态操作');
     return this.weighService.updateStatus(id, data.status, userId, data.reviewRemark);
   }
 

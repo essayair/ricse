@@ -47,11 +47,11 @@ describe('司机车辆联合登记与资料附件', () => {
     await service.create({ driverId: 'd', vehicleId: 'v' }, {}, 'u');
     expect(prisma.vehicle.update).not.toHaveBeenCalled();
   });
-  it('空表单、同一侧新建与已有并存、缺少对应附件均拦截', async () => {
+  it('空表单、同一侧新建与已有并存仍拦截，证件附件可后补', async () => {
     await expect(service.create({}, {}, 'u')).rejects.toThrow('至少完整填写');
     await expect(service.create({ driverId: 'd', newDriver }, {}, 'u')).rejects.toThrow('之一');
-    await expect(service.create({ newDriver }, {}, 'u')).rejects.toThrow('驾驶证或身份证');
-    await expect(service.create({ newVehicle }, {}, 'u')).rejects.toThrow('行驶证');
+    await expect(service.create({ newDriver }, {}, 'u')).resolves.toMatchObject({ driverId: 'd' });
+    await expect(service.create({ newVehicle }, {}, 'u')).resolves.toMatchObject({ vehicleId: 'v' });
     await expect(service.create({ driverId: 'd' }, { vehicleAttachments: [file()] }, 'u')).rejects.toThrow('对应一份车辆');
     expect(files.upload).not.toHaveBeenCalled();
   });
@@ -70,12 +70,12 @@ describe('司机车辆联合登记与资料附件', () => {
     await expect(service.create({ newDriver }, { driverAttachments: [file()] }, 'u')).rejects.toThrow('手机号已存在');
     expect(prisma.driver.create).not.toHaveBeenCalled(); expect(files.delete).toHaveBeenCalled();
   });
-  it('不能通过车辆资料路径读取另一名司机的证件；最后一份附件不能删除', async () => {
+  it('不能通过车辆资料路径读取另一名司机的证件；最后一份附件允许删除', async () => {
     prisma.attachment.findFirst.mockResolvedValue(null);
     await expect(service.attachment('vehicles', 'v', 'driver-file', 'u')).rejects.toThrow('不属于该档案');
     expect(files.getUrl).not.toHaveBeenCalled();
     prisma.driver.findFirst.mockResolvedValue(driver as any); prisma.attachment.findFirst.mockResolvedValue({ id: 'a', fileName: 'stored.pdf' } as any); prisma.attachment.count.mockResolvedValue(1);
-    await expect(service.attachment('drivers', 'd', 'a', 'u', true)).rejects.toThrow('至少保留一份');
-    expect(prisma.attachment.delete).not.toHaveBeenCalled();
+    await expect(service.attachment('drivers', 'd', 'a', 'u', true)).resolves.toBeUndefined();
+    expect(prisma.attachment.delete).toHaveBeenCalled();
   });
 });

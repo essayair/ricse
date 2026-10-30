@@ -7,6 +7,8 @@ import { toLocalDateTimeInput } from '@/lib/date-time';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { QualityReportTextRecognition } from '@/components/quality-report-text-recognition';
+import { RecognizedQualityReport } from '@/lib/quality-report-recognition';
 
 type Indicator = { code: string; name: string; operator: string; standardValue: string; measuredValue: string; unit: string };
 type Material = { id: string; code: string; name: string; status: string };
@@ -34,6 +36,7 @@ export default function NewStandaloneQualityReportPage() {
   const [indicators, setIndicators] = useState<Indicator[]>(fallback);
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [standardsLoading, setStandardsLoading] = useState(false);
 
   useEffect(() => {
     const now = toLocalDateTimeInput(); setSampledAt(now); setTestedAt(now);
@@ -44,14 +47,38 @@ export default function NewStandaloneQualityReportPage() {
 
   useEffect(() => {
     if (!materialId) return;
+    let active = true;
+    setStandardsLoading(true);
     api.get<{ template?: { items: Array<{ operator: string; standardValue: string | number; unit: string; indicator: { code: string; name: string } }> } }>(`/quality-standards/resolve?materialId=${encodeURIComponent(materialId)}&scene=PURCHASE`)
-      .then(result => { if (result.template?.items?.length) setIndicators(result.template.items.map(item => ({
+      .then(result => { if (active && result.template?.items?.length) setIndicators(result.template.items.map(item => ({
         code: item.indicator.code, name: item.indicator.name, operator: item.operator,
         standardValue: String(item.standardValue ?? ''), measuredValue: '', unit: item.unit || '%',
-      }))); }).catch(() => {});
+      }))); }).catch(() => {}).finally(() => { if (active) setStandardsLoading(false); });
+    return () => { active = false; };
   }, [materialId]);
 
   const update = (index: number, key: keyof Indicator, value: string) => setIndicators(rows => rows.map((row, i) => i === index ? { ...row, [key]: value } : row));
+  const applyRecognition = (result: RecognizedQualityReport) => {
+    if (result.reportNo) setReportNo(result.reportNo);
+    if (result.samplingGroupNo) setSamplingGroupNo(result.samplingGroupNo);
+    if (result.sampleNo) setSampleNo(result.sampleNo);
+    if (result.sampledAt) setSampledAt(result.sampledAt);
+    if (result.testedAt) setTestedAt(result.testedAt);
+    if (result.samplerName) setSamplerName(result.samplerName);
+    if (result.samplingMethod) setSamplingMethod(result.samplingMethod);
+    if (result.institutionName) {
+      setInstitutionName(result.institutionName);
+      if (['PARTNER', 'THIRD_PARTY'].includes(institutionType)) {
+        const matched = institutions.find(item => item.partner.name.trim() === result.institutionName?.trim());
+        setInstitutionPartnerId(matched?.partnerId || '');
+        if (!matched) alert('检测机构名称未匹配已维护机构，请核对并手动选择');
+      }
+    }
+    setIndicators(rows => rows.map(row => {
+      const matched = result.measured.find(item => item.code === row.code && item.name === row.name);
+      return matched ? { ...row, measuredValue: matched.value } : row;
+    }));
+  };
   const save = async () => {
     if (!materialId || !reportNo.trim() || !sampledAt || !testedAt || !samplerName.trim()) return alert('请填写物料、报告编号、取样和检测信息');
     if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? !institutionPartnerId : !institutionName.trim()) return alert('请选择或填写检测机构');
@@ -88,6 +115,7 @@ export default function NewStandaloneQualityReportPage() {
       <label className="text-sm">检测机构类型<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionType} onChange={event => { setInstitutionType(event.target.value); setInstitutionPartnerId(''); }}><option value="OUR">我方</option><option value="PARTNER">合作方</option><option value="THIRD_PARTY">第三方</option><option value="OTHER">其他</option></select></label>
       {['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <label className="text-sm">检测机构 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionPartnerId} onChange={event => setInstitutionPartnerId(event.target.value)}><option value="">请选择已维护机构</option>{institutions.map(item => <option key={item.partnerId} value={item.partnerId}>{item.partner.name}</option>)}</select></label> : <label className="text-sm">检测机构名称 *<Input className="mt-1" value={institutionName} onChange={event => setInstitutionName(event.target.value)} /></label>}
     </Card>
+    {materialId && (standardsLoading ? <Card className="p-5 text-sm text-muted-foreground">正在加载物料质检指标…</Card> : <QualityReportTextRecognition indicators={indicators.map(item => ({ code: item.code, name: item.name }))} onApply={applyRecognition} />)}
     <Card className="space-y-3 p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">检测指标</h2><Button variant="outline" size="sm" onClick={() => setIndicators(rows => [...rows, { code: '', name: '', operator: 'GTE', standardValue: '', measuredValue: '', unit: '%' }])}>添加指标</Button></div>
       {indicators.map((row, index) => <div key={index} className="grid gap-2 rounded-md border p-3 sm:grid-cols-[1fr_1fr_90px_110px_110px_65px_auto]"><Input aria-label="指标编码" placeholder="编码" value={row.code} onChange={event => update(index, 'code', event.target.value)} /><Input aria-label="指标名称" placeholder="指标名称" value={row.name} onChange={event => update(index, 'name', event.target.value)} /><select className="rounded-md border bg-background px-2" value={row.operator} onChange={event => update(index, 'operator', event.target.value)}><option value="GTE">≥</option><option value="LTE">≤</option><option value="EQ">=</option></select><Input aria-label="标准值" type="number" placeholder="标准值" value={row.standardValue} onChange={event => update(index, 'standardValue', event.target.value)} /><Input aria-label="实测值" type="number" placeholder="实测值 *" value={row.measuredValue} onChange={event => update(index, 'measuredValue', event.target.value)} /><Input aria-label="单位" value={row.unit} onChange={event => update(index, 'unit', event.target.value)} /><Button variant="ghost" size="sm" onClick={() => setIndicators(rows => rows.filter((_, i) => i !== index))}>移除</Button></div>)}
     </Card>

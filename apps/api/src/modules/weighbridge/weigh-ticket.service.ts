@@ -190,7 +190,7 @@ export class WeighTicketService {
     if (!waybill) return null;
     let status = 'PENDING_WEIGHING';
     if (waybill.status === 'CANCELLED') status = 'VOIDED';
-    else if (waybill.weighTickets.some(item => item.status === 'REVIEWED' && item.abnormal)) status = 'EXCEPTION';
+    else if (waybill.weighTickets.some(item => item.status === 'COMPLETED' && item.abnormal)) status = 'EXCEPTION';
     else if (waybill.weightSelections.length) status = 'COMPLETED';
     else if (waybill.weighTickets.some(item => ['COMPLETED', 'REVIEWED'].includes(item.status))) status = 'PENDING_CONFIRMATION';
     else if (waybill.weighTickets.length) status = 'IN_PROGRESS';
@@ -625,6 +625,14 @@ export class WeighTicketService {
 
   async updateStatus(id: string, status: string, userId: string, reviewRemark?: string) {
     const ticket = await this.findOne(id, userId, 'quality.manage');
+    if (status === 'WEIGHING') {
+      if (ticket.status !== 'COMPLETED') throw new BadRequestException('仅待复核的磅单可以返回修改');
+      const reopened = await this.prisma.weighTicket.update({
+        where: { id }, data: { status: 'WEIGHING' }, include: this.include,
+      });
+      await this.syncTaskForWaybill(ticket.waybillId, userId);
+      return reopened;
+    }
     if (status === 'COMPLETED') {
       if (!['PENDING', 'WEIGHING'].includes(ticket.status)) throw new BadRequestException('当前磅单不能完成称重');
       if (!ticket.selectedGrossRecordId || !ticket.selectedTareRecordId || !ticket.netWeight) {
@@ -638,10 +646,9 @@ export class WeighTicketService {
     }
     if (status === 'REVIEWED') {
       if (ticket.status !== 'COMPLETED') throw new BadRequestException('仅已完成磅单可以复核');
-      if (ticket.abnormal && !reviewRemark?.trim()) throw new BadRequestException('异常磅单复核必须填写处理意见');
       const reviewed = await this.prisma.weighTicket.update({
         where: { id },
-        data: { status, reviewedBy: userId, reviewedAt: new Date(), reviewRemark: reviewRemark?.trim() },
+        data: { status, reviewedBy: userId, reviewedAt: new Date(), reviewRemark: reviewRemark?.trim() || (ticket.abnormal ? '按实际磅单' : null) },
         include: this.include,
       });
       await this.applyDefaultSelections(reviewed.id, userId);

@@ -69,8 +69,6 @@ export class TransportResourceService {
     if (dto.vehicleId && dto.newVehicle) throw new BadRequestException('车辆请选择新建或已有档案之一');
     if (!dto.driverId && !dto.newDriver && !dto.vehicleId && !dto.newVehicle) throw new BadRequestException('请至少完整填写一名司机或一辆车辆');
     const driverFiles = this.prepare(fileGroups.driverAttachments || []), vehicleFiles = this.prepare(fileGroups.vehicleAttachments || []);
-    if (dto.newDriver && !driverFiles.length) throw new BadRequestException('新建司机请至少上传一份驾驶证或身份证附件');
-    if (dto.newVehicle && !vehicleFiles.length) throw new BadRequestException('新建车辆请至少上传一份行驶证等车辆资料附件');
     if (driverFiles.length && !dto.driverId && !dto.newDriver) throw new BadRequestException('司机附件需要对应一份司机档案');
     if (vehicleFiles.length && !dto.vehicleId && !dto.newVehicle) throw new BadRequestException('车辆附件需要对应一份车辆档案');
     const uploaded: Array<{ fileName: string; originalName: string; mimeType: string; size: number; hash: string; kind: Kind }> = [];
@@ -149,7 +147,6 @@ export class TransportResourceService {
     await this.prisma.$transaction(async tx => {
       if (validatedKind === 'drivers') await tx.$queryRaw`SELECT id FROM drivers WHERE id = ${id} FOR UPDATE`;
       else await tx.$queryRaw`SELECT id FROM vehicles WHERE id = ${id} FOR UPDATE`;
-      if (await tx.attachment.count({ where: { [key]: id } }) <= 1) throw new BadRequestException('至少保留一份资料附件，请先上传替换文件再删除');
       await tx.attachment.delete({ where: { id: file.id } });
     });
     await this.files.delete(file.fileName).catch(() => this.logger.warn('已删除的运力资料附件对象清理失败'));

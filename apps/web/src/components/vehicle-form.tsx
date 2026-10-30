@@ -40,7 +40,7 @@ interface DriverOption {
 }
 
 export const EMPTY_VEHICLE_VALUE: VehicleFormValue = {
-  plateNo: '', vehicleType: 'SEMI_TRAILER', brand: '', tareWeight: '', loadCapacity: '', plateColor: 'YELLOW',
+  plateNo: '', vehicleType: 'HEAVY_SEMI_TRAILER', brand: '', tareWeight: '', loadCapacity: '', plateColor: 'YELLOW',
   licenseNo: '', annualInspectionExpiry: '', compulsoryInsuranceExpiry: '', commercialInsuranceExpiry: '',
   ownerType: 'OUTSOURCED', ownerId: '', ownerName: '', ownerPhone: '', drivers: [],
   deviceType: 'NONE', deviceNo: '', deviceInstalledAt: '', status: 'ACTIVE', remark: '',

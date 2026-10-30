@@ -63,17 +63,16 @@ async function main() {
       assert.equal(await tx.driver.count({ where: { phone: failedDriver.phone } }), 0, '联合失败不能留下司机');
       assert.equal(deleted.length - deletedBefore, 2, '联合失败清理两边已上传文件');
       const attachment = await tx.attachment.findFirstOrThrow({ where: { driverId: first.driverId } });
-      await assert.rejects(() => service.attachment('drivers', first.driverId!, attachment.id, user.id, true), /至少保留一份/);
       const result = await service.attachment('drivers', first.driverId!, attachment.id, user.id);
       assert(result && 'url' in result);
       const response = await fetch(result.url); assert(response.ok); assert((await response.text()).startsWith('%PDF-'));
       await assert.rejects(() => service.attachment('vehicles', both.vehicleId!, attachment.id, user.id), /不属于该档案/);
-      const added = await service.upload('drivers', first.driverId!, pdf(), user.id);
       await service.attachment('drivers', first.driverId!, attachment.id, user.id, true);
+      const added = await service.upload('drivers', first.driverId!, pdf(), user.id);
       assert.equal(await tx.attachment.count({ where: { driverId: first.driverId } }), 1);
       assert.equal((await tx.attachment.findUniqueOrThrow({ where: { id: added.id } })).category, 'DRIVER_DOCUMENT');
       console.log('PASS 司机单建、车辆单建、联合建档、已有司机+新车辆、新司机+已有车辆、重复关联不覆盖主驾');
-      console.log('PASS 失败无半套档案、真实PDF资料上传/下载/替换、最后附件保护及跨档案拒绝读取');
+      console.log('PASS 失败无半套档案、真实PDF资料上传/下载/替换、最后附件可删除及跨档案拒绝读取');
       complete = true; throw rollback;
     }, { timeout: 120000 });
   } catch (error) { if (error !== rollback) throw error; }

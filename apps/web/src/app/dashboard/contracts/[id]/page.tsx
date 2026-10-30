@@ -671,6 +671,10 @@ export default function ContractDetailPage() {
             <Field label="最后修改" value={new Date(c.updatedAt).toLocaleString('zh-CN')} />
           </div>
 
+          <Separator className="my-4" />
+          <h4 className="mb-3 text-sm font-semibold">合同行项</h4>
+          <ContractLineItems contract={c} />
+
           <>
               <Separator className="my-4" />
               <h4 className="text-sm font-semibold mb-3">结算条款</h4>
@@ -727,45 +731,6 @@ export default function ContractDetailPage() {
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
-      {/* Line Items */}
-      <Card>
-        <CardHeader><CardTitle className="text-base">合同行项</CardTitle></CardHeader>
-        <CardContent>
-          {c.lineItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无行项数据</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2">物料</th>
-                  <th className="pb-2">数量</th>
-                  <th className="pb-2">单位</th>
-                  <th className="pb-2">{c.pricingType === 'GRADE_TIER' ? '预计单价' : c.type === 'BILATERAL' ? '采购单价' : c.type === 'PURCHASE' ? '采购单价' : '销售单价'}</th>
-                  {c.type === 'BILATERAL' && <th className="pb-2">销售单价</th>}
-                  <th className="pb-2">行项备注</th>
-                  <th className="pb-2 text-right">{c.type === 'BILATERAL' ? '采购小计' : '小计'}</th>
-                  {c.type === 'BILATERAL' && <th className="pb-2 text-right">销售小计</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {c.lineItems.map((item) => (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="py-3 font-medium">{item.materialName || '—'}</td>
-                    <td className="py-3">{Number(item.quantity).toLocaleString()}</td>
-                    <td className="py-3">{unitLabel(item.unit)}</td>
-                    <td className="py-3 font-mono">¥{Number(item.unitPrice).toLocaleString()}</td>
-                    {c.type === 'BILATERAL' && <td className="py-3 font-mono">{item.salesUnitPrice == null ? '—' : `¥${Number(item.salesUnitPrice).toLocaleString()}`}</td>}
-                    <td className="py-3">{item.remarks || '—'}</td>
-                    <td className="py-3 text-right font-mono">¥{Number(item.totalPrice).toLocaleString()}</td>
-                    {c.type === 'BILATERAL' && <td className="py-3 text-right font-mono">{item.salesTotalPrice == null ? '—' : `¥${Number(item.salesTotalPrice).toLocaleString()}`}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Attachments */}
       {c.attachments && c.attachments.length > 0 && (
         <Card>
@@ -793,6 +758,34 @@ export default function ContractDetailPage() {
       </div>
     </div>
   );
+}
+
+function ContractLineItems({ contract }: { contract: ContractDetail }) {
+  if (contract.lineItems.length === 0) return <p className="text-sm text-muted-foreground">暂无行项数据</p>;
+  return <div className="overflow-x-auto">
+    <table className="w-full min-w-[700px] text-sm">
+      <thead><tr className="border-b text-left text-muted-foreground">
+        <th className="pb-2">物料</th>
+        <th className="pb-2">数量</th>
+        <th className="pb-2">单位</th>
+        <th className="pb-2">{contract.pricingType === 'GRADE_TIER' ? '预计单价' : contract.type === 'BILATERAL' || contract.type === 'PURCHASE' ? '采购单价' : '销售单价'}</th>
+        {contract.type === 'BILATERAL' && <th className="pb-2">销售单价</th>}
+        <th className="pb-2">行项备注</th>
+        <th className="pb-2 text-right">{contract.type === 'BILATERAL' ? '采购小计' : '小计'}</th>
+        {contract.type === 'BILATERAL' && <th className="pb-2 text-right">销售小计</th>}
+      </tr></thead>
+      <tbody>{contract.lineItems.map(item => <tr key={item.id} className="border-b last:border-0">
+        <td className="py-3 font-medium">{item.materialName || '—'}</td>
+        <td className="py-3">{Number(item.quantity).toLocaleString()}</td>
+        <td className="py-3">{unitLabel(item.unit)}</td>
+        <td className="py-3 font-mono">¥{Number(item.unitPrice).toLocaleString()}</td>
+        {contract.type === 'BILATERAL' && <td className="py-3 font-mono">{item.salesUnitPrice == null ? '—' : `¥${Number(item.salesUnitPrice).toLocaleString()}`}</td>}
+        <td className="py-3">{item.remarks || '—'}</td>
+        <td className="py-3 text-right font-mono">¥{Number(item.totalPrice).toLocaleString()}</td>
+        {contract.type === 'BILATERAL' && <td className="py-3 text-right font-mono">{item.salesTotalPrice == null ? '—' : `¥${Number(item.salesTotalPrice).toLocaleString()}`}</td>}
+      </tr>)}</tbody>
+    </table>
+  </div>;
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
