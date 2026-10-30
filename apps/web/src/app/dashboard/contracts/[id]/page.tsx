@@ -650,16 +650,22 @@ export default function ContractDetailPage() {
               <Field label="业务部门" value={c.department?.name || '—'} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div className="col-span-2"><Field label="合同标题" value={c.title} /></div>
+          <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+            <div className="sm:col-span-2"><Field label="合同标题" value={c.title} /></div>
             <Field label="外部合同号" value={c.externalNo || '—'} />
-            <Field label="我方签约主体（内部）" value={c.signingPartner ? `${c.signingPartner.code} ${c.signingPartner.name}` : c.company ? `${c.company.code} ${c.company.name}（旧数据）` : '—'} />
-            <Field label={c.type === 'PURCHASE' ? '交易对手方（供应商）' : c.type === 'SALES' ? '交易对手方（客户）' : '上游交易对手方（供应商）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
-            {c.type === 'BILATERAL' && <Field label="下游交易对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />}
+            <div className="sm:col-span-3"><Field label="我方签约主体（内部）" value={c.signingPartner ? `${c.signingPartner.code} ${c.signingPartner.name}` : c.company ? `${c.company.code} ${c.company.name}（旧数据）` : '—'} /></div>
+            <div className="rounded-lg border bg-muted/30 p-4 sm:col-span-3">
+              <div className="mb-3 text-xs font-semibold text-muted-foreground">交易对手方与联系人</div>
+              <div className={`grid grid-cols-1 gap-4 ${c.type === 'BILATERAL' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+                <Field label={c.type === 'PURCHASE' ? '交易对手方（供应商）' : c.type === 'SALES' ? '交易对手方（客户）' : '上游交易对手方（供应商）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
+                {c.type === 'BILATERAL' && <Field label="下游交易对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />}
+                <Field label={c.type === 'BILATERAL' ? '本合同主要对接人' : '联系人'} value={c.contactPerson || '—'} />
+                <Field label="联系电话" value={c.contactPhone || '—'} />
+              </div>
+            </div>
             <Field label={c.type === 'BILATERAL' ? '采购金额（审批口径）' : '总金额'} value={<span className="text-lg font-bold text-primary">¥{Number(c.totalAmount).toLocaleString()}</span>} />
             {c.type === 'BILATERAL' && <Field label="销售金额" value={<span className="font-mono">¥{bilateralSalesAmount.toLocaleString()}</span>} />}
             {c.type === 'BILATERAL' && <Field label="预计毛利" value={<span className={`font-bold ${bilateralProfit >= 0 ? 'text-success' : 'text-destructive'}`}>¥{bilateralProfit.toLocaleString()}</span>} />}
-            <Field label="联系人" value={`${c.contactPerson || '—'}${c.contactPhone ? ` ${c.contactPhone}` : ''}`} />
             <Field label="定价类型" value={c.pricingType === 'FIXED' ? '一口价' : c.pricingType === 'BASIS' ? '基差定价' : c.pricingType === 'FLOATING' ? '不定价' : '—'} />
             <Field label="溢装/短装" value={`${c.overfillPct ?? '—'}% / ${c.shortfallPct ?? '—'}%`} />
             <Field label="交货方式" value={c.deliveryMethod || '—'} />
