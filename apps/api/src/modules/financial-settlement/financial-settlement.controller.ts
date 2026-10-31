@@ -44,8 +44,8 @@ export class FinancialSettlementController {
   }
 
   @Get('options/goods-sources')
-  goodsSources(@Query('contractId') contractId: string, @CurrentUser('id') userId: string) {
-    return this.service.settlementSources(contractId, userId);
+  goodsSources(@Query('contractId') contractId: string, @CurrentUser('id') userId: string, @Query('direction') direction?: string) {
+    return this.service.settlementSources(contractId, userId, direction);
   }
 
   @Post('preview-goods')
@@ -248,6 +248,13 @@ export class FinancialSettlementController {
     return this.uploadAttachment(file, { paymentRequestId: id }, userId, 'PAYMENT_BASIS');
   }
 
+  @Post(':id/attachments')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  async uploadSettlementAttachment(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser('id') userId: string) {
+    return this.uploadAttachment(file, { financialSettlementId: id }, userId, 'SIGNED_SETTLEMENT_CONFIRMATION');
+  }
+
   @Get('attachments/:id/view-url')
   async attachmentUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
     const attachment = await this.service.findDocumentAttachment(id, userId);
@@ -263,7 +270,7 @@ export class FinancialSettlementController {
 
   private async uploadAttachment(
     file: Express.Multer.File,
-    target: { fundTransactionId?: string; paymentRequestId?: string },
+    target: { fundTransactionId?: string; paymentRequestId?: string; financialSettlementId?: string },
     userId: string,
     category: string,
   ) {

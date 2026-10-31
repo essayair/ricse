@@ -8,6 +8,7 @@ import {
   ExecutePaymentRequestDto, RejectPaymentRequestDto, ReviewPaymentRequestDto, ReverseAllocationDto, UpdatePaymentRequestDto, CreateFundEarmarkDto,
 } from './dto/financial-settlement.dto';
 import { PurchaseSettlementBasis, snapshotJson, signature } from './purchase-settlement-basis';
+import { SalesSettlementBasis } from './sales-settlement-basis';
 import { PurchasePaymentContext } from './purchase-payment-context';
 import { LogisticsPaymentContext } from './logistics-payment-context';
 import { goodsAmounts, requestCommitment, ACTIVE_PAYMENT_REQUEST_STATUSES } from './payment-balance';
@@ -19,6 +20,7 @@ const SETTLEMENT_INCLUDE = {
   counterparty: { select: { id: true, code: true, name: true } },
   creator: { select: { id: true, name: true, username: true } },
   confirmer: { select: { id: true, name: true, username: true } },
+  attachments: { orderBy: { createdAt: 'desc' as const } },
   lines: {
     include: { order: { select: { id: true, status: true } } },
     orderBy: { createdAt: 'asc' as const },
@@ -222,7 +224,9 @@ export class FinancialSettlementService {
     return new PurchasePaymentContext(this.prisma, this.accessControl).load(contractId, userId, 'settlement.view', excludeRequestId);
   }
 
-  async settlementSources(contractId: string, userId: string) {
+  async settlementSources(contractId: string, userId: string, direction?: string) {
+    if (direction === 'RECEIVABLE') return new SalesSettlementBasis(this.prisma, this.accessControl).sources(contractId, userId);
+    if (direction && direction !== 'PAYABLE') throw new BadRequestException('结算方向无效');
     return new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contractId, userId);
   }
 
@@ -509,7 +513,7 @@ export class FinancialSettlementService {
   async create(dto: CreateFinancialSettlementDto, userId: string): Promise<SettlementResult> {
     if (!this.transactional) return this.withContractLock(dto.contractId, service => service.create(dto, userId));
     const contract = await this.accessibleContract(dto.contractId, dto.direction, userId, 'settlement.create');
-    if (contract.pricingType === 'GRADE_TIER' && !(dto.direction === 'PAYABLE' && ['GOODS', 'CONTRACT_FINAL'].includes(dto.settlementScope))) {
+    if (contract.pricingType === 'GRADE_TIER' && !['GOODS', 'CONTRACT_FINAL'].includes(dto.settlementScope)) {
       throw new BadRequestException('品位分档合同的预计单价不能直接用于批次或合同金额结算；请按已入库货物和最终检测结果编制采购结算单');
     }
     if (!contract.signingPartnerId || !contract.businessUnitId) throw new BadRequestException('合同缺少我方签约主体或业务单元，不能生成结算单');
@@ -517,6 +521,9 @@ export class FinancialSettlementService {
     if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方，不能生成结算单');
     if (dto.direction === 'PAYABLE' && ['GOODS', 'CONTRACT_FINAL'].includes(dto.settlementScope)) {
       return this.createGoodsSettlement(dto, contract, counterpartyId, userId);
+    }
+    if (dto.direction === 'RECEIVABLE' && dto.settlementScope === 'GOODS') {
+      return this.createSalesGoodsSettlement(dto, contract, counterpartyId, userId);
     }
     if (dto.direction === 'PAYABLE' && dto.settlementScope === 'CONTRACT_STAGE') throw new BadRequestException('预付或阶段备款请直接创建付款申请；货物应付请按实际货物编制，避免重复结算');
     if (dto.direction === 'PAYABLE' && dto.settlementScope === 'BATCH') {
@@ -622,12 +629,18 @@ export class FinancialSettlementService {
     if (gradeTier && dto.taxRatePct == null) throw new BadRequestException('品位分档价格为不含税价，请填写并确认本次结算适用税率');
     const ids = dto.lines.map(l => l.waybillLineItemId!);
     if (new Set(ids).size !== ids.length) throw new BadRequestException('同一货物来源不能重复选择');
-    const sources = await new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create');
+    const reportChoices = new Map(dto.lines.filter(line => line.qualityReportId).map(line => [line.waybillLineItemId!, line.qualityReportId!]));
+    const sources = await new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', undefined, reportChoices);
     const lines = dto.lines.map(input => {
       const source = sources.find(s => s.id === input.waybillLineItemId && s.orderId === input.orderId);
       if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于该批次'}`);
       const qty = input.quantity ?? source.remainingQuantity;
-      if (qty <= 0 || qty > source.remainingQuantity) throw new BadRequestException(`${source.waybillNo}本次结算数量超过剩余可结算数量`);
+      const ceiling = input.negotiatedQuantity ? source.negotiableRemainingQuantity : source.remainingQuantity;
+      if (qty <= 0 || qty > ceiling) throw new BadRequestException(`${source.waybillNo}本次结算数量超过有依据的剩余可结算数量`);
+      if (input.negotiatedQuantity && !input.remarks?.trim()) throw new BadRequestException(`${source.waybillNo}协商数量须填写双方确认的原因`);
+      if (input.qualityReportId && input.qualityReportId !== source.inventoryReportId && !input.remarks?.trim()) {
+        throw new BadRequestException(`${source.waybillNo}改用其他检测报告结算须填写原因`);
+      }
       if (gradeTier && source.gradePrice?.status !== 'READY') throw new BadRequestException(`${source.waybillNo}的品位或水分需人工确认，暂不能自动形成正式结算`);
       if (gradeTier && source.deductionPerTon) throw new BadRequestException(`${source.waybillNo}还存在质量扣价规则，请先由业务与财务确认分档价和扣价的含税计算顺序`);
       if (input.unitPrice != null && new Prisma.Decimal(input.unitPrice).comparedTo(source.unitPrice) !== 0) throw new BadRequestException('实际货物结算单价取自合同及检测报告，价格变化请先确认合同变更或使用有说明的结算调整');
@@ -646,7 +659,7 @@ export class FinancialSettlementService {
       if (amounts.totalAmount <= 0) throw new BadRequestException('扣款后货物结算金额须大于零，超额扣款请先复核合同规则和处置');
       return { orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
         waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
-        sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, ...amounts,
+        sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity), ...amounts,
           ...(gradeTier ? { taxRatePct: dto.taxRatePct, pricingFormula: '结算吨数 × CaF₂实测百分数数值 × 档位元/度单价 × (1 + 税率)' } : {}) }),
         unit: source.unit, unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(dto.taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
         quantity: amounts.quantity, grossAmount: amounts.grossAmount, qualityDeductionAmount: amounts.qualityDeductionAmount,
@@ -670,16 +683,83 @@ export class FinancialSettlementService {
     return this.prisma.financialSettlement.create({ data: { ...data, settlementNo: await this.nextNo('YF', 'settlement'), lines: { create: lines } }, include: SETTLEMENT_INCLUDE });
   }
 
+  private async createSalesGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false): Promise<any> {
+    if (!dto.lines?.length || dto.lines.some(line => !line.waybillLineItemId)) throw new BadRequestException('请选择本次销售结算的具体运单货物');
+    const ids = dto.lines.map(line => line.waybillLineItemId!);
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('同一运单货物不能重复结算');
+    const gradeTier = contract.pricingType === 'GRADE_TIER';
+    if (gradeTier && dto.taxRatePct == null) throw new BadRequestException('品位分档价格为不含税价，请确认本次销售结算税率');
+    const reportChoices = new Map(dto.lines.filter(line => line.qualityReportId).map(line => [line.waybillLineItemId!, line.qualityReportId!]));
+    const sources = await new SalesSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', undefined, reportChoices);
+    const lines = dto.lines.map(input => {
+      const source = sources.find(candidate => candidate.id === input.waybillLineItemId && candidate.orderId === input.orderId);
+      if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于合同'}`);
+      const qty = input.quantity ?? source.remainingQuantity;
+      const ceiling = input.negotiatedQuantity ? source.negotiableRemainingQuantity : source.remainingQuantity;
+      if (qty <= 0 || qty > ceiling) throw new BadRequestException(`${source.waybillNo}本次结算数量超过剩余有依据数量`);
+      if (input.negotiatedQuantity && !input.remarks?.trim()) throw new BadRequestException('销售协商数量须填写双方确认的原因');
+      if (input.qualityReportId && input.qualityReportId !== source.defaultReportId && !input.remarks?.trim()) throw new BadRequestException('改用其他销售检测报告须填写原因');
+      if (input.unitPrice != null && new Prisma.Decimal(input.unitPrice).comparedTo(source.unitPrice) !== 0) throw new BadRequestException('销售货款单价按合同与所选检测报告计算；调整价格请走合同变更');
+      if (Number(input.adjustmentAmount || 0) !== 0 && !input.remarks?.trim()) throw new BadRequestException('销售结算调整须填写原因');
+      const amounts = gradeTier
+        ? (() => {
+          const exTax = new Prisma.Decimal(qty).mul(source.unitPrice).toDecimalPlaces(2);
+          const tax = exTax.mul(new Prisma.Decimal(dto.taxRatePct!).div(100)).toDecimalPlaces(2);
+          const gross = exTax.plus(tax);
+          return { quantity: new Prisma.Decimal(qty).toDecimalPlaces(3).toNumber(), grossAmount: gross.toNumber(), qualityDeductionAmount: 0,
+            adjustmentAmount: money(input.adjustmentAmount || 0), totalAmount: gross.plus(input.adjustmentAmount || 0).toDecimalPlaces(2).toNumber(),
+            taxAmount: tax.toNumber(), amountExTax: exTax.toNumber() };
+        })()
+        : goodsAmounts(qty, source.unitPrice, 0, input.adjustmentAmount || 0);
+      if (amounts.totalAmount <= 0) throw new BadRequestException('销售结算金额须大于零');
+      return {
+        orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
+        waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
+        sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity), ...amounts,
+          ...(gradeTier ? { taxRatePct: dto.taxRatePct, pricingFormula: '结算吨数 × CaF₂实测百分数数值 × 档位元/度单价 × (1 + 税率)' } : {}) }),
+        quantity: amounts.quantity, unit: source.unit,
+        unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(dto.taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
+        grossAmount: amounts.grossAmount, qualityDeductionAmount: 0, adjustmentAmount: amounts.adjustmentAmount,
+        totalAmount: amounts.totalAmount, remarks: input.remarks?.trim(),
+      };
+    });
+    const contractItems = await this.prisma.contractLineItem.findMany({ where: { contractId: contract.id } });
+    const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'RECEIVABLE', deletedAt: null, status: { not: 'VOIDED' } } } });
+    for (const item of contractItems) {
+      const current = lines.filter(line => (line.sourceSnapshot as any).contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity), new Prisma.Decimal(0));
+      const previous = existingLines.filter(line => (line.sourceSnapshot as any)?.contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity || 0), new Prisma.Decimal(0));
+      const limit = new Prisma.Decimal(item.quantity).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(contract.overfillPct || 0).div(100)));
+      if (current.plus(previous).greaterThan(limit)) throw new BadRequestException(`物料“${item.materialName || item.materialId}”销售累计结算数量超过合同与溢装约定，请先处理合同变更`);
+    }
+    const total = (key: 'grossAmount' | 'adjustmentAmount' | 'totalAmount' | 'quantity') => lines.reduce((sum, line) => sum.plus(line[key]), new Prisma.Decimal(0)).toDecimalPlaces(key === 'quantity' ? 3 : 2).toNumber();
+    const data = {
+      direction: 'RECEIVABLE', sourceType: 'CONTRACT', contractId: contract.id, businessUnitId: contract.businessUnitId,
+      legalEntityPartnerId: contract.signingPartnerId, counterpartyId, settlementScope: dto.settlementScope,
+      sourceNo: [...new Set(lines.map(line => line.orderNo))].join('、'), quantity: total('quantity'), unit: 'TON',
+      grossAmount: total('grossAmount'), adjustmentAmount: total('adjustmentAmount'), totalAmount: total('totalAmount'),
+      dueDate: dto.dueDate ? new Date(dto.dueDate) : null, remarks: dto.remarks?.trim(), createdBy: userId,
+    };
+    if (preview) return { ...data, lines };
+    return this.prisma.financialSettlement.create({ data: { ...data, settlementNo: await this.nextNo('YS', 'settlement'), lines: { create: lines } }, include: SETTLEMENT_INCLUDE });
+  }
+
   async previewGoodsSettlement(dto: CreateFinancialSettlementDto, userId: string) {
-    const contract = await this.accessibleContract(dto.contractId, 'PAYABLE', userId, 'settlement.create');
-    return this.createGoodsSettlement(dto, contract, this.counterpartyId(contract, 'PAYABLE')!, userId, true);
+    const direction = dto.direction === 'RECEIVABLE' ? 'RECEIVABLE' : 'PAYABLE';
+    const contract = await this.accessibleContract(dto.contractId, direction, userId, 'settlement.create');
+    if (direction === 'RECEIVABLE') return this.createSalesGoodsSettlement(dto, contract, this.counterpartyId(contract, direction)!, userId, true);
+    return this.createGoodsSettlement(dto, contract, this.counterpartyId(contract, direction)!, userId, true);
   }
 
   async confirm(id: string, userId: string): Promise<SettlementResult> {
     const item = await this.findOne(id, userId, 'settlement.confirm');
     if (!this.transactional) return this.withContractLock(this.paymentLockKey(item), service => service.confirm(id, userId));
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿状态的结算单可以确认');
+    if (item.settlementScope === 'GOODS' && item.lines.some(line => (line.sourceSnapshot as Record<string, any> | null)?.negotiatedQuantity || Number(line.adjustmentAmount || 0) !== 0)
+      && !item.attachments.some(attachment => attachment.category === 'SIGNED_SETTLEMENT_CONFIRMATION')) {
+      throw new BadRequestException('使用协商结算数量或其他加减项时，请先上传双方签章的结算确认单');
+    }
     if (item.direction === 'PAYABLE') await new PurchaseSettlementBasis(this.prisma, this.accessControl).assertCurrent(id, userId, 'settlement.confirm');
+    if (item.direction === 'RECEIVABLE' && item.settlementScope === 'GOODS') await new SalesSettlementBasis(this.prisma, this.accessControl).assertCurrent(id, userId);
     return this.prisma.financialSettlement.update({ where: { id }, data: { status: 'CONFIRMED', confirmedBy: userId, confirmedAt: new Date() }, include: SETTLEMENT_INCLUDE });
   }
 
@@ -863,7 +943,7 @@ export class FinancialSettlementService {
   }
 
   async createDocumentAttachment(
-    target: { fundTransactionId?: string; paymentRequestId?: string },
+    target: { fundTransactionId?: string; paymentRequestId?: string; financialSettlementId?: string },
     data: { fileName: string; originalName: string; mimeType: string; size: number; category: string },
     userId: string,
   ): Promise<Attachment> {
@@ -881,6 +961,10 @@ export class FinancialSettlementService {
       await this.findPaymentRequest(target.paymentRequestId, userId, permission);
       if (!this.transactional) return this.withContractLock(this.paymentLockKey(request), service => service.createDocumentAttachment(target, data, userId));
       if (!['DRAFT', 'REJECTED', 'BUSINESS_CONFIRMED'].includes(request.status)) throw new BadRequestException('已进入审批或付款阶段，不能继续上传申请附件');
+    } else if (target.financialSettlementId) {
+      const settlement = await this.findOne(target.financialSettlementId, userId, 'settlement.create');
+      if (!this.transactional) return this.withContractLock(this.paymentLockKey(settlement), service => service.createDocumentAttachment(target, data, userId));
+      if (settlement.status !== 'DRAFT') throw new BadRequestException('仅草稿结算单可以上传结算确认附件');
     } else {
       throw new BadRequestException('附件缺少关联单据');
     }
@@ -893,7 +977,8 @@ export class FinancialSettlementService {
     if (!attachment) throw new NotFoundException('附件不存在或无权访问');
     if (attachment.fundTransactionId) await this.findFund(attachment.fundTransactionId, userId);
     if (attachment.paymentRequestId) await this.findPaymentRequest(attachment.paymentRequestId, userId);
-    if (!attachment.fundTransactionId && !attachment.paymentRequestId) throw new NotFoundException('附件不存在或无权访问');
+    if (attachment.financialSettlementId) await this.findOne(attachment.financialSettlementId, userId);
+    if (!attachment.fundTransactionId && !attachment.paymentRequestId && !attachment.financialSettlementId) throw new NotFoundException('附件不存在或无权访问');
     return attachment;
   }
 
@@ -911,6 +996,10 @@ export class FinancialSettlementService {
       await this.findPaymentRequest(attachment.paymentRequestId, userId, permission);
       if (!this.transactional) return this.withContractLock(this.paymentLockKey(request), service => service.deleteDocumentAttachment(id, userId));
       if (!['DRAFT', 'REJECTED', 'BUSINESS_CONFIRMED'].includes(request.status)) throw new BadRequestException('已提交审批的付款申请附件不能删除');
+    } else if (attachment.financialSettlementId) {
+      const settlement = await this.findOne(attachment.financialSettlementId, userId, 'settlement.create');
+      if (!this.transactional) return this.withContractLock(this.paymentLockKey(settlement), service => service.deleteDocumentAttachment(id, userId));
+      if (settlement.status !== 'DRAFT') throw new BadRequestException('已确认结算单的附件不能删除');
     }
     await this.prisma.attachment.delete({ where: { id } });
     return attachment;

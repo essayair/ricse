@@ -165,7 +165,7 @@ describe('OutboundService', () => {
       outboundOrder: { id: 'order-1', businessUnitId: 'bu-1' },
       waybillId: 'waybill-1',
       weighTicketId: 'ticket-1',
-      weighTicket: { id: 'ticket-1', status: 'REVIEWED' },
+      weighTicket: { id: 'ticket-1', status: 'REVIEWED', weighingStage: 'SHIPPING' },
       outboundQuantity: 10,
       waybill: {
         status: 'PENDING', dispatchNoticeId: 'notice-1',

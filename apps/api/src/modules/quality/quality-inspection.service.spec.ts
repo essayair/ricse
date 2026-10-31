@@ -43,6 +43,18 @@ describe('QualityInspectionService', () => {
     service = module.get(QualityInspectionService);
   });
 
+  it('历史检测报告仅可补录一次取样环节，并保留补录依据', async () => {
+    prisma.qualityInspection.findFirst.mockResolvedValue({ id: 'report-1', evidenceStage: 'UNSPECIFIED', status: 'CONFIRMED', remarks: '原备注' } as any);
+    prisma.qualityInspection.updateMany.mockResolvedValue({ count: 1 } as any);
+    await service.classifyEvidenceStage('report-1', 'RECEIVING', '核对客户签章报告', 'user-1');
+    expect(prisma.qualityInspection.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'report-1', evidenceStage: 'UNSPECIFIED' }),
+      data: expect.objectContaining({ evidenceStage: 'RECEIVING', remarks: expect.stringContaining('核对客户签章报告') }),
+    }));
+    prisma.qualityInspection.findFirst.mockResolvedValue({ id: 'report-1', evidenceStage: 'RECEIVING', status: 'CONFIRMED' } as any);
+    await expect(service.classifyEvidenceStage('report-1', 'SHIPPING', '改回', 'user-1')).rejects.toThrow('不能直接改写');
+  });
+
   it('质检单列表支持关键词、状态、结论和日期组合检索', async () => {
     prisma.qualityInspection.findMany.mockResolvedValue([]);
     prisma.qualityInspection.count.mockResolvedValue(0);
@@ -270,5 +282,77 @@ describe('QualityInspectionService', () => {
     expect(prisma.qualityInspection.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ contractId: null, supplierId: null, businessUnitId: null }),
     }));
+  });
+
+  const editableReport = {
+    id: 'report-1', status: 'REPORTED', deletedAt: null,
+    qualityTaskId: null, qualitySampleId: null, weighTicketId: null, contractId: null,
+  };
+  const reportDto = {
+    materialId: 'material-1', sampledAt: '2026-10-30T08:00:00.000Z', testedAt: '2026-10-30T09:00:00.000Z',
+    samplerName: '取样人', institutionType: 'OUR', institutionName: '本地实验室', reportNo: 'LAB-1',
+    submit: true, indicators: [{ code: 'CAF2', name: 'CaF₂', operator: 'GTE', standardValue: 97, measuredValue: 97.2 }],
+  };
+  const mockStandalonePreparation = () => {
+    prisma.material.findFirst.mockResolvedValue({ id: 'material-1', name: '萤石精粉', spec: '97粉' } as any);
+    prisma.qualityIndicatorDefinition.findMany.mockResolvedValue([]);
+    prisma.qualityMethod.findMany.mockResolvedValue([]);
+    prisma.qualityIndicatorMethod.findMany.mockResolvedValue([]);
+    (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<any>) => callback(prisma));
+    prisma.qualityInspectionTaskLink.count.mockResolvedValue(0);
+    prisma.qualityTask.count.mockResolvedValue(0);
+    prisma.inboundReceipt.count.mockResolvedValue(0);
+  };
+
+  it('未关联的检测报告可以编辑，已确认报告编辑后重新待确认', async () => {
+    mockStandalonePreparation();
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...editableReport, status: 'CONFIRMED' } as any);
+    prisma.qualityInspection.findUnique.mockResolvedValue({ ...editableReport, status: 'CONFIRMED' } as any);
+
+    await service.updateStandalone('report-1', reportDto, 'user-1');
+
+    expect(prisma.qualityInspection.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'REPORTED', confirmedBy: null, indicators: expect.objectContaining({ deleteMany: {}, create: expect.any(Array) }) }),
+    }));
+  });
+
+  it('已作废且未关联的报告可以编辑恢复草稿，之后可以重新提交', async () => {
+    mockStandalonePreparation();
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...editableReport, status: 'VOIDED' } as any);
+    prisma.qualityInspection.findUnique.mockResolvedValue({ ...editableReport, status: 'VOIDED' } as any);
+
+    await service.updateStandalone('report-1', reportDto, 'user-1');
+
+    expect(prisma.qualityInspection.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'DRAFT', conclusion: 'PENDING' }),
+    }));
+  });
+
+  it('已关联任务或被入库引用的报告不能作废、编辑或删除', async () => {
+    mockStandalonePreparation();
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...editableReport, indicators: [] } as any);
+    prisma.qualityInspection.findUnique.mockResolvedValue(editableReport as any);
+    prisma.qualityInspectionTaskLink.count.mockResolvedValue(1);
+
+    await expect(service.updateStatus('report-1', 'VOIDED', 'user-1')).rejects.toThrow('已关联业务单据');
+    await expect(service.updateStandalone('report-1', reportDto, 'user-1')).rejects.toThrow('已关联业务单据');
+    await expect(service.deleteStandalone('report-1', 'user-1')).rejects.toThrow('已关联业务单据');
+    expect(prisma.qualityInspection.update).not.toHaveBeenCalled();
+
+    prisma.qualityInspectionTaskLink.count.mockResolvedValue(0);
+    prisma.inboundReceipt.count.mockResolvedValue(1);
+    await expect(service.updateStandalone('report-1', reportDto, 'user-1')).rejects.toThrow('已关联业务单据');
+  });
+
+  it('只有已作废且未关联的报告才允许软删除', async () => {
+    mockStandalonePreparation();
+    jest.spyOn(service, 'findOne').mockResolvedValue(editableReport as any);
+    prisma.qualityInspection.findUnique.mockResolvedValue(editableReport as any);
+    await expect(service.deleteStandalone('report-1', 'user-1')).rejects.toThrow('请先作废');
+    prisma.qualityInspection.findUnique.mockResolvedValue({ ...editableReport, status: 'VOIDED' } as any);
+    await expect(service.deleteStandalone('report-1', 'user-1')).resolves.toEqual({ deleted: true });
+    expect(prisma.qualityInspection.update).toHaveBeenCalledWith({
+      where: { id: 'report-1' }, data: { deletedAt: expect.any(Date) },
+    });
   });
 });

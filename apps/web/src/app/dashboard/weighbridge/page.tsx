@@ -65,7 +65,7 @@ export default function WeighbridgePage() {
     <div className="grid gap-3 sm:grid-cols-4">
       <Summary label="过磅任务" value={items.length} />
       <Summary label="称重磅单" value={summary.tickets} />
-      <Summary label="待确定执行结算磅单" value={summary.pending} warn />
+      <Summary label="待确定库存磅单" value={summary.pending} warn />
       <Summary label="存在磅差异常" value={summary.abnormal} danger />
     </div>
     <div className="flex flex-wrap gap-3">
@@ -78,7 +78,7 @@ export default function WeighbridgePage() {
     {!items.length ? <Card><div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无磅单信息</div></Card> : <Card className="overflow-hidden">
       <div className="overflow-x-auto"><table className="min-w-[1500px] w-full text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr>
-          <th className="px-4 py-3">序号</th><th className="px-4 py-3">任务 / 物流运单</th><th className="px-4 py-3">业务类型</th><th className="px-4 py-3">状态</th><th className="px-4 py-3">执行批次 / 通知</th><th className="px-4 py-3">车牌 / 司机</th><th className="px-4 py-3">货物</th><th className="px-4 py-3 text-right">计划数量（吨）</th><th className="px-4 py-3">发货称重</th><th className="px-4 py-3">收货称重</th><th className="px-4 py-3">库存与结算执行磅单</th><th className="px-4 py-3"></th>
+          <th className="px-4 py-3">序号</th><th className="px-4 py-3">任务 / 物流运单</th><th className="px-4 py-3">业务类型</th><th className="px-4 py-3">状态</th><th className="px-4 py-3">执行批次 / 通知</th><th className="px-4 py-3">车牌 / 司机</th><th className="px-4 py-3">货物</th><th className="px-4 py-3 text-right">计划数量（吨）</th><th className="px-4 py-3">发货称重</th><th className="px-4 py-3">收货称重</th><th className="px-4 py-3">库存磅单</th><th className="px-4 py-3"></th>
         </tr></thead>
         <tbody>{items.map((item, index) => {
           const shipping = stageTickets(item, 'SHIPPING');
@@ -113,7 +113,7 @@ function StageSummary({ tickets }: { tickets: ChildTicket[] }) {
 function Summary({ label, value, danger = false, warn = false }: { label: string; value: number; danger?: boolean; warn?: boolean }) {
   return <Card className="p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 text-xl font-bold ${danger && value ? 'text-destructive' : warn && value ? 'text-amber-700' : ''}`}>{value}</div></Card>;
 }
-function effectiveSelection(item: ManagementFile) { return item.weightSelections.find(value => value.purpose === 'INVENTORY') || item.weightSelections[0]; }
+function effectiveSelection(item: ManagementFile) { return item.weightSelections.find(value => value.purpose === 'INVENTORY'); }
 function stageTickets(item: ManagementFile, stage: string) { return item.weighTickets.filter(ticket => ticket.weighingStage === stage && ticket.status !== 'VOIDED'); }
 function materialNames(item: ManagementFile) { return [...new Set(item.lineItems.map(line => line.materialName || line.materialId))].join('、') || '-'; }
 function number(value: string | number) { return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 3 }); }

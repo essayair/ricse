@@ -153,9 +153,7 @@ export function SettlementWorkbench({ direction, standalone = false, showTitle =
   const updateBatch = (orderId: string, key: keyof BatchLineForm, value: string) => setBatchLines((old) => old.map((line) => line.orderId === orderId ? { ...line, [key]: value } : line));
 
   const openSettlement = () => {
-    if (!receivable) { window.location.assign('/dashboard/payable-settlements/new'); return; }
-    setForm({ contractId: '', settlementScope: 'BATCH', stageName: '', stageRatio: '', grossAmount: '', adjustmentAmount: '0', dueDate: '', remarks: '' });
-    setBatchLines([]); setOrders([]); setSettlementOpen(true);
+    window.location.assign(receivable ? '/dashboard/receivables/new' : '/dashboard/payable-settlements/new');
   };
   const openFund = () => {
     setFundForm({ contractId: '', paymentStage: 'SETTLEMENT', paymentMethod: 'BANK_TRANSFER', amount: '', occurredAt: today(), relatedTransactionId: '', bankReference: '', ourBankAccount: '', counterpartyBankAccount: '', instrumentNo: '', instrumentDueDate: '', remarks: '' });

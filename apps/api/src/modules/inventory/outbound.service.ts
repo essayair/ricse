@@ -24,7 +24,7 @@ export class OutboundService {
     creator: { select: { id: true, name: true } },
     weighTicket: {
       select: {
-        id: true, ticketNo: true, direction: true, status: true, settlementBasis: true,
+        id: true, ticketNo: true, direction: true, status: true, weighingStage: true, settlementBasis: true,
         settlementWeight: true, netWeight: true,
       },
     },
@@ -83,6 +83,14 @@ export class OutboundService {
         ? await db.outboundReceipt.count({ where: { createdAt: { gte: start, lt: end } } })
         : await db.salesOutbound.count({ where: { createdAt: { gte: start, lt: end } } });
     return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  private async assertShippingTicketSelected(waybillId: string, ticketId: string) {
+    const count = await this.prisma.weighTicket.count({ where: { waybillId, weighingStage: 'SHIPPING', deletedAt: null, status: { not: 'VOIDED' } } });
+    const selected = await this.prisma.waybillWeightSelection.findFirst({ where: { waybillId, purpose: 'SHIPPING', isCurrent: true } });
+    if ((count > 1 || selected) && selected?.weighTicketId !== ticketId) {
+      throw new BadRequestException('该运单有多张我方发货磅单，请先确认采信发货磅单');
+    }
   }
 
   private async productionReservedQuantity(
@@ -538,6 +546,7 @@ export class OutboundService {
       },
     });
     if (!ticket) throw new BadRequestException('请选择该运单已复核的出库磅单');
+    await this.assertShippingTicketSelected(waybill.id, ticket.id);
     const quantity = Number(ticket.netWeight);
     if (quantity <= 0) throw new BadRequestException('出库磅单有效净重必须大于 0');
     const currentWeightSelection = await this.prisma.waybillWeightSelection.findFirst({
@@ -777,6 +786,8 @@ export class OutboundService {
     const receipt = await this.findOne(id, userId, 'inventory.manage');
     if (receipt.status !== 'READY') throw new BadRequestException('只有待放行车次可以确认出库');
     if (!receipt.weighTicket || receipt.weighTicket.status !== 'REVIEWED') throw new BadRequestException('必须关联已复核出库磅单');
+    if (receipt.weighTicket.weighingStage !== 'SHIPPING') throw new BadRequestException('销售出库只能采用我方发货磅单');
+    await this.assertShippingTicketSelected(receipt.waybillId, receipt.weighTicket.id);
     if (!receipt.outboundQuantity || Number(receipt.outboundQuantity) <= 0) throw new BadRequestException('实际出库数量无效');
     const actualQuantity = receipt.outboundQuantity;
     if (receipt.salesOutbound) throw new BadRequestException('该车次已生成销售出库单');

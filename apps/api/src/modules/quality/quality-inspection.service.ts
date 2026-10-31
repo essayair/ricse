@@ -24,6 +24,7 @@ export class QualityInspectionService {
     qualityTask: { select: { id: true, taskNo: true, status: true, finalConclusion: true } },
     contract: { select: { id: true, contractNo: true, title: true } },
     taskLinks: { where: { unlinkedAt: null }, include: { qualityTask: { select: { id: true, taskNo: true, status: true, waybillId: true } } }, orderBy: { linkedAt: 'asc' as const } },
+    basisForTasks: { where: { deletedAt: null }, select: { id: true } },
     inboundReceipts: {
       where: { deletedAt: null, status: { not: 'CANCELLED' } },
       select: { id: true, receiptNo: true, status: true },
@@ -84,7 +85,7 @@ export class QualityInspectionService {
     },
     basisInspection: {
       select: {
-        id: true, inspectionNo: true, institutionName: true, reportNo: true,
+        id: true, inspectionNo: true, institutionName: true, reportNo: true, evidenceStage: true,
         conclusion: true, settlementWeight: true, moistureDeductionWeight: true,
         impurityDeductionWeight: true, deductionAmount: true,
       },
@@ -303,6 +304,7 @@ export class QualityInspectionService {
   async linkReport(inspectionId: string, taskId: string, userId: string) {
     const report = await this.findOne(inspectionId, userId, 'quality.manage');
     const task = await this.findTask(taskId, userId, 'quality.manage');
+    if (task.waybill?.salesCompletionConfirmedAt) throw new BadRequestException('销售交付已确认，检测报告不能直接追加关联；请先办理交付更正');
     if (report.status === 'VOIDED' || task.status === 'VOIDED') throw new BadRequestException('已作废的报告或任务不能关联');
     const contract = task.waybill.dispatchNotice.order.contract;
     const supplierId = task.waybill.dispatchNotice.type === 'SALES'
@@ -315,6 +317,7 @@ export class QualityInspectionService {
       await tx.$queryRaw`SELECT "id" FROM "quality_inspections" WHERE "id" = ${inspectionId} FOR UPDATE`;
       const current = await tx.qualityInspection.findUnique({ where: { id: inspectionId }, include: { taskLinks: { where: { unlinkedAt: null } } } });
       if (!current || current.deletedAt) throw new NotFoundException('检测报告不存在');
+      if (current.status === 'VOIDED') throw new BadRequestException('已作废的检测报告不能关联');
       if (current.materialId && !materialIds.includes(current.materialId)) throw new BadRequestException('检测报告物料与所选车辆不一致');
       if (current.taskLinks.length && (
         current.contractId !== contract.id || current.supplierId !== supplierId || current.businessUnitId !== businessUnitId
@@ -341,6 +344,7 @@ export class QualityInspectionService {
   async unlinkReport(inspectionId: string, taskId: string, userId: string) {
     await this.findOne(inspectionId, userId, 'quality.manage');
     const task = await this.findTask(taskId, userId, 'quality.manage');
+    if (task.waybill?.salesCompletionConfirmedAt) throw new BadRequestException('销售交付已确认，检测报告不能直接解除关联；请先办理交付更正');
     if (task.basisInspectionId === inspectionId) throw new BadRequestException('该报告已作为任务最终判定依据，请先办理判定更正');
     const receiptCount = await this.prisma.inboundReceipt.count({ where: {
       qualityInspectionId: inspectionId, waybillId: task.waybillId, deletedAt: null, status: { not: 'CANCELLED' },
@@ -370,6 +374,7 @@ export class QualityInspectionService {
 
   async finalizeTask(id: string, data: { conclusion: string; basisInspectionId: string; reason?: string }, userId: string) {
     const task = await this.findTask(id, userId, 'quality.manage');
+    if (task.waybill?.salesCompletionConfirmedAt) throw new BadRequestException('销售交付已确认，不能直接改选最终检测报告；请先办理交付更正');
     if (task.status === 'VOIDED') throw new BadRequestException('已作废质检任务不能形成最终结论');
     const confirmed = task.reports.filter(report => report.status === 'CONFIRMED');
     if (!confirmed.length) throw new BadRequestException('至少需要一份已确认的有效检测报告');
@@ -674,6 +679,9 @@ export class QualityInspectionService {
     });
     if (!ticket) throw new NotFoundException('关联磅单不存在');
     if (!['COMPLETED', 'REVIEWED'].includes(ticket.status)) throw new BadRequestException('磅单完成称重后才能创建质检单');
+    if (dto.evidenceStage && dto.evidenceStage !== ticket.weighingStage) {
+      throw new BadRequestException('检测报告的取样环节必须与所关联磅单的发货或收货环节一致');
+    }
     if (!dto.indicators.length) throw new BadRequestException('请至少填写一个质检指标');
     if (dto.indicators.some(item => !item.code.trim() || !item.name.trim())) {
       throw new BadRequestException('质检指标编码和名称不能为空');
@@ -764,6 +772,7 @@ export class QualityInspectionService {
         status: dto.submit ? 'REPORTED' : 'DRAFT',
         conclusion,
         dataSource: dto.dataSource || 'MANUAL',
+        evidenceStage: ticket.weighingStage,
         institutionType: dto.institutionType,
         institutionPartnerId: institutionPartner?.id || null,
         institutionName: institutionPartner?.name || dto.institutionName!.trim(),
@@ -833,8 +842,7 @@ export class QualityInspectionService {
     return inspection;
   }
 
-  async createStandalone(dto: CreateStandaloneQualityReportDto, userId: string) {
-    await this.accessControl.assertPermission(userId, 'quality.manage');
+  private async prepareStandalone(dto: CreateStandaloneQualityReportDto) {
     const material = await this.prisma.material.findFirst({ where: { id: dto.materialId, deletedAt: null, status: 'ACTIVE' } });
     if (!material) throw new BadRequestException('请选择有效物料');
     if (!dto.reportNo?.trim() || !dto.samplerName?.trim()) throw new BadRequestException('请填写报告编号和取样人');
@@ -875,12 +883,19 @@ export class QualityInspectionService {
         methodCode: method?.code || item.methodCode, methodName: method?.name || item.methodName,
         result: evaluateIndicator(item), sort: index };
     });
+    return { material, institutionName, institutionPartnerId, evaluated };
+  }
+
+  async createStandalone(dto: CreateStandaloneQualityReportDto, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
+    const { material, institutionName, institutionPartnerId, evaluated } = await this.prepareStandalone(dto);
     return this.prisma.qualityInspection.create({ data: {
       inspectionNo: await this.generateNo(),
       materialId: material.id, materialName: material.name, materialSpec: material.spec,
       samplingGroupNo: clean(dto.samplingGroupNo), sampleNo: clean(dto.sampleNo),
       sampledAt: new Date(dto.sampledAt), samplerName: dto.samplerName.trim(), samplingMethod: clean(dto.samplingMethod),
       testedAt: new Date(dto.testedAt), reportNo: dto.reportNo.trim(),
+      evidenceStage: dto.evidenceStage || 'UNSPECIFIED',
       institutionType: dto.institutionType, institutionPartnerId, institutionName,
       status: dto.submit ? 'REPORTED' : 'DRAFT',
       conclusion: dto.submit ? evaluateConclusion(evaluated) : 'PENDING',
@@ -893,6 +908,78 @@ export class QualityInspectionService {
         unit: item.unit || '%', measuredValue: item.measuredValue, result: item.result, sort: item.sort,
       })) },
     }, include: this.include });
+  }
+
+  /** Serialize mutations against linking and verify all effective consumers before changing the report. */
+  private async assertStandaloneUnlinked(tx: Prisma.TransactionClient, id: string) {
+    await tx.$queryRaw`SELECT "id" FROM "quality_inspections" WHERE "id" = ${id} FOR UPDATE`;
+    const report = await tx.qualityInspection.findUnique({ where: { id }, select: {
+      id: true, status: true, deletedAt: true, qualityTaskId: true, qualitySampleId: true,
+      weighTicketId: true, contractId: true,
+    } });
+    if (!report || report.deletedAt) throw new NotFoundException('检测报告不存在');
+    const [links, basis, receipts] = await Promise.all([
+      tx.qualityInspectionTaskLink.count({ where: { inspectionId: id, unlinkedAt: null } }),
+      tx.qualityTask.count({ where: { basisInspectionId: id, deletedAt: null } }),
+      tx.inboundReceipt.count({ where: { qualityInspectionId: id, deletedAt: null, status: { not: 'CANCELLED' } } }),
+    ]);
+    if (links || basis || receipts || report.qualityTaskId || report.qualitySampleId || report.weighTicketId || report.contractId) {
+      throw new BadRequestException('检测报告已关联业务单据，请先解除关联；最终判定或入库引用需先完成业务更正');
+    }
+    return report;
+  }
+
+  async updateStandalone(id: string, dto: CreateStandaloneQualityReportDto, userId: string) {
+    await this.findOne(id, userId, 'quality.manage');
+    const { material, institutionName, institutionPartnerId, evaluated } = await this.prepareStandalone(dto);
+    await this.prisma.$transaction(async tx => {
+      const current = await this.assertStandaloneUnlinked(tx, id);
+      // Editing a confirmed or voided report must not silently retain its previous confirmation.
+      await tx.qualityInspection.update({ where: { id }, data: {
+        materialId: material.id, materialName: material.name, materialSpec: material.spec,
+        samplingGroupNo: clean(dto.samplingGroupNo), sampleNo: clean(dto.sampleNo),
+        sampledAt: new Date(dto.sampledAt), samplerName: dto.samplerName.trim(), samplingMethod: clean(dto.samplingMethod),
+        testedAt: new Date(dto.testedAt), reportNo: dto.reportNo.trim(),
+        evidenceStage: dto.evidenceStage || 'UNSPECIFIED',
+        institutionType: dto.institutionType, institutionPartnerId, institutionName,
+        status: current.status === 'VOIDED' ? 'DRAFT' : dto.submit ? 'REPORTED' : 'DRAFT',
+        conclusion: current.status === 'VOIDED' || !dto.submit ? 'PENDING' : evaluateConclusion(evaluated),
+        confirmedBy: null, confirmedAt: null, resolution: null, resolvedAt: null,
+        remarks: clean(dto.remarks),
+        indicators: { deleteMany: {}, create: evaluated.map(item => ({
+          code: item.code.trim(), name: item.name.trim(), operator: item.operator,
+          indicatorDefinitionId: item.indicatorDefinitionId || null, methodId: item.methodId || null,
+          methodCode: clean(item.methodCode), methodName: clean(item.methodName),
+          standardValue: item.standardValue, upperValue: item.upperValue, fuseValue: item.fuseValue,
+          unit: item.unit || '%', measuredValue: item.measuredValue, result: item.result, sort: item.sort,
+        })) },
+      } });
+    });
+    return this.findOne(id, userId, 'quality.manage');
+  }
+
+  async classifyEvidenceStage(id: string, evidenceStage: string, reason: string, userId: string) {
+    const report = await this.findOne(id, userId, 'quality.manage');
+    if (!['SHIPPING', 'RECEIVING'].includes(evidenceStage)) throw new BadRequestException('请选择发货侧或收货侧');
+    if (!reason?.trim()) throw new BadRequestException('补录取样环节须填写依据');
+    if (report.evidenceStage !== 'UNSPECIFIED') throw new BadRequestException('该报告已标明取样环节，不能直接改写；请按报告更正流程处理');
+    if (report.status === 'VOIDED') throw new BadRequestException('已作废报告不能补录取样环节');
+    const updated = await this.prisma.qualityInspection.updateMany({
+      where: { id, evidenceStage: 'UNSPECIFIED', deletedAt: null },
+      data: { evidenceStage, remarks: [report.remarks, `取样环节补录：${evidenceStage === 'SHIPPING' ? '发货侧' : '收货侧'}；依据：${reason.trim()}`].filter(Boolean).join('\n') },
+    });
+    if (!updated.count) throw new BadRequestException('报告状态已变化，请刷新后重试');
+    return this.findOne(id, userId, 'quality.manage');
+  }
+
+  async deleteStandalone(id: string, userId: string) {
+    await this.findOne(id, userId, 'quality.manage');
+    await this.prisma.$transaction(async tx => {
+      const current = await this.assertStandaloneUnlinked(tx, id);
+      if (current.status !== 'VOIDED') throw new BadRequestException('请先作废检测报告，再删除');
+      await tx.qualityInspection.update({ where: { id }, data: { deletedAt: new Date() } });
+    });
+    return { deleted: true };
   }
 
   async findAll(params: { page?: number; pageSize?: number; search?: string; status?: string; conclusion?: string; dateFrom?: string; dateTo?: string }, userId: string) {
@@ -952,7 +1039,7 @@ export class QualityInspectionService {
     const item = await this.findOne(id, userId, 'quality.manage');
     const transitions: Record<string, string[]> = {
       DRAFT: ['TESTING', 'REPORTED', 'VOIDED'], TESTING: ['REPORTED', 'VOIDED'],
-      REPORTED: ['CONFIRMED', 'VOIDED'], CONFIRMED: [], VOIDED: [],
+      REPORTED: ['CONFIRMED', 'VOIDED'], CONFIRMED: ['VOIDED'], VOIDED: [],
     };
     if (!(transitions[item.status] || []).includes(status)) throw new BadRequestException('当前质检单不能进行该状态操作');
     if (status === 'REPORTED' && item.indicators.some(indicator => indicator.measuredValue === null)) {
@@ -961,12 +1048,23 @@ export class QualityInspectionService {
     if (status === 'CONFIRMED' && item.conclusion === 'FUSE' && !resolution?.trim()) {
       throw new BadRequestException('拒收质检单确认时必须填写处理方案');
     }
+    if (status === 'VOIDED') {
+      await this.prisma.$transaction(async tx => {
+        const current = await this.assertStandaloneUnlinked(tx, id);
+        if (!(transitions[current.status] || []).includes('VOIDED')) throw new BadRequestException('当前质检单不能作废');
+        await tx.qualityInspection.update({ where: { id }, data: {
+          status: 'VOIDED', confirmedBy: null, confirmedAt: null,
+        } });
+      });
+      return this.findOne(id, userId, 'quality.manage');
+    }
     // 检测报告是独立检测事实，确认报告不以任何一辆车的磅单/到达状态为前提；
     // 任务最终判定和入库过账仍分别校验其车辆磅单与现场状态。
     await this.prisma.qualityInspection.update({
       where: { id },
       data: {
         status,
+        ...(status === 'REPORTED' ? { conclusion: evaluateConclusion(item.indicators) } : {}),
         ...(status === 'CONFIRMED' ? { confirmedBy: userId, confirmedAt: new Date() } : {}),
         ...(resolution?.trim() ? { resolution: resolution.trim(), resolvedAt: new Date() } : {}),
       },

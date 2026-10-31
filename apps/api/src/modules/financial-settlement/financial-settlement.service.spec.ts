@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { FinancialSettlementService } from './financial-settlement.service';
 import { PurchaseSettlementBasis } from './purchase-settlement-basis';
+import { SalesSettlementBasis } from './sales-settlement-basis';
 
 describe('FinancialSettlementService payment approvals', () => {
   const prisma = mockDeep<PrismaService>();
@@ -61,6 +62,71 @@ describe('FinancialSettlementService payment approvals', () => {
 
     expect(result.grossAmount).toBe(9699.92);
     expect(result.lines[0].sourceSnapshot).toMatchObject({ amountExTax: 8584, taxAmount: 1115.92, taxRatePct: 13 });
+    sources.mockRestore();
+  });
+
+  it('协商数量超过所选磅单但未超过双方依据上限时可预览，须填写原因', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'FIXED', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller' } as any);
+    const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue([{
+      id: 'w', orderId: 'o', available: true, remainingQuantity: 100, negotiableRemainingQuantity: 105,
+      unitPrice: 100, deductionPerTon: 0, waybillNo: 'WB-1', orderNo: 'O-1', orderName: '批次', unit: 'TON',
+      contractLineItemId: 'line-1', reasons: [],
+    }] as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'line-1', quantity: 200, materialName: '萤石精粉' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    const line = { orderId: 'o', waybillLineItemId: 'w', quantity: 103, negotiatedQuantity: true };
+    await expect(service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: [line] }, 'u')).rejects.toThrow('须填写双方确认的原因');
+    const result = await service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: [{ ...line, remarks: '双方签章确认' }] }, 'u');
+    expect(result.lines[0].sourceSnapshot).toMatchObject({ negotiatedQuantity: true, settlementQuantity: 103 });
+    sources.mockRestore();
+  });
+
+  it('协商数量结算确认前必须有双方签章确认附件', async () => {
+    prisma.financialSettlement.findFirst.mockResolvedValue({
+      id: 'settlement-negotiated', contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', status: 'DRAFT',
+      lines: [{ sourceSnapshot: { negotiatedQuantity: true } }], attachments: [],
+    } as any);
+    await expect(service.confirm('settlement-negotiated', 'u')).rejects.toThrow('双方签章的结算确认单');
+    expect(prisma.financialSettlement.update).not.toHaveBeenCalled();
+  });
+
+  it('实际货物结算存在人工加减金额时确认前须上传双方签章凭证', async () => {
+    prisma.financialSettlement.findFirst.mockResolvedValue({
+      id: 'settlement-adjusted', contractId: 'c', direction: 'RECEIVABLE', settlementScope: 'GOODS', status: 'DRAFT',
+      lines: [{ sourceSnapshot: {}, adjustmentAmount: 100 }], attachments: [],
+    } as any);
+    await expect(service.confirm('settlement-adjusted', 'u')).rejects.toThrow('双方签章的结算确认单');
+  });
+
+  it('销售最终货款按交付与所选磅单逐车预览，不直接采用计划批次金额', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'sales-contract', type: 'SALES', pricingType: 'FIXED', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', buyerId: 'customer' } as any);
+    const sources = jest.spyOn(SalesSettlementBasis.prototype, 'sources').mockResolvedValue([{
+      id: 'line-1', orderId: 'order-1', available: true, remainingQuantity: 88.2, unitPrice: 2000,
+      waybillNo: 'YD-1', orderNo: 'PC-1', orderName: '销售首批', unit: 'TON', contractLineItemId: 'contract-line-1',
+      qualityTaskId: 'quality-1', weightSelectionId: 'weight-1', reportId: 'customer-report', defaultReportId: 'customer-report', reasons: [],
+    }] as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'contract-line-1', quantity: 100, materialName: '萤石精粉' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+
+    const result = await service.previewGoodsSettlement({ contractId: 'sales-contract', direction: 'RECEIVABLE', settlementScope: 'GOODS', lines: [{ orderId: 'order-1', waybillLineItemId: 'line-1', quantity: 88.2 }] }, 'u');
+
+    expect(result.totalAmount).toBe(176400);
+    expect(result.lines[0]).toMatchObject({ waybillLineItemId: 'line-1', quantity: 88.2, totalAmount: 176400 });
+    sources.mockRestore();
+  });
+
+  it('销售协商数量不得超过双方采信磅单范围，且必须填写原因', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'sales-contract', type: 'SALES', pricingType: 'FIXED', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', buyerId: 'customer' } as any);
+    const sources = jest.spyOn(SalesSettlementBasis.prototype, 'sources').mockResolvedValue([{
+      id: 'line-1', orderId: 'order-1', available: true, remainingQuantity: 88.2, negotiableRemainingQuantity: 90,
+      unitPrice: 2000, waybillNo: 'YD-1', orderNo: 'PC-1', orderName: '销售首批', unit: 'TON', contractLineItemId: 'contract-line-1', reasons: [],
+    }] as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'contract-line-1', quantity: 100, materialName: '萤石精粉' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    const line = { orderId: 'order-1', waybillLineItemId: 'line-1', quantity: 89, negotiatedQuantity: true };
+    await expect(service.previewGoodsSettlement({ contractId: 'sales-contract', direction: 'RECEIVABLE', settlementScope: 'GOODS', lines: [line] }, 'u')).rejects.toThrow('须填写双方确认的原因');
+    const result = await service.previewGoodsSettlement({ contractId: 'sales-contract', direction: 'RECEIVABLE', settlementScope: 'GOODS', lines: [{ ...line, remarks: '双方确认以89吨结算' }] }, 'u');
+    expect(result.lines[0].sourceSnapshot).toMatchObject({ negotiatedQuantity: true, settlementQuantity: 89 });
     sources.mockRestore();
   });
 

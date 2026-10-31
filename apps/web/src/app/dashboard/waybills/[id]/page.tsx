@@ -13,7 +13,7 @@ import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-pan
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { BusinessDirectionBadge, waybillStatusLabel, waybillTransitionLabel } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
-import { confirmAction } from '@/lib/system-dialog';
+import { confirmAction, promptAction } from '@/lib/system-dialog';
 import { driverMatchesTransport, FleetCarrierLink, vehicleMatchesTransport } from '@/lib/logistics-resources';
 
 interface Vehicle { id: string; plateNo: string; vehicleType: string; brand?: string; loadCapacity: string; driverName?: string; driverPhone?: string; ownerType: string; owner: { id: string; name: string } | null; fleetLinks?: FleetCarrierLink[]; drivers: Array<{ role: string; driver: { id: string; name: string; phone: string } }> }
@@ -25,12 +25,17 @@ interface Waybill {
   originLocation: string | null; destinationLocation: string | null; plannedDepartureAt: string | null;
   plannedArrivalAt: string | null;
   departedAt: string | null; arrivedAt: string | null; signedAt: string | null; remarks: string | null;
+  salesCompletionConfirmedAt: string | null; salesCompletionRemarks: string | null;
+  salesCompletionCustomerTicketId: string | null; salesCompletionShippingTicketId: string | null;
+  salesCompletionCustomerWeight: string | null; salesCompletionShippingWeight: string | null; salesCompletionWeightVariance: string | null;
+  salesCompletionConfirmer: { id: string; name: string } | null;
+  salesCompletionReport: { id: string; reportNo: string; institutionName: string; conclusion: string; evidenceStage: string } | null;
   dispatchNotice: { id: string; noticeNo: string; type: string; order: { orderNo: string; name: string; contract: { contractNo: string; title: string } } };
   lineItems: Array<{ id: string; materialName: string | null; materialId: string; quantity: string; unit: string }>;
   weighTickets: Array<{ id: string; ticketNo: string; status: string; netWeight: string | null; settlementWeight: string | null; abnormal: boolean; weighingStage: string; sequence: number; isSupplementary: boolean; additionReason: string | null; ticketDate: string; reviewedAt: string | null }>;
   weightSelections: Array<{ id: string; purpose: string; weighTicketId: string; quantity: string; reason: string | null; selectedAt: string; selector: { id: string; name: string } }>;
   attachments: BusinessAttachment[];
-  qualityTask: { id: string; taskNo: string; status: string; finalConclusion: string; plannedReportCount: number; finalizedReportCount: number; _count: { reports: number } } | null;
+  qualityTask: { id: string; taskNo: string; status: string; finalConclusion: string; plannedReportCount: number; finalizedReportCount: number; basisInspectionId: string | null; basisInspection: { id: string; reportNo: string; institutionName: string; status: string; conclusion: string } | null; _count: { reports: number } } | null;
 }
 const RECEIPT_ATTACHMENT_CATEGORIES = ['RECEIPT', 'RECEIPT_DOCUMENT', 'RECEIPT_PHOTO', 'RECEIPT_OTHER'];
 const isReceiptAttachment = (category: string) => RECEIPT_ATTACHMENT_CATEGORIES.includes(category);
@@ -42,9 +47,12 @@ export default function WaybillDetailPage() {
   const [canViewLogisticsContract, setCanViewLogisticsContract] = useState(false);
   const [vehicleId, setVehicleId] = useState(''); const [plateNo, setPlateNo] = useState(''); const [driverId, setDriverId] = useState(''); const [driverSearch, setDriverSearch] = useState(''); const [driverName, setDriverName] = useState(''); const [driverPhone, setDriverPhone] = useState(''); const [carrierPartnerId, setCarrierPartnerId] = useState(''); const [freightMode, setFreightMode] = useState('SELF'); const [plannedDepartureAt, setPlannedDepartureAt] = useState(''); const [plannedArrivalAt, setPlannedArrivalAt] = useState('');
   const [editingCarrier, setEditingCarrier] = useState(false); const [bindCarrierId, setBindCarrierId] = useState('');
+  const [customerWeighTicketId, setCustomerWeighTicketId] = useState('');
   const load = async () => {
     try {
       const data = await api.get<Waybill>(`/waybills/${id}`); setWaybill(data); setVehicleId(data.vehicleId || ''); setPlateNo(data.plateNo || ''); setDriverId(data.driverId || ''); setDriverName(data.driverName || ''); setDriverPhone(data.driverPhone || ''); setCarrierPartnerId(data.carrierPartnerId || ''); setFreightMode(data.freightMode); setPlannedDepartureAt(data.plannedDepartureAt ? data.plannedDepartureAt.slice(0, 16) : ''); setPlannedArrivalAt(data.plannedArrivalAt ? data.plannedArrivalAt.slice(0, 16) : '');
+      const customerTickets = data.weighTickets.filter(ticket => ticket.weighingStage === 'RECEIVING' && ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0);
+      setCustomerWeighTicketId(data.salesCompletionCustomerTicketId || data.weightSelections.find(selection => selection.purpose === 'RECEIVING')?.weighTicketId || (customerTickets.length === 1 ? customerTickets[0].id : ''));
     } catch (error: any) { alert(error.message); router.push('/dashboard/waybills'); }
   };
   useEffect(() => {
@@ -70,6 +78,17 @@ export default function WaybillDetailPage() {
   const saveAssignment = async () => { if (!plateNo.trim() || !driverName.trim() || !driverPhone.trim()) return alert('请填写车牌号、司机姓名和联系电话'); if (freightMode === 'THIRD_PARTY' && !carrierPartnerId) return alert('请选择已维护的物流承运商'); try { setWaybill(await api.patch(`/waybills/${id}/assignment`, { vehicleId: vehicleId || null, driverId: driverId || null, plateNo, driverName, driverPhone, carrierPartnerId: carrierPartnerId || null, freightMode, plannedDepartureAt: plannedDepartureAt || undefined, plannedArrivalAt: plannedArrivalAt || undefined })); } catch (error: any) { alert(error.message); } };
   const saveCarrier = async () => { try { setWaybill(await api.patch(`/waybills/${id}/carrier`, { carrierPartnerId: bindCarrierId || null })); setEditingCarrier(false); } catch (error: any) { alert(error.message); } };
   const transition = async (status: string, label: string) => { if (!await confirmAction(`确定${label}？`, { title: `${label}确认` })) return; try { setWaybill(await api.patch(`/waybills/${id}/status`, { status })); } catch (error: any) { alert(error.message); } };
+  const confirmSalesCompletion = async () => {
+    const report = waybill?.qualityTask?.basisInspection;
+    if (!report) return alert('请先在交付质检任务中选定客户收货报告并形成最终结论');
+    if (!customerWeighTicketId) return alert('请选择客户收货磅单');
+    const customerTicket = waybill?.weighTickets.find(ticket => ticket.id === customerWeighTicketId);
+    const remarks = (await promptAction('请说明客户收货报告来源及双方差异处理情况', '', { title: '确认销售交付完成', confirmText: '确认完成' }))?.trim();
+    if (!remarks) return;
+    if (!await confirmAction(`确认采用客户收货磅单 ${customerTicket?.ticketNo || ''}（${Number(customerTicket?.netWeight || 0)} 吨）和检测报告 ${report.reportNo} 完成销售交付？出库库存不会再次扣减。`, { title: '销售完成确认' })) return;
+    try { setWaybill(await api.post(`/waybills/${id}/sales-completion`, { customerWeighTicketId, qualityReportId: report.id, remarks })); }
+    catch (error: any) { alert(error.message || '销售交付确认失败'); }
+  };
   if (!waybill) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
   const sales = waybill.dispatchNotice.type === 'SALES';
   const actions: Record<string, Array<{ status: string; variant?: 'default' | 'destructive' | 'outline' }>> = {
@@ -85,8 +104,29 @@ export default function WaybillDetailPage() {
     {waybill.status === 'PENDING' && <Card className="space-y-4 p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">车辆与司机信息</h2><p className="text-xs text-muted-foreground">可从车辆和司机档案引用，也可手工填写临时调度信息</p></div><div className="flex gap-2"><Link href="/dashboard/master-data?tab=service-organizations&type=LOGISTICS_CARRIER"><Button variant="outline">维护司机</Button></Link><Link href="/dashboard/master-data/vehicles/new"><Button variant="outline">维护车辆</Button></Link><Button onClick={() => void saveAssignment()}>保存运输信息</Button></div></div><div className="grid gap-4 md:grid-cols-4"><div><label className="mb-1 block text-sm">运输方式</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={freightMode} onChange={e => changeFreightMode(e.target.value)}><option value="SELF">自有运力</option><option value="THIRD_PARTY">第三方承运</option><option value="SOCIAL">社会运力</option></select></div><div><label className="mb-1 block text-sm">车辆</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={vehicleId} onChange={e => selectVehicle(e.target.value)}><option value="">手工填写</option>{selectableVehicles.map(item => <option key={item.id} value={item.id}>{item.plateNo} · {item.brand || vehicleTypeLabel(item.vehicleType)} · {Number(item.loadCapacity)} 吨{item.owner?.name ? ` · ${item.owner.name}` : ''}</option>)}</select></div><div><label className="mb-1 block text-sm">计划发运时间</label><Input type="datetime-local" value={plannedDepartureAt} onChange={e => setPlannedDepartureAt(e.target.value)} /></div><div><label className="mb-1 block text-sm">预计到达时间</label><Input type="datetime-local" min={plannedDepartureAt || undefined} value={plannedArrivalAt} onChange={e => setPlannedArrivalAt(e.target.value)} /></div>{freightMode === 'THIRD_PARTY' && <div><label className="mb-1 block text-sm">物流承运商 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={carrierPartnerId} onChange={e => { setCarrierPartnerId(e.target.value); setVehicleId(''); setPlateNo(''); setDriverId(''); setDriverSearch(''); setDriverName(''); setDriverPhone(''); }}><option value="">请选择</option>{carriers.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {item.partner.name}</option>)}</select>{canViewLogisticsContract && carrierPartnerId && <Link href={`/dashboard/logistics-contracts?carrierPartnerId=${encodeURIComponent(carrierPartnerId)}&carrierName=${encodeURIComponent(carriers.find(item => item.partnerId === carrierPartnerId)?.partner.name || '')}`} className="mt-1 inline-block text-xs text-primary hover:underline">查看该承运方物流合同</Link>}</div>}<div><label className="mb-1 block text-sm">车牌号 *</label><Input value={plateNo} onChange={e => setPlateNo(e.target.value)} /></div><div><label className="mb-1 block text-sm">司机模糊搜索</label><Input value={driverSearch} onChange={e => setDriverSearch(e.target.value)} placeholder="姓名、手机号、服务商" /></div><div><label className="mb-1 block text-sm">选择司机</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={driverId} onChange={e => selectDriver(e.target.value)}><option value="">手工填写</option>{selectableDrivers.map(item => <option key={item.id} value={item.id}>{item.name} · {item.phone} · {item.serviceOrganization?.partner.name || '无承运商'}</option>)}</select></div><div><label className="mb-1 block text-sm">司机姓名 *</label><Input value={driverName} onChange={e => { setDriverId(''); setDriverName(e.target.value); }} /></div><div><label className="mb-1 block text-sm">司机电话</label><Input value={driverPhone} onChange={e => { setDriverId(''); setDriverPhone(e.target.value); }} /></div></div></Card>}
     {waybill.status !== 'PENDING' && <Card className="grid gap-4 p-5 md:grid-cols-4"><Field label="车牌号" value={waybill.plateNo || '-'} /><Field label="司机" value={waybill.driverName || '-'} /><Field label="司机电话" value={waybill.driverPhone || '-'} /><div><Field label="承运单位" value={waybill.carrierName || (waybill.freightMode === 'SELF' ? '自有运力' : '-')} />{canViewLogisticsContract && waybill.carrierPartnerId && <Link href={`/dashboard/logistics-contracts?carrierPartnerId=${encodeURIComponent(waybill.carrierPartnerId)}&carrierName=${encodeURIComponent(waybill.carrierName || '')}`} className="mt-2 inline-block text-xs text-primary hover:underline">查看该承运方物流合同</Link>}</div></Card>}
     {['ARRIVED', 'SIGNED'].includes(waybill.status) && <section className="space-y-3"><Card className="p-5"><h2 className="font-semibold">{sales ? '物流交付凭证' : '物流收货凭证'}</h2><p className="mt-1 text-sm text-muted-foreground">{sales ? '确认客户签收' : '确认收货'}前，以下三类附件合计至少上传一份；无需每类都上传。</p></Card><AttachmentPanel title={sales ? '客户签收单' : '收货签收单'} description={sales ? '上传客户签字或盖章的签收单，支持图片或 PDF' : '上传我方签字或盖章的收货单，支持图片或 PDF'} attachments={waybill.attachments.filter(item => item.category === 'RECEIPT_DOCUMENT')} uploadPath={`/waybills/${waybill.id}/attachments`} uploadCategory="RECEIPT_DOCUMENT" uploadLabel={sales ? '上传客户签收单' : '上传收货签收单'} attachmentPath="/waybills/attachments" canUpload canDelete={waybill.status === 'ARRIVED'} onChanged={load} /><AttachmentPanel title={sales ? '送达现场照片' : '收货现场照片'} description={sales ? '上传客户现场、卸货、货物或车辆照片' : '上传卸货、货物、车辆或现场交接照片'} attachments={waybill.attachments.filter(item => item.category === 'RECEIPT_PHOTO')} uploadPath={`/waybills/${waybill.id}/attachments`} uploadCategory="RECEIPT_PHOTO" uploadLabel="上传现场照片" attachmentPath="/waybills/attachments" canUpload canDelete={waybill.status === 'ARRIVED'} onChanged={load} /><AttachmentPanel title={sales ? '其他交付凭证' : '其他收货凭证'} description={sales ? '上传交接记录、客户回单等补充凭证' : '上传交接记录等补充收货凭证；历史附件也归入此处'} attachments={waybill.attachments.filter(item => ['RECEIPT_OTHER', 'RECEIPT'].includes(item.category))} uploadPath={`/waybills/${waybill.id}/attachments`} uploadCategory="RECEIPT_OTHER" uploadLabel="上传其他凭证" attachmentPath="/waybills/attachments" canUpload canDelete={waybill.status === 'ARRIVED'} onChanged={load} /></section>}
-    {waybill.status !== 'CANCELLED' && <Card className="flex flex-wrap items-center justify-between gap-4 p-5"><div><h2 className="font-semibold">物流称重与{sales ? '结算出库磅单' : '结算入库磅单'}</h2><p className="mt-1 text-xs text-muted-foreground">该运单已归集 {waybill.weighTickets.filter(item => item.status !== 'VOIDED').length} 张发货/收货称重磅单；从中统一选择一张作为库存执行和结算依据。</p><div className="mt-3"><WeightSelectionSummary waybill={waybill} /></div></div><div className="flex gap-2"><Button variant="outline" onClick={() => router.push(`/dashboard/weighbridge/create?waybillId=${waybill.id}`)}>新增称重磅单</Button><Button onClick={() => router.push(`/dashboard/weighbridge/management/${waybill.id}`)}>查看磅单信息</Button></div></Card>}
+    {waybill.status !== 'CANCELLED' && <Card className="flex flex-wrap items-center justify-between gap-4 p-5"><div><h2 className="font-semibold">物流称重与{sales ? '我方出库磅单' : '我方入库磅单'}</h2><p className="mt-1 text-xs text-muted-foreground">该运单已归集 {waybill.weighTickets.filter(item => item.status !== 'VOIDED').length} 张发货/收货称重磅单；发货侧和收货侧分别确认采信磅单，货款结算依据另行选择。</p><div className="mt-3"><WeightSelectionSummary waybill={waybill} /></div></div><div className="flex gap-2"><Button variant="outline" onClick={() => router.push(`/dashboard/weighbridge/create?waybillId=${waybill.id}`)}>新增称重磅单</Button><Button onClick={() => router.push(`/dashboard/weighbridge/management/${waybill.id}`)}>查看磅单信息</Button></div></Card>}
     {['ARRIVED', 'SIGNED'].includes(waybill.status) && (waybill.qualityTask || !sales) && <Card className="flex flex-wrap items-center justify-between gap-4 p-5"><div><h2 className="font-semibold">{sales ? '交付质检任务' : '到货质检任务'}</h2>{waybill.qualityTask ? <p className="mt-1 text-sm"><span className="font-mono text-primary">{waybill.qualityTask.taskNo}</span> · 已归集 {waybill.qualityTask._count.reports} 份检测报告 · {waybill.qualityTask.status === 'COMPLETED' ? '已完成最终判定' : '待质检管理人员处理'}</p> : <p className="mt-1 text-sm text-amber-700">任务正在自动生成，请刷新后查看。</p>}</div>{waybill.qualityTask && <Button onClick={() => router.push(`/dashboard/quality/${waybill.qualityTask!.id}`)}>查看质检任务</Button>}</Card>}
+    {sales && waybill.status === 'SIGNED' && <Card className="space-y-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="font-semibold">销售交付完成确认</h2>
+          <p className="mt-1 text-sm text-muted-foreground">核对客户收货磅单与最终检测报告；本操作不会再次扣减库存。</p>
+          {waybill.salesCompletionConfirmedAt && <p className="mt-2 text-sm">已确认 · {waybill.salesCompletionConfirmer?.name || '操作人'} · {new Date(waybill.salesCompletionConfirmedAt).toLocaleString('zh-CN')}</p>}
+        </div>
+        {!waybill.salesCompletionConfirmedAt && <Button onClick={() => void confirmSalesCompletion()}>确认销售交付完成</Button>}
+      </div>
+      {!waybill.salesCompletionConfirmedAt ? <div className="grid gap-4 md:grid-cols-2">
+        <div><label className="mb-1 block text-sm">客户收货磅单 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={customerWeighTicketId} onChange={event => setCustomerWeighTicketId(event.target.value)}><option value="">请选择已复核磅单</option>{waybill.weighTickets.filter(ticket => ticket.weighingStage === 'RECEIVING' && ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0).map(ticket => <option key={ticket.id} value={ticket.id}>{ticket.ticketNo} · {Number(ticket.netWeight).toLocaleString()} 吨</option>)}</select></div>
+        <Field label="客户收货检测报告" value={waybill.qualityTask?.basisInspection?.reportNo || '请先完成质检最终判定'} />
+      </div> : <div className="grid gap-3 text-sm md:grid-cols-4">
+        <Field label="我方发货磅单" value={waybill.weighTickets.find(ticket => ticket.id === waybill.salesCompletionShippingTicketId)?.ticketNo || '未记录'} />
+        <Field label="我方发货净重" value={waybill.salesCompletionShippingWeight ? `${Number(waybill.salesCompletionShippingWeight).toLocaleString()} 吨` : '-'} />
+        <Field label="客户收货磅单与净重" value={`${waybill.weighTickets.find(ticket => ticket.id === waybill.salesCompletionCustomerTicketId)?.ticketNo || '历史未记录'} · ${Number(waybill.salesCompletionCustomerWeight || 0).toLocaleString()} 吨`} />
+        <Field label="收发重量差" value={waybill.salesCompletionWeightVariance == null ? '-' : `${Number(waybill.salesCompletionWeightVariance).toLocaleString()} 吨`} />
+        <Field label="客户收货检测报告" value={waybill.salesCompletionReport?.reportNo || '-'} />
+      </div>}
+      {waybill.salesCompletionRemarks && <p className="text-xs text-muted-foreground">说明：{waybill.salesCompletionRemarks}</p>}
+    </Card>}
     <Card className="overflow-hidden"><div className="border-b p-5"><h2 className="font-semibold">运单明细</h2></div><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-4 py-3 text-left">物料</th><th className="px-4 py-3 text-right">数量</th></tr></thead><tbody>{waybill.lineItems.map(item => <tr key={item.id} className="border-b"><td className="px-4 py-3">{item.materialName || item.materialId}</td><td className="px-4 py-3 text-right">{Number(item.quantity).toLocaleString()} {unitLabel(item.unit)}</td></tr>)}</tbody></table></Card>
     <BusinessOperationHistory logs={(waybill as any).operationLogs} />
   </div>;
@@ -94,7 +134,7 @@ export default function WaybillDetailPage() {
 function Field({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-sm">{value}</div></div>; }
 
 function WeightSelectionSummary({ waybill }: { waybill: Waybill }) {
-  const selection = waybill.weightSelections.find(item => item.purpose === 'INVENTORY') || waybill.weightSelections[0];
+  const selection = waybill.weightSelections.find(item => item.purpose === 'INVENTORY');
   const ticket = selection ? waybill.weighTickets.find(item => item.id === selection.weighTicketId) : undefined;
   return <SelectionField label={`${waybill.dispatchNotice.type === 'SALES' ? '结算出库磅单' : '结算入库磅单'}（库存与结算统一口径）`} selection={selection} ticket={ticket} />;
 }

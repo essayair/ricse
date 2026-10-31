@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { confirmAction } from '@/lib/system-dialog';
 import { selectValidAttachmentFiles } from '@/lib/attachment-file';
 import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-panel';
+import { LocalAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -57,7 +58,7 @@ export function LogisticsContractEditor({ id }: { id?: string }) {
     {savedId && <AttachmentPanel title="已上传合同附件" description="草稿可增删附件，启用后保留原附件并允许追加。" attachments={attachments} uploadPath={`/logistics-contracts/${savedId}/attachments`} attachmentPath={`/logistics-contracts/${savedId}/attachments`} onChanged={() => refreshAttachments()}/>}
     <Card className="space-y-3 p-5"><h2 className="font-semibold">{savedId ? '待上传附件' : '合同附件'}</h2><p className="text-xs text-muted-foreground">支持图片或PDF文件，单个不超过20MB。草稿允许暂缺，启用合同前必须上传。</p>
       <div className="flex flex-wrap items-center gap-3"><label className={`inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-muted ${busy ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}><Upload className="mr-2 h-4 w-4"/>选择合同附件<input className="hidden" aria-label="选择物流合同附件" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={busy} onChange={e => { const files = selectValidAttachmentFiles(Array.from(e.currentTarget.files || [])); if (files.length) { setPending(rows => [...rows, ...files]); setDirty(true); } e.target.value = ''; }}/></label><span className="text-sm text-muted-foreground">{pending.length ? `已选择 ${pending.length} 份附件，保存草稿时上传` : '尚未选择待上传附件'}</span></div>
-      {pending.map((file, i) => <div key={i} className="flex items-center justify-between gap-3 border-t pt-2 text-sm"><span className="truncate">{file.name}</span><div className="flex shrink-0 items-center gap-2"><span className="text-xs text-muted-foreground">待上传</span><Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => { setPending(rows => rows.filter((_, n) => n !== i)); setDirty(true); }}>移除附件</Button></div></div>)}
+      {pending.map((file, i) => <div key={i} className="flex items-center gap-3 border-t pt-2 text-sm"><LocalAttachmentThumbnail file={file} /><span className="min-w-0 flex-1 truncate">{file.name}</span><div className="flex shrink-0 items-center gap-2"><span className="text-xs text-muted-foreground">待上传</span><Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => { setPending(rows => rows.filter((_, n) => n !== i)); setDirty(true); }}>移除附件</Button></div></div>)}
     </Card>
     <div className="sticky bottom-0 flex justify-end gap-3 border-t bg-background/95 p-4"><Button variant="outline" disabled={busy} onClick={() => void back()}>取消</Button><Button disabled={busy} onClick={() => void save()}><Save className="mr-2 h-4 w-4"/>{busy ? '保存中…' : '保存草稿'}</Button></div>
   </div>;

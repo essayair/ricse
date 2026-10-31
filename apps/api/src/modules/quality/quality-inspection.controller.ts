@@ -9,7 +9,7 @@ import { CurrentUser } from '../common/current-user.decorator';
 import { FileService } from '../common/file.service';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
-import { CreateQualityInspectionDto, CreateStandaloneQualityReportDto } from './dto/create-quality-inspection.dto';
+import { ClassifyQualityEvidenceStageDto, CreateQualityInspectionDto, CreateStandaloneQualityReportDto } from './dto/create-quality-inspection.dto';
 import { UpdateQualityStatusDto } from './dto/update-quality-status.dto';
 import { QualityInspectionService } from './quality-inspection.service';
 
@@ -114,6 +114,24 @@ export class QualityInspectionController {
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.findOne(id, userId);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: '编辑未关联的检测报告；作废报告编辑后恢复为待确认' })
+  update(@Param('id') id: string, @Body() dto: CreateStandaloneQualityReportDto, @CurrentUser('id') userId: string) {
+    return this.service.updateStandalone(id, dto, userId);
+  }
+
+  @Post(':id/evidence-stage')
+  @ApiOperation({ summary: '补录历史检测报告的发货或收货取样环节' })
+  classifyEvidenceStage(@Param('id') id: string, @Body() dto: ClassifyQualityEvidenceStageDto, @CurrentUser('id') userId: string) {
+    return this.service.classifyEvidenceStage(id, dto.evidenceStage, dto.reason, userId);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '删除已作废且未关联的检测报告' })
+  delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.deleteStandalone(id, userId);
   }
 
   @Patch(':id/status')

@@ -1,16 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { openLocalAttachment } from '@/lib/attachment-preview';
 import { toLocalDateTimeInput } from '@/lib/date-time';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { QualityReportTextRecognition } from '@/components/quality-report-text-recognition';
 import { RecognizedQualityReport } from '@/lib/quality-report-recognition';
+import { LocalAttachmentThumbnail } from '@/components/attachment-thumbnail';
 
-type Indicator = { code: string; name: string; operator: string; standardValue: string; measuredValue: string; unit: string };
+type Indicator = { code: string; name: string; operator: string; standardValue: string; measuredValue: string; unit: string; upperValue?: string; fuseValue?: string; indicatorDefinitionId?: string; methodId?: string; methodCode?: string; methodName?: string };
 type Material = { id: string; code: string; name: string; status: string };
 type Institution = { partnerId: string; partner: { name: string } };
 const fallback: Indicator[] = [
@@ -18,11 +20,16 @@ const fallback: Indicator[] = [
   { code: 'MOISTURE', name: '水分', operator: 'LTE', standardValue: '', measuredValue: '', unit: '%' },
 ];
 
+type ExistingReport = { status: string; materialId: string | null; evidenceStage: string; institutionType: string; institutionPartnerId: string | null; institutionName: string; reportNo: string; samplingGroupNo: string | null; sampleNo: string | null; sampledAt: string; testedAt: string; samplerName: string; samplingMethod: string | null; remarks: string | null; indicators: Array<Indicator & { standardValue: string | null; measuredValue: string | null }> };
+
 export default function NewStandaloneQualityReportPage() {
   const router = useRouter();
+  const { id: editId } = useParams<{ id?: string }>();
+  const skipTemplateForMaterial = useRef<string | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [materialId, setMaterialId] = useState('');
+  const [evidenceStage, setEvidenceStage] = useState('');
   const [institutionType, setInstitutionType] = useState('OUR');
   const [institutionPartnerId, setInstitutionPartnerId] = useState('');
   const [institutionName, setInstitutionName] = useState('');
@@ -33,20 +40,34 @@ export default function NewStandaloneQualityReportPage() {
   const [testedAt, setTestedAt] = useState('');
   const [samplerName, setSamplerName] = useState('');
   const [samplingMethod, setSamplingMethod] = useState('多点混合取样');
+  const [remarks, setRemarks] = useState('');
   const [indicators, setIndicators] = useState<Indicator[]>(fallback);
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [standardsLoading, setStandardsLoading] = useState(false);
+  const [loadingReport, setLoadingReport] = useState(!!editId);
+  const [existingStatus, setExistingStatus] = useState('');
 
   useEffect(() => {
     const now = toLocalDateTimeInput(); setSampledAt(now); setTestedAt(now);
     try { setSamplerName(JSON.parse(localStorage.getItem('user') || '{}').name || ''); } catch {}
     api.get<{ items: Material[] }>('/master-data/materials?pageSize=200').then(result => setMaterials(result.items || [])).catch(() => {});
     api.get<{ items: Institution[] }>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE&pageSize=200').then(result => setInstitutions(result.items || [])).catch(() => {});
-  }, []);
+    if (editId) api.get<ExistingReport>(`/quality-inspections/${editId}`).then(report => {
+      skipTemplateForMaterial.current = report.materialId;
+      setExistingStatus(report.status); setMaterialId(report.materialId || '');
+      setEvidenceStage(report.evidenceStage || 'UNSPECIFIED');
+      setInstitutionType(report.institutionType); setInstitutionPartnerId(report.institutionPartnerId || ''); setInstitutionName(report.institutionName);
+      setReportNo(report.reportNo); setSamplingGroupNo(report.samplingGroupNo || ''); setSampleNo(report.sampleNo || '');
+      setSampledAt(toLocalDateTimeInput(new Date(report.sampledAt))); setTestedAt(toLocalDateTimeInput(new Date(report.testedAt)));
+      setSamplerName(report.samplerName); setSamplingMethod(report.samplingMethod || ''); setRemarks(report.remarks || '');
+      setIndicators(report.indicators.map(row => ({ ...row, standardValue: String(row.standardValue ?? ''), measuredValue: String(row.measuredValue ?? ''), upperValue: String(row.upperValue ?? ''), fuseValue: String(row.fuseValue ?? '') })));
+    }).catch((error: Error) => { alert(error.message || '检测报告加载失败'); router.push('/dashboard/quality/reports'); }).finally(() => setLoadingReport(false));
+  }, [editId, router]);
 
   useEffect(() => {
     if (!materialId) return;
+    if (skipTemplateForMaterial.current === materialId) { skipTemplateForMaterial.current = null; return; }
     let active = true;
     setStandardsLoading(true);
     api.get<{ template?: { items: Array<{ operator: string; standardValue: string | number; unit: string; indicator: { code: string; name: string } }> } }>(`/quality-standards/resolve?materialId=${encodeURIComponent(materialId)}&scene=PURCHASE`)
@@ -79,19 +100,27 @@ export default function NewStandaloneQualityReportPage() {
       return matched ? { ...row, measuredValue: matched.value } : row;
     }));
   };
-  const save = async () => {
+  const save = async (submit: boolean) => {
     if (!materialId || !reportNo.trim() || !sampledAt || !testedAt || !samplerName.trim()) return alert('请填写物料、报告编号、取样和检测信息');
+    if (!evidenceStage) return alert('请选择取样环节（发货侧或收货侧）');
     if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? !institutionPartnerId : !institutionName.trim()) return alert('请选择或填写检测机构');
-    if (!indicators.length || indicators.some(row => !row.code.trim() || !row.name.trim() || row.measuredValue === '')) return alert('请填写至少一项完整检测结果');
+    if (!indicators.length || indicators.some(row => !row.code.trim() || !row.name.trim() || (submit && row.measuredValue === ''))) return alert('请填写至少一项完整检测结果');
     setSaving(true);
     try {
-      const report = await api.post<{ id: string }>('/quality-inspections/standalone', {
+      const payload = {
         materialId, samplingGroupNo: samplingGroupNo.trim() || undefined, sampleNo: sampleNo.trim() || undefined,
         sampledAt: new Date(sampledAt).toISOString(), testedAt: new Date(testedAt).toISOString(), samplerName: samplerName.trim(), samplingMethod,
-        institutionType, institutionPartnerId: institutionPartnerId || undefined, institutionName: institutionName.trim(), reportNo: reportNo.trim(), submit: true,
+        evidenceStage, institutionType, institutionPartnerId: institutionPartnerId || undefined, institutionName: institutionName.trim(), reportNo: reportNo.trim(), submit,
+        remarks: remarks.trim() || undefined,
         indicators: indicators.map(row => ({ code: row.code.trim(), name: row.name.trim(), operator: row.operator,
-          standardValue: row.standardValue === '' ? undefined : Number(row.standardValue), measuredValue: Number(row.measuredValue), unit: row.unit })),
-      });
+          standardValue: row.standardValue === '' ? undefined : Number(row.standardValue), measuredValue: row.measuredValue === '' ? undefined : Number(row.measuredValue),
+          upperValue: row.upperValue === '' ? undefined : Number(row.upperValue), fuseValue: row.fuseValue === '' ? undefined : Number(row.fuseValue),
+          indicatorDefinitionId: row.indicatorDefinitionId || undefined, methodId: row.methodId || undefined,
+          methodCode: row.methodCode || undefined, methodName: row.methodName || undefined, unit: row.unit })),
+      };
+      const report = editId
+        ? await api.patch<{ id: string }>(`/quality-inspections/${editId}`, payload)
+        : await api.post<{ id: string }>('/quality-inspections/standalone', payload);
       for (const file of files) {
         const body = new FormData(); body.append('file', file); body.append('category', 'REPORT');
         await api.upload(`/quality-inspections/${report.id}/attachments`, body);
@@ -101,13 +130,15 @@ export default function NewStandaloneQualityReportPage() {
     finally { setSaving(false); }
   };
 
+  if (loadingReport) return <div className="p-10 text-center text-muted-foreground">加载中…</div>;
   return <div className="mx-auto max-w-5xl space-y-5">
-    <div><h1 className="text-2xl font-bold">录入独立检测报告</h1><p className="mt-1 text-sm text-muted-foreground">先保存检测事实，之后可从报告或质检任务关联实际参与混样的车辆。</p></div>
+    <div><h1 className="text-2xl font-bold">{editId ? '编辑检测报告' : '录入独立检测报告'}</h1><p className="mt-1 text-sm text-muted-foreground">{existingStatus === 'VOIDED' ? '保存后恢复为草稿，请核对并重新提交确认。' : '先保存检测事实，之后可从报告或质检任务关联实际参与混样的车辆。'}</p></div>
     <Card className="grid gap-4 p-5 sm:grid-cols-2">
       <label className="text-sm">物料 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={materialId} onChange={event => setMaterialId(event.target.value)}><option value="">请选择物料</option>{materials.filter(item => item.status === 'ACTIVE').map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
       <label className="text-sm">报告编号 *<Input className="mt-1" value={reportNo} onChange={event => setReportNo(event.target.value)} /></label>
       <label className="text-sm">混样编号<Input className="mt-1" value={samplingGroupNo} onChange={event => setSamplingGroupNo(event.target.value)} placeholder="几车共同取样时填写" /></label>
       <label className="text-sm">样品编号<Input className="mt-1" value={sampleNo} onChange={event => setSampleNo(event.target.value)} /></label>
+      <label className="text-sm">取样环节 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={evidenceStage} onChange={event => setEvidenceStage(event.target.value)}><option value="">请选择</option><option value="SHIPPING">发货侧</option><option value="RECEIVING">收货侧</option>{editId && <option value="UNSPECIFIED">历史未标明</option>}</select></label>
       <label className="text-sm">取样时间 *<Input className="mt-1" type="datetime-local" value={sampledAt} onChange={event => setSampledAt(event.target.value)} /></label>
       <label className="text-sm">检测时间 *<Input className="mt-1" type="datetime-local" value={testedAt} onChange={event => setTestedAt(event.target.value)} /></label>
       <label className="text-sm">取样人 *<Input className="mt-1" value={samplerName} onChange={event => setSamplerName(event.target.value)} /></label>
@@ -119,7 +150,8 @@ export default function NewStandaloneQualityReportPage() {
     <Card className="space-y-3 p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">检测指标</h2><Button variant="outline" size="sm" onClick={() => setIndicators(rows => [...rows, { code: '', name: '', operator: 'GTE', standardValue: '', measuredValue: '', unit: '%' }])}>添加指标</Button></div>
       {indicators.map((row, index) => <div key={index} className="grid gap-2 rounded-md border p-3 sm:grid-cols-[1fr_1fr_90px_110px_110px_65px_auto]"><Input aria-label="指标编码" placeholder="编码" value={row.code} onChange={event => update(index, 'code', event.target.value)} /><Input aria-label="指标名称" placeholder="指标名称" value={row.name} onChange={event => update(index, 'name', event.target.value)} /><select className="rounded-md border bg-background px-2" value={row.operator} onChange={event => update(index, 'operator', event.target.value)}><option value="GTE">≥</option><option value="LTE">≤</option><option value="EQ">=</option></select><Input aria-label="标准值" type="number" placeholder="标准值" value={row.standardValue} onChange={event => update(index, 'standardValue', event.target.value)} /><Input aria-label="实测值" type="number" placeholder="实测值 *" value={row.measuredValue} onChange={event => update(index, 'measuredValue', event.target.value)} /><Input aria-label="单位" value={row.unit} onChange={event => update(index, 'unit', event.target.value)} /><Button variant="ghost" size="sm" onClick={() => setIndicators(rows => rows.filter((_, i) => i !== index))}>移除</Button></div>)}
     </Card>
-    <Card className="p-5"><label className="text-sm font-medium">报告附件（图片或 PDF）<input className="mt-2 block text-sm" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={event => setFiles(Array.from(event.currentTarget.files || []))} /></label>{files.length > 0 && <p className="mt-2 text-xs text-muted-foreground">已选 {files.length} 份文件</p>}</Card>
-    <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => router.push('/dashboard/quality/reports')}>返回</Button><Button disabled={saving} onClick={() => void save()}>{saving ? '保存中…' : '保存检测报告'}</Button></div>
+    <Card className="p-5"><label className="text-sm font-medium">补充报告附件（图片或 PDF）<input className="mt-2 block text-sm" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={event => setFiles(Array.from(event.currentTarget.files || []))} /></label>{files.length > 0 && <div className="mt-3 space-y-2">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-3 rounded-md border p-2 text-sm"><LocalAttachmentThumbnail file={file} /><span className="min-w-0 flex-1 truncate">{file.name}</span><Button variant="outline" size="sm" onClick={() => openLocalAttachment(file)}>查看</Button><Button variant="ghost" size="sm" onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>移除</Button></div>)}</div>}</Card>
+    <Card className="p-5"><label className="text-sm font-medium">备注<Input className="mt-2" value={remarks} onChange={event => setRemarks(event.target.value)} /></label></Card>
+    <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => router.push(editId ? `/dashboard/quality/reports/${editId}` : '/dashboard/quality/reports')}>返回</Button><Button variant="outline" disabled={saving} onClick={() => void save(false)}>保存草稿</Button><Button disabled={saving || existingStatus === 'VOIDED'} onClick={() => void save(true)}>{saving ? '保存中…' : '保存并提交报告'}</Button></div>
   </div>;
 }

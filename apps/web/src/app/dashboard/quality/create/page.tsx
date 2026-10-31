@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { QualityReportTextRecognition } from '@/components/quality-report-text-recognition';
 import { RecognizedQualityReport } from '@/lib/quality-report-recognition';
+import { LocalAttachmentThumbnail } from '@/components/attachment-thumbnail';
 
 interface MaterialSpec { id?: number; name: string; operator: string; value: string | number; unit: string }
 interface EligibleTicket {
@@ -267,6 +268,7 @@ export default function CreateQualityInspectionPage() {
     </Card>
 
     <Card className="space-y-5 p-6"><SectionTitle title="检测机构与报告" />
+      {ticket && <p className="text-sm text-muted-foreground">本报告取样环节：{ticket.weighingStage === 'SHIPPING' ? '发货侧' : '收货侧'}。由所关联磅单确定；检测机构类型另行填写，两者不是同一个概念。</p>}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Field label="机构类型 *"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionType} onChange={event => { setInstitutionType(event.target.value); setInstitutionPartnerId(''); setInstitutionName(''); }}>{Object.entries(INSTITUTION_TYPE).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
         <Field label="检测机构 *">{['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionPartnerId} onChange={event => { const id = event.target.value; const item = institutions.find(value => value.partnerId === id); setInstitutionPartnerId(id); setInstitutionName(item?.partner.name || ''); }}><option value="">请选择已维护的质检机构</option>{institutions.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {item.partner.name}</option>)}</select> : <Input value={institutionName} onChange={event => setInstitutionName(event.target.value)} placeholder="填写实际出具报告的机构" />}</Field>
@@ -285,7 +287,7 @@ export default function CreateQualityInspectionPage() {
 
     <Card className="space-y-4 p-6"><SectionTitle title="附件与备注" />
       <div className="flex flex-wrap gap-3"><select className="h-10 rounded-md border bg-background px-3 text-sm" value={fileCategory} onChange={event => setFileCategory(event.target.value)}>{Object.entries(CATEGORY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="inline-flex h-10 cursor-pointer items-center rounded-md border px-4 text-sm text-primary hover:bg-muted"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={event => { addFiles(event.currentTarget.files); event.currentTarget.value = ''; }} /><FileText className="mr-2 h-4 w-4" />选择附件</label></div>
-      {files.length > 0 && <div className="space-y-2">{files.map((item, index) => <div key={`${item.file.name}-${index}`} className="flex items-center justify-between rounded-md bg-muted px-3 py-2 text-sm"><span className="truncate"><Badge variant="outline" className="mr-2">{CATEGORY[item.category as keyof typeof CATEGORY]}</Badge>{item.file.name}</span><button onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4 text-destructive" /></button></div>)}</div>}
+      {files.length > 0 && <div className="space-y-2">{files.map((item, index) => <div key={`${item.file.name}-${index}`} className="flex items-center gap-3 rounded-md bg-muted px-3 py-2 text-sm"><LocalAttachmentThumbnail file={item.file} /><span className="min-w-0 flex-1 truncate"><Badge variant="outline" className="mr-2">{CATEGORY[item.category as keyof typeof CATEGORY]}</Badge>{item.file.name}</span><button onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4 text-destructive" /></button></div>)}</div>}
       <textarea className="min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={remarks} onChange={event => setRemarks(event.target.value)} placeholder="化验特殊情况、复检说明、留样位置等" />
     </Card>
 

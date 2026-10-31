@@ -8,6 +8,7 @@ import { normalizeUploadFilename } from '../common/filename-encoding';
 import { BatchCreateWaybillDto, CreateWaybillDto } from './dto/create-waybill.dto';
 import { WaybillReceiptAttachmentCategory, WaybillService } from './waybill.service';
 import { AssignWaybillDto } from './dto/assign-waybill.dto';
+import { ConfirmSalesCompletionDto } from './dto/confirm-sales-completion.dto';
 
 @ApiTags('物流运单与调度')
 @ApiBearerAuth()
@@ -90,6 +91,11 @@ export class WaybillController {
   @Patch(':id/status')
   updateStatus(@Param('id') id: string, @Body('status') status: string, @CurrentUser('id') userId: string) {
     return this.service.updateStatus(id, status, userId);
+  }
+
+  @Post(':id/sales-completion')
+  confirmSalesCompletion(@Param('id') id: string, @Body() dto: ConfirmSalesCompletionDto, @CurrentUser('id') userId: string) {
+    return this.service.confirmSalesCompletion(id, dto.customerWeighTicketId, dto.qualityReportId, dto.remarks, userId);
   }
 
   @Patch(':id/carrier')

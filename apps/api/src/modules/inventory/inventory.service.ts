@@ -95,6 +95,26 @@ export class InventoryService {
     return value == null ? Prisma.DbNull : value as Prisma.InputJsonValue;
   }
 
+  private async assertReceivingTicketSelected(waybillId: string, ticket: { id: string; weighingStage: string }) {
+    if (ticket.weighingStage !== 'RECEIVING') throw new BadRequestException('采购入库只能采用我方收货磅单');
+    const count = await this.prisma.weighTicket.count({ where: { waybillId, weighingStage: 'RECEIVING', deletedAt: null, status: { not: 'VOIDED' } } });
+    const selected = await this.prisma.waybillWeightSelection.findFirst({ where: { waybillId, purpose: 'RECEIVING', isCurrent: true } });
+    if ((count > 1 || selected) && selected?.weighTicketId !== ticket.id) {
+      throw new BadRequestException('该运单有多张我方收货磅单，请先确认采信收货磅单');
+    }
+  }
+
+  private async preferredReceivingTicket(waybillId: string) {
+    const stageSelection = await this.prisma.waybillWeightSelection.findFirst({
+      where: { waybillId, purpose: 'RECEIVING', isCurrent: true }, include: { weighTicket: true },
+    });
+    const selected = stageSelection?.weighTicket;
+    if (selected?.weighingStage === 'RECEIVING' && selected.status === 'REVIEWED' && !selected.deletedAt) return selected;
+    const activeCount = await this.prisma.weighTicket.count({ where: { waybillId, weighingStage: 'RECEIVING', deletedAt: null, status: { not: 'VOIDED' } } });
+    if (activeCount !== 1) return null;
+    return this.prisma.weighTicket.findFirst({ where: { waybillId, weighingStage: 'RECEIVING', deletedAt: null, status: 'REVIEWED' } });
+  }
+
   private decorateReceipt<T>(receipt: T): T & { workflow: ReturnType<InventoryService['buildWorkflow']>; receiptDefaults: ReturnType<typeof inboundReceiptDefaults>; reportMeasuredMoisturePct: number | null; qualityException: boolean } {
     const report = (receipt as any).qualityInspection;
     const moisture = this.readMeasuredMoisture(report?.indicators || []);
@@ -313,6 +333,7 @@ export class InventoryService {
 
     const weighTicket = await this.prisma.weighTicket.findFirst({ where: { id: dto.weighTicketId, waybillId: waybill.id, deletedAt: null } });
     if (!weighTicket || weighTicket.status !== 'REVIEWED') throw new BadRequestException('请选择该运单已复核的磅单');
+    await this.assertReceivingTicketSelected(waybill.id, weighTicket);
     const quality = await this.prisma.qualityInspection.findFirst({
       where: {
         id: dto.qualityInspectionId, deletedAt: null,
@@ -413,18 +434,13 @@ export class InventoryService {
       where: { waybillId: waybill.id, purpose: 'INVENTORY', isCurrent: true },
       include: { weighTicket: true },
     });
-    const candidateTicket = currentSelection?.weighTicket || await this.prisma.weighTicket.findFirst({
-      where: {
-        waybillId: waybill.id, deletedAt: null, status: 'REVIEWED', weighingStage: 'SHIPPING',
-      },
-      orderBy: [{ sequence: 'asc' }, { reviewedAt: 'asc' }],
-    }) || ticket;
+    const candidateTicket = await this.preferredReceivingTicket(waybill.id);
     // 质检结论与入库重量分开同步：即使异常报告先判定、磅单尚未复核，也要先记录最终报告。
     const inventoryTicket = candidateTicket && candidateTicket.status === 'REVIEWED' && !candidateTicket.deletedAt
       && this.inventoryQuantity(candidateTicket) > 0 ? candidateTicket : null;
     const quantity = inventoryTicket ? this.inventoryQuantity(inventoryTicket) : null;
-    if (!currentSelection && inventoryTicket) {
-      await this.ensureInventorySelection(waybill.id, inventoryTicket, userId, '采购默认选用发货称重磅单');
+    if (!currentSelection && inventoryTicket && inventoryTicket.weighingStage === 'RECEIVING') {
+      await this.ensureInventorySelection(waybill.id, inventoryTicket, userId, '我方收货磅单作为库存依据');
     }
 
     const existing = waybill.inboundReceipts[0];
@@ -526,14 +542,11 @@ export class InventoryService {
       where: { waybillId: receipt.waybillId, purpose: 'INVENTORY', isCurrent: true },
       include: { weighTicket: true },
     });
-    const candidateTicket = currentSelection?.weighTicket || receipt.weighTicket || await this.prisma.weighTicket.findFirst({
-      where: { waybillId: receipt.waybillId, deletedAt: null, status: 'REVIEWED', weighingStage: 'SHIPPING' },
-      orderBy: [{ sequence: 'asc' }, { reviewedAt: 'asc' }],
-    }) || quality.weighTicket;
+    const candidateTicket = await this.preferredReceivingTicket(receipt.waybillId);
     const inventoryTicket = candidateTicket && candidateTicket.status === 'REVIEWED' && !candidateTicket.deletedAt
       && this.inventoryQuantity(candidateTicket) > 0 ? candidateTicket : null;
     const quantity = inventoryTicket ? this.inventoryQuantity(inventoryTicket) : null;
-    if (!currentSelection && inventoryTicket) {
+    if (!currentSelection && inventoryTicket && inventoryTicket.weighingStage === 'RECEIVING') {
       await this.ensureInventorySelection(receipt.waybillId, inventoryTicket, userId, '采用最终质检报告时补齐入库磅单');
     }
     const updated = await this.prisma.inboundReceipt.update({
@@ -596,7 +609,7 @@ export class InventoryService {
 
   private async ensureInventorySelection(
     waybillId: string,
-    ticket: { id: string; netWeight: unknown },
+    ticket: { id: string; netWeight: unknown; weighingStage: string },
     userId: string,
     reason: string,
   ) {
@@ -604,9 +617,12 @@ export class InventoryService {
       where: { waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (current && current.weighTicketId !== ticket.id) {
-      throw new BadRequestException('所选磅单不是当前结算入库磅单，请先在磅单信息详情中变更选用依据');
+      throw new BadRequestException('所选磅单不是当前库存入库磅单，请先在磅单信息详情中变更选用依据');
     }
     if (!current) {
+      if (ticket.weighingStage !== 'RECEIVING') {
+        throw new BadRequestException('引用供应商发货磅单入库，须先在磅单信息中填写原因并确认选用');
+      }
       await this.prisma.waybillWeightSelection.create({
         data: {
           waybillId, purpose: 'INVENTORY', weighTicketId: ticket.id,
@@ -706,8 +722,9 @@ export class InventoryService {
       where: { waybillId: item.waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (!currentWeight || currentWeight.weighTicketId !== item.weighTicketId) {
-      throw new BadRequestException('入库单关联磅单与当前结算入库磅单不一致，请先在磅单信息详情中完成选用');
+      throw new BadRequestException('入库单关联磅单与当前库存入库磅单不一致，请先在磅单信息详情中完成选用');
     }
+    if (item.weighTicket) await this.assertReceivingTicketSelected(item.waybillId, item.weighTicket);
     const materialId = item.waybill.lineItems[0]?.materialId;
     if (!materialId || !item.qualityInspectionId || !item.weighTicket) throw new BadRequestException('入库单缺少物料、磅单或最终质检依据');
     const physicalQuantity = this.inventoryQuantity(item.weighTicket);
@@ -780,8 +797,9 @@ export class InventoryService {
       where: { waybillId: receipt.waybillId, purpose: 'INVENTORY', isCurrent: true },
     });
     if (!currentWeight || currentWeight.weighTicketId !== receipt.weighTicketId) {
-      throw new BadRequestException('入库单关联磅单与当前结算入库磅单不一致，不能入账');
+      throw new BadRequestException('入库单关联磅单与当前库存入库磅单不一致，不能入账');
     }
+    if (receipt.weighTicket) await this.assertReceivingTicketSelected(receipt.waybillId, receipt.weighTicket);
     const warehouseId = receipt.warehouseId;
     const inventoryOwner = receipt.waybill.dispatchNotice.order.contract.signingPartner;
     if (!inventoryOwner) throw new BadRequestException('采购合同缺少我方签约主体，无法确认库存所有权');

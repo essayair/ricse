@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
+import { StoredAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -360,7 +361,7 @@ export default function InboundDetail() {
             {item.attachments.map((attachment: any) => (
               <div key={attachment.id} className="flex items-center justify-between gap-3 p-3">
                 <button className="flex min-w-0 items-center gap-2 text-left hover:text-primary" onClick={() => void viewAttachment(attachment)}>
-                  <FileText className="h-4 w-4 shrink-0" />
+                  <StoredAttachmentThumbnail name={attachment.originalName} mimeType={attachment.mimeType} viewUrlPath={`/inbound-receipts/attachments/${attachment.id}/view-url`} />
                   <span className="truncate text-sm">{attachment.originalName}</span>
                 </button>
                 <div className="flex shrink-0 items-center gap-3">

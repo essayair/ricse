@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save, Plus, Trash2, Paperclip, Loader2, Pencil, X } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
+import { LocalAttachmentThumbnail, StoredAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachment-file';
 import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
@@ -650,7 +651,7 @@ export default function ContractEditPage() {
           <div className="space-y-2">
             {attachments.map(att => (
               <div key={att.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                <Paperclip className="h-4 w-4 text-muted-foreground" />
+                <StoredAttachmentThumbnail name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
                 <button type="button" onClick={() => viewStoredAttachment(att.id)} className="flex-1 text-left text-primary hover:underline">{att.originalName}</button>
                 <span className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</span>
                 <Button type="button" variant="outline" size="sm" onClick={() => viewStoredAttachment(att.id)}>查看</Button>
@@ -664,7 +665,7 @@ export default function ContractEditPage() {
             ))}
             {pendingAttachments.map((item, index) => (
               <div key={`${item.file.name}-${index}`} className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm">
-                <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <LocalAttachmentThumbnail file={item.file} />
                 <Input value={item.name} onChange={e => {
                   setIsDirty(true);
                   setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, name: e.target.value } : entry));

@@ -5,7 +5,9 @@ dist-dev-*/
 .next-quality-payment-check/
 .next-logistics-check/
 .next-transport-check/
+.next-fulltest-check/
 coverage/
+test-reports/
 .env
 .env.local
 .env.staging

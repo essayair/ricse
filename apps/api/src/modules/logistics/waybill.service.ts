@@ -80,6 +80,7 @@ export class WaybillService {
     qualityTask: {
       select: {
         id: true, taskNo: true, status: true, finalConclusion: true,
+        basisInspectionId: true, basisInspection: { select: { id: true, reportNo: true, institutionName: true, status: true, conclusion: true, evidenceStage: true } },
         plannedReportCount: true, finalizedReportCount: true,
         _count: { select: { reports: true } },
       },
@@ -89,6 +90,8 @@ export class WaybillService {
         attachments: { orderBy: { createdAt: 'desc' as const } },
       },
     },
+    salesCompletionConfirmer: { select: { id: true, name: true } },
+    salesCompletionReport: { select: { id: true, reportNo: true, institutionName: true, conclusion: true, evidenceStage: true } },
     outboundReceipts: {
       where: { deletedAt: null, status: { not: 'CANCELLED' } },
       select: { id: true, receiptNo: true, status: true },
@@ -667,14 +670,10 @@ export class WaybillService {
         throw new BadRequestException('确认签收前必须至少完成并复核一张有效磅单');
       }
       const inventorySelection = (waybill.weightSelections || []).find(selection => selection.purpose === 'INVENTORY');
-      const settlementSelection = (waybill.weightSelections || []).find(selection => selection.purpose === 'SETTLEMENT');
-      if (waybill.dispatchNotice.type === 'PURCHASE' && (!inventorySelection || !settlementSelection)) {
+      if (waybill.dispatchNotice.type === 'PURCHASE' && !inventorySelection) {
         throw new BadRequestException(validTickets.length > 1
-          ? '存在多张有效磅单，请先选择库存与结算统一执行磅单'
-          : '请先将唯一有效磅单确认为库存与结算执行口径');
-      }
-      if (waybill.dispatchNotice.type === 'PURCHASE' && inventorySelection?.weighTicketId !== settlementSelection?.weighTicketId) {
-        throw new BadRequestException('库存与结算执行磅单不一致，请先统一选择执行口径');
+          ? '存在多张有效磅单，请先选择库存入库磅单'
+          : '请先确认唯一有效磅单是否作为库存入库依据');
       }
     }
     const updated = await this.prisma.$transaction(async tx => {
@@ -720,6 +719,59 @@ export class WaybillService {
     if (status === 'CANCELLED') await this.weighService.voidTaskForWaybill(id, userId);
     else await this.weighService.syncTaskForWaybill(id, userId);
     return updated;
+  }
+
+  async confirmSalesCompletion(id: string, customerWeighTicketId: string, qualityReportId: string, remarks: string, userId: string) {
+    const waybill = await this.findOne(id, userId, 'logistics.manage');
+    if (waybill.dispatchNotice.type !== 'SALES') throw new BadRequestException('仅销售运单可以确认客户交付完成');
+    if (waybill.status !== 'SIGNED') throw new BadRequestException('请先完成客户签收，再确认销售交付完成');
+    if (waybill.salesCompletionConfirmedAt) throw new BadRequestException('该车销售交付已确认，不可重复确认');
+    if (waybill.dispatchNotice.mode === 'STANDARD' && !waybill.outboundReceipts.some(receipt => receipt.status === 'POSTED')) {
+      throw new BadRequestException('请先完成我方销售出库过账');
+    }
+    const customerTickets = waybill.weighTickets.filter(ticket => ticket.weighingStage === 'RECEIVING' && ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0);
+    if (!customerTickets.length) throw new BadRequestException('请先登记并复核客户收货磅单');
+    const customerTicket = customerTickets.find(ticket => ticket.id === customerWeighTicketId);
+    if (!customerTicket) throw new BadRequestException('请选择该运单已复核的客户收货磅单');
+    const customerStageSelection = waybill.weightSelections.find(selection => selection.purpose === 'RECEIVING');
+    if ((customerTickets.length > 1 || customerStageSelection) && customerStageSelection?.weighTicketId !== customerTicket.id) {
+      throw new BadRequestException('客户收货侧有多张磅单，请先确认采信收货磅单');
+    }
+    const inventorySelection = waybill.weightSelections.find(selection => selection.purpose === 'INVENTORY');
+    const reviewedShippingTickets = waybill.weighTickets.filter(ticket => ticket.weighingStage === 'SHIPPING' && ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0);
+    const shippingTicket = inventorySelection
+      ? reviewedShippingTickets.find(ticket => ticket.id === inventorySelection.weighTicketId)
+      : reviewedShippingTickets.length === 1 ? reviewedShippingTickets[0] : undefined;
+    if (waybill.dispatchNotice.mode === 'STANDARD' && !shippingTicket) {
+      throw new BadRequestException('请先确认我方销售出库所采用的发货磅单');
+    }
+    const task = waybill.qualityTask;
+    if (!task || task.status !== 'COMPLETED' || !task.basisInspection || task.basisInspection.id !== qualityReportId || task.basisInspection.status !== 'CONFIRMED') {
+      throw new BadRequestException('请先完成销售交付质检任务，并选定客户收货检测报告形成最终结论');
+    }
+    if (task.basisInspection.evidenceStage === 'SHIPPING') throw new BadRequestException('我方发货检测报告不能作为客户收货质检依据');
+    if (task.basisInspection.evidenceStage === 'UNSPECIFIED') throw new BadRequestException('检测报告尚未标明发货或收货环节，不能确认客户交付');
+    if (task.basisInspection.evidenceStage !== 'RECEIVING') throw new BadRequestException('请选用客户收货环节的检测报告');
+    if (task.basisInspection.conclusion === 'FUSE') throw new BadRequestException('质检结论为异常拒收，请先处理质量争议');
+    if (!remarks?.trim()) throw new BadRequestException('请说明客户收货报告来源及双方差异处理情况');
+    const updated = await this.prisma.waybill.updateMany({
+      where: { id, status: 'SIGNED', salesCompletionConfirmedAt: null, deletedAt: null },
+      data: {
+        salesCompletionReportId: qualityReportId,
+        salesCompletionCustomerTicketId: customerTicket.id,
+        salesCompletionShippingTicketId: shippingTicket?.id || null,
+        salesCompletionCustomerWeight: customerTicket.netWeight,
+        salesCompletionShippingWeight: shippingTicket?.netWeight || null,
+        salesCompletionWeightVariance: shippingTicket
+          ? new Prisma.Decimal(customerTicket.netWeight!).minus(shippingTicket.netWeight!)
+          : null,
+        salesCompletionConfirmedBy: userId,
+        salesCompletionConfirmedAt: new Date(),
+        salesCompletionRemarks: remarks.trim(),
+      },
+    });
+    if (updated.count !== 1) throw new BadRequestException('销售交付状态已变化，请刷新后重试');
+    return this.findOne(id, userId, 'logistics.manage');
   }
 
   async remove(id: string, userId: string) {

@@ -14,7 +14,7 @@ describe('逐车质量结算来源与版本', () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', lineItems: [{ id: 'cl', materialName: '萤石精粉', unitPrice: new Prisma.Decimal(2000) }] } as any);
     prisma.financialSettlement.findMany.mockResolvedValue([]);
     source = { id: 'wl', unit: 'TON', settlementLines: [], dispatchNoticeLineItem: { orderLineItem: { contractLineItemId: 'cl' } },
-      waybill: { id: 'w', waybillNo: 'YD1', status: 'ARRIVED', lineItems: [{ id: 'wl' }], inboundReceipts: [{ status: 'POSTED', weighTicketId: 'wt', weighTicket: { ticketNo: 'B1', status: 'REVIEWED', netWeight: new Prisma.Decimal(102), updatedAt: new Date('2026-10-01') }, businessInbound: { id: 'bi', inboundNo: 'BIN1', status: 'POSTED', quantity: new Prisma.Decimal(100), postedAt: new Date('2026-10-01') } }],
+      waybill: { id: 'w', waybillNo: 'YD1', status: 'ARRIVED', lineItems: [{ id: 'wl' }], weighTickets: [], inboundReceipts: [{ status: 'POSTED', weighTicketId: 'wt', weighTicket: { ticketNo: 'B1', status: 'REVIEWED', netWeight: new Prisma.Decimal(102), updatedAt: new Date('2026-10-01') }, businessInbound: { id: 'bi', inboundNo: 'BIN1', status: 'POSTED', quantity: new Prisma.Decimal(100), postedAt: new Date('2026-10-01') } }],
         dispatchNotice: { order: { id: 'o', orderNo: 'O1', name: '第一批', status: 'DISPATCHED' } },
         weightSelections: [{ id: 'ws', purpose: 'INVENTORY', weighTicketId: 'wt', quantity: new Prisma.Decimal(100), weighTicket: { ticketNo: 'B1', status: 'REVIEWED', updatedAt: new Date('2026-10-01') } }, { id: 'ws-legacy', purpose: 'SETTLEMENT', weighTicketId: 'wt', quantity: new Prisma.Decimal(100), weighTicket: { ticketNo: 'B1', status: 'REVIEWED', updatedAt: new Date('2026-10-01') } }],
         qualityTask: { id: 'q', taskNo: 'Q1', status: 'COMPLETED', qualityDisposition: 'ACCEPT_WITH_DEDUCTION', qualityDeductionPerTon: new Prisma.Decimal(40), decisionVersion: 1,
@@ -39,6 +39,80 @@ describe('逐车质量结算来源与版本', () => {
 
     expect(row).toMatchObject({ inboundDate: receipt.receivedAt, grossWeight: 125, tareWeight: 23,
       netWeight: 102, measuredMoisturePct: 8.7, dryQuantity: 93.126, pricingQuantityBasis: 'DRY_MATTER' });
+  });
+  it('采购结算另选供应商发货磅单时，只改变货款数量且保留库存入库事实', async () => {
+    source.waybill.inboundReceipts[0].weighTicket.id = 'wt';
+    source.waybill.inboundReceipts[0].businessInbound.pricingQuantityBasis = 'DRY_MATTER';
+    source.waybill.inboundReceipts[0].businessInbound.measuredMoisturePct = new Prisma.Decimal(10);
+    source.waybill.weighTickets = [
+      { id: 'wt', ticketNo: '我方收货', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: new Prisma.Decimal(102) },
+      { id: 'supplier', ticketNo: '供应商发货', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: new Prisma.Decimal(110) },
+    ];
+    source.waybill.weightSelections[1] = {
+      id: 'ws-supplier', purpose: 'SETTLEMENT', weighTicketId: 'supplier', quantity: new Prisma.Decimal(110),
+      weighTicket: { id: 'supplier', ticketNo: '供应商发货', status: 'REVIEWED', netWeight: new Prisma.Decimal(110), updatedAt: new Date('2026-10-02') },
+    };
+    const row = (await service.sources('c', 'u'))[0];
+    expect(row).toMatchObject({ totalQuantity: 99, inventoryNetWeight: 102, netWeight: 110,
+      inventoryTicketNo: 'B1', settlementTicketNo: '供应商发货', weightSelectionId: 'ws-supplier', settlementWeightSource: 'SELECTED_OTHER_SIDE' });
+    expect(source.waybill.inboundReceipts[0].businessInbound.pricingQuantity.toNumber()).toBe(100);
+  });
+  it('采购结算可另选本车已确认的发货侧报告重算折干数量，入库报告和库存数量保持不变', async () => {
+    const posted = source.waybill.inboundReceipts[0].businessInbound;
+    posted.pricingQuantityBasis = 'DRY_MATTER';
+    posted.measuredMoisturePct = new Prisma.Decimal(10);
+    posted.pricingQuantity = new Prisma.Decimal(90);
+    source.waybill.inboundReceipts[0].weighTicket.netWeight = new Prisma.Decimal(100);
+    source.waybill.qualityTask.basisInspection.indicators = [{ code: 'MOISTURE', measuredValue: new Prisma.Decimal(10) }];
+    source.waybill.qualityTask.reportLinks = [{ inspection: {
+      id: 'supplier-report', reportNo: '供应商报告', status: 'CONFIRMED', deletedAt: null, evidenceStage: 'SHIPPING',
+      conclusion: 'PASS', institutionName: '供应商送检机构', updatedAt: new Date('2026-10-02'),
+      indicators: [{ code: 'MOISTURE', measuredValue: new Prisma.Decimal(8) }],
+    } }];
+    const rows = await service.sources('c', 'u', 'settlement.view', undefined, new Map([['wl', 'supplier-report']]));
+    expect(rows[0]).toMatchObject({ totalQuantity: 92, measuredMoisturePct: 8, inventoryReportId: 'report', reportId: 'supplier-report', qualityReady: true });
+    expect(posted.pricingQuantity.toNumber()).toBe(90);
+  });
+  it('未关联本车或尚未确认的检测报告不能选作货款依据', async () => {
+    const rows = await service.sources('c', 'u', 'settlement.view', undefined, new Map([['wl', 'other-contract-report']]));
+    expect(rows[0].available).toBe(false);
+    expect(rows[0].reasons.join('；')).toContain('不属于本车质检任务');
+  });
+  it('另选的货款报告被修改后，原结算快照在确认时失效', async () => {
+    const report = { id: 'supplier-report', reportNo: '供应商报告', status: 'CONFIRMED', deletedAt: null,
+      evidenceStage: 'SHIPPING', conclusion: 'PASS', institutionName: '送检机构', updatedAt: new Date('2026-10-02'),
+      indicators: [{ code: 'MOISTURE', measuredValue: new Prisma.Decimal(8) }] };
+    source.waybill.qualityTask.reportLinks = [{ inspection: report }];
+    const selected = (await service.sources('c', 'u', 'settlement.view', undefined, new Map([['wl', report.id]])))[0];
+    prisma.financialSettlement.findUnique.mockResolvedValue({ id: 's', contractId: 'c', lines: [{ waybillLineItemId: 'wl', quantity: new Prisma.Decimal(100), sourceSnapshot: selected }] } as any);
+    await expect(service.assertCurrent('s', 'u')).resolves.toBeUndefined();
+    report.updatedAt = new Date('2026-10-03');
+    await expect(service.assertCurrent('s', 'u')).rejects.toThrow('结算依据已变更');
+  });
+  it('协商数量只允许落在双方已复核磅单的依据范围内，不回写库存', async () => {
+    source.waybill.weighTickets = [
+      { id: 'ours', ticketNo: '收货', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: new Prisma.Decimal(100) },
+      { id: 'theirs', ticketNo: '发货', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: new Prisma.Decimal(105) },
+    ];
+    const row = (await service.sources('c', 'u'))[0];
+    expect(row).toMatchObject({ totalQuantity: 100, negotiableQuantity: 105, remainingQuantity: 100, negotiableRemainingQuantity: 105 });
+    expect(source.waybill.inboundReceipts[0].businessInbound.pricingQuantity.toNumber()).toBe(100);
+  });
+  it('只有一侧磅单时不能借协商数量入口突破已过账数量', async () => {
+    source.waybill.weighTickets = [{ id: 'ours', ticketNo: '收货', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: new Prisma.Decimal(105) }];
+    expect((await service.sources('c', 'u'))[0]).toMatchObject({ totalQuantity: 100, negotiableQuantity: 100 });
+  });
+  it('新增未完成的同侧第二张磅单后，不再静默沿用唯一磅单作为结算侧依据', async () => {
+    source.waybill.weighTickets = [
+      { id: 'first', ticketNo: '发货一', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: new Prisma.Decimal(105) },
+      { id: 'second', ticketNo: '发货二', weighingStage: 'SHIPPING', status: 'PENDING', netWeight: null },
+      { id: 'receiving', ticketNo: '我方收货', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: new Prisma.Decimal(100) },
+    ];
+    const row = (await service.sources('c', 'u'))[0];
+    expect(row.available).toBe(false);
+    expect(row.reasons.join('；')).toContain('发货侧有多张磅单，请先确认采信磅单');
+    expect(row.negotiableQuantity).toBe(100);
+    expect(row.availableWeighTickets.map((ticket: any) => ticket.id)).toEqual(['first', 'receiving']);
   });
   it('未入库过账或入库已冲销时不能编制最终货物应付，不影响提前付款入口', async () => {
     source.waybill.inboundReceipts[0].status = 'RECEIVED';

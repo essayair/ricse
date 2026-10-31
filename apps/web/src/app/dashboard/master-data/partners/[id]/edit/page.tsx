@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save, Loader2, Lock, Upload, X, Eye, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
+import { LocalAttachmentThumbnail, StoredAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 /* ── Constants ── */
@@ -408,7 +409,7 @@ export default function PartnerEditPage() {
               <div className="mb-3 space-y-1.5">
                 {attachments.map((a) => (
                   <div key={a.id} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
-                    <span>{a.mimeType.startsWith('image/') ? '🖼' : '📄'}</span>
+                    <StoredAttachmentThumbnail name={a.originalName} mimeType={a.mimeType} viewUrlPath={`/partners/attachments/${a.id}/view-url`} />
                     <span className="flex-1 truncate">{a.originalName}</span>
                     <span className="text-xs text-muted-foreground">{a.category === 'BUSINESS_LICENSE' ? '营业执照' : ''} · {(a.size / 1024).toFixed(0)} KB</span>
                     <button type="button" title="查看" onClick={() => void viewAttachment(a.id)} className="text-primary hover:bg-primary/10 rounded p-1"><Eye className="h-3.5 w-3.5" /></button>
@@ -428,6 +429,7 @@ export default function PartnerEditPage() {
               <div className="mt-2 space-y-1">
                 {newFiles.map((f, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm py-1 px-2 rounded bg-primary/5">
+                    <LocalAttachmentThumbnail file={f} />
                     <span>{f.name}</span>
                     <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
                     <button type="button" onClick={() => viewNewFile(f)} className="ml-auto text-primary"><Eye className="h-3.5 w-3.5" /></button>

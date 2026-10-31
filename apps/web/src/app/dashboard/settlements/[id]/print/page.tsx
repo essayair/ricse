@@ -21,7 +21,7 @@ interface SettlementLine {
   remarks?: string | null;
   sourceSnapshot?: {
     waybillNo?: string; plateNo?: string; materialName?: string; ticketNo?: string; reportNo?: string;
-    inboundDate?: string | null; grossWeight?: number | null; tareWeight?: number | null; netWeight?: number | null;
+    inboundDate?: string | null; salesCompletionConfirmedAt?: string | null; grossWeight?: number | null; tareWeight?: number | null; netWeight?: number | null;
     measuredMoisturePct?: number | null; dryQuantity?: number | null; pricingQuantityBasis?: string;
   } | null;
 }
@@ -94,7 +94,7 @@ export default function SettlementPrintPage() {
 
   const supplier = item.direction === 'PAYABLE' ? item.counterparty : item.legalEntity;
   const purchaser = item.direction === 'PAYABLE' ? item.legalEntity : item.counterparty;
-  const goodsPurchase = item.direction === 'PAYABLE' && item.settlementScope === 'GOODS' && item.lines.length > 0;
+  const goodsPurchase = item.settlementScope === 'GOODS' && item.lines.length > 0;
   const dryTotal = goodsPurchase ? totalKnown(item.lines, 'dryQuantity') : null;
   const grossTotal = goodsPurchase ? totalKnown(item.lines, 'grossWeight') : null;
   const tareTotal = goodsPurchase ? totalKnown(item.lines, 'tareWeight') : null;
@@ -120,11 +120,11 @@ export default function SettlementPrintPage() {
       {goodsPurchase ? <section className="mt-4">
         <table className="w-full border-collapse text-[10px] leading-tight">
           <colgroup>{[2.5, 7, 8, 14, 5, 6.5, 6.5, 6.5, 6.5, 7.5, 10, 8, 12].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
-          <thead><tr><Th>序号</Th><Th>入库日期</Th><Th>车牌</Th><Th>货物</Th><Th>水分<br/>（%）</Th><Th>毛重<br/>（吨）</Th><Th>皮重<br/>（吨）</Th><Th>净重<br/>（吨）</Th><Th>干基<br/>（吨）</Th><Th>结算数量<br/>（吨）</Th><Th>含税单价<br/>（元/吨）</Th><Th>扣款/调整<br/>净额（元）</Th><Th>含税金额<br/>（元）</Th></tr></thead>
+          <thead><tr><Th>序号</Th><Th>{item.direction === 'PAYABLE' ? '入库日期' : '交付日期'}</Th><Th>车牌</Th><Th>货物</Th><Th>水分<br/>（%）</Th><Th>毛重<br/>（吨）</Th><Th>皮重<br/>（吨）</Th><Th>净重<br/>（吨）</Th><Th>干基<br/>（吨）</Th><Th>结算数量<br/>（吨）</Th><Th>含税单价<br/>（元/吨）</Th><Th>扣款/调整<br/>净额（元）</Th><Th>含税金额<br/>（元）</Th></tr></thead>
           <tbody>{item.lines.map((line, index) => {
             const source = line.sourceSnapshot;
             const adjustment = Number(line.adjustmentAmount || 0) - Number(line.qualityDeductionAmount || 0);
-            return <tr key={line.id}><Td center>{index + 1}</Td><Td center>{date(source?.inboundDate)}</Td><Td center>{source?.plateNo || '—'}</Td><Td>{source?.materialName || '—'}</Td><Td right>{source?.measuredMoisturePct == null ? '—' : number(source.measuredMoisturePct, 2)}</Td><Td right>{tons(source?.grossWeight)}</Td><Td right>{tons(source?.tareWeight)}</Td><Td right>{tons(source?.netWeight)}</Td><Td right>{tons(source?.dryQuantity)}</Td><Td right>{tons(line.quantity)}</Td><Td right>{line.unitPrice == null ? '—' : Number(line.unitPrice).toFixed(4)}</Td><Td right>{adjustment ? signedAmount(adjustment) : '—'}</Td><Td right>{amount(line.totalAmount)}</Td></tr>;
+            return <tr key={line.id}><Td center>{index + 1}</Td><Td center>{date(item.direction === 'PAYABLE' ? source?.inboundDate : source?.salesCompletionConfirmedAt)}</Td><Td center>{source?.plateNo || '—'}</Td><Td>{source?.materialName || '—'}</Td><Td right>{source?.measuredMoisturePct == null ? '—' : number(source.measuredMoisturePct, 2)}</Td><Td right>{tons(source?.grossWeight)}</Td><Td right>{tons(source?.tareWeight)}</Td><Td right>{tons(source?.netWeight)}</Td><Td right>{tons(source?.dryQuantity)}</Td><Td right>{tons(line.quantity)}</Td><Td right>{line.unitPrice == null ? '—' : Number(line.unitPrice).toFixed(4)}</Td><Td right>{adjustment ? signedAmount(adjustment) : '—'}</Td><Td right>{amount(line.totalAmount)}</Td></tr>;
           })}<tr className="font-bold"><Td center>合计</Td><Td colSpan={4} /><Td right>{tons(grossTotal)}</Td><Td right>{tons(tareTotal)}</Td><Td right>{tons(netTotal)}</Td><Td right>{tons(dryTotal)}</Td><Td right>{tons(settledTons)}</Td><Td right>{uniquePrices.length === 1 ? Number(uniquePrices[0]).toFixed(4) : '见明细'}</Td><Td right>{signedAmount(Number(item.adjustmentAmount || 0) - Number(item.qualityDeductionAmount || 0))}</Td><Td right>{amount(item.totalAmount)}</Td></tr></tbody>
         </table>
         <p className="mt-2 text-[10px]">净重＝毛重－皮重；干基＝净重×（1－实测水分）。干基为依据展示，实际结算数量以本单逐车确认值为准；扣款/调整净额＝其他加减项－质量扣款。</p>

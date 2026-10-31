@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, Eye, Save } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openLocalAttachment } from '@/lib/attachment-preview';
+import { LocalAttachmentThumbnail } from '@/components/attachment-thumbnail';
 
 /* ── 枚举配置 ── */
 
@@ -608,9 +609,7 @@ export default function PartnerNewPage() {
               <div className="mt-3 space-y-1.5">
                 {files.map((f, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
-                    <span className="text-muted-foreground">
-                      {f.type.startsWith('image/') ? '🖼' : '📄'}
-                    </span>
+                    <LocalAttachmentThumbnail file={f} />
                     <span className="flex-1 truncate">{f.name}</span>
                     <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
                     <button type="button" title="预览" onClick={() => viewFile(f)} className="text-primary hover:bg-primary/10 rounded p-1"><Eye className="h-3.5 w-3.5" /></button>

@@ -82,7 +82,7 @@ describe('InventoryService', () => {
       id: 'receipt-1', status: 'PENDING', qualityInspectionId: 'report-1', waybillId: 'waybill-1', weighTicketId: 'ticket-1',
       warehouseId: 'warehouse-1', receivedAt: new Date(), currentOperatorName: '入库员',
       acceptanceConclusion: 'REJECT', qualityInspection: { status: 'CONFIRMED', conclusion: 'FUSE', indicators: [] },
-      weighTicket: { netWeight: new Prisma.Decimal(100) },
+      weighTicket: { id: 'ticket-1', weighingStage: 'RECEIVING', netWeight: new Prisma.Decimal(100) },
       waybill: { lineItems: [{ materialId: 'material-1' }], qualityTask: { status: 'COMPLETED', basisInspectionId: 'report-1' } },
     } as any);
     prisma.warehouse.findFirst.mockResolvedValue({ id: 'warehouse-1' } as any);
@@ -185,6 +185,7 @@ describe('InventoryService', () => {
     prisma.weighTicket.findFirst.mockResolvedValue({
       id: 'ticket-1',
       status: 'REVIEWED',
+      weighingStage: 'RECEIVING',
       settlementWeight: 100,
     } as any);
     prisma.qualityInspection.findFirst.mockResolvedValue({
@@ -290,6 +291,8 @@ describe('InventoryService', () => {
     { conclusion: 'FUSE', disposition: 'REJECT', deductionPerTon: null,
       evaluation: null, expectedEvaluation: Prisma.DbNull },
   ])('最终报告为 $conclusion 时均同步已提前生成的入库单', async ({ conclusion, disposition, deductionPerTon, evaluation, expectedEvaluation }) => {
+    prisma.weighTicket.count.mockResolvedValue(1);
+    prisma.weighTicket.findFirst.mockResolvedValue({ id: 'ticket-1', status: 'REVIEWED', netWeight: 100, weighingStage: 'RECEIVING' } as any);
     const existing = {
       id: 'receipt-1', receiptNo: 'LIR-001', status: 'PENDING',
       qualityInspectionId: null, waybill: { status: 'ARRIVED', weighTickets: [] },
@@ -302,7 +305,7 @@ describe('InventoryService', () => {
       qualityTask: { qualityDisposition: disposition, qualityDeductionPerTon: deductionPerTon,
         contractQualityEvaluation: evaluation },
       weighTicket: {
-        id: 'ticket-1', netWeight: 100, settlementWeight: 100,
+        id: 'ticket-1', netWeight: 100, settlementWeight: 100, weighingStage: 'RECEIVING',
         status: 'REVIEWED',
         waybill: {
           id: 'waybill-1', status: 'ARRIVED',
@@ -358,10 +361,12 @@ describe('InventoryService', () => {
   });
 
   it('仓管可以重新同步同一运单下的最终采用报告', async () => {
+    prisma.weighTicket.count.mockResolvedValue(1);
+    prisma.weighTicket.findFirst.mockResolvedValue({ id: 'ticket-1', status: 'REVIEWED', netWeight: 100, weighingStage: 'RECEIVING' } as any);
     jest.spyOn(service, 'findReceipt').mockResolvedValue({
       id: 'receipt-1', waybillId: 'waybill-1', status: 'PENDING', plateNo: '沪A12345',
       weighTicketId: 'ticket-1',
-      weighTicket: { id: 'ticket-1', status: 'REVIEWED', netWeight: 100 },
+      weighTicket: { id: 'ticket-1', status: 'REVIEWED', netWeight: 100, weighingStage: 'RECEIVING' },
     } as any);
     prisma.qualityInspection.findFirst.mockResolvedValue({
       id: 'quality-2', weighTicketId: 'ticket-2', materialName: '铁矿石', materialSpec: '粉矿',

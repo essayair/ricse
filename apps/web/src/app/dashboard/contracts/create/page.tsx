@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, TrendingDown, TrendingUp, Zap, Save } from 'lucide-react';
 import { api, API_BASE_URL } from '@/lib/api';
 import { openLocalAttachment, openStoredAttachment } from '@/lib/attachment-preview';
+import { LocalAttachmentThumbnail, StoredAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachment-file';
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
@@ -554,11 +555,12 @@ export default function ContractCreatePage() {
             <div className="text-sm font-semibold">选择合同附件</div>
             <div className="text-xs text-muted-foreground mt-1">纸质合同扫描件、签章文件等，保存或提交时自动上传</div>
           </label>
-          {uploadedAttachments.length > 0 && <div className="mt-3 space-y-2">{uploadedAttachments.map(item => <div key={item.id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.originalName}</span><span className="shrink-0 text-xs text-muted-foreground">已上传</span><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>查看附件</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div>)}</div>}
+          {uploadedAttachments.length > 0 && <div className="mt-3 space-y-2">{uploadedAttachments.map(item => <div key={item.id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm"><StoredAttachmentThumbnail name={item.originalName} viewUrlPath={`/contracts/attachments/${item.id}/view-url`} /><span className="min-w-0 flex-1 truncate">{item.originalName}</span><span className="shrink-0 text-xs text-muted-foreground">已上传</span><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>查看附件</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div>)}</div>}
           {files.length > 0 && (
             <div className="mt-3 space-y-1.5">
               {files.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
+                  <LocalAttachmentThumbnail file={item.file} />
                   <button type="button" onClick={() => {
                     try { openLocalAttachment(item.file); }
                     catch (e: any) { alert(e.message || '附件打开失败'); }

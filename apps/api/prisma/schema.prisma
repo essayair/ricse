@@ -48,6 +48,7 @@ model User {
   weighRecords                     WeighRecord[]                @relation("WeighRecordOperator")
   createdQualityInspections        QualityInspection[]          @relation("QualityInspectionCreator")
   confirmedQualityInspections      QualityInspection[]          @relation("QualityInspectionConfirmer")
+  confirmedSalesDeliveries         Waybill[]                    @relation("WaybillSalesCompletionConfirmer")
   createdQualityTasks              QualityTask[]                @relation("QualityTaskCreator")
   createdQualitySamples            QualitySample[]              @relation("QualitySampleCreator")
   handledQualityTasks              QualityTask[]                @relation("QualityTaskHandler")
@@ -1070,6 +1071,7 @@ model FinancialSettlement {
   allocations     SettlementAllocation[]
   lines           FinancialSettlementLine[]
   paymentRequests PaymentRequest[]
+  attachments     Attachment[]
   fundEarmarks    FundEarmark[]
 
   @@index([direction, status])
@@ -1528,6 +1530,15 @@ model Waybill {
   departedAt          DateTime?
   arrivedAt           DateTime?
   signedAt            DateTime?
+  salesCompletionReportId String?
+  salesCompletionCustomerTicketId String?
+  salesCompletionShippingTicketId String?
+  salesCompletionCustomerWeight Decimal? @db.Decimal(15, 3)
+  salesCompletionShippingWeight Decimal? @db.Decimal(15, 3)
+  salesCompletionWeightVariance Decimal? @db.Decimal(15, 3)
+  salesCompletionConfirmedBy String?
+  salesCompletionConfirmedAt DateTime?
+  salesCompletionRemarks String?
   remarks             String?
   creationBatchId     String?
   creationRowId       String?
@@ -1541,6 +1552,10 @@ model Waybill {
   driver                   Driver?                   @relation(fields: [driverId], references: [id])
   carrierPartner           Partner?                  @relation("WaybillCarrierPartner", fields: [carrierPartnerId], references: [id])
   creator                  User                      @relation("WaybillCreator", fields: [createdBy], references: [id])
+  salesCompletionConfirmer User?                     @relation("WaybillSalesCompletionConfirmer", fields: [salesCompletionConfirmedBy], references: [id], onDelete: Restrict)
+  salesCompletionReport    QualityInspection?        @relation("WaybillSalesCompletionReport", fields: [salesCompletionReportId], references: [id], onDelete: Restrict)
+  salesCompletionCustomerTicket WeighTicket? @relation("WaybillSalesCustomerTicket", fields: [salesCompletionCustomerTicketId], references: [id], onDelete: Restrict)
+  salesCompletionShippingTicket WeighTicket? @relation("WaybillSalesShippingTicket", fields: [salesCompletionShippingTicketId], references: [id], onDelete: Restrict)
   lineItems                WaybillLineItem[]
   weighTickets             WeighTicket[]
   weightSelections         WaybillWeightSelection[]
@@ -1558,6 +1573,8 @@ model Waybill {
   @@index([vehicleId])
   @@index([driverId])
   @@index([carrierPartnerId])
+  @@index([salesCompletionConfirmedAt])
+  @@index([salesCompletionCustomerTicketId])
   @@index([creationBatchId])
   @@map("waybills")
 }
@@ -1661,6 +1678,8 @@ model WeighTicket {
   inboundReceipts      InboundReceipt[]
   outboundReceipts     OutboundReceipt[]
   weightSelections     WaybillWeightSelection[]
+  customerCompletionWaybills Waybill[] @relation("WaybillSalesCustomerTicket")
+  shippingCompletionWaybills Waybill[] @relation("WaybillSalesShippingTicket")
 
   @@index([ticketNo])
   @@index([ticketDate])
@@ -2000,6 +2019,7 @@ model QualityInspection {
   status                  String    @default("DRAFT") // DRAFT | TESTING | REPORTED | CONFIRMED | VOIDED
   conclusion              String    @default("PENDING") // PENDING | PASS | DEDUCTION | FUSE
   dataSource              String    @default("MANUAL") // DEVICE | MANUAL | OCR
+  evidenceStage           String    @default("UNSPECIFIED") // SHIPPING | RECEIVING | UNSPECIFIED；相对运单的发货/收货环节，与检测机构类型无关
   institutionType         String    @default("OUR") // OUR | PARTNER | THIRD_PARTY | OTHER
   institutionPartnerId    String?
   institutionName         String
@@ -2044,6 +2064,7 @@ model QualityInspection {
   indicators         QualityInspectionIndicator[]
   attachments        Attachment[]
   inboundReceipts    InboundReceipt[]
+  salesCompletionWaybills Waybill[] @relation("WaybillSalesCompletionReport")
 
   @@index([inspectionNo])
   @@index([qualityTaskId])
@@ -2053,6 +2074,7 @@ model QualityInspection {
   @@index([status])
   @@index([conclusion])
   @@index([institutionType])
+  @@index([evidenceStage])
   @@index([institutionPartnerId])
   @@index([reportNo])
   @@index([testedAt])
@@ -2791,6 +2813,7 @@ model Attachment {
   inventoryReversalId String? // 关联库存冲销单
   fundTransactionId   String? // 关联收款单/付款单银行回单
   paymentRequestId    String? // 关联付款申请依据
+  financialSettlementId String? // 双方签章的结算确认单等附件
   logisticsContractId String?
   logisticsSettlementId String?
   driverId            String? // 司机证件资料；与车辆附件独立存储
@@ -2821,6 +2844,7 @@ model Attachment {
   inventoryReversal InventoryReversal? @relation(fields: [inventoryReversalId], references: [id])
   fundTransaction   FundTransaction?   @relation(fields: [fundTransactionId], references: [id])
   paymentRequest    PaymentRequest?    @relation(fields: [paymentRequestId], references: [id])
+  financialSettlement FinancialSettlement? @relation(fields: [financialSettlementId], references: [id], onDelete: Restrict)
   logisticsContract LogisticsContract? @relation(fields: [logisticsContractId], references: [id], onDelete: Restrict)
   logisticsSettlement LogisticsSettlement? @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
   driver            Driver?            @relation(fields: [driverId], references: [id], onDelete: Restrict)
@@ -2837,6 +2861,7 @@ model Attachment {
   @@index([qualityInspectionId])
   @@index([fundTransactionId])
   @@index([paymentRequestId])
+  @@index([financialSettlementId])
   @@index([logisticsContractId])
   @@index([logisticsSettlementId])
   @@index([driverId])

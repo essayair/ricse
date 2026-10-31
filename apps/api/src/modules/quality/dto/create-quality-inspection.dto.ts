@@ -31,6 +31,7 @@ export class CreateQualityInspectionDto {
   @IsOptional() @IsString() @MaxLength(100) sampleNo2?: string;
   @IsOptional() @IsString() @MaxLength(100) sampleNo3?: string;
   @IsOptional() @IsIn(['DEVICE', 'MANUAL', 'OCR']) dataSource?: string;
+  @IsOptional() @IsIn(['SHIPPING', 'RECEIVING']) evidenceStage?: string;
 
   @IsIn(['OUR', 'PARTNER', 'THIRD_PARTY', 'OTHER']) institutionType: string;
   @IsOptional() @IsString() institutionPartnerId?: string;
@@ -58,6 +59,7 @@ export class CreateStandaloneQualityReportDto {
   @IsString() @MaxLength(100) samplerName: string;
   @IsOptional() @IsString() @MaxLength(100) samplingMethod?: string;
   @IsOptional() @IsString() @MaxLength(100) sampleNo?: string;
+  @IsOptional() @IsIn(['SHIPPING', 'RECEIVING', 'UNSPECIFIED']) evidenceStage?: string;
   @IsIn(['OUR', 'PARTNER', 'THIRD_PARTY', 'OTHER']) institutionType: string;
   @IsOptional() @IsString() institutionPartnerId?: string;
   @IsOptional() @IsString() @MaxLength(200) institutionName?: string;
@@ -67,4 +69,10 @@ export class CreateStandaloneQualityReportDto {
   @IsOptional() @IsBoolean() submit?: boolean;
   @IsArray() @ValidateNested({ each: true }) @Type(() => QualityIndicatorDto)
   indicators: QualityIndicatorDto[];
+}
+
+/** 只允许为历史未分类报告补录取样环节，不改变检测指标和报告结论。 */
+export class ClassifyQualityEvidenceStageDto {
+  @IsIn(['SHIPPING', 'RECEIVING']) evidenceStage: string;
+  @IsString() @MaxLength(500) reason: string;
 }

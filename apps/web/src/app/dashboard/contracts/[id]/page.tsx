@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { Loader2, Edit3, CheckCircle2, XCircle, Clock, User, ClipboardList, Truck, Warehouse, ReceiptText, ChevronRight, Trash2, Plus, ShieldAlert, MoreHorizontal, Printer } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
+import { StoredAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
@@ -745,6 +746,7 @@ export default function ContractDetailPage() {
             <div className="space-y-2">
               {c.attachments.map((att) => (
                 <div key={att.id} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
+                  <StoredAttachmentThumbnail name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
                   <button type="button" onClick={() => viewAttachment(att.id)} className="flex-1 text-left text-primary hover:underline">{att.originalName}</button>
                   <span className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</span>
                   <Button type="button" variant="outline" size="sm" onClick={() => viewAttachment(att.id)}>查看</Button>

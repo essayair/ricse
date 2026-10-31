@@ -437,7 +437,7 @@ describe('WaybillService', () => {
     },
   );
 
-  it('采购库存与结算执行磅单不一致时不允许确认签收', async () => {
+  it('采购库存与货款结算依据不同时仍允许确认签收', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1', status: 'ARRIVED',
       attachments: [{ id: 'attachment-1', category: 'RECEIPT_DOCUMENT' }],
@@ -452,8 +452,10 @@ describe('WaybillService', () => {
       ],
     } as any);
 
+    prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
+    prisma.waybill.update.mockResolvedValue({ id: 'waybill-1', status: 'SIGNED' } as any);
     await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1'))
-      .rejects.toThrow('库存与结算执行磅单不一致，请先统一选择执行口径');
+      .resolves.toMatchObject({ status: 'SIGNED' });
   });
 
   it('销售按我方出库、客户货款两种口径时允许确认客户签收', async () => {
@@ -463,6 +465,71 @@ describe('WaybillService', () => {
     prisma.$transaction.mockImplementation(async (f: any) => f(prisma));
     prisma.waybill.update.mockResolvedValue({ id: 'waybill-1', status: 'SIGNED' } as any);
     await expect(service.updateStatus('waybill-1', 'SIGNED', 'user-1')).resolves.toMatchObject({ status: 'SIGNED' });
+  });
+
+  it('销售交付完成须有客户收货磅单和最终确认的检测报告，且不重复扣减库存', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1', status: 'SIGNED', salesCompletionConfirmedAt: null,
+      dispatchNotice: { type: 'SALES', mode: 'STANDARD' },
+      outboundReceipts: [{ status: 'POSTED' }],
+      weighTickets: [
+        { id: 'shipping-ticket', ticketNo: 'F-1', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: 100 },
+        { id: 'customer-ticket', ticketNo: 'R-1', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: 98 },
+      ],
+      weightSelections: [{ purpose: 'INVENTORY', weighTicketId: 'shipping-ticket' }],
+      qualityTask: { status: 'COMPLETED', basisInspection: { id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS', evidenceStage: 'RECEIVING' } },
+    } as any);
+    prisma.waybill.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    await expect(service.confirmSalesCompletion('waybill-1', 'customer-ticket', 'report-1', '客户报告已核对', 'user-1'))
+      .resolves.toMatchObject({ salesCompletionConfirmedAt: null });
+    expect(prisma.waybill.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ salesCompletionReportId: 'report-1', salesCompletionCustomerTicketId: 'customer-ticket', salesCompletionShippingTicketId: 'shipping-ticket', salesCompletionWeightVariance: expect.objectContaining({}), salesCompletionRemarks: '客户报告已核对' }),
+    }));
+    expect(prisma.salesOutbound.update).not.toHaveBeenCalled();
+  });
+
+  it('没有客户收货磅单不得确认销售交付完成', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1', status: 'SIGNED', salesCompletionConfirmedAt: null,
+      dispatchNotice: { type: 'SALES', mode: 'STANDARD' }, outboundReceipts: [{ status: 'POSTED' }],
+      weighTickets: [], qualityTask: { status: 'COMPLETED', basisInspection: { id: 'report-1', status: 'CONFIRMED' } },
+    } as any);
+    await expect(service.confirmSalesCompletion('waybill-1', 'customer-ticket', 'report-1', '客户报告已核对', 'user-1'))
+      .rejects.toThrow('客户收货磅单');
+  });
+
+  it('我方发货检测报告不能冒充客户收货报告确认销售交付', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1', status: 'SIGNED', salesCompletionConfirmedAt: null,
+      dispatchNotice: { type: 'SALES', mode: 'STANDARD' }, outboundReceipts: [{ status: 'POSTED' }],
+      weighTickets: [
+        { id: 'shipping-ticket', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: 100 },
+        { id: 'customer-ticket', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: 98 },
+      ],
+      weightSelections: [{ purpose: 'INVENTORY', weighTicketId: 'shipping-ticket' }],
+      qualityTask: { status: 'COMPLETED', basisInspection: { id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS', evidenceStage: 'SHIPPING' } },
+    } as any);
+    await expect(service.confirmSalesCompletion('waybill-1', 'customer-ticket', 'report-1', '确认交付', 'user-1'))
+      .rejects.toThrow('我方发货检测报告不能作为客户收货质检依据');
+    expect(prisma.waybill.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('多张客户磅单时必须明确选择有效的收货磅单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      id: 'waybill-1', status: 'SIGNED', salesCompletionConfirmedAt: null,
+      dispatchNotice: { type: 'SALES', mode: 'STANDARD' }, outboundReceipts: [{ status: 'POSTED' }],
+      weighTickets: [
+        { id: 'shipping-ticket', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: 100 },
+        { id: 'customer-a', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: 98 },
+        { id: 'customer-b', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: 99 },
+      ],
+      weightSelections: [{ purpose: 'INVENTORY', weighTicketId: 'shipping-ticket' }],
+      qualityTask: { status: 'COMPLETED', basisInspection: { id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS', evidenceStage: 'RECEIVING' } },
+    } as any);
+    await expect(service.confirmSalesCompletion('waybill-1', 'shipping-ticket', 'report-1', '确认交付', 'user-1'))
+      .rejects.toThrow('请选择该运单已复核的客户收货磅单');
+    expect(prisma.waybill.updateMany).not.toHaveBeenCalled();
   });
 
   it('新增物流收货附件必须使用明确分类', async () => {

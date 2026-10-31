@@ -8,6 +8,9 @@ export class CreateSettlementLineDto {
   @IsOptional() @IsString()
   waybillLineItemId?: string;
 
+  @IsOptional() @IsString()
+  qualityReportId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 3 })
@@ -28,6 +31,10 @@ export class CreateSettlementLineDto {
   @IsOptional()
   @IsString()
   remarks?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  negotiatedQuantity?: boolean;
 }
 
 export class CreateFinancialSettlementDto {

@@ -11,10 +11,16 @@ export const paymentMoney = (value: unknown) => `¥${Number(value || 0).toLocale
 export const QUALITY_LABELS: Record<string, string> = { PENDING: '待检测', PASS: '合格接收', LEGACY: '历史验收', DEDUCTION_PENDING: '待确认扣款接收', ACCEPT_WITH_DEDUCTION: '已确认扣款接收', REJECT: '拒收', REVIEW_REQUIRED: '待人工判定' };
 export interface GoodsSource {
   id: string; orderId: string; orderNo: string; orderName: string; orderStatus: string; waybillId: string; waybillNo: string; plateNo?: string;
-  materialName?: string; totalQuantity: number; remainingQuantity: number; settlementQuantity?: number; unitPrice: number; deductionPerTon: number; qualityDisposition: string;
+  materialName?: string; totalQuantity: number; remainingQuantity: number; negotiableQuantity?: number; negotiableRemainingQuantity?: number; negotiatedQuantity?: boolean; settlementQuantity?: number; unitPrice: number; deductionPerTon: number; qualityDisposition: string;
   qualityTaskId?: string; decisionVersion?: number; taskNo?: string; reportNo?: string; ticketNo?: string; weighTicketId?: string; available: boolean; reasons: string[];
+  reportId?: string; defaultReportId?: string; inventoryReportId?: string; inventoryReportNo?: string;
+  availableQualityReports?: Array<{ id: string; reportNo: string; evidenceStage: string; institutionName: string; conclusion: string }>;
   inboundNo?: string;
-  inboundDate?: string | null; grossWeight?: number | null; tareWeight?: number | null; netWeight?: number | null;
+  inboundDate?: string | null; salesCompletionConfirmedAt?: string | null; grossWeight?: number | null; tareWeight?: number | null; netWeight?: number | null;
+  inventoryTicketNo?: string; inventoryNetWeight?: number | null; settlementTicketNo?: string; settlementSelectionId?: string;
+  customerTicketNo?: string; customerNetWeight?: number | null; shippingNetWeight?: number | null; weightVariance?: number | null;
+  availableWeighTickets?: Array<{ id: string; ticketNo: string; weighingStage: string; netWeight: number | null }>;
+  settlementWeightSource?: 'INVENTORY_DEFAULT' | 'EXPLICIT_INVENTORY' | 'SELECTED_OTHER_SIDE';
   measuredMoisturePct?: number | null; dryQuantity?: number | null; pricingQuantityBasis?: string;
   pricingType?: string; gradePrice?: { status: 'READY' | 'REVIEW_REQUIRED'; gradePct?: number | null; moisturePct?: number | null; rate?: number; unitPrice?: number; band?: { lower: number; upper: number }; reasons?: string[] };
   signature: string; totalAmount: number; evaluation?: { items?: Array<{ name: string; reason: string; deductionPerTon?: number }> }; qualityAcceptance?: { name: string; acceptedAt: string; reason: string };

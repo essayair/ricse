@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { openStoredAttachment } from '@/lib/attachment-preview';
+import { StoredAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { PartnerAddressDialog, type PartnerAddress } from '@/components/partner-address-dialog';
 import { StatusText } from '@/components/status-text';
 import { confirmAction } from '@/lib/system-dialog';
@@ -575,7 +576,7 @@ export default function PartnerDetailPage() {
             <div className="grid grid-cols-3 gap-4 p-4">
               {p.attachments.map((a) => (
                 <div key={a.id} className="border rounded-lg p-3 flex items-start gap-3 hover:bg-muted/30 transition-colors">
-                  <span className="text-xl mt-0.5">{a.mimeType.startsWith('image/') ? '🖼' : '📄'}</span>
+                  <StoredAttachmentThumbnail name={a.originalName} mimeType={a.mimeType} viewUrlPath={`/partners/attachments/${a.id}/view-url`} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate" title={a.originalName}>{a.originalName}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">
