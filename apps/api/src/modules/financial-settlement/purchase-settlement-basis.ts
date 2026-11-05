@@ -56,6 +56,8 @@ export class PurchaseSettlementBasis {
     return rows.map(row => {
       const w = row.waybill, order = w.dispatchNotice.order;
       const item = contract.lineItems.find(l => l.id === row.dispatchNoticeLineItem.orderLineItem.contractLineItemId);
+      const isGradeTier = contract.pricingType === 'GRADE_TIER';
+      const gradeQuantityBasis = isGradeTier ? (item?.priceRulesSnapshot as { quantityBasis?: 'PHYSICAL' | 'DRY_MATTER' } | null)?.quantityBasis || 'PHYSICAL' : null;
       const receipt = w.inboundReceipts.find(r => r.status === 'POSTED' && r.businessInbound?.status === 'POSTED');
       const posted = receipt?.businessInbound, inventoryTicket = receipt?.weighTicket;
       const inventorySelection = w.weightSelections.find(s => s.purpose === 'INVENTORY' && s.weighTicketId === receipt?.weighTicketId), task = w.qualityTask;
@@ -77,16 +79,19 @@ export class PurchaseSettlementBasis {
       const selection = requestedTicketId
         ? w.weightSelections.find(candidate => candidate.purpose === ticket?.weighingStage && candidate.weighTicketId === ticket?.id)
         : separateSettlementTicket ? settlementSelection : inventorySelection;
-      const measuredMoisturePct = separateSettlementReport || posted?.measuredMoisturePct == null
+      const measuredMoisturePct = isGradeTier || separateSettlementReport || posted?.measuredMoisturePct == null
         ? readMeasuredPct(report?.indicators || [], 'MOISTURE')
         : Number(posted.measuredMoisturePct);
       const netWeight = ticket?.netWeight == null ? null : Number(ticket.netWeight);
       const dryQuantity = netWeight == null || measuredMoisturePct == null ? null
         : new Prisma.Decimal(netWeight).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(measuredMoisturePct).div(100))).toDecimalPlaces(3).toNumber();
-      // 库存始终使用已过账数量；只有结算人员另选了不同磅单时，重新计算货款数量。
-      const totalQuantity = separateSettlementTicket || separateSettlementReport
-        ? (posted?.pricingQuantityBasis === 'DRY_MATTER' ? (dryQuantity ?? 0) : (netWeight ?? 0))
-        : Number(posted?.pricingQuantity ?? posted?.quantity ?? 0);
+      // 库存过账口径与合同货款口径分离：新分档合同可约定所选净重折干，存量合同沿用原净重口径。
+      const settlementQuantityBasis = gradeQuantityBasis || posted?.pricingQuantityBasis || 'PHYSICAL';
+      const totalQuantity = isGradeTier
+        ? (settlementQuantityBasis === 'DRY_MATTER' ? (dryQuantity ?? 0) : (netWeight ?? 0))
+        : separateSettlementTicket || separateSettlementReport
+          ? (settlementQuantityBasis === 'DRY_MATTER' ? (dryQuantity ?? 0) : (netWeight ?? 0))
+          : Number(posted?.pricingQuantity ?? posted?.quantity ?? 0);
       // 同侧多张只采用已确认的采信磅单；不能用“最新一张”静默替代人工结论。
       const effectiveByStage = new Map<string, (typeof w.weighTickets)[number]>();
       for (const stage of ['SHIPPING', 'RECEIVING']) {
@@ -96,9 +101,9 @@ export class PurchaseSettlementBasis {
           : candidates.length === 1 && candidates[0].status === 'REVIEWED' ? candidates[0] : undefined;
         if (effective) effectiveByStage.set(stage, effective);
       }
-      const candidateQuantities = [...effectiveByStage.values()].filter(candidate => candidate.netWeight != null && (posted?.pricingQuantityBasis !== 'DRY_MATTER' || measuredMoisturePct != null)).map(candidate => {
+      const candidateQuantities = [...effectiveByStage.values()].filter(candidate => candidate.netWeight != null && (settlementQuantityBasis !== 'DRY_MATTER' || measuredMoisturePct != null)).map(candidate => {
         const physical = Number(candidate.netWeight);
-        return posted?.pricingQuantityBasis === 'DRY_MATTER' && measuredMoisturePct != null
+        return settlementQuantityBasis === 'DRY_MATTER' && measuredMoisturePct != null
           ? new Prisma.Decimal(physical).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(measuredMoisturePct).div(100))).toDecimalPlaces(3).toNumber()
           : physical;
       });
@@ -125,16 +130,14 @@ export class PurchaseSettlementBasis {
       if (requestedTicketId && chosenTicket && effectiveByStage.get(chosenTicket.weighingStage)?.id !== chosenTicket.id) reasons.push('本次结算所选磅单不是该侧采信磅单');
       if (!inventoryTicket || inventoryTicket.deletedAt || inventoryTicket.status !== 'REVIEWED') reasons.push('请先核对入库过账关联的库存磅单');
       if (separateSettlementTicket && (!ticket || ticket.deletedAt || ticket.status !== 'REVIEWED')) reasons.push('货款依据磅单已失效，请重新选择');
-      if (separateSettlementTicket && posted?.pricingQuantityBasis === 'DRY_MATTER' && measuredMoisturePct == null) reasons.push('折干货款结算需要最终报告的水分实测值');
+      if (settlementQuantityBasis === 'DRY_MATTER' && measuredMoisturePct == null) reasons.push('折干货款结算需要所选报告的水分实测值');
       if (requestedReportId && !report) reasons.push('所选货款检测报告未确认、已解绑或不属于本车质检任务');
       if (separateSettlementReport && report?.evidenceStage === 'UNSPECIFIED') reasons.push('所选货款检测报告未标明发货或收货环节');
-      if (separateSettlementReport && posted?.pricingQuantityBasis === 'DRY_MATTER' && measuredMoisturePct == null) reasons.push('另选检测报告缺少折干所需的水分实测值');
       if (!item) reasons.push('无法匹配合同物料行');
       if (!task || task.deletedAt || task.status !== 'COMPLETED' || !report || report.deletedAt || report.status !== 'CONFIRMED') reasons.push('请先完成最终质检判定');
       if (legacyContract || legacyOrders.has(order.id)) reasons.push('存在未映射到具体货物的历史应付，请先复核并处理重叠结算');
       if (remainingQuantity <= 0) reasons.push('该来源数量已全部结算或被结算草稿占用');
       if (!['TON', '吨', 't'].includes(row.unit)) reasons.push('当前自动质量扣款仅支持已明确以吨计价的物料');
-      const isGradeTier = contract.pricingType === 'GRADE_TIER';
       const gradePrice = isGradeTier && item?.priceRulesSnapshot
         ? evaluateGradePrice(item.priceRulesSnapshot, (item.priceRulesSnapshot as any).selectedSpec, remainingQuantity, report?.indicators || [])
         : null;
@@ -151,7 +154,6 @@ export class PurchaseSettlementBasis {
           ? '另选报告触发合同扣款，需先办理质量扣款接收与审批'
           : selectedDisposition === 'DEDUCTION_PENDING' ? '请由结算或付款申请人员确认按合同扣款接收' : '当前质量结果为拒收或待判定，不能正常结算');
       }
-      if (isGradeTier && posted && posted.pricingQuantityBasis !== 'PHYSICAL') reasons.push('萤石矿品位分档价应按实物吨结算，请核对物料计价数量口径');
       if (isGradeTier && !item?.priceRulesSnapshot) reasons.push('合同物料缺少品位分档价格表');
       if (isGradeTier && gradePrice?.status === 'REVIEW_REQUIRED') reasons.push(...gradePrice.reasons);
       const deductionPerTon = !separateSettlementReport && task && ['DEDUCTION_PENDING', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition) ? Number(task.qualityDeductionPerTon || 0) : 0;
@@ -160,6 +162,7 @@ export class PurchaseSettlementBasis {
         waybillLineItemId: row.id, weightSelectionId: selection?.id, weight: totalQuantity,
         weighTicketId: ticket?.id || receipt?.weighTicketId, ticketUpdatedAt: ticket?.updatedAt,
         businessInboundId: posted?.id, inboundQuantity: (posted?.pricingQuantity ?? posted?.quantity)?.toString(), inboundPhysicalQuantity: posted?.quantity?.toString(), inboundStatus: posted?.status, inboundPostedAt: posted?.postedAt,
+        settlementQuantityBasis, settlementQuantity: totalQuantity, contractTaxRatePct: item?.taxRatePct?.toString(),
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, qualityDisposition: selectedDisposition,
         reportId: report?.id, reportUpdatedAt: report?.updatedAt, unitPrice: item?.unitPrice.toString(), deductionPerTon,
         gradePrice: gradePrice?.status === 'READY' ? { gradePct: gradePrice.gradePct, moisturePct: gradePrice.moisturePct, band: gradePrice.band, spec: gradePrice.spec, rate: gradePrice.rate, unitPriceExTax: gradePrice.unitPrice } : null,
@@ -177,6 +180,7 @@ export class PurchaseSettlementBasis {
         contractLineItemId: item?.id, materialName: row.materialName || item?.materialName, unit: row.unit,
         totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity, negotiableQuantity, negotiableRemainingQuantity,
         unitPrice: gradePrice?.status === 'READY' ? gradePrice.unitPrice : Number(item?.unitPrice || 0),
+        contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct),
         pricingType: contract.pricingType || 'FIXED', gradePrice,
         weightSelectionId: selection?.id, weighTicketId: ticket?.id || receipt?.weighTicketId, ticketNo: ticket?.ticketNo,
         inventoryTicketNo: inventoryTicket?.ticketNo, inventoryNetWeight: inventoryTicket?.netWeight == null ? null : Number(inventoryTicket.netWeight),
@@ -189,7 +193,7 @@ export class PurchaseSettlementBasis {
         grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight),
         tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
         netWeight, measuredMoisturePct, dryQuantity,
-        pricingQuantityBasis: posted?.pricingQuantityBasis || 'PHYSICAL',
+        pricingQuantityBasis: settlementQuantityBasis,
         qualityTaskId: task?.id, taskNo: task?.taskNo, reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo,
         inventoryReportId: inventoryReport?.id, inventoryReportNo: inventoryReport?.reportNo || inventoryReport?.inspectionNo,
         availableQualityReports: [...availableReports.values()].map(candidate => ({ id: candidate.id, reportNo: candidate.reportNo || candidate.inspectionNo, evidenceStage: candidate.evidenceStage, institutionName: candidate.institutionName, conclusion: candidate.conclusion, measuredMoisturePct: readMeasuredPct(candidate.indicators || [], 'MOISTURE') })),

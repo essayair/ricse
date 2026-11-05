@@ -37,6 +37,7 @@ interface Material {
   standardCommodity: { id: string; code: string; name: string } | null;
   internalCode: string | null; spec: string | null; sourceRegion: string | null; packageType: string | null;
   hsCode: string | null; qcTemplate: string | null; isVirtual: boolean;
+  qualityTemplate?: { id: string; code: string; name: string; version: number; status: string } | null;
 }
 interface WarehouseItem {
   id: string; code: string; name: string; type: string;
@@ -965,7 +966,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
               <Badge key="cat" variant="outline" className="text-xs">{m.category?.name || '-'}</Badge>,
               <div key="g"><div className="text-xs">{m.grade || '-'}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.internalCode || '无内部编码'}</div></div>,
               unitLabel(m.unit),
-              <span key="qc" className="text-xs text-muted-foreground">{m.qcTemplate || '—'}</span>,
+              <span key="qc" className="text-xs text-muted-foreground">{m.qualityTemplate ? `${m.qualityTemplate.name}（v${m.qualityTemplate.version}）` : m.qcTemplate || '—'}</span>,
               <div key="ops" className="flex gap-1.5">
                 <Link href={`/dashboard/master-data/materials/${m.id}`}>
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">详情</Button>

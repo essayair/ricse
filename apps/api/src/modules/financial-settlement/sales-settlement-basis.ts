@@ -46,6 +46,8 @@ export class SalesSettlementBasis {
     return rows.map(row => {
       const w = row.waybill, order = w.dispatchNotice.order;
       const item = contract.lineItems.find(line => line.id === row.dispatchNoticeLineItem.orderLineItem.contractLineItemId);
+      const gradeTier = contract.pricingType === 'GRADE_TIER';
+      const gradeRules = contract.type === 'BILATERAL' ? item?.salesPriceRulesSnapshot : item?.priceRulesSnapshot;
       const outbound = w.outboundReceipts.find(receipt => receipt.status === 'POSTED');
       const inventoryTicket = outbound?.weighTicket;
       const task = w.qualityTask;
@@ -62,7 +64,7 @@ export class SalesSettlementBasis {
       const stageSelection = w.weightSelections.find(selection => selection.purpose === selectedStage);
       const sourceSelection = requestedTicketId ? stageSelection : settlementSelection || stageSelection;
       const stageTickets = selectedStage ? w.weighTickets.filter(candidate => candidate.weighingStage === selectedStage) : [];
-      const pricingQuantityBasis = materialBasis.get(row.materialId) || 'PHYSICAL';
+      const pricingQuantityBasis = gradeTier ? (gradeRules as { quantityBasis?: 'PHYSICAL' | 'DRY_MATTER' } | null)?.quantityBasis || 'PHYSICAL' : materialBasis.get(row.materialId) || 'PHYSICAL';
       const measuredMoisturePct = readMeasuredPct(report?.indicators || [], 'MOISTURE');
       const netWeight = ticket?.netWeight == null ? null : Number(ticket.netWeight);
       const dryQuantity = netWeight == null || measuredMoisturePct == null ? null
@@ -111,8 +113,7 @@ export class SalesSettlementBasis {
       if (legacyContract || legacyOrders.has(order.id)) reasons.push('存在未映射到具体货物的历史应收，请先处理重叠结算');
       if (negotiableRemainingQuantity <= 0) reasons.push('该车货物无剩余可结算数量');
       if (!['TON', '吨', 't'].includes(row.unit)) reasons.push('当前自动货物结算仅支持吨计价');
-      const gradeTier = contract.pricingType === 'GRADE_TIER';
-      const rules = contract.type === 'BILATERAL' ? item?.salesPriceRulesSnapshot : item?.priceRulesSnapshot;
+      const rules = gradeRules;
       const gradePrice = gradeTier && rules ? evaluateGradePrice(rules, (rules as any).selectedSpec, remainingQuantity, report?.indicators || []) : null;
       if (gradeTier && gradePrice?.status !== 'READY') reasons.push(...(gradePrice?.reasons || ['销售合同品位分档价缺少有效依据']));
       const unitPrice = gradePrice?.status === 'READY' ? gradePrice.unitPrice : Number(contract.type === 'BILATERAL' ? item?.salesUnitPrice || 0 : item?.unitPrice || 0);
@@ -123,7 +124,7 @@ export class SalesSettlementBasis {
         outboundReceiptId: outbound?.id, outboundQuantity: outbound?.outboundQuantity?.toString(), outboundStatus: outbound?.status,
         weighTicketId: ticket?.id, ticketUpdatedAt: ticket?.updatedAt, weightSelectionId: sourceSelection?.id,
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, reportId: report?.id, reportUpdatedAt: report?.updatedAt,
-        pricingQuantityBasis, totalQuantity, unitPrice, gradePrice: gradePrice?.status === 'READY' ? gradePrice : null,
+        pricingQuantityBasis, totalQuantity, unitPrice, contractTaxRatePct: item?.taxRatePct?.toString(), gradePrice: gradePrice?.status === 'READY' ? gradePrice : null,
       };
       return {
         id: row.id, waybillLineItemId: row.id, waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo,
@@ -144,7 +145,7 @@ export class SalesSettlementBasis {
         netWeight, grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
         measuredMoisturePct, dryQuantity, pricingQuantityBasis, totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity,
         negotiableQuantity, negotiableRemainingQuantity,
-        unitPrice, pricingType: contract.pricingType || 'FIXED', gradePrice, deductionPerTon: 0,
+        unitPrice, contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct), pricingType: contract.pricingType || 'FIXED', gradePrice, deductionPerTon: 0,
         qualityDisposition: task?.qualityDisposition && task.qualityDisposition !== 'PENDING'
           ? task.qualityDisposition : report?.conclusion === 'PASS' ? 'PASS' : report?.conclusion === 'FUSE' ? 'REJECT' : 'REVIEW_REQUIRED',
         signature: signature(basis), basis, available: reasons.length === 0, reasons,

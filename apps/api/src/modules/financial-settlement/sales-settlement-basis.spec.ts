@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { SalesSettlementBasis } from './sales-settlement-basis';
+import { DEFAULT_FLUORITE_ORE_BANDS } from '../contract/grade-price-rules';
 
 describe('销售交付后的逐车应收来源', () => {
   const prisma = mockDeep<PrismaService>(), access = mockDeep<AccessControlService>();
@@ -46,6 +47,25 @@ describe('销售交付后的逐车应收来源', () => {
     expect(source).toMatchObject({ available: true, totalQuantity: 88.2, remainingQuantity: 88.2,
       negotiableQuantity: 90, negotiableRemainingQuantity: 90,
       inventoryNetWeight: 100, customerNetWeight: 98, weightVariance: -2, unitPrice: 2000, totalAmount: 176400 });
+    expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
+  });
+
+  it('销售分档合同以选定客户磅单净重折干，不沿用物料的实物计价配置', async () => {
+    prisma.material.findMany.mockResolvedValue([{ id: 'material', pricingQuantityBasis: 'PHYSICAL' }] as any);
+    prisma.contract.findFirst.mockResolvedValue({ id: 'contract', type: 'SALES', pricingType: 'GRADE_TIER', lineItems: [{
+      id: 'contract-line', unitPrice: new Prisma.Decimal(700), taxRatePct: new Prisma.Decimal(13),
+      priceRulesSnapshot: { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
+        quantityBasis: 'DRY_MATTER', moistureMaxPct: 5, bands: DEFAULT_FLUORITE_ORE_BANDS,
+        exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'FRAGMENT', formulaConfirmed: true },
+    }] } as any);
+    row.waybill.qualityTask.basisInspection.indicators = [
+      { code: 'CAF2', measuredValue: new Prisma.Decimal(32.5), unit: '%' },
+      { code: 'MOISTURE', measuredValue: new Prisma.Decimal(3.2), unit: '%' },
+    ];
+    const source = (await basis.sources('contract', 'user'))[0];
+    expect(source).toMatchObject({ available: true, pricingQuantityBasis: 'DRY_MATTER', netWeight: 98,
+      dryQuantity: 94.864, totalQuantity: 94.864, contractTaxRatePct: 13,
+      gradePrice: { status: 'READY', gradePct: 32.5, rate: 22.7, unitPrice: 737.75 } });
     expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
   });
 

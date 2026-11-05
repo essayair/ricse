@@ -12,6 +12,7 @@ import { attachmentUploadError, selectValidAttachmentFiles } from '@/lib/attachm
 import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
 import { GradePriceRulesEditor, GradePriceSnapshot, defaultGradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
+import { TaxPriceFields, pairFromInclusive } from '@/components/contracts/tax-price-fields';
 import { alertValidationErrors, confirmAction } from '@/lib/system-dialog';
 import { focusInvalidField, type FieldErrors } from '@/lib/form-validation';
 
@@ -23,7 +24,7 @@ const ContractErrorsContext = createContext<FieldErrors>({});
 const fieldKeys: Record<string, string> = {
   '业务单元（事业部）': 'businessUnitId', '业务部门': 'departmentId', '合同标题': 'title', '外部合同号': 'externalNo',
   '我方签约主体（内部）': 'signingPartnerId', '上游供应商': 'sellerId', '下游客户': 'buyerId',
-  '物料品种': 'materialId', '合同数量（吨）': 'quantity', '采购单价（元/吨）': 'unitPrice', '销售单价（元/吨）': 'saleUnitPrice',
+  '物料品种': 'materialId', '合同数量（吨）': 'quantity', '增值税率（%）': 'taxRatePct', '采购单价（元/吨）': 'unitPrice', '销售单价（元/吨）': 'saleUnitPrice',
   '溢装比例(%)': 'overfillPct', '短装比例(%)': 'shortfallPct', '签订日期': 'signedAt', '生效日期': 'effectiveAt',
   '到期日期': 'expireAt', '交货方式': 'deliveryMethod', '交货地点': 'deliveryLocation', '结算数量约定': 'settlementBasis',
   '结算方式': 'settlementMethod', '预付比例(%)': 'prepayPct', '尾款账期（天）': 'paymentDays', '付款方式': 'paymentMethod',
@@ -92,7 +93,7 @@ export default function ContractCreatePage() {
     signingPartnerId: '', departmentId: '', businessUnitId: '', externalNo: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
-    pricingType: 'FIXED', unitPrice: '', saleUnitPrice: '', overfillPct: '10', shortfallPct: '10',
+    pricingType: 'FIXED', unitPrice: '', unitPriceExTax: '', saleUnitPrice: '', saleUnitPriceExTax: '', taxRatePct: '13', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: '', effectiveAt: '', expireAt: '',
     settlementMethod: '', settlementBasis: '',
@@ -105,7 +106,11 @@ export default function ContractCreatePage() {
 
   const set = (k: string, v: string) => {
     setIsDirty(true);
-    setForm(f => ({ ...f, [k]: v }));
+    setForm(f => k === 'taxRatePct' ? {
+      ...f, taxRatePct: v,
+      unitPriceExTax: pairFromInclusive(f.unitPrice, v).exclusive,
+      saleUnitPriceExTax: pairFromInclusive(f.saleUnitPrice, v).exclusive,
+    } : ({ ...f, [k]: v }));
     if (k === 'type') setFormErrors({});
     else if (String(v).trim()) setFormErrors(current => { const next = { ...current }; delete next[k]; return next; });
   };
@@ -149,6 +154,10 @@ export default function ContractCreatePage() {
 
   const handleSelectMaterial = (id: string) => {
     const m = materials.find(x => x.id === id);
+    if (m && m.status !== 'ACTIVE') {
+      setFormErrors(current => ({ ...current, materialId: '该物料已停用，请选择启用中的物料' }));
+      return;
+    }
     set('materialId', id);
     setQualityRulesSnapshot(null);
     setGradePriceSnapshot(null);
@@ -189,7 +198,10 @@ export default function ContractCreatePage() {
         quantity: form.quantity,
         unit: form.unit,
         unitPrice: form.unitPrice,
+        unitPriceExTax: form.unitPriceExTax,
+        taxRatePct: form.taxRatePct,
         salesUnitPrice: form.saleUnitPrice,
+        salesUnitPriceExTax: form.saleUnitPriceExTax,
         qualityRulesSnapshot,
         priceRulesSnapshot: form.pricingType === 'GRADE_TIER' ? gradePriceSnapshot : null,
         salesPriceRulesSnapshot: form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' ? gradeSalesPriceSnapshot : null,
@@ -199,7 +211,8 @@ export default function ContractCreatePage() {
       materialId: form.materialId, materialName: form.materialName,
       quantity: Number(form.quantity), unit: form.unit,
       unitPrice: Number(form.unitPrice),
-      ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(form.saleUnitPrice) } : {}),
+      unitPriceExTax: Number(form.unitPriceExTax), taxRatePct: Number(form.taxRatePct),
+      ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(form.saleUnitPrice), salesUnitPriceExTax: Number(form.saleUnitPriceExTax) } : {}),
       qualityRulesSnapshot: qualityRulesSnapshot || undefined,
       priceRulesSnapshot: form.pricingType === 'GRADE_TIER' ? gradePriceSnapshot || undefined : undefined,
       salesPriceRulesSnapshot: form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' ? gradeSalesPriceSnapshot || undefined : undefined,
@@ -277,6 +290,7 @@ export default function ContractCreatePage() {
       ['signingPartnerId', '我方签约主体'], ['departmentId', '业务部门'], ['businessUnitId', '业务单元（事业部）'],
       ['sellerId', form.type === 'BILATERAL' ? '上游供应商' : '交易对手方'],
       ['materialId', '物料品种'], ['quantity', '合同数量'], ['unitPrice', '采购/销售单价'],
+      ['taxRatePct', '增值税率'],
       ['signedAt', '纸质合同签订日期'],
       ['deliveryMethod', '交货方式'], ['deliveryLocation', '交货地点'], ['settlementBasis', '结算数量约定'],
       ['settlementMethod', '结算方式'], ['prepayPct', '预付比例（无预付请填写0）'], ['paymentDays', '尾款账期（无账期请填写0）'],
@@ -292,6 +306,9 @@ export default function ContractCreatePage() {
     }
     for (const key of ['quantity', 'unitPrice', ...(form.type === 'BILATERAL' ? ['saleUnitPrice'] : [])]) {
       if (!errors[key] && Number(form[key as keyof typeof form]) <= 0) errors[key] = `${key === 'quantity' ? '合同数量' : key === 'saleUnitPrice' ? '销售单价' : '合同单价'}必须大于0`;
+    }
+    if (!errors.taxRatePct && (!Number.isFinite(Number(form.taxRatePct)) || Number(form.taxRatePct) < 0 || Number(form.taxRatePct) > 100)) {
+      errors.taxRatePct = '税率须在0至100%之间，请按合同实际税率核对';
     }
     for (const key of ['overfillPct', 'shortfallPct', 'prepayPct']) {
       const value = Number(form[key as keyof typeof form]);
@@ -455,30 +472,26 @@ export default function ContractCreatePage() {
         </Card>
 
         {/* 货物与价格 */}
-        <Card className="p-6 mt-4">
+      <Card className="p-6 mt-4">
           <SectionTitle>货物与价格</SectionTitle>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <FormField label="物料品种" required>
               <select value={form.materialId} onChange={e => handleSelectMaterial(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">请选择</option>
-                {materials.map(m => <option key={m.id} value={m.id}>{m.code} {m.name} {m.grade ? `(${m.grade})` : ''}</option>)}
+                {materials.map(m => <option key={m.id} value={m.id} disabled={m.status !== 'ACTIVE'}>{m.code} {m.name} {m.grade ? `(${m.grade})` : ''}{m.status !== 'ACTIVE' ? '（已停用）' : ''}</option>)}
               </select>
             </FormField>
             <FormField label="合同数量（吨）" required><Input type="number" value={form.quantity} onChange={e => set('quantity', e.target.value)} step="0.001" /></FormField>
             <FormField label="定价类型" required><select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.pricingType} onChange={e => { set('pricingType', e.target.value); if (e.target.value === 'GRADE_TIER') { if (!gradePriceSnapshot) setGradePriceSnapshot(defaultGradePriceSnapshot); if (!gradeSalesPriceSnapshot) setGradeSalesPriceSnapshot(defaultGradePriceSnapshot); } }}><option value="FIXED">固定价格（一口价）</option><option value="GRADE_TIER">按 CaF₂ 品位分档计价</option></select></FormField>
-            {form.type !== 'BILATERAL' && (
-              <FormField label={form.pricingType === 'GRADE_TIER' ? '预计单价（元/吨，仅用于合同金额预估）' : `${form.type === 'PURCHASE' ? '采购' : '销售'}单价（元/吨）`} required><Input type="number" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
-            )}
+            <FormField label="增值税率（%）" required><Input type="number" min="0" max="100" step="0.01" value={form.taxRatePct} onChange={e => set('taxRatePct', e.target.value)} /></FormField>
             <FormField label="溢装比例(%)" required><Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} /></FormField>
             <FormField label="短装比例(%)" required><Input type="number" min="0" max="100" step="0.01" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} /></FormField>
           </div>
-          {form.type === 'BILATERAL' && (
-            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
-              <FormField label="采购单价（元/吨）" required><Input type="number" min="0" value={form.unitPrice} onChange={e => set('unitPrice', e.target.value)} step="0.01" /></FormField>
-              <FormField label="销售单价（元/吨）" required><Input type="number" min="0" value={form.saleUnitPrice} onChange={e => set('saleUnitPrice', e.target.value)} step="0.01" /></FormField>
-            </div>
-          )}
-          {form.pricingType === 'GRADE_TIER' && <><div className="mt-4 text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={gradePriceSnapshot} onChange={snapshot => { setIsDirty(true); setGradePriceSnapshot(snapshot); }} />{form.type === 'BILATERAL' && <><div className="mt-5 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={gradeSalesPriceSnapshot} onChange={snapshot => { setIsDirty(true); setGradeSalesPriceSnapshot(snapshot); }} /></>}</>}
+          <div className="mt-4 space-y-4">
+            <TaxPriceFields label={form.type === 'SALES' ? '销售' : '采购'} estimated={form.pricingType === 'GRADE_TIER'} rate={form.taxRatePct} inclusive={form.unitPrice} exclusive={form.unitPriceExTax} fieldKey="unitPrice" error={formErrors.unitPrice} onChange={pair => { set('unitPrice', pair.inclusive); set('unitPriceExTax', pair.exclusive); }} />
+            {form.type === 'BILATERAL' && <TaxPriceFields label="销售" estimated={form.pricingType === 'GRADE_TIER'} rate={form.taxRatePct} inclusive={form.saleUnitPrice} exclusive={form.saleUnitPriceExTax} fieldKey="saleUnitPrice" error={formErrors.saleUnitPrice} onChange={pair => { set('saleUnitPrice', pair.inclusive); set('saleUnitPriceExTax', pair.exclusive); }} />}
+          </div>
+          {form.pricingType === 'GRADE_TIER' && <><div className="mt-4 text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={gradePriceSnapshot} taxRate={form.taxRatePct} onChange={snapshot => { setIsDirty(true); setGradePriceSnapshot(snapshot); }} />{form.type === 'BILATERAL' && <><div className="mt-5 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={gradeSalesPriceSnapshot} taxRate={form.taxRatePct} onChange={snapshot => { setIsDirty(true); setGradeSalesPriceSnapshot(snapshot); }} /></>}</>}
           <QualityRulesEditor
             materialId={form.materialId}
             scene={form.type === 'SALES' ? 'SALES' : 'PURCHASE'}

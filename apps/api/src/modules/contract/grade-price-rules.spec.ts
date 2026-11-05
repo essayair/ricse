@@ -25,4 +25,17 @@ describe('萤石矿品位分档计价', () => {
   it('重叠或缺档规则不能提交合同', () => {
     expect(() => parseGradePriceRules({ ...rules, bands: [rules.bands[0], { ...rules.bands[1], lower: 14 }] })).toThrow('连续、不重叠');
   });
+  it('新合同未填价格表时不能提交，草稿可保留空白', () => {
+    expect(() => parseGradePriceRules({ ...rules, bands: [], moistureMaxPct: null })).toThrow('请确认品位分档价格规则');
+  });
+  it('只填写本行货物规格的价格也可以提交，另一规格不被自动套价', () => {
+    const oneSpec = { ...rules, bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: 14.8, RUN_OF_MINE: null } }] };
+    expect(parseGradePriceRules(oneSpec).bands[0].rates.RUN_OF_MINE).toBeNull();
+    expect(evaluateGradePrice(oneSpec, 'FRAGMENT', 10, [
+      { code: 'CAF2', measuredValue: 12, unit: '%' }, { code: 'MOISTURE', measuredValue: 4, unit: '%' },
+    ])).toMatchObject({ status: 'READY', amountExTax: 1776 });
+    expect(evaluateGradePrice(oneSpec, 'RUN_OF_MINE', 10, [
+      { code: 'CAF2', measuredValue: 12, unit: '%' }, { code: 'MOISTURE', measuredValue: 4, unit: '%' },
+    ])).toMatchObject({ status: 'REVIEW_REQUIRED' });
+  });
 });

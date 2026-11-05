@@ -322,7 +322,10 @@ export class ContractService {
         materialId: string;
         quantity: unknown;
         unitPrice: unknown;
+        unitPriceExTax?: unknown;
+        taxRatePct?: unknown;
         salesUnitPrice: unknown;
+        salesUnitPriceExTax?: unknown;
         deliveryDate?: Date | null;
         qualityRulesSnapshot?: unknown;
         priceRulesSnapshot?: unknown;
@@ -391,6 +394,21 @@ export class ContractService {
       || (contract.type === 'BILATERAL' && (item.salesUnitPrice == null || !Number.isFinite(Number(item.salesUnitPrice)) || Number(item.salesUnitPrice) <= 0))
     ));
     if (invalidLine) throw new BadRequestException('请完整填写货物、数量和单价');
+    for (const line of contract.lineItems) {
+      if (line.taxRatePct == null) continue; // 存量合同沿用原价，不倒推历史税率。
+      const taxRate = new Prisma.Decimal(String(line.taxRatePct));
+      if (taxRate.lessThan(0) || taxRate.greaterThan(100)) throw new BadRequestException('合同税率须在0至100%之间');
+      const multiplier = taxRate.div(100).plus(1);
+      const checkPrice = (inclusive: unknown, exclusive: unknown, label: string) => {
+        if (exclusive == null) return;
+        const expected = new Prisma.Decimal(String(exclusive)).mul(multiplier).toDecimalPlaces(4);
+        if (expected.minus(new Prisma.Decimal(String(inclusive))).abs().greaterThan(0.0001)) {
+          throw new BadRequestException(`${label}的含税价与不含税价、税率不一致`);
+        }
+      };
+      checkPrice(line.unitPrice, line.unitPriceExTax, '合同单价');
+      if (contract.type === 'BILATERAL') checkPrice(line.salesUnitPrice, line.salesUnitPriceExTax, '销售单价');
+    }
     if (contract.pricingType === 'GRADE_TIER') {
       for (const line of contract.lineItems) {
         parseGradePriceRules(line.priceRulesSnapshot);
@@ -399,7 +417,7 @@ export class ContractService {
     }
     const materials = await client.material.findMany({
       where: { id: { in: contract.lineItems.map(item => item.materialId) }, deletedAt: null },
-      select: { id: true, name: true, categoryId: true, qualityTemplateId: true, qualityTemplate: { select: { status: true } } },
+      select: { id: true, name: true, status: true, categoryId: true, qualityTemplateId: true, qualityTemplate: { select: { status: true } } },
     });
     const scene = contract.type === 'SALES' ? 'SALES' : 'PURCHASE';
     const fallbackTemplates = await client.qualityTemplate.findMany({
@@ -409,6 +427,9 @@ export class ContractService {
     const materialById = new Map(materials.map(material => [material.id, material]));
     for (const line of contract.lineItems) {
       const material = materialById.get(line.materialId);
+      if (!material || material.status !== 'ACTIVE') {
+        throw new BadRequestException(`物料“${material?.name || line.materialId}”不存在或已停用，不能提交合同`);
+      }
       const hasDirectTemplate = Boolean(material?.qualityTemplateId && material.qualityTemplate?.status === 'ACTIVE');
       const hasFallbackTemplate = fallbackTemplates.some(template => template.materialCategoryId === material?.categoryId);
       if ((hasDirectTemplate || hasFallbackTemplate) && (!line.qualityRulesSnapshot || !Array.isArray((line.qualityRulesSnapshot as any).items) || !(line.qualityRulesSnapshot as any).items.length)) {
@@ -527,8 +548,11 @@ export class ContractService {
               quantity: item.quantity,
               unit: item.unit || 'TON',
               unitPrice: item.unitPrice,
+              unitPriceExTax: item.unitPriceExTax,
+              taxRatePct: item.taxRatePct,
               totalPrice: Number(item.unitPrice) * Number(item.quantity),
               salesUnitPrice: dto.type === 'BILATERAL' ? item.salesUnitPrice : null,
+              salesUnitPriceExTax: dto.type === 'BILATERAL' ? item.salesUnitPriceExTax : null,
               salesTotalPrice: dto.type === 'BILATERAL'
                 ? Number(item.salesUnitPrice) * Number(item.quantity)
                 : null,
@@ -1342,7 +1366,8 @@ export class ContractService {
       lineItems?: Array<{
         materialId: string; materialName?: string;
         quantity: number; unit?: string;
-        unitPrice: number; salesUnitPrice?: number; deliveryDate?: string; remarks?: string;
+        unitPrice: number; unitPriceExTax?: number; taxRatePct?: number;
+        salesUnitPrice?: number; salesUnitPriceExTax?: number; deliveryDate?: string; remarks?: string;
         qualityRulesSnapshot?: Record<string, unknown>;
         priceRulesSnapshot?: Record<string, unknown>;
         salesPriceRulesSnapshot?: Record<string, unknown>;
@@ -1412,8 +1437,11 @@ export class ContractService {
               quantity: item.quantity,
               unit: item.unit || 'TON',
               unitPrice: item.unitPrice,
+              unitPriceExTax: item.unitPriceExTax,
+              taxRatePct: item.taxRatePct,
               totalPrice: Number(item.unitPrice) * Number(item.quantity),
               salesUnitPrice: resolvedType === 'BILATERAL' ? item.salesUnitPrice : null,
+              salesUnitPriceExTax: resolvedType === 'BILATERAL' ? item.salesUnitPriceExTax : null,
               salesTotalPrice: resolvedType === 'BILATERAL'
                 ? Number(item.salesUnitPrice) * Number(item.quantity)
                 : null,

@@ -89,6 +89,21 @@ describe('FinancialSettlementService payment approvals', () => {
     sources.mockRestore();
   });
 
+  it('新分档合同结算沿用合同税率，拒绝与合同不一致的手填税率', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller', lineItems: [{ taxRatePct: 13 }] } as any);
+    const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue([{
+      id: 'w', orderId: 'o', available: true, remainingQuantity: 10, unitPrice: 858.4, contractTaxRatePct: 13, deductionPerTon: 0,
+      gradePrice: { status: 'READY', gradePct: 37, rate: 23.2 }, waybillNo: 'WB-1', orderNo: 'O-1', orderName: '批次', unit: 'TON', contractLineItemId: 'line-1', reasons: [],
+    }] as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'line-1', quantity: 100, materialName: '萤石矿' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    const request = { contractId: 'c', direction: 'PAYABLE' as const, settlementScope: 'GOODS' as const, lines: [{ orderId: 'o', waybillLineItemId: 'w', quantity: 10 }] };
+    const preview = await service.previewGoodsSettlement(request, 'u');
+    expect(preview.lines[0].sourceSnapshot).toMatchObject({ taxRatePct: 13, taxAmount: 1115.92 });
+    await expect(service.previewGoodsSettlement({ ...request, taxRatePct: 9 }, 'u')).rejects.toThrow('与合同约定不一致');
+    sources.mockRestore();
+  });
+
   it('协商数量超过所选磅单但未超过双方依据上限时可预览，须填写原因', async () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'FIXED', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller' } as any);
     const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue([{

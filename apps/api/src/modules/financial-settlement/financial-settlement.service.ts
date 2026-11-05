@@ -633,7 +633,9 @@ export class FinancialSettlementService {
   private async createGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false, existingId?: string): Promise<any> {
     if (!dto.lines?.length || dto.lines.some(l => !l.waybillLineItemId)) throw new BadRequestException('请勾选本次结算的具体运单货物');
     const gradeTier = contract.pricingType === 'GRADE_TIER';
-    if (gradeTier && dto.taxRatePct == null) throw new BadRequestException('品位分档价格为不含税价，请填写并确认本次结算适用税率');
+    if (gradeTier && dto.taxRatePct == null && !contract.lineItems?.some((line: { taxRatePct?: unknown }) => line.taxRatePct != null)) {
+      throw new BadRequestException('存量品位分档合同未记录税率，请填写并确认本次结算适用税率');
+    }
     const ids = dto.lines.map(l => l.waybillLineItemId!);
     if (new Set(ids).size !== ids.length) throw new BadRequestException('同一货物来源不能重复选择');
     const reportChoices = new Map(dto.lines.filter(line => line.qualityReportId).map(line => [line.waybillLineItemId!, line.qualityReportId!]));
@@ -642,6 +644,11 @@ export class FinancialSettlementService {
     const lines = dto.lines.map(input => {
       const source = sources.find(s => s.id === input.waybillLineItemId && s.orderId === input.orderId);
       if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于该批次'}`);
+      const taxRatePct = gradeTier ? source.contractTaxRatePct ?? dto.taxRatePct : null;
+      if (gradeTier && taxRatePct == null) throw new BadRequestException('存量品位分档合同未记录税率，请填写并确认本次结算适用税率');
+      if (gradeTier && source.contractTaxRatePct != null && dto.taxRatePct != null && Number(dto.taxRatePct) !== Number(source.contractTaxRatePct)) {
+        throw new BadRequestException('结算税率与合同约定不一致，请先核对合同税率');
+      }
       const qty = input.quantity ?? source.remainingQuantity;
       const ceiling = input.negotiatedQuantity ? source.negotiableRemainingQuantity : source.remainingQuantity;
       if (qty <= 0 || qty > ceiling) throw new BadRequestException(`${source.waybillNo}本次结算数量超过有依据的剩余可结算数量`);
@@ -657,7 +664,7 @@ export class FinancialSettlementService {
       const amounts = gradeTier
         ? (() => {
           const exTax = new Prisma.Decimal(qty).mul(source.unitPrice).toDecimalPlaces(2);
-          const tax = exTax.mul(new Prisma.Decimal(dto.taxRatePct!).div(100)).toDecimalPlaces(2);
+          const tax = exTax.mul(new Prisma.Decimal(taxRatePct!).div(100)).toDecimalPlaces(2);
           const gross = exTax.plus(tax);
           return { quantity: new Prisma.Decimal(qty).toDecimalPlaces(3).toNumber(), grossAmount: gross.toNumber(),
             qualityDeductionAmount: 0, adjustmentAmount: money(input.adjustmentAmount || 0),
@@ -669,8 +676,8 @@ export class FinancialSettlementService {
       return { orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
         waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
         sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity), ...amounts,
-          ...(gradeTier ? { taxRatePct: dto.taxRatePct, pricingFormula: '结算吨数 × CaF₂实测百分数数值 × 档位元/度单价 × (1 + 税率)' } : {}) }),
-        unit: source.unit, unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(dto.taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
+          ...(gradeTier ? { taxRatePct, pricingFormula: '所选磅单净重按合同口径折算 × CaF₂实测百分点 × 档位不含税元/度单价 × (1 + 合同税率)' } : {}) }),
+        unit: source.unit, unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
         quantity: amounts.quantity, grossAmount: amounts.grossAmount, qualityDeductionAmount: amounts.qualityDeductionAmount,
         adjustmentAmount: amounts.adjustmentAmount, totalAmount: amounts.totalAmount, remarks: input.remarks?.trim() };
     });
@@ -698,13 +705,20 @@ export class FinancialSettlementService {
     const ids = dto.lines.map(line => line.waybillLineItemId!);
     if (new Set(ids).size !== ids.length) throw new BadRequestException('同一运单货物不能重复结算');
     const gradeTier = contract.pricingType === 'GRADE_TIER';
-    if (gradeTier && dto.taxRatePct == null) throw new BadRequestException('品位分档价格为不含税价，请确认本次销售结算税率');
+    if (gradeTier && dto.taxRatePct == null && !contract.lineItems?.some((line: { taxRatePct?: unknown }) => line.taxRatePct != null)) {
+      throw new BadRequestException('存量销售分档合同未记录税率，请填写并确认本次结算适用税率');
+    }
     const reportChoices = new Map(dto.lines.filter(line => line.qualityReportId).map(line => [line.waybillLineItemId!, line.qualityReportId!]));
     const ticketChoices = new Map(dto.lines.filter(line => line.weighTicketId).map(line => [line.waybillLineItemId!, line.weighTicketId!]));
     const sources = await new SalesSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', existingId, reportChoices, ticketChoices);
     const lines = dto.lines.map(input => {
       const source = sources.find(candidate => candidate.id === input.waybillLineItemId && candidate.orderId === input.orderId);
       if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于合同'}`);
+      const taxRatePct = gradeTier ? source.contractTaxRatePct ?? dto.taxRatePct : null;
+      if (gradeTier && taxRatePct == null) throw new BadRequestException('存量销售分档合同未记录税率，请确认本次结算税率');
+      if (gradeTier && source.contractTaxRatePct != null && dto.taxRatePct != null && Number(dto.taxRatePct) !== Number(source.contractTaxRatePct)) {
+        throw new BadRequestException('销售结算税率与合同约定不一致，请先核对合同税率');
+      }
       const qty = input.quantity ?? source.remainingQuantity;
       const ceiling = input.negotiatedQuantity ? source.negotiableRemainingQuantity : source.remainingQuantity;
       if (qty <= 0 || qty > ceiling) throw new BadRequestException(`${source.waybillNo}本次结算数量超过剩余有依据数量`);
@@ -716,7 +730,7 @@ export class FinancialSettlementService {
       const amounts = gradeTier
         ? (() => {
           const exTax = new Prisma.Decimal(qty).mul(source.unitPrice).toDecimalPlaces(2);
-          const tax = exTax.mul(new Prisma.Decimal(dto.taxRatePct!).div(100)).toDecimalPlaces(2);
+          const tax = exTax.mul(new Prisma.Decimal(taxRatePct!).div(100)).toDecimalPlaces(2);
           const gross = exTax.plus(tax);
           return { quantity: new Prisma.Decimal(qty).toDecimalPlaces(3).toNumber(), grossAmount: gross.toNumber(), qualityDeductionAmount: 0,
             adjustmentAmount: money(input.adjustmentAmount || 0), totalAmount: gross.plus(input.adjustmentAmount || 0).toDecimalPlaces(2).toNumber(),
@@ -728,9 +742,9 @@ export class FinancialSettlementService {
         orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
         waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
         sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity), ...amounts,
-          ...(gradeTier ? { taxRatePct: dto.taxRatePct, pricingFormula: '结算吨数 × CaF₂实测百分数数值 × 档位元/度单价 × (1 + 税率)' } : {}) }),
+          ...(gradeTier ? { taxRatePct, pricingFormula: '所选磅单净重按合同口径折算 × CaF₂实测百分点 × 档位不含税元/度单价 × (1 + 合同税率)' } : {}) }),
         quantity: amounts.quantity, unit: source.unit,
-        unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(dto.taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
+        unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
         grossAmount: amounts.grossAmount, qualityDeductionAmount: 0, adjustmentAmount: amounts.adjustmentAmount,
         totalAmount: amounts.totalAmount, remarks: input.remarks?.trim(),
       };

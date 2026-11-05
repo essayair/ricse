@@ -14,7 +14,7 @@ type Rule = {
 
 type Snapshot = { materialId?: string; templateId?: string; templateCode?: string; templateName?: string; templateVersion?: number; items: Rule[] };
 
-function preset(item: any): Rule {
+function preset(item: any, templateCode: string): Rule {
   const code = String(item.indicator?.code || '').toLowerCase();
   const name = String(item.indicator?.name || '').toLowerCase();
   const symbol = String(item.indicator?.symbol || '').toLowerCase();
@@ -28,17 +28,24 @@ function preset(item: any): Rule {
     deductionCondition: 'OUTSIDE_STANDARD', deductionLowerValue: null, deductionUpperValue: null,
     deductionLimitValue: null, rejectOperator: 'NONE', rejectValue: null,
   };
-  if (is('caf2', 'caf₂', '氟化钙')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 0.1, deductionAmount: 20, rejectOperator: 'LT', rejectValue: 96.5 });
-  else if (is('caco3', '碳酸钙')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 0.1, deductionAmount: 20 });
-  else if (is('sio2', '二氧化硅')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 0.1, deductionAmount: 20, rejectOperator: 'GT', rejectValue: 2 });
-  else if (is('moisture', '水分')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 1, deductionAmount: 20, rejectOperator: 'GT', rejectValue: 15 });
-  else if (is('sulfur', 'sulphur', '硫')) Object.assign(rule, { rejectOperator: 'GT', rejectValue: rule.standardValue });
-  else if (is('organic', '有机物')) Object.assign(rule, { rejectOperator: 'GT', rejectValue: rule.standardValue });
-  else if (is('325', '泰勒', '筛')) Object.assign(rule, {
-    deductionMode: 'FLAT', deductionAmount: 20, deductionCondition: 'IN_RANGE',
-    deductionLowerValue: rule.standardValue ?? 45, deductionUpperValue: rule.upperValue ?? 50,
-    rejectOperator: 'GT', rejectValue: rule.upperValue ?? 50,
-  });
+  // 精粉 97 的商务扣款为历史专用预设，不能套到块矿等仅共享检测指标的模板。
+  if (templateCode === 'QT-FLUORITE-97') {
+    if (is('caf2', 'caf₂', '氟化钙')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 0.1, deductionAmount: 20, rejectOperator: 'LT', rejectValue: 96.5 });
+    else if (is('caco3', '碳酸钙')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 0.1, deductionAmount: 20 });
+    else if (is('sio2', '二氧化硅')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 0.1, deductionAmount: 20, rejectOperator: 'GT', rejectValue: 2 });
+    else if (is('moisture', '水分')) Object.assign(rule, { deductionMode: 'PER_STEP', deductionStep: 1, deductionAmount: 20, rejectOperator: 'GT', rejectValue: 15 });
+    else if (is('sulfur', 'sulphur', '硫')) Object.assign(rule, { rejectOperator: 'GT', rejectValue: rule.standardValue });
+    else if (is('organic', '有机物')) Object.assign(rule, { rejectOperator: 'GT', rejectValue: rule.standardValue });
+    else if (is('325', '泰勒', '筛')) Object.assign(rule, {
+      deductionMode: 'FLAT', deductionAmount: 20, deductionCondition: 'IN_RANGE',
+      deductionLowerValue: rule.standardValue ?? 45, deductionUpperValue: rule.upperValue ?? 50,
+      rejectOperator: 'GT', rejectValue: rule.upperValue ?? 50,
+    });
+  }
+  if (item.fuseValue != null) {
+    const rejectOperator = item.operator === 'GTE' ? 'LT' : item.operator === 'LTE' ? 'GT' : null;
+    if (rejectOperator) Object.assign(rule, { rejectOperator, rejectValue: Number(item.fuseValue) });
+  }
   return rule;
 }
 
@@ -63,7 +70,7 @@ export function QualityRulesEditor({ materialId, scene, value, onChange }: {
           templateCode: template?.code,
           templateName: template?.name,
           templateVersion: template?.version,
-          items: (template?.items || []).map(preset),
+          items: (template?.items || []).map((item: any) => preset(item, template?.code || '')),
         });
       })
       .catch((e: Error) => { if (active) setError(e.message || '读取物料质检模板失败'); })
@@ -91,7 +98,7 @@ export function QualityRulesEditor({ materialId, scene, value, onChange }: {
       {rule.deductionMode === 'PER_STEP' && <><label className="col-span-3 md:col-span-2 text-xs">每步偏差<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" min="0.0001" step="0.1" value={rule.deductionStep ?? ''} onChange={e => update(index, { deductionStep: e.target.value === '' ? null : Number(e.target.value) })} /></label><label className="col-span-3 md:col-span-2 text-xs">扣款标准（元/吨）<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" min="0" step="0.01" value={rule.deductionAmount ?? ''} onChange={e => update(index, { deductionAmount: e.target.value === '' ? null : Number(e.target.value) })} /></label></>}
       {rule.deductionMode === 'FLAT' && <label className="col-span-6 md:col-span-2 text-xs">固定扣款（元/吨）<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" min="0" step="0.01" value={rule.deductionAmount ?? ''} onChange={e => update(index, { deductionAmount: e.target.value === '' ? null : Number(e.target.value) })} /></label>}
       {rule.deductionCondition === 'IN_RANGE' && <><label className="col-span-3 md:col-span-1 text-xs">区间下限<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.deductionLowerValue ?? ''} onChange={e => update(index, { deductionLowerValue: e.target.value === '' ? null : Number(e.target.value) })} /></label><label className="col-span-3 md:col-span-1 text-xs">区间上限<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.deductionUpperValue ?? ''} onChange={e => update(index, { deductionUpperValue: e.target.value === '' ? null : Number(e.target.value) })} /></label></>}
-      {rule.deductionMode !== 'NONE' && <label className="col-span-6 md:col-span-2 text-xs">拒收条件<select className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" value={rule.rejectOperator} onChange={e => update(index, { rejectOperator: e.target.value })}><option value="NONE">无</option><option value="LT">小于</option><option value="LTE">小于等于</option><option value="GT">大于</option><option value="GTE">大于等于</option></select></label>}
+      <label className="col-span-6 md:col-span-2 text-xs">拒收条件<select className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" value={rule.rejectOperator} onChange={e => update(index, { rejectOperator: e.target.value })}><option value="NONE">无</option><option value="LT">小于</option><option value="LTE">小于等于</option><option value="GT">大于</option><option value="GTE">大于等于</option></select></label>
       {rule.rejectOperator !== 'NONE' && <label className="col-span-3 md:col-span-1 text-xs">拒收值<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.rejectValue ?? ''} onChange={e => update(index, { rejectValue: e.target.value === '' ? null : Number(e.target.value) })} /></label>}
       {rule.deductionMode === 'PER_STEP' && <label className="col-span-6 md:col-span-2 text-xs">扣款区间边界（可选）<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.deductionLimitValue ?? ''} onChange={e => update(index, { deductionLimitValue: e.target.value === '' ? null : Number(e.target.value) })} /></label>}
     </div>)}

@@ -1,10 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-export type GradePriceBand = { lower: number; upper: number; rates: { FRAGMENT: number; RUN_OF_MINE: number } };
+export type GradePriceBand = { lower: number; upper: number; rates: { FRAGMENT: number | null; RUN_OF_MINE: number | null } };
 export type GradePriceRules = {
   version: 1;
   method: 'CAF2_GRADE_TIER';
+  quantityBasis?: 'PHYSICAL' | 'DRY_MATTER';
   gradeUnit: 'PERCENT_POINTS';
   rateUnit: 'CNY_PER_DEGREE_EX_TAX';
   moistureMaxPct: number;
@@ -30,13 +31,18 @@ export function parseGradePriceRules(value: unknown): GradePriceRules {
   if (!Number.isFinite(rules.moistureMaxPct) || Number(rules.moistureMaxPct) < 0 || Number(rules.moistureMaxPct) > 100) {
     throw new BadRequestException('水分上限必须为0至100之间的百分比');
   }
+  if (rules.quantityBasis && !['PHYSICAL', 'DRY_MATTER'].includes(rules.quantityBasis)) {
+    throw new BadRequestException('品位结算重量仅支持所选磅单净重或净重折干');
+  }
   let previousUpper: number | null = null;
   for (const band of rules.bands) {
+    const selectedRate = band.rates?.[rules.selectedSpec as 'FRAGMENT' | 'RUN_OF_MINE'];
+    const otherRate = band.rates?.[rules.selectedSpec === 'FRAGMENT' ? 'RUN_OF_MINE' : 'FRAGMENT'];
     if (!Number.isFinite(band.lower) || !Number.isFinite(band.upper) || band.lower >= band.upper
       || (previousUpper !== null && band.lower !== previousUpper)
-      || !Number.isFinite(band.rates?.FRAGMENT) || band.rates.FRAGMENT <= 0
-      || !Number.isFinite(band.rates?.RUN_OF_MINE) || band.rates.RUN_OF_MINE <= 0) {
-      throw new BadRequestException('品位区间必须连续、不重叠且两种规格均有正数报价');
+      || !Number.isFinite(selectedRate) || Number(selectedRate) <= 0
+      || (otherRate != null && (!Number.isFinite(otherRate) || otherRate <= 0))) {
+      throw new BadRequestException('品位区间必须连续、不重叠，且所选规格每档均有正数报价');
     }
     previousUpper = band.upper;
   }
@@ -68,6 +74,7 @@ export function evaluateGradePrice(rulesValue: unknown, spec: 'FRAGMENT' | 'RUN_
   if (!Number.isFinite(quantity) || quantity <= 0) reasons.push('结算数量必须大于0');
   if (reasons.length || !band || gradePct === null) return { status: 'REVIEW_REQUIRED' as const, reasons, gradePct, moisturePct, band: band || null };
   const rate = band.rates[spec];
+  if (rate == null || rate <= 0) return { status: 'REVIEW_REQUIRED' as const, reasons: ['该规格未配置品位分档单价'], gradePct, moisturePct, band: { lower: band.lower, upper: band.upper } };
   const unitPrice = new Prisma.Decimal(gradePct).mul(rate).toDecimalPlaces(4).toNumber();
   const amountExTax = new Prisma.Decimal(quantity).mul(unitPrice).toDecimalPlaces(2).toNumber();
   return { status: 'READY' as const, reasons: [], gradePct, moisturePct,

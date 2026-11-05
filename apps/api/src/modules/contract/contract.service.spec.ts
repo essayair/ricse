@@ -75,7 +75,7 @@ describe('ContractService', () => {
     prisma.partner.findFirst.mockResolvedValue({ roles: ['SUPPLIER', 'CUSTOMER'] } as any);
     prisma.businessUnit.findFirst.mockResolvedValue({ id: 'bu-1', companyId: 'management-company-1' } as any);
     prisma.department.findUnique.mockResolvedValue({ id: 'dept-1', companyId: 'company-1' } as any);
-    prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '测试物料' }] as any);
+    prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '测试物料', status: 'ACTIVE' }] as any);
     (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: PrismaService) => unknown) => callback(prisma));
 
     const module: TestingModule = await Test.createTestingModule({
@@ -413,6 +413,12 @@ describe('ContractService', () => {
   });
 
   describe('getApprovalReadiness', () => {
+    it('停用物料可以保留草稿，但不能提交审批', async () => {
+      prisma.contract.findFirst.mockResolvedValue(mockContract as any);
+      prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '测试物料', status: 'INACTIVE' }] as any);
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('物料“测试物料”不存在或已停用');
+    });
+
     it('不完整草稿可以保存，但不能提交审批', async () => {
       prisma.contract.findFirst.mockResolvedValue({
         ...mockContract,

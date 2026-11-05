@@ -67,8 +67,11 @@ interface ContractPrintDetail {
     quantity: string;
     unit: string;
     unitPrice: string;
+    unitPriceExTax?: string | null;
+    taxRatePct?: string | null;
     totalPrice: string;
     salesUnitPrice?: string | null;
+    salesUnitPriceExTax?: string | null;
     salesTotalPrice?: string | null;
     remarks?: string | null;
     qualityRulesSnapshot?: any;
@@ -187,8 +190,8 @@ export default function ContractPrintPage() {
 
       <PrintSection title="二、货物与价格">
         <table className="w-full border-collapse text-[10px]">
-          <thead><tr className="bg-slate-100"><Th>序号</Th><Th>物料</Th><Th>数量</Th><Th>{item.type === 'SALES' ? '销售单价' : '采购单价'}</Th>{item.type === 'BILATERAL' && <Th>销售单价</Th>}<Th>小计</Th>{item.type === 'BILATERAL' && <Th>销售小计</Th>}<Th>备注</Th></tr></thead>
-          <tbody>{item.lineItems.length ? item.lineItems.map((line, index) => <tr key={line.id}><Td center>{index + 1}</Td><Td>{line.materialName || '—'}</Td><Td>{Number(line.quantity).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} {unitLabel(line.unit)}</Td><Td>¥{money(line.unitPrice)}</Td>{item.type === 'BILATERAL' && <Td>{line.salesUnitPrice == null ? '—' : `¥${money(line.salesUnitPrice)}`}</Td>}<Td>¥{money(line.totalPrice)}</Td>{item.type === 'BILATERAL' && <Td>{line.salesTotalPrice == null ? '—' : `¥${money(line.salesTotalPrice)}`}</Td>}<Td>{line.remarks || '—'}</Td></tr>) : <tr><Td center colSpan={item.type === 'BILATERAL' ? 8 : 6}>暂无货物明细</Td></tr>}</tbody>
+          <thead><tr className="bg-slate-100"><Th>序号</Th><Th>物料</Th><Th>数量</Th><Th>{item.type === 'SALES' ? '销售' : '采购'}含税/不含税单价</Th>{item.type === 'BILATERAL' && <Th>销售含税/不含税单价</Th>}<Th>税率</Th><Th>小计</Th>{item.type === 'BILATERAL' && <Th>销售小计</Th>}<Th>备注</Th></tr></thead>
+          <tbody>{item.lineItems.length ? item.lineItems.map((line, index) => <tr key={line.id}><Td center>{index + 1}</Td><Td>{line.materialName || '—'}</Td><Td>{Number(line.quantity).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} {unitLabel(line.unit)}</Td><Td>¥{money(line.unitPrice)} / {line.unitPriceExTax == null ? '—' : `¥${money(line.unitPriceExTax)}`}</Td>{item.type === 'BILATERAL' && <Td>{line.salesUnitPrice == null ? '—' : `¥${money(line.salesUnitPrice)}`} / {line.salesUnitPriceExTax == null ? '—' : `¥${money(line.salesUnitPriceExTax)}`}</Td>}<Td>{line.taxRatePct == null ? '—' : `${line.taxRatePct}%`}</Td><Td>¥{money(line.totalPrice)}</Td>{item.type === 'BILATERAL' && <Td>{line.salesTotalPrice == null ? '—' : `¥${money(line.salesTotalPrice)}`}</Td>}<Td>{line.remarks || '—'}</Td></tr>) : <tr><Td center colSpan={item.type === 'BILATERAL' ? 9 : 7}>暂无货物明细</Td></tr>}</tbody>
         </table>
         <div className="mt-2 flex justify-end gap-8 border border-t-0 border-slate-900 p-2 text-[11px] font-semibold"><span>{item.type === 'BILATERAL' ? '采购总额' : '合同总额'}：¥{money(item.totalAmount)}</span>{item.type === 'BILATERAL' && <span>销售总额：¥{money(salesAmount)}</span>}</div>
       </PrintSection>
@@ -204,7 +207,7 @@ export default function ContractPrintPage() {
         </div>
         {item.lineItems.filter(line => line.qualityRulesSnapshot?.items?.length).map((line, index) => <div key={line.id} className="mt-3"><div className="mb-1 text-[11px] font-semibold">{index + 1}. {line.materialName || '合同物料'}质量结算规则（{line.qualityRulesSnapshot.templateName || '质检模板'} V{line.qualityRulesSnapshot.templateVersion || 1}）</div><table className="w-full border-collapse text-[9px]"><thead><tr className="bg-slate-100"><Th>检测指标 / 合同标准</Th><Th>扣款方式</Th><Th>扣款标准</Th><Th>拒收条件</Th></tr></thead><tbody>{line.qualityRulesSnapshot.items.map((rule: any, ruleIndex: number) => <tr key={`${rule.code}-${ruleIndex}`}><Td>{rule.symbol || rule.name} {rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? `–${rule.upperValue}` : ''} {rule.unit}</Td><Td>{rule.deductionMode === 'PER_STEP' ? `每 ${rule.deductionStep} 偏差` : rule.deductionMode === 'FLAT' ? (rule.deductionCondition === 'IN_RANGE' ? `区间 ${rule.deductionLowerValue}-${rule.deductionUpperValue}` : '固定扣款') : '按标准验收'}</Td><Td>{rule.deductionMode === 'NONE' ? '—' : `${rule.deductionAmount ?? '—'} 元/吨`}</Td><Td>{rule.rejectOperator && rule.rejectOperator !== 'NONE' ? `${rule.rejectOperator} ${rule.rejectValue}` : '未设置'}</Td></tr>)}</tbody></table></div>)}
         {!item.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <p className="mt-2 text-[10px]">未配置结构化质量结算规则；存量合同按原合同约定处理。</p>}
-        {item.lineItems.map(line => <div key={`price-${line.id}`}><GradePriceRulesView value={line.priceRulesSnapshot} title={`${line.materialName || '合同物料'}采购/单边品位价格`} />{item.type === 'BILATERAL' && <GradePriceRulesView value={line.salesPriceRulesSnapshot} title={`${line.materialName || '合同物料'}销售品位价格`} />}</div>)}
+        {item.lineItems.map(line => <div key={`price-${line.id}`}><GradePriceRulesView value={line.priceRulesSnapshot} taxRate={line.taxRatePct} title={`${line.materialName || '合同物料'}采购/单边品位价格 · ${line.priceRulesSnapshot?.quantityBasis === 'DRY_MATTER' ? '净重折干' : '净重计价'}`} />{item.type === 'BILATERAL' && <GradePriceRulesView value={line.salesPriceRulesSnapshot} taxRate={line.taxRatePct} title={`${line.materialName || '合同物料'}销售品位价格 · ${line.salesPriceRulesSnapshot?.quantityBasis === 'DRY_MATTER' ? '净重折干' : '净重计价'}`} />}</div>)}
       </PrintSection>
 
       <PrintSection title="四、审批流程">

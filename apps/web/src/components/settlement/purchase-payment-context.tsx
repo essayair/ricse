@@ -22,7 +22,7 @@ export interface GoodsSource {
   availableWeighTickets?: Array<{ id: string; ticketNo: string; weighingStage: string; netWeight: number | null; isSelectable?: boolean }>;
   settlementWeightSource?: 'INVENTORY_DEFAULT' | 'EXPLICIT_INVENTORY' | 'SELECTED_OTHER_SIDE';
   measuredMoisturePct?: number | null; dryQuantity?: number | null; pricingQuantityBasis?: string;
-  pricingType?: string; gradePrice?: { status: 'READY' | 'REVIEW_REQUIRED'; gradePct?: number | null; moisturePct?: number | null; rate?: number; unitPrice?: number; band?: { lower: number; upper: number }; reasons?: string[] };
+  pricingType?: string; contractTaxRatePct?: number | null; gradePrice?: { status: 'READY' | 'REVIEW_REQUIRED'; gradePct?: number | null; moisturePct?: number | null; rate?: number; unitPrice?: number; band?: { lower: number; upper: number }; reasons?: string[] };
   signature: string; totalAmount: number; evaluation?: { items?: Array<{ name: string; reason: string; deductionPerTon?: number }> }; qualityAcceptance?: { name: string; acceptedAt: string; reason: string };
 }
 export interface PaymentContext {

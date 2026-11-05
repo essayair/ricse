@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { PurchaseSettlementBasis } from './purchase-settlement-basis';
+import { DEFAULT_FLUORITE_ORE_BANDS } from '../contract/grade-price-rules';
 
 describe('逐车质量结算来源与版本', () => {
   const prisma = mockDeep<PrismaService>(), access = mockDeep<AccessControlService>();
@@ -26,6 +27,25 @@ describe('逐车质量结算来源与版本', () => {
     source.settlementLines.push({ quantity: new Prisma.Decimal(60) });
     const rows = await service.sources('c', 'u');
     expect(rows[0]).toMatchObject({ available: true, totalQuantity: 100, remainingQuantity: 40, totalAmount: 78400, deductionPerTon: 40 });
+  });
+  it('新分档合同按所选磅单净重折干结算，库存过账数量保持不变', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', lineItems: [{
+      id: 'cl', materialName: '萤石矿', unitPrice: new Prisma.Decimal(700), taxRatePct: new Prisma.Decimal(13),
+      priceRulesSnapshot: { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
+        quantityBasis: 'DRY_MATTER', moistureMaxPct: 5, bands: DEFAULT_FLUORITE_ORE_BANDS,
+        exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'FRAGMENT', formulaConfirmed: true },
+    }] } as any);
+    source.waybill.inboundReceipts[0].weighTicket.netWeight = new Prisma.Decimal(50);
+    source.waybill.inboundReceipts[0].businessInbound.quantity = new Prisma.Decimal(50);
+    source.waybill.inboundReceipts[0].businessInbound.pricingQuantity = new Prisma.Decimal(50);
+    source.waybill.qualityTask.basisInspection.indicators = [
+      { code: 'CAF2', measuredValue: new Prisma.Decimal(32.5), unit: '%' },
+      { code: 'MOISTURE', measuredValue: new Prisma.Decimal(3.2), unit: '%' },
+    ];
+    const [row] = await service.sources('c', 'u');
+    expect(row).toMatchObject({ pricingQuantityBasis: 'DRY_MATTER', netWeight: 50, dryQuantity: 48.4,
+      totalQuantity: 48.4, contractTaxRatePct: 13, gradePrice: { status: 'READY', gradePct: 32.5, rate: 22.7, unitPrice: 737.75 } });
+    expect(source.waybill.inboundReceipts[0].businessInbound.quantity.toNumber()).toBe(50);
   });
   it('逐车结算来源带出入库日期、磅单三重和实测水分，并计算参考干基', async () => {
     const receipt = source.waybill.inboundReceipts[0];

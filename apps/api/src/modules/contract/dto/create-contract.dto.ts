@@ -7,6 +7,7 @@ import {
   ValidateNested,
   IsDateString,
   Min,
+  Max,
   MaxLength,
   IsObject,
 } from 'class-validator';
@@ -38,11 +39,23 @@ export class CreateContractLineItemDto {
   @Min(0)
   unitPrice: number;
 
+  @ApiPropertyOptional({ description: '不含税单价，系统与含税单价按税率互算' })
+  @IsOptional() @IsNumber() @Min(0)
+  unitPriceExTax?: number;
+
+  @ApiPropertyOptional({ description: '货物增值税率（%）；一般货物页面默认13，可按实际合同修改' })
+  @IsOptional() @IsNumber() @Min(0) @Max(100)
+  taxRatePct?: number;
+
   @ApiPropertyOptional({ description: '双边合同销售单价' })
   @IsOptional()
   @IsNumber()
   @Min(0)
   salesUnitPrice?: number;
+
+  @ApiPropertyOptional({ description: '双边合同销售方向不含税单价' })
+  @IsOptional() @IsNumber() @Min(0)
+  salesUnitPriceExTax?: number;
 
   @ApiPropertyOptional({ description: '交货日期' })
   @IsOptional()

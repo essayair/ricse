@@ -16,6 +16,7 @@ import { useDraftLeaveGuard } from '@/hooks/use-draft-leave-guard';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
 import { GradePriceRulesEditor, GradePriceSnapshot, defaultGradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
+import { TaxPriceFields, pairFromInclusive } from '@/components/contracts/tax-price-fields';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -50,7 +51,10 @@ interface LineItem {
   quantity: string;
   unit: string;
   unitPrice: string;
+  unitPriceExTax: string;
+  taxRatePct: string;
   salesUnitPrice: string;
+  salesUnitPriceExTax: string;
   remarks: string;
   qualityRulesSnapshot?: any;
   priceRulesSnapshot?: GradePriceSnapshot | null;
@@ -109,7 +113,7 @@ export default function ContractEditPage() {
 
   const [lineItems, setLineItems] = useState<LineItem[]>([{
     materialId: '', materialName: '', quantity: '', unit: 'TON',
-    unitPrice: '', salesUnitPrice: '', remarks: '',
+    unitPrice: '', unitPriceExTax: '', taxRatePct: '13', salesUnitPrice: '', salesUnitPriceExTax: '', remarks: '',
   }]);
 
   const set = (k: string, v: string) => {
@@ -176,7 +180,10 @@ export default function ContractEditPage() {
           quantity: String(item.quantity || ''),
           unit: item.unit || 'TON',
           unitPrice: String(item.unitPrice || ''),
+          unitPriceExTax: item.unitPriceExTax == null ? '' : String(item.unitPriceExTax),
+          taxRatePct: item.taxRatePct == null ? '' : String(item.taxRatePct),
           salesUnitPrice: String(item.salesUnitPrice || ''),
+          salesUnitPriceExTax: item.salesUnitPriceExTax == null ? '' : String(item.salesUnitPriceExTax),
           remarks: item.remarks || '',
           qualityRulesSnapshot: item.qualityRulesSnapshot || null,
           priceRulesSnapshot: item.priceRulesSnapshot || null,
@@ -190,10 +197,18 @@ export default function ContractEditPage() {
   }, [contractId, router]);
 
   const updateLineItem = (idx: number, key: keyof LineItem, value: string) => {
+    if (key === 'materialId' && value && materials.find((material: any) => material.id === value)?.status !== 'ACTIVE') {
+      alert('该物料已停用，请选择启用中的物料');
+      return;
+    }
     setIsDirty(true);
     setLineItems(prev => {
       const next = [...prev];
       next[idx] = { ...next[idx], [key]: value };
+      if (key === 'taxRatePct') {
+        next[idx].unitPriceExTax = pairFromInclusive(next[idx].unitPrice, value).exclusive;
+        next[idx].salesUnitPriceExTax = pairFromInclusive(next[idx].salesUnitPrice, value).exclusive;
+      }
       if (key === 'materialId') {
         const m = materials.find((x: any) => x.id === value);
         next[idx].qualityRulesSnapshot = null;
@@ -209,7 +224,7 @@ export default function ContractEditPage() {
     setIsDirty(true);
     setLineItems(prev => [
       ...prev,
-      { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', salesUnitPrice: '', remarks: '', qualityRulesSnapshot: null },
+      { materialId: '', materialName: '', quantity: '', unit: 'TON', unitPrice: '', unitPriceExTax: '', taxRatePct: '13', salesUnitPrice: '', salesUnitPriceExTax: '', remarks: '', qualityRulesSnapshot: null },
     ]);
   };
 
@@ -259,7 +274,10 @@ export default function ContractEditPage() {
           quantity: Number(item.quantity),
           unit: item.unit,
           unitPrice: Number(item.unitPrice),
+          ...(item.taxRatePct === '' ? {} : { taxRatePct: Number(item.taxRatePct) }),
+          ...(item.unitPriceExTax === '' ? {} : { unitPriceExTax: Number(item.unitPriceExTax) }),
           ...(form.type === 'BILATERAL' ? { salesUnitPrice: Number(item.salesUnitPrice) } : {}),
+          ...(form.type === 'BILATERAL' && item.salesUnitPriceExTax !== '' ? { salesUnitPriceExTax: Number(item.salesUnitPriceExTax) } : {}),
           remarks: item.remarks || undefined,
           qualityRulesSnapshot: item.qualityRulesSnapshot || undefined,
           priceRulesSnapshot: form.pricingType === 'GRADE_TIER' ? item.priceRulesSnapshot || undefined : undefined,
@@ -495,7 +513,7 @@ export default function ContractEditPage() {
                   <label className="text-xs text-muted-foreground">物料 <span className="text-destructive">*</span></label>
                   <select value={item.materialId} onChange={e => updateLineItem(idx, 'materialId', e.target.value)} className={SELECT_CLS + ' mt-1'}>
                     <option value="">请选择</option>
-                    {materials.map((m: any) => <option key={m.id} value={m.id}>{m.code} {m.name}{m.grade ? ` (${m.grade})` : ''}</option>)}
+                    {materials.map((m: any) => <option key={m.id} value={m.id} disabled={m.status !== 'ACTIVE'}>{m.code} {m.name}{m.grade ? ` (${m.grade})` : ''}{m.status !== 'ACTIVE' ? '（已停用）' : ''}</option>)}
                   </select>
                 </div>
                 <div className="col-span-2">
@@ -507,15 +525,13 @@ export default function ContractEditPage() {
                   <Input className="mt-1" value={unitLabel(item.unit)} onChange={e => updateLineItem(idx, 'unit', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground">{form.pricingType === 'GRADE_TIER' ? '预计单价（元/吨）' : form.type === 'BILATERAL' ? '采购单价(元/吨)' : form.type === 'PURCHASE' ? '采购单价(元/吨)' : '销售单价(元/吨)'} <span className="text-destructive">*</span></label>
-                  <Input className="mt-1" type="number" step="0.01" value={item.unitPrice} onChange={e => updateLineItem(idx, 'unitPrice', e.target.value)} />
+                  <label className="text-xs text-muted-foreground">增值税率（%）</label>
+                  <Input className="mt-1" type="number" min="0" max="100" step="0.01" value={item.taxRatePct} onChange={e => updateLineItem(idx, 'taxRatePct', e.target.value)} placeholder="历史合同请确认税率" />
                 </div>
-                {form.type === 'BILATERAL' && (
-                  <div className="col-span-2">
-                    <label className="text-xs text-muted-foreground">销售单价(元/吨) <span className="text-destructive">*</span></label>
-                    <Input className="mt-1" type="number" min="0" step="0.01" value={item.salesUnitPrice} onChange={e => updateLineItem(idx, 'salesUnitPrice', e.target.value)} />
-                  </div>
-                )}
+                <div className="col-span-12 space-y-3">
+                  <TaxPriceFields label={form.type === 'SALES' ? '销售' : '采购'} estimated={form.pricingType === 'GRADE_TIER'} rate={item.taxRatePct} inclusive={item.unitPrice} exclusive={item.unitPriceExTax} onChange={pair => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, unitPrice: pair.inclusive, unitPriceExTax: pair.exclusive } : line)); }} />
+                  {form.type === 'BILATERAL' && <TaxPriceFields label="销售" estimated={form.pricingType === 'GRADE_TIER'} rate={item.taxRatePct} inclusive={item.salesUnitPrice} exclusive={item.salesUnitPriceExTax} onChange={pair => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, salesUnitPrice: pair.inclusive, salesUnitPriceExTax: pair.exclusive } : line)); }} />}
+                </div>
                 {form.type !== 'BILATERAL' && <div className="col-span-1 flex items-end justify-center">
                   {(Number(item.quantity) * Number(item.unitPrice)) > 0 && (
                     <div className="text-xs text-center text-primary font-mono">
@@ -549,7 +565,7 @@ export default function ContractEditPage() {
                   setLineItems(current => current.map((line, index) => index === idx ? { ...line, qualityRulesSnapshot: snapshot } : line));
                 }}
               />
-              {form.pricingType === 'GRADE_TIER' && <><div className="text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={item.priceRulesSnapshot || defaultGradePriceSnapshot} onChange={snapshot => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, priceRulesSnapshot: snapshot } : line)); }} />{form.type === 'BILATERAL' && <><div className="mt-4 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={item.salesPriceRulesSnapshot || defaultGradePriceSnapshot} onChange={snapshot => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, salesPriceRulesSnapshot: snapshot } : line)); }} /></>}</>}
+              {form.pricingType === 'GRADE_TIER' && <><div className="text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={item.priceRulesSnapshot || defaultGradePriceSnapshot} taxRate={item.taxRatePct} onChange={snapshot => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, priceRulesSnapshot: snapshot } : line)); }} />{form.type === 'BILATERAL' && <><div className="mt-4 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={item.salesPriceRulesSnapshot || defaultGradePriceSnapshot} taxRate={item.taxRatePct} onChange={snapshot => { setIsDirty(true); setLineItems(lines => lines.map((line, index) => index === idx ? { ...line, salesPriceRulesSnapshot: snapshot } : line)); }} /></>}</>}
               </div>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={addLineItem}>

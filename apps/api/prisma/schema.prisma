@@ -1020,8 +1020,11 @@ model ContractLineItem {
   quantity        Decimal   @db.Decimal(15, 3)
   unit            String    @default("TON")
   unitPrice       Decimal   @db.Decimal(15, 4) // 普通合同单价；双边合同采购单价
+  unitPriceExTax  Decimal?  @db.Decimal(15, 4) // 合同录入的不含税单价；历史合同可为空
+  taxRatePct      Decimal?  @db.Decimal(5, 2) // 货物增值税率，百分数；历史合同不推定税率
   totalPrice      Decimal   @db.Decimal(15, 2) // 普通合同金额；双边合同采购金额
   salesUnitPrice  Decimal?  @db.Decimal(15, 4) // 双边合同销售单价
+  salesUnitPriceExTax Decimal? @db.Decimal(15, 4) // 双边合同销售方向不含税单价
   salesTotalPrice Decimal?  @db.Decimal(15, 2) // 双边合同销售金额
   deliveryDate    DateTime?
   remarks         String?

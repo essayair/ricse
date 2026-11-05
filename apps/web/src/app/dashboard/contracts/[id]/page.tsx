@@ -72,7 +72,7 @@ interface ContractDetail {
   seller: { id: string; code: string; name: string; roles: string[] } | null;
   buyer: { id: string; code: string; name: string; roles: string[] } | null;
   attachments?: Array<{ id: string; originalName: string; mimeType: string; size: number; category: string }>;
-  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; totalPrice: string; salesUnitPrice?: string | null; salesTotalPrice?: string | null; remarks?: string | null; qualityRulesSnapshot?: any; priceRulesSnapshot?: GradePriceSnapshot | null; salesPriceRulesSnapshot?: GradePriceSnapshot | null }>;
+  lineItems: Array<{ id: string; materialName: string | null; quantity: string; unit: string; unitPrice: string; unitPriceExTax?: string | null; taxRatePct?: string | null; totalPrice: string; salesUnitPrice?: string | null; salesUnitPriceExTax?: string | null; salesTotalPrice?: string | null; remarks?: string | null; qualityRulesSnapshot?: any; priceRulesSnapshot?: GradePriceSnapshot | null; salesPriceRulesSnapshot?: GradePriceSnapshot | null }>;
   approvals: Approval[];
   fulfillment: { directions: FulfillmentDirection[] };
   orders: Array<{
@@ -732,7 +732,7 @@ export default function ContractDetailPage() {
           )}
           {c.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <div className="mt-5 space-y-3"><h3 className="text-sm font-semibold">物料质量结算规则（合同快照）</h3>{c.lineItems.filter(line => line.qualityRulesSnapshot?.items?.length).map(line => <div key={line.id} className="rounded-md border p-3"><div className="mb-2 text-sm font-medium">{line.materialName || '合同物料'} · {line.qualityRulesSnapshot.templateName || '质检模板'}{line.qualityRulesSnapshot.templateVersion ? ` V${line.qualityRulesSnapshot.templateVersion}` : ''}</div><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="py-2">指标 / 标准</th><th>偏差处理</th><th>扣款标准</th><th>拒收条件</th></tr></thead><tbody>{line.qualityRulesSnapshot.items.map((rule: any, index: number) => <tr key={`${rule.code}-${index}`} className="border-b last:border-0"><td className="py-2">{rule.symbol || rule.name} {rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? `–${rule.upperValue}` : ''} {rule.unit}</td><td>{rule.deductionMode === 'PER_STEP' ? `按步长 ${rule.deductionStep}` : rule.deductionMode === 'FLAT' ? '固定扣款' : '按标准验收'}</td><td>{rule.deductionMode === 'NONE' ? '—' : `${rule.deductionAmount ?? '待填'} 元/吨`}</td><td>{rule.rejectOperator && rule.rejectOperator !== 'NONE' ? `${rule.rejectOperator} ${rule.rejectValue}` : '未设置'}</td></tr>)}</tbody></table></div></div>)}</div>}
           {!c.lineItems.some(line => line.qualityRulesSnapshot?.items?.length) && <p className="mt-3 text-xs text-muted-foreground">未配置结构化质量结算规则；存量合同按原合同约定处理，不自动套用新模板。</p>}
-          {c.pricingType === 'GRADE_TIER' && c.lineItems.map(line => <div key={`price-${line.id}`}><GradePriceRulesView value={line.priceRulesSnapshot} title={`${line.materialName || '合同物料'}采购/单边价格条款`} />{c.type === 'BILATERAL' && <GradePriceRulesView value={line.salesPriceRulesSnapshot} title={`${line.materialName || '合同物料'}销售价格条款`} />}</div>)}
+          {c.pricingType === 'GRADE_TIER' && c.lineItems.map(line => <div key={`price-${line.id}`}><GradePriceRulesView value={line.priceRulesSnapshot} taxRate={line.taxRatePct} title={`${line.materialName || '合同物料'}采购/单边价格条款 · ${line.priceRulesSnapshot?.quantityBasis === 'DRY_MATTER' ? '净重折干' : '净重计价'}`} />{c.type === 'BILATERAL' && <GradePriceRulesView value={line.salesPriceRulesSnapshot} taxRate={line.taxRatePct} title={`${line.materialName || '合同物料'}销售价格条款 · ${line.salesPriceRulesSnapshot?.quantityBasis === 'DRY_MATTER' ? '净重折干' : '净重计价'}`} />}</div>)}
         </CardContent>
       </Card>
 
@@ -776,8 +776,9 @@ function ContractLineItems({ contract }: { contract: ContractDetail }) {
         <th className="pb-2">物料</th>
         <th className="pb-2">数量</th>
         <th className="pb-2">单位</th>
-        <th className="pb-2">{contract.pricingType === 'GRADE_TIER' ? '预计单价' : contract.type === 'BILATERAL' || contract.type === 'PURCHASE' ? '采购单价' : '销售单价'}</th>
-        {contract.type === 'BILATERAL' && <th className="pb-2">销售单价</th>}
+        <th className="pb-2">{contract.pricingType === 'GRADE_TIER' ? '预计' : contract.type === 'BILATERAL' || contract.type === 'PURCHASE' ? '采购' : '销售'}单价（含税/不含税）</th>
+        {contract.type === 'BILATERAL' && <th className="pb-2">销售单价（含税/不含税）</th>}
+        <th className="pb-2">税率</th>
         <th className="pb-2">行项备注</th>
         <th className="pb-2 text-right">{contract.type === 'BILATERAL' ? '采购小计' : '小计'}</th>
         {contract.type === 'BILATERAL' && <th className="pb-2 text-right">销售小计</th>}
@@ -786,8 +787,9 @@ function ContractLineItems({ contract }: { contract: ContractDetail }) {
         <td className="py-3 font-medium">{item.materialName || '—'}</td>
         <td className="py-3">{Number(item.quantity).toLocaleString()}</td>
         <td className="py-3">{unitLabel(item.unit)}</td>
-        <td className="py-3 font-mono">¥{Number(item.unitPrice).toLocaleString()}</td>
-        {contract.type === 'BILATERAL' && <td className="py-3 font-mono">{item.salesUnitPrice == null ? '—' : `¥${Number(item.salesUnitPrice).toLocaleString()}`}</td>}
+        <td className="py-3 font-mono">¥{Number(item.unitPrice).toLocaleString()} / {item.unitPriceExTax == null ? '—' : `¥${Number(item.unitPriceExTax).toLocaleString()}`}</td>
+        {contract.type === 'BILATERAL' && <td className="py-3 font-mono">{item.salesUnitPrice == null ? '—' : `¥${Number(item.salesUnitPrice).toLocaleString()}`} / {item.salesUnitPriceExTax == null ? '—' : `¥${Number(item.salesUnitPriceExTax).toLocaleString()}`}</td>}
+        <td className="py-3">{item.taxRatePct == null ? '—' : `${item.taxRatePct}%`}</td>
         <td className="py-3">{item.remarks || '—'}</td>
         <td className="py-3 text-right font-mono">¥{Number(item.totalPrice).toLocaleString()}</td>
         {contract.type === 'BILATERAL' && <td className="py-3 text-right font-mono">{item.salesTotalPrice == null ? '—' : `¥${Number(item.salesTotalPrice).toLocaleString()}`}</td>}

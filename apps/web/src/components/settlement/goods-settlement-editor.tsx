@@ -91,9 +91,18 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   }, [contractId, direction, editId]);
 
   useEffect(() => {
-    setSources([]); setSelected({}); setPreview(null); setBatchFilter('');
+    setSources([]); setSelected({}); setPreview(null); setBatchFilter(''); setTaxRatePct('');
     if (contractId && (!editId || saved?.contractId === contractId)) void refresh().catch(e => setError(e.message));
   }, [contractId, editId, saved, refresh]);
+
+  useEffect(() => {
+    if (!sources.length) return;
+    const savedRate = saved?.lines.find(line => line.sourceSnapshot?.taxRatePct != null)?.sourceSnapshot?.taxRatePct;
+    const contractRates = [...new Set(sources.map(source => source.contractTaxRatePct).filter(rate => rate != null))];
+    if (savedRate != null) setTaxRatePct(String(savedRate));
+    else if (contractRates.length === 1) setTaxRatePct(String(contractRates[0]));
+    else if (contractRates.length > 1) setError('合同物料存在不同税率，请分开结算或先核对合同税率');
+  }, [sources, saved]);
 
   useEffect(() => {
     if (!sources.length) return;
@@ -312,7 +321,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       </div>
     </Card>}
     {selectedRows.length > 0 && <Card className="space-y-3 p-5"><h2 className="font-semibold">逐车结算明细</h2><div className="overflow-x-auto"><table className="w-full min-w-[1150px] text-sm"><thead className="bg-muted/40 text-left"><tr><th className="p-2">运单 / 车牌</th><th className="p-2">净重 / 水分 / 折干</th><th className="p-2">本次数量（吨）</th><th className="p-2">协商数量</th><th className="p-2">参考单价</th><th className="p-2">其他加减（元）</th><th className="p-2">依据与调整说明</th><th className="p-2">含税金额</th></tr></thead><tbody>{selectedRows.map(source => { const line = selected[source.id]; const result = preview?.lines?.find((item: any) => item.waybillLineItemId === source.id); return <tr key={source.id} className="border-t align-top"><td className="p-2">{source.waybillNo}<div className="text-xs text-muted-foreground">{source.plateNo}</div></td><td className="p-2">{tons(result?.sourceSnapshot?.netWeight ?? source.netWeight)} / {result?.sourceSnapshot?.measuredMoisturePct ?? source.measuredMoisturePct ?? '—'}% / {tons(result?.sourceSnapshot?.dryQuantity ?? source.dryQuantity)}</td><td className="p-2"><Input aria-label={`${source.waybillNo}本次数量`} type="number" min="0.001" step="0.001" value={line.quantity} onChange={e => setField(source.id, { quantity: e.target.value })} /></td><td className="p-2"><input type="checkbox" checked={line.negotiatedQuantity} onChange={e => setField(source.id, { negotiatedQuantity: e.target.checked })} /></td><td className="p-2">{paymentMoney(result?.unitPrice ?? source.unitPrice)}</td><td className="p-2"><Input type="number" step="0.01" value={line.adjustmentAmount} onChange={e => setField(source.id, { adjustmentAmount: e.target.value })} /></td><td className="p-2"><Input value={line.remarks} placeholder="改选依据、协商或调整时必填" onChange={e => setField(source.id, { remarks: e.target.value })} /></td><td className="p-2 font-medium">{result ? paymentMoney(result.totalAmount) : '待试算'}</td></tr>; })}</tbody></table></div></Card>}
-    {gradeTier && <Card className="p-5"><label className="block max-w-xs space-y-1 text-sm">本次结算税率（%）*<Input type="number" min="0" max="100" step="0.01" value={taxRatePct} onChange={e => setTaxRatePct(e.target.value)} /></label></Card>}
+    {gradeTier && <Card className="p-5"><label className="block max-w-xs space-y-1 text-sm">{sources.some(source => source.contractTaxRatePct != null) ? '合同税率（%）' : '本次结算税率（%）*'}<Input type="number" min="0" max="100" step="0.01" value={taxRatePct} readOnly={sources.some(source => source.contractTaxRatePct != null)} onChange={e => setTaxRatePct(e.target.value)} /></label></Card>}
     <Card className="grid gap-4 p-5 md:grid-cols-2"><label className="space-y-1 text-sm">约定{sales ? '收款' : '付款'}到期日<Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></label><label className="space-y-1 text-sm">结算说明<Input value={remarks} onChange={e => setRemarks(e.target.value)} /></label></Card>
     {previewOpen && preview && <Card ref={previewRef} className="space-y-4 p-5" id="goods-settlement-preview">
       <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold">结算单预览</h2><p className="text-xs text-muted-foreground">预览稿未保存；正式结算单在确认后打印并交双方签章。</p></div><Button type="button" variant="ghost" size="sm" onClick={() => setPreviewOpen(false)}>收起</Button></div>
