@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
-import { calculateNetWeight, normalizeWeight, WeighTicketService } from './weigh-ticket.service';
+import { calculateNetWeight, normalizeWeight, resolveDirectWeights, WeighTicketService } from './weigh-ticket.service';
 import { attachmentMimeType } from './weigh-ticket.controller';
 
 describe('磅单附件类型兼容', () => {
@@ -26,6 +26,27 @@ describe('磅单重量精度', () => {
   it('重量和净重统一保留最多三位小数', () => {
     expect(normalizeWeight(130.0004)).toBe(130);
     expect(calculateNetWeight(130.001, 10)).toBe(120.001);
+  });
+});
+
+describe('磅单直接录入重量', () => {
+  it('只有净重时保留毛皮重空白', () => {
+    expect(resolveDirectWeights(null, null, 87.58)).toMatchObject({ mismatch: false, invalidPair: false, effectiveGross: null, effectiveTare: null, effectiveNet: 87.58 });
+  });
+  it('毛重和皮重推算净重，不反写原始录入值', () => {
+    expect(resolveDirectWeights(111.34, 23.76, null).effectiveNet).toBe(87.58);
+  });
+  it('毛重和净重推算皮重', () => {
+    expect(resolveDirectWeights(111.34, null, 87.58).effectiveTare).toBe(23.76);
+  });
+  it('皮重和净重推算毛重', () => {
+    expect(resolveDirectWeights(null, 23.76, 87.58).effectiveGross).toBe(111.34);
+  });
+  it('三项不一致时标识差异', () => {
+    expect(resolveDirectWeights(111.34, 23.76, 87.5)).toMatchObject({ mismatch: true });
+  });
+  it('毛重不得小于或等于皮重', () => {
+    expect(resolveDirectWeights(10, 12, null)).toMatchObject({ invalidPair: true, effectiveNet: null });
   });
 });
 
@@ -119,7 +140,7 @@ describe('WeighTicketService', () => {
       .rejects.toThrow('物流运单到达后才能创建或关联收货称重磅单');
   });
 
-  it('采购运单确认到达后自动生成我方收货待过磅单', async () => {
+  it('采购运单确认到达后补齐供应商发货和我方收货两张空白磅单', async () => {
     prisma.waybill.findFirst.mockResolvedValue(waybill as any);
     prisma.weighTicket.findFirst.mockResolvedValue(null);
     prisma.weighTicket.create.mockResolvedValue({
@@ -129,23 +150,29 @@ describe('WeighTicketService', () => {
     await service.ensurePrimaryTicketForWaybill(waybill.id, 'user-1');
 
     expect(accessControl.assertPermission).not.toHaveBeenCalled();
+    expect(prisma.weighTicket.create).toHaveBeenCalledTimes(2);
     expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         waybillId: waybill.id,
         direction: 'INBOUND',
         weighingStage: 'RECEIVING',
-        remarks: '系统根据物流运单自动生成我方收货待过磅单',
+        remarks: expect.stringContaining('我方收货待填写空白磅单'),
         packageCount: undefined,
       }),
     }));
   });
 
-  it('采购运单到达前只生成过磅任务而不提前生成收货磅单', async () => {
+  it('采购运单到达前生成发货侧空白单，不提前生成收货侧空白单', async () => {
     prisma.waybill.findFirst.mockResolvedValue({ ...waybill, status: 'IN_TRANSIT' } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue(null);
+    prisma.weighTicket.create.mockResolvedValue({ ...ticket, weighingStage: 'SHIPPING' } as any);
 
     await expect(service.ensurePrimaryTicketForWaybill(waybill.id, 'user-1')).resolves.toBeNull();
 
-    expect(prisma.weighTicket.create).not.toHaveBeenCalled();
+    expect(prisma.weighTicket.create).toHaveBeenCalledTimes(1);
+    expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ weighingStage: 'SHIPPING', remarks: expect.stringContaining('供应商发货待填写空白磅单') }),
+    }));
   });
 
   it('销售运单确定车辆后自动生成我方发货待过磅单且重复调用不重复创建', async () => {
@@ -178,10 +205,37 @@ describe('WeighTicketService', () => {
       data: expect.objectContaining({
         direction: 'OUTBOUND',
         weighingStage: 'SHIPPING',
-        remarks: '系统根据物流运单自动生成我方发货待过磅单',
+        remarks: expect.stringContaining('我方发货待填写空白磅单'),
         packageCount: undefined,
       }),
     }));
+  });
+
+  it('销售运单到达后补齐客户收货侧空白磅单', async () => {
+    prisma.waybill.findFirst.mockResolvedValue({
+      ...waybill, status: 'ARRIVED',
+      dispatchNotice: { ...waybill.dispatchNotice, type: 'SALES' },
+    } as any);
+    prisma.weighTicket.findFirst.mockImplementation(((args: any) =>
+      args.where.weighingStage === 'SHIPPING' ? ({ id: 'shipping-ticket' } as any) : null) as any);
+    prisma.weighTicket.create.mockResolvedValue({ ...ticket, weighingStage: 'RECEIVING' } as any);
+    await service.ensurePrimaryTicketForWaybill(waybill.id, 'user-1');
+    expect(prisma.weighTicket.create).toHaveBeenCalledTimes(1);
+    expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ weighingStage: 'RECEIVING', remarks: expect.stringContaining('客户收货待填写空白磅单') }),
+    }));
+  });
+
+  it('仅生成发货和收货空白磅单时，过磅任务仍为待过磅', async () => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, status: 'ARRIVED', plateNo: '甘A12345', totalQuantity: 100 } as any);
+    prisma.weighTask.findUnique.mockResolvedValueOnce({ id: 'task-1', plannedQuantity: 100, status: 'PENDING_WEIGHING' } as any);
+    prisma.waybill.findUnique.mockResolvedValueOnce({
+      status: 'ARRIVED',
+      weighTickets: [{ status: 'PENDING', abnormal: false }, { status: 'PENDING', abnormal: false }],
+      weightSelections: [],
+    } as any);
+    await service.syncTaskForWaybill(waybill.id, 'user-1');
+    expect(prisma.weighTask.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'PENDING_WEIGHING' } });
   });
 
   it.each([
@@ -398,6 +452,57 @@ describe('WeighTicketService', () => {
     } as any);
     await expect(service.updateStatus(ticket.id, 'COMPLETED', 'user-1'))
       .rejects.toThrow('完成称重前必须上传至少一份磅单附件');
+  });
+
+  it('只有净重的直接录入磅单可完成称重', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      ...ticket, waybillId: 'waybill-1', weightEntrySource: 'DIRECT',
+      selectedGrossRecordId: null, selectedTareRecordId: null,
+      enteredGrossWeight: null, enteredTareWeight: null, enteredNetWeight: 87.58,
+      netWeight: 87.58, settlementWeight: 87.58, attachments: [{ id: 'attachment-1' }],
+    } as any);
+    jest.spyOn(service, 'syncTaskForWaybill').mockResolvedValue(undefined as any);
+    prisma.weighTicket.update.mockResolvedValue({ ...ticket, status: 'COMPLETED' } as any);
+    await expect(service.updateStatus(ticket.id, 'COMPLETED', 'user-1')).resolves.toMatchObject({ status: 'COMPLETED' });
+  });
+
+  it('保存只有净重的直接录入时不伪造毛重和皮重', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...ticket, waybillId: 'waybill-1' } as any);
+    jest.spyOn(service, 'syncTaskForWaybill').mockResolvedValue(undefined as any);
+    prisma.weighTicket.findUniqueOrThrow.mockResolvedValueOnce({
+      ...ticket, weightEntrySource: 'DIRECT', enteredGrossWeight: null,
+      enteredTareWeight: null, enteredNetWeight: 87.58,
+      records: [], plannedQuantity: 100, settlementBasis: 'RECEIVING', toleranceRate: 10,
+    } as any).mockResolvedValueOnce({ ...ticket, netWeight: 87.58 } as any);
+    await service.updateWeights(ticket.id, { source: 'DIRECT', grossWeight: null, tareWeight: null, netWeight: 87.58 }, 'user-1');
+    expect(prisma.weighTicket.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ grossWeight: null, tareWeight: null, netWeight: 87.58 }),
+    }));
+  });
+
+  it('三项不一致不能保存，避免进入待复核数据', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...ticket, waybillId: 'waybill-1' } as any);
+    await expect(service.updateWeights(ticket.id, {
+      source: 'DIRECT', grossWeight: 111.34, tareWeight: 23.76, netWeight: 87.5,
+    }, 'user-1')).rejects.toThrow('毛重－皮重必须等于净重');
+    expect(prisma.weighTicket.update).not.toHaveBeenCalled();
+  });
+
+  it('直接录入只有毛重时不能保存，净重必须存在或可计算', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({ ...ticket, waybillId: 'waybill-1' } as any);
+    await expect(service.updateWeights(ticket.id, {
+      source: 'DIRECT', grossWeight: 111.34, tareWeight: null, netWeight: null,
+    }, 'user-1')).rejects.toThrow('请填写净重');
+  });
+
+  it('三项直接录入不一致时不能完成，即使填写了旧的采信原因', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      ...ticket, weightEntrySource: 'DIRECT', enteredGrossWeight: 111.34,
+      enteredTareWeight: 23.76, enteredNetWeight: 87.5,
+      weightOverrideReason: '旧理由', attachments: [{ id: 'attachment-1' }],
+    } as any);
+    await expect(service.updateStatus(ticket.id, 'COMPLETED', 'user-1'))
+      .rejects.toThrow('毛重、皮重、净重不一致');
   });
 
   it('异常磅单可一键按实际磅单复核', async () => {

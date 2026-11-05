@@ -208,7 +208,7 @@ export const SidebarMenuButton = React.forwardRef<
         'flex items-center gap-3 px-3 py-2 text-sm transition-colors',
         // Active item: blue left border + highlight background (matches prototype)
         isActive
-          ? 'border-l-[3px] border-primary bg-sidebar-accent text-[#93c5fd] font-medium'
+          ? 'border-l-[3px] border-primary bg-sidebar-accent text-sidebar-current font-medium'
           : 'text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-l-[3px] border-transparent',
         className,
       )}
@@ -248,8 +248,8 @@ export function SidebarIconItem({
         'flex items-center gap-3 rounded-md text-sm font-semibold transition-colors px-2.5 py-2 border-l-[3px]',
         // Match SidebarGroupItem heading sizing (always has transparent border to prevent icon shift)
         isActive
-          ? 'border-primary bg-sidebar-accent text-[#93c5fd]'
-          : 'border-transparent text-[#cbd5e1] hover:text-sidebar-accent-foreground',
+          ? 'border-primary bg-sidebar-accent text-sidebar-current'
+          : 'border-transparent text-sidebar-heading hover:text-sidebar-accent-foreground',
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />
@@ -362,8 +362,8 @@ export function SidebarGroupItem({
         onClick={handleToggle}
         className={cn(
           'w-full flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-semibold transition-colors border-l-[3px]',
-          // Level‑1 heading: lighter text (matches prototype #cbd5e1), no background on hover
-          'border-transparent text-[#cbd5e1] hover:text-sidebar-accent-foreground',
+          // Level‑1 heading: lighter text, no background on hover
+          'border-transparent text-sidebar-heading hover:text-sidebar-accent-foreground',
         )}
       >
         <Icon className="h-4 w-4 shrink-0" />

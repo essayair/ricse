@@ -232,12 +232,12 @@ export default function InboundDetail() {
         </Card>
       )}
       {item.quantitySource === 'LEGACY_UNVERIFIED' && (
-        <Card className="border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+        <Card className="border-warning-border bg-warning-bg p-4 text-sm text-warning">
           这张历史入库单的数量尚未与选定磅单及最终质检报告核对。原记录已保留；核对完成前不能过账，请联系管理员执行历史数量核对。
         </Card>
       )}
       {item.quantitySource === 'HISTORICAL_RECONCILED' && (
-        <Card className="border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+        <Card className="border-primary-border bg-primary-bg p-4 text-sm text-primary">
           历史数量已依据选定磅单和最终质检报告自动核对。原数量：{item.legacyReceivedQuantity == null ? '未记录' : weight(item.legacyReceivedQuantity)}；当前实物数量：{weight(item.receivedQuantity)}。
         </Card>
       )}
@@ -258,7 +258,7 @@ export default function InboundDetail() {
           <Title>物流收货信息</Title>
           {item.status === 'PENDING' ? (
             <div className="space-y-4">
-              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+              <div className="rounded-md border border-primary-border bg-primary/5 p-3 text-sm">
                 入库仓库默认取物流目的地关联仓库；收货人以当前确认操作人为准。请核对实际收货时间和仓库后确认。
               </div>
               <div className="text-sm text-muted-foreground">物流目的地：{item.waybill?.destinationLocation || item.waybill?.dispatchNotice?.destinationLocation || '未填写'}{item.waybill?.dispatchNotice?.destinationWarehouse?.address ? ` · ${item.waybill.dispatchNotice.destinationWarehouse.address}` : ''}</div>
@@ -273,8 +273,8 @@ export default function InboundDetail() {
                 <Field label="收货人（当前操作人）"><Input value={item.currentOperatorName || '当前账号'} readOnly className="bg-muted" /></Field>
                 <Field label="备注"><Input value={receiptForm.remarks} onChange={event => editReceipt('remarks', event.target.value)} /></Field>
               </div>
-              {item.qualityException && <Field label="质检异常人工接收原因 *"><textarea className="min-h-24 w-full rounded-md border border-amber-400 bg-background p-3 text-sm" value={qualityExceptionReason} onChange={event => setQualityExceptionReason(event.target.value)} placeholder="请核对异常指标，并说明仍接收入库的业务依据" /></Field>}
-              {receiptError && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{receiptError}</div>}
+              {item.qualityException && <Field label="质检异常人工接收原因 *"><textarea className="min-h-24 w-full rounded-md border border-warning-border bg-background p-3 text-sm" value={qualityExceptionReason} onChange={event => setQualityExceptionReason(event.target.value)} placeholder="请核对异常指标，并说明仍接收入库的业务依据" /></Field>}
+              {receiptError && <div className="rounded-md border border-destructive-border bg-destructive/5 px-3 py-2 text-sm text-destructive">{receiptError}</div>}
               <Button variant="outline" disabled={saving} onClick={() => void savePending()}><Save className="mr-2 h-4 w-4" />保存收货信息</Button>
             </div>
           ) : (
@@ -292,7 +292,7 @@ export default function InboundDetail() {
         </Card>
         <Card className="p-5">
           <Title>质量验收依据</Title>
-          {canSyncFinalReport && <div className="mb-4 rounded-md border border-amber-400/50 bg-amber-50 p-3 text-sm text-amber-900">
+          {canSyncFinalReport && <div className="mb-4 rounded-md border border-warning-border/50 bg-warning-bg p-3 text-sm text-warning">
             质检任务已形成最终结论，但本单尚未同步最终报告。
             <Button className="ml-3" size="sm" variant="outline" disabled={saving} onClick={() => void selectAcceptanceQuality(finalReport.id)}>同步最终质检报告</Button>
           </div>}
@@ -319,8 +319,8 @@ export default function InboundDetail() {
                 return <div key={indicator.code} className={`rounded-md border px-3 py-2 text-sm ${abnormal ? 'border-destructive/40 bg-destructive/5 text-destructive' : ''}`}><span>{indicator.name}：</span><strong>{indicator.measuredValue == null ? '未录入' : `${indicator.measuredValue}${indicator.unit || ''}`}</strong>{standard && <span className="ml-2 text-xs">标准 {standard}</span>}<span className="ml-2 text-xs">{abnormal ? '异常' : '正常'}</span>{rule?.reason && abnormal && <div className="mt-1 text-xs">{rule.reason}</div>}</div>;
               })}</div></div>}
               {qualityRules.filter((rule: any) => rule.result !== 'PASS' && !item.qualityInspection.indicators?.some((indicator: any) => indicator.code === rule.code || indicator.name === rule.name)).map((rule: any, index: number) => <div key={`${rule.code || rule.name}-${index}`} className="mt-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{rule.name}异常：实测 {rule.measuredValue == null ? '缺失' : `${rule.measuredValue}${rule.unit || ''}`} · {rule.reason || '请核对合同质量规则'}</div>)}
-              {item.qualityInspection.resolution && <p className="mt-3 text-sm text-amber-800">报告处理方案：{item.qualityInspection.resolution}</p>}
-              {item.qualityException && item.qualityExceptionReason && <p className="mt-3 text-sm text-amber-800">人工接收原因：{item.qualityExceptionReason}</p>}
+              {item.qualityInspection.resolution && <p className="mt-3 text-sm text-warning">报告处理方案：{item.qualityInspection.resolution}</p>}
+              {item.qualityException && item.qualityExceptionReason && <p className="mt-3 text-sm text-warning">人工接收原因：{item.qualityExceptionReason}</p>}
               <Button className="mt-4" variant="outline" onClick={() => router.push(`/dashboard/quality/${item.waybill.qualityTask?.id}`)}>
                 查看到货质检任务
               </Button>
@@ -357,17 +357,16 @@ export default function InboundDetail() {
         {!item.attachments?.length ? (
           <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无收货附件</div>
         ) : (
-          <div className="divide-y rounded-md border">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {item.attachments.map((attachment: any) => (
-              <div key={attachment.id} className="flex items-center justify-between gap-3 p-3">
-                <button className="flex min-w-0 items-center gap-2 text-left hover:text-primary" onClick={() => void viewAttachment(attachment)}>
-                  <StoredAttachmentThumbnail name={attachment.originalName} mimeType={attachment.mimeType} viewUrlPath={`/inbound-receipts/attachments/${attachment.id}/view-url`} />
-                  <span className="truncate text-sm">{attachment.originalName}</span>
-                </button>
-                <div className="flex shrink-0 items-center gap-3">
+              <div key={attachment.id} className="min-w-0 space-y-2 rounded-md border p-3">
+                <StoredAttachmentThumbnail large name={attachment.originalName} mimeType={attachment.mimeType} viewUrlPath={`/inbound-receipts/attachments/${attachment.id}/view-url`} />
+                <div className="truncate text-sm font-medium" title={attachment.originalName}>{attachment.originalName}</div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</span>
+                  <Button variant="outline" size="sm" onClick={() => void viewAttachment(attachment)}>放大查看</Button>
                   {item.status === 'PENDING' && (
-                    <Button variant="ghost" size="icon" onClick={() => void removeAttachment(attachment)}>
+                    <Button variant="ghost" size="icon" aria-label={`删除 ${attachment.originalName}`} onClick={() => void removeAttachment(attachment)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   )}
@@ -379,7 +378,7 @@ export default function InboundDetail() {
       </Card>
 
       {item.businessInbound ? (
-        <Card className="border-primary/30 bg-primary/5 p-5">
+        <Card className="border-primary-border bg-primary/5 p-5">
           <Title>业务入库与库存批次</Title>
           <Grid items={[
             ['业务入库单', item.businessInbound.inboundNo],
@@ -420,7 +419,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function ProgressStep({ title, milestone }: { title: string; milestone?: { label: string; complete: boolean } }) {
   return (
-    <div className={`rounded-md border p-3 ${milestone?.complete ? 'border-success/30 bg-success-bg' : 'bg-muted/20'}`}>
+    <div className={`rounded-md border p-3 ${milestone?.complete ? 'border-success-border bg-success-bg' : 'bg-muted/20'}`}>
       <div className="flex items-center gap-2">
         {milestone?.complete
           ? <CheckCircle2 className="h-4 w-4 text-success" />

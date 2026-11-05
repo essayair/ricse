@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { BusinessOperationHistory, type BusinessOperationLog } from '@/components/business-operation-history';
 import { GoodsEvidence, GoodsSource, paymentMoney } from '@/components/settlement/purchase-payment-context';
 import { SettlementAttachments, type SettlementAttachment } from '@/components/settlement/settlement-attachments';
+import { SettlementInvoicePanel } from '@/components/settlement/settlement-invoice-panel';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,15 +20,16 @@ interface Fund { id: string; transactionNo: string; direction: string; paymentSt
 interface Allocation { id: string; amount: string; reversedAt?: string | null; reversalReason?: string | null; fundTransaction: Fund; creator: { name: string }; reverser?: { name: string } | null }
 interface SettlementLine { sourceSnapshot?: GoodsSource; qualityDeductionAmount?: string; id: string; orderId?: string | null; orderNo?: string | null; orderName?: string | null; quantity?: string | null; unit?: string | null; unitPrice?: string | null; adjustmentAmount: string; totalAmount: string; remarks?: string | null; order?: { id: string; status: string } | null }
 interface Settlement {
-  id: string; settlementNo: string; direction: 'RECEIVABLE' | 'PAYABLE'; settlementScope: string; stageName?: string | null; status: string;
+  id: string; settlementNo: string; direction: 'RECEIVABLE' | 'PAYABLE'; settlementScope: string; stageName?: string | null; status: string; createdBy: string;
   qualityDeductionAmount?: string;
   grossAmount: string; adjustmentAmount: string; totalAmount: string; settledAmount: string; dueDate?: string | null; remarks?: string | null;
   contract: { id: string; contractNo: string; title: string }; businessUnit?: { name: string } | null;
   legalEntity: { name: string }; counterparty: { name: string }; creator: { name: string }; confirmer?: { name: string } | null;
   lines: SettlementLine[]; allocations: Allocation[]; attachments?: SettlementAttachment[]; operationLogs?: BusinessOperationLog[];
+  approvalTasks?: Array<{ id: string; step: number; round: number; nodeName: string; roleName?: string | null; status: string; comment?: string | null; assignee: { id: string; name: string }; actedBy?: { name: string } | null; actedAt?: string | null }>;
 }
 
-const STATUS: Record<string, string> = { DRAFT: '草稿', CONFIRMED: '待收付', PARTIALLY_SETTLED: '部分结清', SETTLED: '已结清', VOIDED: '已作废' };
+const STATUS: Record<string, string> = { DRAFT: '草稿', PENDING_APPROVAL: '结算待审批', REJECTED: '结算已驳回', CONFIRMED: '待收付', PARTIALLY_SETTLED: '部分结清', SETTLED: '已结清', VOIDED: '已作废' };
 const SCOPE: Record<string, string> = { GOODS: '实际货物结算', BATCH: '执行批次结算', CONTRACT_STAGE: '合同阶段结算', CONTRACT_FINAL: '合同最终结算', ADJUSTMENT: '调整结算' };
 const ORDER_STATUS: Record<string, string> = { DRAFT: '草稿', CONFIRMED: '已确认', DISPATCHED: '执行中', COMPLETED: '已完成', CANCELLED: '已取消' };
 const STAGE: Record<string, string> = { ADVANCE: '预收预付款', PROGRESS: '阶段款', SETTLEMENT: '结算款', FINAL: '尾款', GUARANTEE: '保证金', OTHER: '其他款项' };
@@ -46,6 +48,7 @@ export default function SettlementDetailPage() {
   const [busy, setBusy] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userId, setUserId] = useState('');
   const [allocationOpen, setAllocationOpen] = useState(false);
   const [allocation, setAllocation] = useState({ fundTransactionId: '', amount: '' });
 
@@ -63,7 +66,7 @@ export default function SettlementDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    try { const user = JSON.parse(localStorage.getItem('user') || '{}'); setIsAdmin(user.role === 'ADMIN'); setPermissions(user.permissions || []); }
+    try { const user = JSON.parse(localStorage.getItem('user') || '{}'); setIsAdmin(user.role === 'ADMIN'); setUserId(user.id || ''); setPermissions(user.permissions || []); }
     catch { setIsAdmin(false); setPermissions([]); }
   }, []);
 
@@ -103,6 +106,16 @@ export default function SettlementDetailPage() {
     catch (error: any) { alert(error.message); }
     finally { setBusy(false); }
   };
+  const review = async (decision: 'approve' | 'reject') => {
+    if (!item) return;
+    const reason = decision === 'reject' ? await promptAction('请输入结算审批驳回原因') : undefined;
+    if (decision === 'reject' && !reason?.trim()) return;
+    if (decision === 'approve' && !await confirmAction(`确认批准结算单 ${item.settlementNo}？`)) return;
+    setBusy(true);
+    try { await api.post(`/financial-settlements/${item.id}/${decision}`, decision === 'reject' ? { reason: reason?.trim() } : { comment: '同意' }); await load(); }
+    catch (error: any) { alert(error.message || '结算审批失败'); }
+    finally { setBusy(false); }
+  };
 
   if (loading) return <div className="p-12 text-center text-muted-foreground">正在加载结算单…</div>;
   if (!item) return <div className="p-12 text-center text-muted-foreground">结算单不存在或无权访问</div>;
@@ -110,20 +123,25 @@ export default function SettlementDetailPage() {
   const dueDateLabel = item.direction === 'PAYABLE' ? '约定付款到期日' : '约定收款到期日';
   const outstanding = Number(item.totalAmount) - Number(item.settledAmount);
   const goodsPurchase = item.settlementScope === 'GOODS';
+  const canReview = item.status === 'PENDING_APPROVAL' && can('settlement.approve')
+    && (isAdmin || item.approvalTasks?.some(task => task.status === 'PENDING' && task.assignee.id === userId));
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3"><Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4"/></Button><div><h1 className="font-mono text-2xl font-bold">{item.direction === 'PAYABLE' ? '采购结算单 · ' : ''}{item.settlementNo}</h1><p className="mt-1 text-sm text-muted-foreground">{SCOPE[item.settlementScope]} · {item.contract.contractNo} · {item.contract.title}</p></div></div>
-      <div className="flex flex-wrap items-center gap-2">{item.direction === 'PAYABLE' && ['CONFIRMED', 'PARTIALLY_SETTLED'].includes(item.status) && can('settlement.payment.apply') && <Button asChild><Link href={`/dashboard/payment-requests/new?contractId=${item.contract.id}&settlementId=${item.id}`}>按本结算申请付款</Link></Button>}<StatusText status={item.status}>{STATUS[item.status] || item.status}</StatusText>{['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(item.status) && <Button variant="outline" asChild><Link href={`/dashboard/settlements/${item.id}/print`}><Printer className="mr-1.5 h-4 w-4"/>打印存档</Link></Button>}{item.status === 'DRAFT' && can('settlement.confirm') && <Button disabled={busy} onClick={() => void doAction('confirm')}>确认形成{item.direction === 'PAYABLE' ? '应付' : '应收'}</Button>}{['CONFIRMED', 'PARTIALLY_SETTLED'].includes(item.status) && can('settlement.allocate') && <Button disabled={busy} onClick={openAllocation}>核销{cashLabel}</Button>}{!['VOIDED', 'SETTLED'].includes(item.status) && can('settlement.reverse') && <Button variant="outline" disabled={busy} onClick={() => void doAction('void')}>作废</Button>}</div>
+      <div className="flex flex-wrap items-center gap-2">{item.direction === 'PAYABLE' && ['CONFIRMED', 'PARTIALLY_SETTLED'].includes(item.status) && can('settlement.payment.apply') && <Button asChild><Link href={`/dashboard/payment-requests/new?contractId=${item.contract.id}&settlementId=${item.id}`}>按本结算申请付款</Link></Button>}<StatusText status={item.status}>{STATUS[item.status] || item.status}</StatusText>{item.status === 'DRAFT' && item.settlementScope === 'GOODS' && (isAdmin || item.createdBy === userId) && can('settlement.create') && <Button variant="outline" asChild><Link href={`/dashboard/settlements/${item.id}/edit`}>编辑草稿</Link></Button>}{['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(item.status) && <Button variant="outline" asChild><Link href={`/dashboard/settlements/${item.id}/print`}><Printer className="mr-1.5 h-4 w-4"/>打印存档</Link></Button>}{item.status === 'DRAFT' && can('settlement.confirm') && <Button disabled={busy} onClick={() => void doAction('confirm')}>确认或提交审批</Button>}{canReview && <><Button disabled={busy} onClick={() => void review('approve')}>批准结算</Button><Button variant="outline" disabled={busy} onClick={() => void review('reject')}>驳回</Button></>}{['CONFIRMED', 'PARTIALLY_SETTLED'].includes(item.status) && can('settlement.allocate') && <Button disabled={busy} onClick={openAllocation}>核销{cashLabel}</Button>}{!['VOIDED', 'SETTLED'].includes(item.status) && can('settlement.reverse') && <Button variant="outline" disabled={busy} onClick={() => void doAction('void')}>作废</Button>}</div>
     </div>
 
     <Card className="p-6"><h2 className="mb-4 text-base font-semibold">基本信息</h2><div className="grid gap-5 text-sm sm:grid-cols-2 lg:grid-cols-4"><Info label="我方签约主体" value={item.legalEntity.name}/><Info label="交易对手方" value={item.counterparty.name}/><Info label="业务单元（事业部）" value={item.businessUnit?.name || '—'}/><Info label={dueDateLabel} value={day(item.dueDate)}/><Info label="结算原金额" value={money(item.grossAmount)}/><Info label="价格/质量等加减项" value={money(item.adjustmentAmount)}/><Info label="结算金额" value={money(item.totalAmount)} emphasis/><Info label="未结金额" value={money(outstanding)} emphasis/><Info label="制单人" value={item.creator.name}/><Info label="确认人" value={item.confirmer?.name || '—'}/></div>{item.remarks && <div className="mt-5 border-t pt-4 text-sm"><span className="text-muted-foreground">备注：</span>{item.remarks}</div>}</Card>
+    {Boolean(item.approvalTasks?.length) && <Card className="space-y-3 p-5"><h2 className="font-semibold">结算审批记录</h2><p className="text-xs text-muted-foreground">协商数量、改用其他计量或检测依据、其他加减项复用现有审批节点；全部通过后才形成正式应收应付。</p><div className="space-y-2">{item.approvalTasks?.map(task => <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"><div>第 {task.round} 轮 · {task.step}. {task.nodeName}（{task.roleName || '审批人'}）· {task.assignee.name}</div><div>{task.status === 'PENDING' ? '待审批' : task.status === 'APPROVED' ? '已通过' : task.status === 'REJECTED' ? '已驳回' : task.status === 'WAITING' ? '待前序节点' : task.status === 'CANCELLED' ? '已取消' : '他人已处理'}{task.comment ? ` · ${task.comment}` : ''}</div></div>)}</div></Card>}
 
     {goodsPurchase && item.lines.length > 0 && <Card className="overflow-hidden"><div className="border-b p-4"><h2 className="font-semibold">逐车结算明细</h2><p className="mt-1 text-xs text-muted-foreground">重量与水分来自制单时的业务依据快照；未保存过的历史字段显示“—”。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[1450px] text-sm"><thead className="bg-muted/40 text-left text-muted-foreground"><tr><th className="p-2">{item.direction === 'PAYABLE' ? '入库' : '交付'}日期 / 运单</th><th className="p-2">车牌 / 物料</th><th className="p-2 text-right">水分（%）</th><th className="p-2 text-right">毛重（吨）</th><th className="p-2 text-right">皮重（吨）</th><th className="p-2 text-right">净重（吨）</th><th className="p-2 text-right">参考干基（吨）</th><th className="p-2 text-right">结算数量（吨）</th><th className="p-2 text-right">含税单价（元/吨）</th><th className="p-2 text-right">质量扣款（元）</th><th className="p-2 text-right">其他加减项（元）</th><th className="p-2 text-right">含税金额（元）</th></tr></thead><tbody>{item.lines.map(line => { const source = line.sourceSnapshot; return <tr key={line.id} className="border-t"><td className="p-2">{inboundDay(item.direction === 'PAYABLE' ? source?.inboundDate : source?.salesCompletionConfirmedAt)}<div className="text-xs text-muted-foreground">{source?.waybillNo || '—'}</div></td><td className="p-2">{source?.plateNo || '—'}<div className="text-xs text-muted-foreground">{source?.materialName || '—'}</div></td><td className="p-2 text-right">{source?.measuredMoisturePct ?? '—'}</td><td className="p-2 text-right">{tons(source?.grossWeight)}</td><td className="p-2 text-right">{tons(source?.tareWeight)}</td><td className="p-2 text-right">{tons(source?.netWeight)}</td><td className="p-2 text-right">{tons(source?.dryQuantity)}</td><td className="p-2 text-right">{tons(line.quantity)}</td><td className="p-2 text-right">{money(line.unitPrice)}</td><td className="p-2 text-right">{money(line.qualityDeductionAmount)}</td><td className="p-2 text-right">{money(line.adjustmentAmount)}</td><td className="p-2 text-right font-medium">{money(line.totalAmount)}</td></tr>; })}</tbody></table></div></Card>}
     {!goodsPurchase && item.lines.length > 0 && <Card className="overflow-hidden"><div className="border-b p-4 font-semibold">执行批次明细</div><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead className="bg-muted/40 text-left text-muted-foreground"><tr><th className="p-3">批次</th><th className="p-3">当前状态</th><th className="p-3 text-right">数量</th><th className="p-3 text-right">单价</th><th className="p-3 text-right">加减项</th><th className="p-3">调整原因</th><th className="p-3 text-right">结算金额</th></tr></thead><tbody>{item.lines.map((line) => <tr key={line.id} className="border-t"><td className="p-3">{line.orderId ? <Link className="font-medium text-primary hover:underline" href={`/dashboard/orders/${line.orderId}`}>{line.orderNo} · {line.orderName}</Link> : `${line.orderNo || '—'} · ${line.orderName || '—'}`}</td><td className="p-3">{line.order ? <StatusText status={line.order.status}>{ORDER_STATUS[line.order.status] || line.order.status}</StatusText> : '—'}</td><td className="p-3 text-right">{line.quantity || '—'} {line.unit || ''}</td><td className="p-3 text-right">{money(line.unitPrice)}</td><td className="p-3 text-right">{money(line.adjustmentAmount)}</td><td className="p-3">{line.remarks || '—'}</td><td className="p-3 text-right font-medium">{money(line.totalAmount)}</td></tr>)}</tbody></table></div></Card>}
 
     {item.direction === 'PAYABLE' && <Card className="space-y-4 p-5"><div className="grid gap-4 text-sm sm:grid-cols-4"><div>货物原金额<p className="mt-1 font-medium">{paymentMoney(item.grossAmount)}</p></div><div>质量价格扣款<p className="mt-1 font-medium">{paymentMoney(item.qualityDeductionAmount)}</p></div><div>其他加减项<p className="mt-1 font-medium">{paymentMoney(item.adjustmentAmount)}</p></div><div>结算净额<p className="mt-1 font-medium">{paymentMoney(item.totalAmount)}</p></div></div>{item.lines.some(l => l.sourceSnapshot) && <GoodsEvidence sources={item.lines.map(l => l.sourceSnapshot).filter(Boolean) as GoodsSource[]}/>}</Card>}
-    {goodsPurchase && <SettlementAttachments attachments={item.attachments} uploadPath={`/financial-settlements/${item.id}/attachments`} editable={item.status === 'DRAFT' && can('settlement.create')} onChanged={load} />}
+    <SettlementAttachments attachments={item.attachments} uploadPath={`/financial-settlements/${item.id}/attachments`} editable={item.status === 'DRAFT' && can('settlement.create')} onChanged={load} />
+
+    {item.status !== 'VOIDED' && <SettlementInvoicePanel settlementId={item.id} status={item.status} canCreate={can('settlement.create')} canVoid={can('settlement.reverse')} materialName={item.lines[0]?.sourceSnapshot?.materialName} />}
 
     <Card className="p-6"><h2 className="mb-4 text-base font-semibold">核销记录</h2>{item.allocations.length ? <div className="space-y-3">{item.allocations.map((entry) => <div key={entry.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 text-sm ${entry.reversedAt ? 'bg-muted/40 text-muted-foreground' : ''}`}><div><div className="font-medium">{entry.fundTransaction.transactionNo} · {STAGE[entry.fundTransaction.paymentStage] || entry.fundTransaction.paymentStage}</div><div className="mt-1 text-xs text-muted-foreground">{day(entry.fundTransaction.occurredAt)} · 经办人 {entry.creator.name}{entry.reversedAt ? ` · 已撤销：${entry.reversalReason || '—'}` : ''}</div></div><div className="flex items-center gap-3"><b>{money(entry.amount)}</b>{can('settlement.reverse') && !entry.reversedAt && <Button size="sm" variant="outline" disabled={busy} onClick={() => void reverse(entry)}><RotateCcw className="mr-1 h-3.5 w-3.5"/>撤销核销</Button>}</div></div>)}</div> : <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">暂无核销记录</div>}</Card>
     <BusinessOperationHistory logs={item.operationLogs}/>

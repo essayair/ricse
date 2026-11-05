@@ -284,9 +284,7 @@ export class WaybillService {
   private async syncCreatedWaybill(waybill: any, userId: string) {
     if (waybill.vehicleId || waybill.plateNo) {
       await this.weighService.ensureTaskForWaybill(waybill.id, userId);
-      if (waybill.dispatchNotice?.type === 'SALES') {
-        await this.weighService.ensurePrimaryTicketForWaybill(waybill.id, userId);
-      }
+      await this.weighService.ensurePrimaryTicketForWaybill(waybill.id, userId);
     }
     if (waybill.dispatchNotice?.type === 'SALES' && waybill.dispatchNotice?.mode === 'STANDARD') {
       await this.outboundService.ensureReceiptForWaybill(waybill.id, userId);
@@ -608,9 +606,7 @@ export class WaybillService {
     });
     if (updated.vehicleId || updated.plateNo) {
       await this.weighService.ensureTaskForWaybill(updated.id, userId);
-      if (updated.dispatchNotice?.type === 'SALES') {
-        await this.weighService.ensurePrimaryTicketForWaybill(updated.id, userId);
-      }
+      await this.weighService.ensurePrimaryTicketForWaybill(updated.id, userId);
     }
     return this.findOne(updated.id, userId, 'logistics.manage');
   }
@@ -710,10 +706,7 @@ export class WaybillService {
     if (['ARRIVED', 'SIGNED'].includes(status)) {
       await this.qualityService.ensureTaskForWaybill(id, userId);
     }
-    if (
-      waybill.dispatchNotice.type === 'PURCHASE'
-      && ['ARRIVED', 'SIGNED'].includes(status)
-    ) {
+    if (['ARRIVED', 'SIGNED'].includes(status)) {
       await this.weighService.ensurePrimaryTicketForWaybill(id, userId);
     }
     if (status === 'CANCELLED') await this.weighService.voidTaskForWaybill(id, userId);

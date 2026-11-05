@@ -1,4 +1,11 @@
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+
+export class UpdateWeighWeightsDto {
+  @IsIn(['DIRECT', 'RECORDS']) source: 'DIRECT' | 'RECORDS';
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) grossWeight?: number | null;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) tareWeight?: number | null;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) netWeight?: number | null;
+}
 
 export class SelectEffectiveRecordsDto {
   @IsString() grossRecordId: string;

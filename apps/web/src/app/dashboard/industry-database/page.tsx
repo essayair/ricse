@@ -32,7 +32,6 @@ export default function IndustryDatabasePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">产业数据库</h1>
-        <p className="mt-1 text-sm text-muted-foreground">维护萤石—氟化工产业的静态企业、资源、产能和园区资料</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

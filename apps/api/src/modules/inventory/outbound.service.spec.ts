@@ -177,7 +177,7 @@ describe('OutboundService', () => {
         id: 'allocation-1',
         inventoryLotId: 'lot-1',
         quantity: 10,
-        inventoryLot: { id: 'lot-1', lotNo: 'LOT-001', availableQuantity: 25, pricingAvailableQuantity: 20 },
+        inventoryLot: { id: 'lot-1', lotNo: 'LOT-001', qualityConclusion: 'PASS', availableQuantity: 25, pricingAvailableQuantity: 20 },
       }],
     };
     prisma.outboundReceipt.findFirst.mockResolvedValue(receipt as any);
@@ -185,6 +185,7 @@ describe('OutboundService', () => {
       waybillId: 'waybill-1', purpose: 'INVENTORY', weighTicketId: 'ticket-1', isCurrent: true,
     } as any);
     prisma.salesOutbound.count.mockResolvedValue(0);
+    prisma.qualityInspection.count.mockResolvedValue(1);
     prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
     prisma.salesOutbound.create.mockResolvedValue({ id: 'sales-out-1' } as any);
     prisma.inventoryLot.updateMany.mockResolvedValue({ count: 1 });
@@ -211,6 +212,55 @@ describe('OutboundService', () => {
     }));
     expect(prisma.outboundReceipt.update).toHaveBeenCalledWith(expect.objectContaining({
       data: { status: 'POSTED', pricingQuantity: 8 },
+    }));
+  });
+
+  it('缺少我方发货报告时要求填写放行原因', async () => {
+    prisma.outboundReceipt.findFirst.mockResolvedValue({
+      id: 'receipt-2', status: 'READY', waybillId: 'waybill-2', weighTicketId: 'ticket-2',
+      weighTicket: { id: 'ticket-2', status: 'REVIEWED', weighingStage: 'SHIPPING' },
+      outboundQuantity: 10, salesOutbound: null,
+      waybill: { status: 'PENDING' },
+      allocations: [{ quantity: 10, inventoryLot: { lotNo: 'LOT-2', qualityConclusion: 'PASS' } }],
+    } as any);
+    prisma.waybillWeightSelection.findFirst.mockResolvedValue({ weighTicketId: 'ticket-2' } as any);
+    prisma.qualityInspection.count.mockResolvedValue(0);
+    await expect(service.post('receipt-2', 'user-1')).rejects.toThrow('缺少我方已确认发货检测报告');
+    expect(prisma.salesOutbound.create).not.toHaveBeenCalled();
+  });
+
+  it('质检异常说明后允许出库，并留存原因和操作人', async () => {
+    prisma.outboundReceipt.findFirst.mockResolvedValue({
+      id: 'receipt-3', receiptNo: 'LOR-3', status: 'READY',
+      warehouseId: 'warehouse-1', materialId: 'material-1', materialName: '萤石',
+      customerName: '客户', outboundOrderId: 'order-1', outboundOrder: { businessUnitId: 'bu-1' },
+      waybillId: 'waybill-3', weighTicketId: 'ticket-3',
+      weighTicket: { id: 'ticket-3', status: 'REVIEWED', weighingStage: 'SHIPPING' },
+      outboundQuantity: 10, salesOutbound: null,
+      waybill: { status: 'PENDING', dispatchNoticeId: 'notice-3', dispatchNotice: { status: 'ISSUED' }, lineItems: [] },
+      allocations: [{
+        id: 'allocation-3', inventoryLotId: 'lot-3', quantity: 10,
+        inventoryLot: { id: 'lot-3', lotNo: 'LOT-3', qualityConclusion: 'REJECTED', availableQuantity: 25, pricingAvailableQuantity: 20 },
+      }],
+    } as any);
+    prisma.waybillWeightSelection.findFirst.mockResolvedValue({ weighTicketId: 'ticket-3' } as any);
+    prisma.qualityInspection.count.mockResolvedValue(0);
+    prisma.salesOutbound.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
+    prisma.salesOutbound.create.mockResolvedValue({ id: 'sales-out-3' } as any);
+    prisma.inventoryLot.updateMany.mockResolvedValue({ count: 1 });
+    prisma.inventoryLot.findUniqueOrThrow.mockResolvedValue({
+      id: 'lot-3', lotNo: 'LOT-3', availableQuantity: 15, pricingAvailableQuantity: 12,
+    } as any);
+
+    await service.post('receipt-3', 'user-1', { qualityExceptionReason: '复核批次质量后，由业务负责人同意发货' });
+
+    expect(prisma.outboundReceipt.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: 'POSTED', qualityExceptionBy: 'user-1',
+        qualityExceptionReason: '复核批次质量后，由业务负责人同意发货',
+        qualityExceptionDetails: expect.stringContaining('缺少我方已确认发货检测报告'),
+      }),
     }));
   });
 });

@@ -12,6 +12,7 @@ import { AttachmentPanel, BusinessAttachment } from '@/components/attachment-pan
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { StatusText } from '@/components/status-text';
+import { calculateWeightInputs, WeightEntryFields, WeightInputs } from '@/components/weighbridge/weight-entry-fields';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 interface WeighRecord {
@@ -58,6 +59,11 @@ interface WeighTicket {
   plannedQuantity: string;
   selectedGrossRecordId: string | null;
   selectedTareRecordId: string | null;
+  weightEntrySource: 'DIRECT' | 'RECORDS';
+  enteredGrossWeight: string | null;
+  enteredTareWeight: string | null;
+  enteredNetWeight: string | null;
+  weightOverrideReason: string | null;
   grossWeight: string | null;
   tareWeight: string | null;
   netWeight: string | null;
@@ -170,6 +176,7 @@ export default function WeighTicketDetailPage() {
   const [customerWeight, setCustomerWeight] = useState('');
   const [thirdPartyWeight, setThirdPartyWeight] = useState('');
   const [manualWeight, setManualWeight] = useState('');
+  const [directWeights, setDirectWeights] = useState<WeightInputs>({ gross: '', tare: '', net: '' });
   const [toleranceRate, setToleranceRate] = useState('0.5');
   const [reviewRemark, setReviewRemark] = useState('');
   const [editingInfo, setEditingInfo] = useState(false);
@@ -189,6 +196,7 @@ export default function WeighTicketDetailPage() {
     setCustomerWeight(data.customerWeight || '');
     setThirdPartyWeight(data.thirdPartyWeight || '');
     setManualWeight(data.manualWeight || '');
+    setDirectWeights({ gross: data.enteredGrossWeight || '', tare: data.enteredTareWeight || '', net: data.enteredNetWeight || '' });
     setToleranceRate(data.toleranceRate || '0.5');
     setReviewRemark(data.reviewRemark || '');
     setInfoForm({
@@ -284,6 +292,23 @@ export default function WeighTicketDetailPage() {
     }
   };
 
+  const saveDirectWeights = async () => {
+    if ([directWeights.gross, directWeights.tare, directWeights.net].some(value => value.trim() !== '' && (!Number.isFinite(Number(value)) || Number(value) <= 0))) return alert('已填写的重量必须大于 0');
+    const weightCheck = calculateWeightInputs(directWeights);
+    if (weightCheck.invalid || weightCheck.mismatch) return alert('毛重、皮重、净重不一致，请核对后保存');
+    if (!weightCheck.displayed.net) return alert('请填写净重，或填写毛重和皮重以计算净重');
+    setSaving(true);
+    try {
+      applyTicket(await api.patch<WeighTicket>(`/weigh-tickets/${id}/weights`, {
+        source: 'DIRECT',
+        grossWeight: directWeights.gross ? Number(directWeights.gross) : null,
+        tareWeight: directWeights.tare ? Number(directWeights.tare) : null,
+        netWeight: directWeights.net ? Number(directWeights.net) : null,
+      }));
+    } catch (error: any) { alert(error.message || '重量保存失败'); }
+    finally { setSaving(false); }
+  };
+
   const saveSettlement = async () => {
     const values: Record<string, string> = { SHIPPING: shippingWeight, CUSTOMER: customerWeight, THIRD_PARTY: thirdPartyWeight, MANUAL: manualWeight };
     if (basis !== 'RECEIVING' && Number(values[basis]) <= 0) return alert('请填写所选结算口径的重量');
@@ -361,6 +386,11 @@ export default function WeighTicketDetailPage() {
   const settlementEditable = !['REVIEWED', 'VOIDED'].includes(ticket.status);
   const grossRecords = ticket.records.filter(item => item.weighingType === 'GROSS');
   const tareRecords = ticket.records.filter(item => item.weighingType === 'TARE');
+  const directRows = ([
+    ['毛重', ticket.enteredGrossWeight, ticket.grossWeight],
+    ['皮重', ticket.enteredTareWeight, ticket.tareWeight],
+    ['净重', ticket.enteredNetWeight, ticket.netWeight],
+  ] as const).filter(([, entered, effective]) => entered != null || (ticket.weightEntrySource === 'DIRECT' && effective != null));
 
   return <>
   <div className="weigh-ticket-screen space-y-6">
@@ -379,9 +409,9 @@ export default function WeighTicketDetailPage() {
       </div>
     </div>
 
-    {ticket.abnormal && <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" /><div><div className="font-medium text-destructive">称重净重与计划数量偏差超过 {number(ticket.toleranceRate)}%</div><div className="mt-1 text-muted-foreground">请核对称重记录和有效记录；若数据无误，可按实际磅单确认并继续。</div></div></div>}
+    {ticket.abnormal && <div className="flex items-start gap-3 rounded-lg border border-destructive-border bg-destructive/5 p-4 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" /><div><div className="font-medium text-destructive">称重净重与计划数量偏差超过 {number(ticket.toleranceRate)}%</div><div className="mt-1 text-muted-foreground">请核对称重记录和有效记录；若数据无误，可按实际磅单确认并继续。</div></div></div>}
 
-    {ticket.status === 'COMPLETED' && <Card className={`space-y-4 border-2 p-5 ${ticket.abnormal ? 'border-destructive/50 bg-destructive/5' : 'border-primary/30 bg-primary/5'}`}>
+    {ticket.status === 'COMPLETED' && <Card className={`space-y-4 border-2 p-5 ${ticket.abnormal ? 'border-destructive/50 bg-destructive/5' : 'border-primary-border bg-primary/5'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">{ticket.abnormal ? <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-primary" />}<div><h2 className={`font-semibold ${ticket.abnormal ? 'text-destructive' : ''}`}>{ticket.abnormal ? '磅差异常提醒' : '磅单复核'}</h2><p className="mt-1 text-sm text-muted-foreground">{ticket.abnormal ? `当前磅差 ${signedWeight(ticket.varianceWeight)}，偏差率 ${number(ticket.varianceRate)}%，超过容差 ${number(ticket.toleranceRate)}%。请核对数据后选择返回修改或按实际磅单继续。` : '称重已完成，请核对数据；如有补充说明可填写后提交复核。'}</p></div></div>
         <StatusText status="PENDING_REVIEW">待复核</StatusText>
@@ -390,9 +420,9 @@ export default function WeighTicketDetailPage() {
       <div className="flex justify-end gap-2">{ticket.abnormal && <Button variant="outline" disabled={saving} onClick={() => void transition('WEIGHING')}>返回修改</Button>}<Button disabled={saving} onClick={() => void transition('REVIEWED')}><CheckCircle2 className="mr-2 h-4 w-4" />{saving ? '提交中...' : ticket.abnormal ? '确认并继续' : '复核通过'}</Button></div>
     </Card>}
 
-    {ticket.status === 'REVIEWED' && <Card className={`p-5 ${ticket.abnormal ? 'border-destructive/30' : ''}`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">复核结果</h2><StatusText status="REVIEWED">已复核</StatusText></div><div className="grid gap-4 sm:grid-cols-3"><SmallField label="复核人" value={ticket.reviewer?.name || '-'} /><SmallField label="复核时间" value={formatDateTimeToSecond(ticket.reviewedAt)} /><SmallField label="处理意见" value={ticket.reviewRemark || '-'} /></div></Card>}
+    {ticket.status === 'REVIEWED' && <Card className={`p-5 ${ticket.abnormal ? 'border-destructive-border' : ''}`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">复核结果</h2><StatusText status="REVIEWED">已复核</StatusText></div><div className="grid gap-4 sm:grid-cols-3"><SmallField label="复核人" value={ticket.reviewer?.name || '-'} /><SmallField label="复核时间" value={formatDateTimeToSecond(ticket.reviewedAt)} /><SmallField label="处理意见" value={ticket.reviewRemark || '-'} /></div></Card>}
 
-    <Card className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">完整磅单信息</h2><p className="mt-1 text-xs text-muted-foreground">业务信息按创建时快照保存，称重时间取当前有效毛重和皮重记录</p></div><div className="flex items-center gap-2">{!['REVIEWED', 'VOIDED'].includes(ticket.status) && <Button variant="outline" size="sm" onClick={() => setEditingInfo(value => !value)}>{editingInfo ? '取消编辑' : '编辑基本信息'}</Button>}<Badge variant="outline">{ticket.ticketNo}</Badge></div></div>{ticket.additionReason && <div className="mb-4 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">追加原因：{ticket.additionReason}</div>}<div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6"><SmallField label="称重节点" value={ticket.weighingStage === 'SHIPPING' ? '发货称重' : '收货称重'} /><SmallField label="节点序次" value={`第 ${ticket.sequence} 张${ticket.isSupplementary ? '（追加）' : ''}`} /><SmallField label="磅单日期" value={formatDateOnly(ticket.ticketDate)} /><SmallField label="磅单编号" value={ticket.ticketNo} /><SmallField label="车牌号" value={ticket.plateNo || ticket.waybill.plateNo || '-'} /><SmallField label="货物名称" value={ticket.materialName || '-'} /><SmallField label="规格型号" value={ticket.materialSpec || '-'} /><SmallField label="包/袋数" value={ticket.packageCount === null ? '-' : `${ticket.packageCount}`} /><SmallField label="发货单位" value={ticket.shipperName || '-'} /><SmallField label="收货单位" value={ticket.receiverName || '-'} /><SmallField label="毛重（吨）" value={plainNumber(ticket.grossWeight)} /><SmallField label="皮重（吨）" value={plainNumber(ticket.tareWeight)} /><SmallField label="净重（吨）" value={plainNumber(ticket.netWeight)} /><SmallField label="毛重时间" value={recordTime(ticket.records, ticket.selectedGrossRecordId)} /><SmallField label="皮重时间" value={recordTime(ticket.records, ticket.selectedTareRecordId)} /><SmallField label="打印时间" value={formatDateTimeToSecond(ticket.printedAt, '尚未打印')} /><SmallField label="司机姓名" value={ticket.driverName || ticket.waybill.driverName || '-'} /><SmallField label="司磅员" value={ticket.weighmasterName || ticket.creator.name} /><div className="sm:col-span-2"><SmallField label="备注" value={ticket.remarks || '-'} /></div></div>{editingInfo && <div className="mt-5 space-y-4 border-t pt-5"><div className="grid gap-4 md:grid-cols-3"><InfoInput label="磅单日期" type="date" value={infoForm.ticketDate} setValue={value => setInfoForm(current => ({ ...current, ticketDate: value }))} /><InfoInput label="车牌号" value={infoForm.plateNo} setValue={value => setInfoForm(current => ({ ...current, plateNo: value }))} /><InfoInput label="司机姓名" value={infoForm.driverName} setValue={value => setInfoForm(current => ({ ...current, driverName: value }))} /><InfoInput label="货物名称" value={infoForm.materialName} setValue={value => setInfoForm(current => ({ ...current, materialName: value }))} /><InfoInput label="规格型号" value={infoForm.materialSpec} setValue={value => setInfoForm(current => ({ ...current, materialSpec: value }))} /><InfoInput label="包/袋数" type="number" value={infoForm.packageCount} setValue={value => setInfoForm(current => ({ ...current, packageCount: value }))} /><InfoInput label="发货单位" value={infoForm.shipperName} setValue={value => setInfoForm(current => ({ ...current, shipperName: value }))} /><InfoInput label="收货单位" value={infoForm.receiverName} setValue={value => setInfoForm(current => ({ ...current, receiverName: value }))} /><InfoInput label="司磅员" value={infoForm.weighmasterName} setValue={value => setInfoForm(current => ({ ...current, weighmasterName: value }))} /><div className="md:col-span-3"><InfoInput label="备注" value={infoForm.remarks} setValue={value => setInfoForm(current => ({ ...current, remarks: value }))} /></div></div><div className="flex justify-end"><Button disabled={saving} onClick={() => void saveInfo()}>{saving ? '保存中...' : '保存基本信息'}</Button></div></div>}</Card>
+    <Card className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">完整磅单信息</h2><p className="mt-1 text-xs text-muted-foreground">业务信息按创建时快照保存；直接录入重量不生成称重记录时间</p></div><div className="flex items-center gap-2">{!['REVIEWED', 'VOIDED'].includes(ticket.status) && <Button variant="outline" size="sm" onClick={() => setEditingInfo(value => !value)}>{editingInfo ? '取消编辑' : '编辑基本信息'}</Button>}<Badge variant="outline">{ticket.ticketNo}</Badge></div></div>{ticket.additionReason && <div className="mb-4 rounded-md bg-warning-bg px-4 py-3 text-sm text-warning">追加原因：{ticket.additionReason}</div>}<div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6"><SmallField label="称重节点" value={ticket.weighingStage === 'SHIPPING' ? '发货称重' : '收货称重'} /><SmallField label="节点序次" value={`第 ${ticket.sequence} 张${ticket.isSupplementary ? '（追加）' : ''}`} /><SmallField label="磅单日期" value={formatDateOnly(ticket.ticketDate)} /><SmallField label="磅单编号" value={ticket.ticketNo} /><SmallField label="车牌号" value={ticket.plateNo || ticket.waybill.plateNo || '-'} /><SmallField label="货物名称" value={ticket.materialName || '-'} /><SmallField label="规格型号" value={ticket.materialSpec || '-'} /><SmallField label="包/袋数" value={ticket.packageCount === null ? '-' : `${ticket.packageCount}`} /><SmallField label="发货单位" value={ticket.shipperName || '-'} /><SmallField label="收货单位" value={ticket.receiverName || '-'} /><SmallField label="毛重（吨）" value={plainNumber(ticket.grossWeight)} /><SmallField label="皮重（吨）" value={plainNumber(ticket.tareWeight)} /><SmallField label="净重（吨）" value={plainNumber(ticket.netWeight)} /><SmallField label="毛重时间" value={ticket.weightEntrySource === 'DIRECT' ? '-' : recordTime(ticket.records, ticket.selectedGrossRecordId)} /><SmallField label="皮重时间" value={ticket.weightEntrySource === 'DIRECT' ? '-' : recordTime(ticket.records, ticket.selectedTareRecordId)} /><SmallField label="打印时间" value={formatDateTimeToSecond(ticket.printedAt, '尚未打印')} /><SmallField label="司机姓名" value={ticket.driverName || ticket.waybill.driverName || '-'} /><SmallField label="司磅员" value={ticket.weighmasterName || ticket.creator.name} /><div className="sm:col-span-2"><SmallField label="备注" value={ticket.remarks || '-'} /></div></div>{editingInfo && <div className="mt-5 space-y-4 border-t pt-5"><div className="grid gap-4 md:grid-cols-3"><InfoInput label="磅单日期" type="date" value={infoForm.ticketDate} setValue={value => setInfoForm(current => ({ ...current, ticketDate: value }))} /><InfoInput label="车牌号" value={infoForm.plateNo} setValue={value => setInfoForm(current => ({ ...current, plateNo: value }))} /><InfoInput label="司机姓名" value={infoForm.driverName} setValue={value => setInfoForm(current => ({ ...current, driverName: value }))} /><InfoInput label="货物名称" value={infoForm.materialName} setValue={value => setInfoForm(current => ({ ...current, materialName: value }))} /><InfoInput label="规格型号" value={infoForm.materialSpec} setValue={value => setInfoForm(current => ({ ...current, materialSpec: value }))} /><InfoInput label="包/袋数" type="number" value={infoForm.packageCount} setValue={value => setInfoForm(current => ({ ...current, packageCount: value }))} /><InfoInput label="发货单位" value={infoForm.shipperName} setValue={value => setInfoForm(current => ({ ...current, shipperName: value }))} /><InfoInput label="收货单位" value={infoForm.receiverName} setValue={value => setInfoForm(current => ({ ...current, receiverName: value }))} /><InfoInput label="司磅员" value={infoForm.weighmasterName} setValue={value => setInfoForm(current => ({ ...current, weighmasterName: value }))} /><div className="md:col-span-3"><InfoInput label="备注" value={infoForm.remarks} setValue={value => setInfoForm(current => ({ ...current, remarks: value }))} /></div></div><div className="flex justify-end"><Button disabled={saving} onClick={() => void saveInfo()}>{saving ? '保存中...' : '保存基本信息'}</Button></div></div>}</Card>
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
       <Metric label="计划数量" value={weight(ticket.plannedQuantity)} />
@@ -403,15 +433,20 @@ export default function WeighTicketDetailPage() {
       <Metric label="结算重量" value={weight(ticket.settlementWeight)} primary />
     </div>
 
+    <Card className="space-y-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">磅单重量录入</h2><span className="text-xs text-muted-foreground">当前依据：{ticket.weightEntrySource === 'DIRECT' ? '直接录入' : '称重记录'}</span></div>
+      {editable ? <><WeightEntryFields value={directWeights} onChange={setDirectWeights} /><div className="flex justify-end"><Button disabled={saving} onClick={() => void saveDirectWeights()}>保存录入重量作为有效重量</Button></div></> : <p className="text-sm text-muted-foreground">已完成磅单的重量如需修改，请先返回修改。</p>}
+    </Card>
+
     <div className="grid gap-5 xl:grid-cols-3">
       <div className="space-y-5 xl:col-span-2">
         <Card className="p-5">
-          <div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">称重记录</h2><p className="mt-1 text-xs text-muted-foreground">基础流程为毛重、皮重各一次；支持追加多次复磅，历史记录不覆盖</p></div><Scale className="h-5 w-5 text-primary" /></div>
+          <div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">重量凭证与称重记录</h2><p className="mt-1 text-xs text-muted-foreground">凭证录入值和系统推算值不冒充现场过磅；复磅记录保留每次称重时间</p></div><Scale className="h-5 w-5 text-primary" /></div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/50"><tr><th className="px-3 py-2 text-left">有效</th><th className="px-3 py-2 text-left">序次</th><th className="px-3 py-2 text-left">类型</th><th className="px-3 py-2 text-right">重量</th><th className="px-3 py-2 text-left">来源</th><th className="px-3 py-2 text-left">称重时间</th><th className="px-3 py-2 text-left">操作人/备注</th>{recordDeletable && <th className="px-3 py-2 text-right">操作</th>}</tr></thead>
-              <tbody>{ticket.records.map(item => {
-                const selected = item.weighingType === 'GROSS' ? grossRecordId === item.id : tareRecordId === item.id;
+              <tbody>{directRows.map(([label, entered, effective]) => <tr key={`direct-${label}`} className={`border-b ${ticket.weightEntrySource === 'DIRECT' ? 'bg-primary/5' : ''}`}><td className="px-3 py-3 text-xs">{ticket.weightEntrySource === 'DIRECT' ? '当前' : '未选用'}</td><td className="px-3 py-3">—</td><td className="px-3 py-3"><Badge variant="outline">{label}</Badge></td><td className="px-3 py-3 text-right font-medium">{weight(entered ?? effective)}</td><td className="px-3 py-3">{entered != null ? '凭证录入' : '系统推算'}</td><td className="px-3 py-3">—</td><td className="px-3 py-3 text-muted-foreground">{entered != null ? '录入重量快照' : '按另外两项计算'}</td>{recordDeletable && <td className="px-3 py-3 text-right">—</td>}</tr>)}{ticket.records.map(item => {
+                const selected = ticket.weightEntrySource === 'RECORDS' && (item.weighingType === 'GROSS' ? grossRecordId === item.id : tareRecordId === item.id);
                 return <tr key={item.id} className={`border-b ${selected ? 'bg-primary/5' : ''}`}>
                   <td className="px-3 py-3"><input type="radio" name={item.weighingType} checked={selected} disabled={!editable} onChange={() => item.weighingType === 'GROSS' ? setGrossRecordId(item.id) : setTareRecordId(item.id)} /></td>
                   <td className="px-3 py-3 font-mono">#{item.sequence}</td><td className="px-3 py-3"><Badge variant="outline">{item.weighingType === 'GROSS' ? '毛重' : '皮重'}</Badge></td>
@@ -421,9 +456,9 @@ export default function WeighTicketDetailPage() {
                 </tr>;
               })}</tbody>
             </table>
-            {!ticket.records.length && <div className="py-10 text-center text-sm text-muted-foreground">暂无称重记录</div>}
+            {!ticket.records.length && !directRows.length && <div className="py-10 text-center text-sm text-muted-foreground">暂无重量凭证或称重记录</div>}
           </div>
-          {editable && ticket.records.length > 0 && <div className="mt-4 flex justify-end"><Button variant="outline" disabled={saving || !grossRecords.length || !tareRecords.length} onClick={() => void saveEffectiveRecords()}>保存有效毛重/皮重</Button></div>}
+          {editable && ticket.records.length > 0 && <div className="mt-4 flex justify-end"><Button variant="outline" disabled={saving || !grossRecords.length || !tareRecords.length} onClick={() => void saveEffectiveRecords()}>改用所选毛重/皮重记录</Button></div>}
         </Card>
 
         {editable && <Card className="space-y-4 p-5">
@@ -526,7 +561,7 @@ export default function WeighTicketDetailPage() {
         <Card className="space-y-4 p-5">
           <div><h2 className="font-semibold">结算重量口径</h2><p className="mt-1 text-xs text-muted-foreground">默认按本次称重净重结算，也可改用其他确认重量</p></div>
           <FieldSelect label="当前口径" value={basis} disabled={!settlementEditable} onChange={setBasis} options={BASIS} />
-          {basis === 'RECEIVING' && <div className="rounded-md bg-muted p-3 text-sm">本次称重净重：<strong>{weight(ticket.netWeight)}</strong><div className="mt-1 text-xs text-muted-foreground">由当前有效毛重与皮重自动计算</div></div>}
+          {basis === 'RECEIVING' && <div className="rounded-md bg-muted p-3 text-sm">本次称重净重：<strong>{weight(ticket.netWeight)}</strong><div className="mt-1 text-xs text-muted-foreground">{ticket.weightEntrySource === 'DIRECT' ? '来自直接录入或毛重与皮重推算' : '由当前有效毛重与皮重计算'}</div></div>}
           {basis === 'SHIPPING' && <WeightInput label="发货重量（吨）" value={shippingWeight} setValue={setShippingWeight} disabled={!settlementEditable} />}
           {basis === 'CUSTOMER' && <WeightInput label="客户收货重量（吨）" value={customerWeight} setValue={setCustomerWeight} disabled={!settlementEditable} />}
           {basis === 'THIRD_PARTY' && <WeightInput label="第三方重量（吨）" value={thirdPartyWeight} setValue={setThirdPartyWeight} disabled={!settlementEditable} />}
@@ -616,8 +651,8 @@ function WeighTicketPrintSheet({ ticket }: { ticket: WeighTicket }) {
         <PrintRow leftLabel="车号" leftValue={plateNo} rightLabel="毛重" rightValue={plainPrintNumber(ticket.grossWeight)} />
         <PrintRow leftLabel="货名" leftValue={ticket.materialName || ''} rightLabel="皮重" rightValue={plainPrintNumber(ticket.tareWeight)} />
         <PrintRow leftLabel="规格" leftValue={ticket.materialSpec || ''} rightLabel="净重" rightValue={plainPrintNumber(ticket.netWeight)} />
-        <PrintRow leftLabel="发货单位" leftValue={ticket.shipperName || ''} rightLabel="毛重时间" rightValue={printDateTime(recordValue(ticket.records, ticket.selectedGrossRecordId))} />
-        <PrintRow leftLabel="收货单位" leftValue={ticket.receiverName || ''} rightLabel="皮重时间" rightValue={printDateTime(recordValue(ticket.records, ticket.selectedTareRecordId))} />
+        <PrintRow leftLabel="发货单位" leftValue={ticket.shipperName || ''} rightLabel="毛重时间" rightValue={ticket.weightEntrySource === 'DIRECT' ? '' : printDateTime(recordValue(ticket.records, ticket.selectedGrossRecordId))} />
+        <PrintRow leftLabel="收货单位" leftValue={ticket.receiverName || ''} rightLabel="皮重时间" rightValue={ticket.weightEntrySource === 'DIRECT' ? '' : printDateTime(recordValue(ticket.records, ticket.selectedTareRecordId))} />
         <tr className="remarks"><th>备注</th><td colSpan={3}>{ticket.remarks || ''}</td></tr>
       </tbody>
     </table>

@@ -11,6 +11,8 @@ import {
 } from './dto/financial-settlement.dto';
 import { FinancialSettlementService } from './financial-settlement.service';
 import { PaymentVoucherRecognitionService } from './payment-voucher-recognition.service';
+import { InvoiceRegisterService } from './invoice-register.service';
+import { CreateInvoiceRecordDto, VoidInvoiceRecordDto } from './dto/invoice-record.dto';
 
 @ApiTags('采购销售资金结算')
 @ApiBearerAuth()
@@ -21,6 +23,7 @@ export class FinancialSettlementController {
     private readonly service: FinancialSettlementService,
     private readonly fileService: FileService,
     private readonly paymentVoucherRecognition: PaymentVoucherRecognitionService,
+    private readonly invoices: InvoiceRegisterService,
   ) {}
 
   @Get('options/logistics-settlements')
@@ -44,13 +47,18 @@ export class FinancialSettlementController {
   }
 
   @Get('options/goods-sources')
-  goodsSources(@Query('contractId') contractId: string, @CurrentUser('id') userId: string, @Query('direction') direction?: string) {
-    return this.service.settlementSources(contractId, userId, direction);
+  goodsSources(@Query('contractId') contractId: string, @CurrentUser('id') userId: string, @Query('direction') direction?: string, @Query('editId') editId?: string) {
+    return this.service.settlementSources(contractId, userId, direction, editId);
   }
 
   @Post('preview-goods')
   previewGoods(@Body() dto: CreateFinancialSettlementDto, @CurrentUser('id') userId: string) {
     return this.service.previewGoodsSettlement(dto, userId);
+  }
+
+  @Post(':id/preview-goods')
+  previewGoodsDraft(@Param('id') id: string, @Body() dto: CreateFinancialSettlementDto, @CurrentUser('id') userId: string) {
+    return this.service.previewGoodsSettlement(dto, userId, id);
   }
 
   @Get('payment-requests/:id/precheck')
@@ -308,14 +316,44 @@ export class FinancialSettlementController {
     return this.service.create(dto, userId);
   }
 
+  @Patch(':id')
+  updateGoodsDraft(@Param('id') id: string, @Body() dto: CreateFinancialSettlementDto, @CurrentUser('id') userId: string) {
+    return this.service.updateGoodsSettlement(id, dto, userId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.findOne(id, userId);
   }
 
+  @Get(':id/invoices')
+  invoicesForSettlement(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.invoices.list(id, userId);
+  }
+
+  @Post(':id/invoices')
+  registerInvoice(@Param('id') id: string, @Body() dto: CreateInvoiceRecordDto, @CurrentUser('id') userId: string) {
+    return this.invoices.create(id, dto, userId);
+  }
+
+  @Post(':id/invoices/:invoiceId/void')
+  voidInvoice(@Param('id') id: string, @Param('invoiceId') invoiceId: string, @Body() dto: VoidInvoiceRecordDto, @CurrentUser('id') userId: string) {
+    return this.invoices.void(id, invoiceId, dto.reason, userId);
+  }
+
   @Post(':id/confirm')
   confirm(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.service.confirm(id, userId);
+  }
+
+  @Post(':id/approve')
+  approveSettlement(@Param('id') id: string, @Body() dto: ReviewPaymentRequestDto, @CurrentUser('id') userId: string) {
+    return this.service.approveSettlement(id, dto.comment, userId);
+  }
+
+  @Post(':id/reject')
+  rejectSettlement(@Param('id') id: string, @Body() dto: RejectPaymentRequestDto, @CurrentUser('id') userId: string) {
+    return this.service.rejectSettlement(id, dto.reason, userId);
   }
 
   @Post(':id/print')

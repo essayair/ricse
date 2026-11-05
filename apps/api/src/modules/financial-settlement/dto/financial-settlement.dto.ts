@@ -11,6 +11,10 @@ export class CreateSettlementLineDto {
   @IsOptional() @IsString()
   qualityReportId?: string;
 
+  /** 仅用于本张结算单，不改写运单的采信或库存磅单。 */
+  @IsOptional() @IsString()
+  weighTicketId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 3 })

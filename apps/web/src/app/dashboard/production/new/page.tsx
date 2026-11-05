@@ -40,7 +40,7 @@ export default function NewProductionTaskPage() {
   };
 
   return <div className="mx-auto max-w-6xl space-y-6">
-    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">新建生产任务</h1><p className="mt-1 text-sm text-muted-foreground">生产任务创建为草稿，确认计划后再下达并预占原料批次</p></div></div>
+    <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">新建生产任务</h1></div></div>
     <Card className="space-y-5 p-6"><h2 className="font-semibold">任务信息</h2><div className="grid gap-4 md:grid-cols-2">
       <Field label="生产方案 *"><Select value={form.recipeId} onChange={chooseRecipe} options={recipes.map(item => ({ value: item.id, label: `${item.recipeNo} · ${item.name}` }))} /></Field>
       <Field label="业务单元（事业部） *"><Select value={form.businessUnitId} onChange={value => setForm({ ...form, businessUnitId: value })} options={businessUnits.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Field>

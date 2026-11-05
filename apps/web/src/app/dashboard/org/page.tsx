@@ -418,7 +418,7 @@ function OrgPageInner() {
           ).map((name) => <Badge key={name} variant="outline" className="text-[10px] font-normal">{name}</Badge>)}
         </div>
         {u.company?.type === 'EXTERNAL' && (
-          <div className="mt-1 text-[10px] font-normal text-blue-600">本企业全部关联数据</div>
+          <div className="mt-1 text-[10px] font-normal text-primary">本企业全部关联数据</div>
         )}
       </td>
       <td className="px-4 py-2.5 text-muted-foreground text-xs">
@@ -523,7 +523,6 @@ function OrgPageInner() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">组织数据</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理企业、部门、员工、业务单元（事业部）和用户账号</p>
         </div>
         {tab === 'dept' ? (
           <Button onClick={async () => {
@@ -986,7 +985,7 @@ function OrgPageInner() {
                                           autoFocus
                                           onKeyDown={(e) => { if (e.key === 'Enter') handleRenameDept(); if (e.key === 'Escape') setEditingDept(null); }}
                                         />
-                                        <button onClick={handleRenameDept} className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600"><Check className="h-3.5 w-3.5" /></button>
+                                        <button onClick={handleRenameDept} className="p-1 rounded text-success hover:bg-success-bg"><Check className="h-3.5 w-3.5" /></button>
                                         <button onClick={() => setEditingDept(null)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
                                       </>
                                     ) : (

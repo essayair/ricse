@@ -30,14 +30,20 @@
     --success: 142 76% 36%;
     --success-foreground: 210 40% 98%;
     --success-bg: 138 76% 97%;
+    --success-border: 141 53% 85%;
     --warning: 41 96% 40%;
     --warning-foreground: 210 40% 98%;
     --warning-bg: 54 92% 95%;
+    --warning-border: 43 88% 79%;
     --info: 192 91% 36%;
     --info-foreground: 210 40% 98%;
     --info-bg: 187 100% 96%;
+    --info-border: 187 70% 83%;
     --primary-bg: 214 100% 97%;
+    --primary-border: 213 94% 87%;
     --destructive-bg: 0 93% 94%;
+    --destructive-border: 0 80% 86%;
+    --surface-2: 210 40% 98%;
 
     /* ── 采销业务方向色（跨合同、执行、物流统一） ── */
     --business-purchase: 0 72% 51%;
@@ -66,6 +72,8 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217.2 32.6% 17.5%;
     --sidebar-ring: 224.3 76.3% 48%;
+    --sidebar-heading: 214 32% 91%;
+    --sidebar-current: 213 94% 87%;
   }
 
   * {

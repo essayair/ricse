@@ -133,7 +133,7 @@ export default function CreateDispatchNoticePage() {
   };
 
   return <div className="mx-auto max-w-5xl space-y-6">
-    <div><h1 className="text-2xl font-bold">新建执行通知</h1><p className="mt-1 text-sm text-muted-foreground">采购生成供应商发货指令，销售生成销售发货通知单</p></div>
+    <div><h1 className="text-2xl font-bold">新建执行通知</h1></div>
     <Card className="space-y-5 p-6">
       <div data-validation-field="order" className="scroll-mt-28"><label className="mb-1 block text-sm font-medium">合同执行批次 *</label><select aria-invalid={!!errors.order} aria-describedby={errors.order ? 'dispatch-error-order' : undefined} className={`h-10 w-full rounded-md border bg-background px-3 text-sm ${errors.order ? 'border-destructive bg-destructive/5' : ''}`} value={data?.order.id || ''} onChange={e => void selectOrder(e.target.value)}><option value="">请选择</option>{orders.map(item => <option key={item.id} value={item.id}>{item.name} · {item.orderNo} · {item.contract.contractNo}</option>)}</select>{errors.order && <p id="dispatch-error-order" role="alert" className="mt-1 text-xs text-destructive">{errors.order}</p>}</div>
       {data && <>

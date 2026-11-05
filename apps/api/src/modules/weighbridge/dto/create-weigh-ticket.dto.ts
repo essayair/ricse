@@ -38,6 +38,9 @@ export class CreateWeighTicketDto {
   @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) customerWeight?: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) thirdPartyWeight?: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) manualWeight?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) grossWeight?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) tareWeight?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) netWeight?: number;
   @IsOptional() @IsNumber() @Min(0) toleranceRate?: number;
   @IsOptional() @IsString() remarks?: string;
 }

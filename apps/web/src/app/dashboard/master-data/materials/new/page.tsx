@@ -143,7 +143,7 @@ export default function MaterialNewPage() {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => router.back()}><ArrowLeft className="mr-1 h-4 w-4" />返回</Button>
-        <div><h1 className="text-2xl font-bold">新建商品物料</h1><p className="mt-1 text-sm text-muted-foreground">填写核心信息即可，平台标准关联、查重、名称和编码由系统自动完成</p></div>
+        <div><h1 className="text-2xl font-bold">新建商品物料</h1></div>
       </div>
       <div className="flex gap-2"><Button variant="outline" onClick={() => router.back()}>取消</Button><Button disabled={loading} onClick={() => void handleSubmit()}><Save className="mr-1 h-4 w-4" />{loading ? '保存中...' : '保存物料'}</Button></div>
     </div>

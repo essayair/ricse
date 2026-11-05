@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { CreateWeighRecordDto } from './dto/create-weigh-record.dto';
 import { CreateWeighTicketDto } from './dto/create-weigh-ticket.dto';
+import { UpdateWeighWeightsDto } from './dto/update-weigh-ticket.dto';
 
 const BASES = ['RECEIVING', 'SHIPPING', 'CUSTOMER', 'THIRD_PARTY', 'MANUAL'];
 const WEIGHING_STAGES = ['SHIPPING', 'RECEIVING'];
@@ -16,6 +17,22 @@ export function normalizeWeight(value: number) {
 
 export function calculateNetWeight(grossWeight: number, tareWeight: number) {
   return normalizeWeight(Math.abs(grossWeight - tareWeight));
+}
+
+export function resolveDirectWeights(gross: number | null, tare: number | null, net: number | null) {
+  const calculatedNet = gross !== null && tare !== null && gross > tare ? normalizeWeight(gross - tare) : null;
+  const calculatedTare = gross !== null && net !== null && gross > net ? normalizeWeight(gross - net) : null;
+  const calculatedGross = tare !== null && net !== null ? normalizeWeight(tare + net) : null;
+  const mismatch = calculatedNet !== null && net !== null
+    && Math.round(calculatedNet * 1000) !== Math.round(net * 1000);
+  const invalidPair = (gross !== null && tare !== null && gross <= tare)
+    || (gross !== null && net !== null && gross <= net);
+  return {
+    calculatedNet, mismatch, invalidPair,
+    effectiveGross: gross ?? calculatedGross,
+    effectiveTare: tare ?? calculatedTare,
+    effectiveNet: net ?? calculatedNet,
+  };
 }
 
 @Injectable()
@@ -194,15 +211,11 @@ export class WeighTicketService {
     else if (waybill.weighTickets.some(item => item.status === 'COMPLETED' && item.abnormal)) status = 'EXCEPTION';
     else if (waybill.weightSelections.some(item => item.purpose === 'INVENTORY')) status = 'COMPLETED';
     else if (waybill.weighTickets.some(item => ['COMPLETED', 'REVIEWED'].includes(item.status))) status = 'PENDING_CONFIRMATION';
-    else if (waybill.weighTickets.length) status = 'IN_PROGRESS';
+    else if (waybill.weighTickets.some(item => item.status !== 'PENDING')) status = 'IN_PROGRESS';
     return this.prisma.weighTask.update({ where: { id: task.id }, data: { status } });
   }
 
-  /**
-   * 为我方可控称重节点幂等生成首张待过磅单。
-   * 销售在发货前生成我方发货磅单；采购仅在车辆到达后生成我方收货磅单。
-   * 供应商发货、客户收货和第三方复磅仍由业务人员按实际凭证登记。
-   */
+  /** 发货侧在车辆确定后、收货侧在到达后各生成一张待填写空白单；不代表已取得凭证。 */
   async ensurePrimaryTicketForWaybill(waybillId: string, userId: string) {
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null },
@@ -214,19 +227,24 @@ export class WeighTicketService {
     if (!waybill || (!waybill.vehicleId && !waybill.plateNo) || waybill.status === 'CANCELLED') return null;
 
     const isPurchase = waybill.dispatchNotice.type === 'PURCHASE';
-    if (isPurchase && !['ARRIVED', 'SIGNED'].includes(waybill.status)) return null;
-    const weighingStage = isPurchase ? 'RECEIVING' : 'SHIPPING';
-    const existing = await this.prisma.weighTicket.findFirst({
-      where: { waybillId, weighingStage, deletedAt: null },
-      orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
-    });
-    if (existing) return existing;
-
-    return this.create({
-      waybillId,
-      weighingStage,
-      remarks: `系统根据物流运单自动生成我方${isPurchase ? '收货' : '发货'}待过磅单`,
-    }, userId, { systemGenerated: true });
+    const stages: Array<'SHIPPING' | 'RECEIVING'> = ['SHIPPING'];
+    if (['ARRIVED', 'SIGNED'].includes(waybill.status)) stages.push('RECEIVING');
+    let primary = null;
+    for (const weighingStage of stages) {
+      const existing = await this.prisma.weighTicket.findFirst({
+        where: { waybillId, weighingStage, deletedAt: null },
+        orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
+      });
+      const label = weighingStage === 'SHIPPING'
+        ? isPurchase ? '供应商发货' : '我方发货'
+        : isPurchase ? '我方收货' : '客户收货';
+      const current = existing || await this.create({
+        waybillId, weighingStage,
+        remarks: `系统根据物流运单生成${label}待填写空白磅单；实际称重凭证取得后录入`,
+      }, userId, { systemGenerated: true });
+      if (weighingStage === (isPurchase ? 'RECEIVING' : 'SHIPPING')) primary = current;
+    }
+    return primary;
   }
 
   async voidTaskForWaybill(waybillId: string, userId: string) {
@@ -324,6 +342,11 @@ export class WeighTicketService {
     }
     const settlementBasis = dto.settlementBasis || 'RECEIVING';
     this.validateBasisWeight(settlementBasis, dto);
+    const directWeights = [dto.grossWeight, dto.tareWeight, dto.netWeight].some(value => value !== undefined);
+    if (directWeights && [dto.grossWeight, dto.tareWeight, dto.netWeight].some(value => value !== undefined && value <= 0)) {
+      throw new BadRequestException('已填写的重量必须大于 0');
+    }
+    if (directWeights) this.assertDirectWeights(dto.grossWeight ?? null, dto.tareWeight ?? null, dto.netWeight ?? null);
     const materialIds = [...new Set(waybill.lineItems.map(item => item.materialId))];
     const [materials, weighmaster] = await Promise.all([
       this.prisma.material.findMany({ where: { id: { in: materialIds } }, select: { id: true, spec: true, grade: true } }),
@@ -358,6 +381,12 @@ export class WeighTicketService {
         driverName: dto.driverName?.trim() || waybill.driverName,
         weighmasterName: dto.weighmasterName?.trim() || weighmaster?.name || null,
         plannedQuantity: waybill.totalQuantity,
+        weightEntrySource: directWeights ? 'DIRECT' : 'RECORDS',
+        status: directWeights ? 'WEIGHING' : 'PENDING',
+        enteredGrossWeight: dto.grossWeight,
+        enteredTareWeight: dto.tareWeight,
+        enteredNetWeight: dto.netWeight,
+        weightOverrideReason: null,
         settlementBasis,
         shippingWeight: dto.shippingWeight === undefined ? undefined : normalizeWeight(dto.shippingWeight),
         customerWeight: dto.customerWeight === undefined ? undefined : normalizeWeight(dto.customerWeight),
@@ -369,6 +398,7 @@ export class WeighTicketService {
       },
       include: this.include,
     });
+    if (directWeights) await this.prisma.$transaction(tx => this.recalculate(tx, created.id));
     if (previousTicket) {
       await this.prisma.waybillWeightSelection.updateMany({
         where: { waybillId: waybill.id, purpose: weighingStage, isCurrent: true, reason: AUTO_STAGE_SELECTION_REASON },
@@ -376,7 +406,7 @@ export class WeighTicketService {
       });
     }
     await this.syncTaskForWaybill(waybill.id, userId);
-    return created;
+    return directWeights ? this.findOne(created.id, userId) : created;
   }
 
   async updateWaybill(id: string, waybillId: string, userId: string, additionReason?: string) {
@@ -604,14 +634,49 @@ export class WeighTicketService {
     const gross = ticket.records.find(item => item.id === data.grossRecordId && item.weighingType === 'GROSS');
     const tare = ticket.records.find(item => item.id === data.tareRecordId && item.weighingType === 'TARE');
     if (!gross || !tare) throw new BadRequestException('有效毛重或皮重记录无效');
-    return this.prisma.$transaction(async tx => {
+    const updated = await this.prisma.$transaction(async tx => {
       await tx.weighTicket.update({
         where: { id },
-        data: { selectedGrossRecordId: gross.id, selectedTareRecordId: tare.id },
+        data: { selectedGrossRecordId: gross.id, selectedTareRecordId: tare.id, weightEntrySource: 'RECORDS' },
       });
       await this.recalculate(tx, id);
       return tx.weighTicket.findUniqueOrThrow({ where: { id }, include: this.include });
     });
+    await this.syncTaskForWaybill(ticket.waybillId, userId);
+    return updated;
+  }
+
+  async updateWeights(id: string, data: UpdateWeighWeightsDto, userId: string) {
+    const ticket = await this.findOne(id, userId, 'quality.manage');
+    if (!['DIRECT', 'RECORDS'].includes(data.source)) throw new BadRequestException('重量来源无效');
+    if (!['PENDING', 'WEIGHING'].includes(ticket.status)) {
+      throw new BadRequestException('仅待称重或称重中的磅单可以修改重量');
+    }
+    if (data.source === 'DIRECT') {
+      for (const value of [data.grossWeight, data.tareWeight, data.netWeight]) {
+        if (value != null && (!Number.isFinite(value) || value <= 0)) {
+          throw new BadRequestException('已填写的重量必须大于 0');
+        }
+      }
+      this.assertDirectWeights(data.grossWeight ?? null, data.tareWeight ?? null, data.netWeight ?? null);
+    }
+    const updated = await this.prisma.$transaction(async tx => {
+      await tx.weighTicket.update({
+        where: { id },
+        data: data.source === 'DIRECT' ? {
+          weightEntrySource: 'DIRECT',
+          enteredGrossWeight: data.grossWeight ?? null,
+          enteredTareWeight: data.tareWeight ?? null,
+          enteredNetWeight: data.netWeight ?? null,
+          weightOverrideReason: null,
+          status: 'WEIGHING',
+        } : { weightEntrySource: 'RECORDS', status: 'WEIGHING' },
+      });
+      await this.recalculate(tx, id);
+      return tx.weighTicket.findUniqueOrThrow({ where: { id }, include: this.include });
+    });
+    await this.syncTaskForWaybill(ticket.waybillId, userId);
+    return updated;
   }
 
   async updateSettlement(id: string, data: {
@@ -655,9 +720,17 @@ export class WeighTicketService {
     }
     if (status === 'COMPLETED') {
       if (!['PENDING', 'WEIGHING'].includes(ticket.status)) throw new BadRequestException('当前磅单不能完成称重');
-      if (!ticket.selectedGrossRecordId || !ticket.selectedTareRecordId || !ticket.netWeight) {
+      if (ticket.weightEntrySource === 'DIRECT') {
+        const resolved = resolveDirectWeights(
+          ticket.enteredGrossWeight == null ? null : Number(ticket.enteredGrossWeight),
+          ticket.enteredTareWeight == null ? null : Number(ticket.enteredTareWeight),
+          ticket.enteredNetWeight == null ? null : Number(ticket.enteredNetWeight),
+        );
+        if (resolved.invalidPair || resolved.mismatch) throw new BadRequestException('毛重、皮重、净重不一致，请返回修改');
+      } else if (!ticket.selectedGrossRecordId || !ticket.selectedTareRecordId) {
         throw new BadRequestException('毛重和皮重均已称重后才能完成磅单');
       }
+      if (!ticket.netWeight || Number(ticket.netWeight) <= 0) throw new BadRequestException('完成磅单前必须有有效净重');
       if (!ticket.settlementWeight) throw new BadRequestException('当前结算口径缺少对应重量');
       if (!(ticket.attachments || []).length) throw new BadRequestException('完成称重前必须上传至少一份磅单附件');
       const updated = await this.prisma.weighTicket.update({ where: { id }, data: { status }, include: this.include });
@@ -1099,15 +1172,31 @@ export class WeighTicketService {
     }
   }
 
+  private assertDirectWeights(gross: number | null, tare: number | null, net: number | null) {
+    const resolved = resolveDirectWeights(gross, tare, net);
+    if (resolved.invalidPair) throw new BadRequestException('毛重须大于皮重和净重，请核对重量');
+    if (resolved.mismatch) throw new BadRequestException('毛重－皮重必须等于净重，请核对重量');
+    if (resolved.effectiveNet === null || resolved.effectiveNet <= 0) {
+      throw new BadRequestException('请填写净重，或填写可计算净重的毛重和皮重');
+    }
+  }
+
   private async recalculate(tx: Prisma.TransactionClient, id: string) {
     const ticket = await tx.weighTicket.findUniqueOrThrow({
       where: { id }, include: { records: true },
     });
     const gross = ticket.records.find(item => item.id === ticket.selectedGrossRecordId);
     const tare = ticket.records.find(item => item.id === ticket.selectedTareRecordId);
-    const grossWeight = gross ? Number(gross.weight) : null;
-    const tareWeight = tare ? Number(tare.weight) : null;
-    const netWeight = grossWeight !== null && tareWeight !== null ? calculateNetWeight(grossWeight, tareWeight) : null;
+    const direct = ticket.weightEntrySource === 'DIRECT';
+    const resolved = direct ? resolveDirectWeights(
+      ticket.enteredGrossWeight == null ? null : Number(ticket.enteredGrossWeight),
+      ticket.enteredTareWeight == null ? null : Number(ticket.enteredTareWeight),
+      ticket.enteredNetWeight == null ? null : Number(ticket.enteredNetWeight),
+    ) : null;
+    const grossWeight = direct ? resolved!.effectiveGross : (gross ? Number(gross.weight) : null);
+    const tareWeight = direct ? resolved!.effectiveTare : (tare ? Number(tare.weight) : null);
+    const netWeight = direct ? resolved!.effectiveNet
+      : grossWeight !== null && tareWeight !== null ? calculateNetWeight(grossWeight, tareWeight) : null;
     const receivingWeight = netWeight;
     const weights: Record<string, number | null> = {
       RECEIVING: receivingWeight,

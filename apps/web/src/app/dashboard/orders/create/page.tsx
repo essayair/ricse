@@ -126,7 +126,6 @@ export default function CreateOrderPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold">新建执行批次</h1>
-        <p className="mt-1 text-sm text-muted-foreground">从已通过或执行中的合同引入明细，按实际履约计划建立合同执行批次</p>
       </div>
 
       <Card className="space-y-5 p-6">

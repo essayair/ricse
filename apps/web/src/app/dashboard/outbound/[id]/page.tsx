@@ -23,6 +23,7 @@ export default function OutboundOrderDetailPage() {
   const [item, setItem] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [variance, setVariance] = useState<Record<string, { decision: string; reason: string }>>({});
+  const [qualityReasons, setQualityReasons] = useState<Record<string, string>>({});
 
   const load = () => api.get(`/outbound-receipts/orders/${id}`).then(setItem).catch((error: any) => alert(error.message));
   useEffect(() => { void load(); }, [id]);
@@ -46,10 +47,11 @@ export default function OutboundOrderDetailPage() {
   };
 
   const release = async (receipt: any) => {
+    if (receipt.qualityExceptionHints?.length && !qualityReasons[receipt.id]?.trim()) return alert('请先填写质量例外放行原因');
     if (!await confirmAction(`确认车辆 ${receipt.plateNo || receipt.waybill.waybillNo} 放行？系统将按实际重量扣减库存、生成销售出库单并将运单置为在途。`, { title: '车辆放行确认' })) return;
     setSaving(true);
     try {
-      await api.post(`/outbound-receipts/${receipt.id}/post`, {});
+      await api.post(`/outbound-receipts/${receipt.id}/post`, { qualityExceptionReason: qualityReasons[receipt.id]?.trim() || undefined });
       await load();
     } catch (error: any) { alert(error.message); }
     finally { setSaving(false); }
@@ -117,6 +119,8 @@ export default function OutboundOrderDetailPage() {
             </div></div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Small label="车次作业单" value={receipt.receiptNo} /><Small label="磅单" value={ticket?.ticketNo || '待创建/复核'} /><Small label="库存批次" value={receipt.allocations?.map((a: any) => a.inventoryLot.lotNo).join('、') || '待拣配'} /><Small label="销售出库单" value={receipt.salesOutbound?.outboundNo || '待生成'} /></div>
           {ticket?.qualityInspections?.length > 0 && <div className="mt-3 text-xs text-muted-foreground">关联质检：{ticket.qualityInspections.map((quality: any) => `${quality.inspectionNo}（${quality.conclusion}）`).join('、')}</div>}
+          {receipt.status === 'READY' && Boolean(receipt.qualityExceptionHints?.length) && <div className="mt-3 space-y-2 border-t pt-3"><p className="text-sm text-warning">质量例外：{receipt.qualityExceptionHints.join('；')}。填写原因后可由有权限人员放行。</p><Input aria-label="质量例外放行原因" placeholder="填写质量例外放行原因（必填）" value={qualityReasons[receipt.id] || ''} onChange={event => setQualityReasons(current => ({ ...current, [receipt.id]: event.target.value }))} /></div>}
+          {receipt.qualityExceptionReason && <div className="mt-3 rounded-md border border-warning-border bg-warning-bg p-3 text-sm text-warning">质量例外放行：{receipt.qualityExceptionDetails}；处理原因：{receipt.qualityExceptionReason}</div>}
           {receipt.status === 'VARIANCE_PENDING' && <div className="mt-4 space-y-3 border-t pt-4"><div className="text-sm font-medium text-destructive">实际与计划偏差 {signedWeight(receipt.varianceQuantity)}（{number(receipt.varianceRate)}%），请完成差异处理后再放行。</div>
             <div className="grid gap-3 md:grid-cols-3"><select className="h-10 rounded-md border bg-background px-3 text-sm" value={form.decision} onChange={event => setVariance(current => ({ ...current, [receipt.id]: { ...form, decision: event.target.value } }))}><option value="">选择处理方式</option>{Number(receipt.varianceQuantity) > 0 ? <option value="OVERAGE_APPROVED">确认溢装并按实际出库</option> : <><option value="SHORT_CONTINUE">短装，剩余后续补发</option><option value="SHORT_CLOSE">短装，本车差额关闭</option></>}</select><Input className="md:col-span-2" placeholder="差异原因和处理意见" value={form.reason} onChange={event => setVariance(current => ({ ...current, [receipt.id]: { ...form, reason: event.target.value } }))} /></div>
             <div className="flex justify-end"><Button size="sm" disabled={saving} onClick={() => void resolveVariance(receipt)}>提交差异处理</Button></div></div>}

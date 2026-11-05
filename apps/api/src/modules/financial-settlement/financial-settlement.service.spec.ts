@@ -36,6 +36,13 @@ describe('FinancialSettlementService payment approvals', () => {
     }));
   });
 
+  it('结算审批中或驳回后不能打印正式结算单', async () => {
+    prisma.financialSettlement.findFirst.mockResolvedValue({ id: 'settlement-1', status: 'PENDING_APPROVAL' } as any);
+    await expect(service.recordPrint('settlement-1', 'user-1')).rejects.toThrow('只有已确认的有效结算单');
+    prisma.financialSettlement.findFirst.mockResolvedValue({ id: 'settlement-1', status: 'REJECTED' } as any);
+    await expect(service.recordPrint('settlement-1', 'user-1')).rejects.toThrow('只有已确认的有效结算单');
+  });
+
   it('新采购最终结算不能绕过入库过账改用计划批次数量，提前付款走申请', async () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller', buyerId: 'owner' } as any);
     await expect(service.create({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'BATCH' }, 'u')).rejects.toThrow('按批次提前付款');
@@ -45,6 +52,23 @@ describe('FinancialSettlementService payment approvals', () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller' } as any);
     await expect(service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: [{ orderId: 'o', waybillLineItemId: 'w' }] }, 'u'))
       .rejects.toThrow('填写并确认本次结算适用税率');
+  });
+
+  it('预览改用发货磅单只传入本单选择，不写回运单；未说明原因时阻止结算', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'FIXED', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller' } as any);
+    const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue([{
+      id: 'w', orderId: 'o', available: true, remainingQuantity: 10, negotiableRemainingQuantity: 10,
+      unitPrice: 100, deductionPerTon: 0, waybillNo: 'WB-1', orderNo: 'O-1', orderName: '批次', unit: 'TON',
+      contractLineItemId: 'line-1', settlementWeightSource: 'SELECTED_OTHER_SIDE', weighTicketId: 'shipping-ticket', reasons: [],
+    }] as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'line-1', quantity: 100, materialName: '萤石精粉' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    const line = { orderId: 'o', waybillLineItemId: 'w', weighTicketId: 'shipping-ticket', quantity: 10 };
+    await expect(service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: [line] }, 'u')).rejects.toThrow('须填写依据说明');
+    await service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: [{ ...line, remarks: '双方确认供应商发货磅单' }] }, 'u');
+    expect(sources).toHaveBeenCalledWith('c', 'u', 'settlement.create', undefined, expect.any(Map), new Map([['w', 'shipping-ticket']]));
+    expect(prisma.waybillWeightSelection.update).not.toHaveBeenCalled();
+    sources.mockRestore();
   });
 
   it('按实测 37 度、23.20 元/度、10 吨、13% 税率生成含税结算预览', async () => {
@@ -96,6 +120,61 @@ describe('FinancialSettlementService payment approvals', () => {
       lines: [{ sourceSnapshot: {}, adjustmentAmount: 100 }], attachments: [],
     } as any);
     await expect(service.confirm('settlement-adjusted', 'u')).rejects.toThrow('双方签章的结算确认单');
+  });
+
+  it('协商数量结算提交后进入复用的审批链，不立即形成应付', async () => {
+    (service as any).transactional = true;
+    prisma.financialSettlement.findFirst.mockResolvedValue({
+      id: 'settlement-review', contractId: 'contract-1', direction: 'PAYABLE', settlementScope: 'GOODS', status: 'DRAFT',
+      totalAmount: 1000, businessUnitId: 'bu-1', createdBy: 'maker', adjustmentAmount: 0,
+      contract: { id: 'contract-1', businessUnitId: 'bu-1', companyId: 'company-1', departmentId: 'department-1' },
+      lines: [{ sourceSnapshot: { negotiatedQuantity: true }, adjustmentAmount: 0 }],
+      attachments: [{ category: 'SIGNED_SETTLEMENT_CONFIRMATION' }],
+    } as any);
+    const current = jest.spyOn(PurchaseSettlementBasis.prototype, 'assertCurrent').mockResolvedValue(undefined);
+    prisma.approvalFlow.findUnique.mockResolvedValue({
+      status: 'ACTIVE', name: '付款审批', amountThreshold: 0,
+      nodes: [{ enabled: true, condition: 'ALWAYS', scopeType: 'BUSINESS_UNIT', roleId: 'role-1', nodeName: '运营经理', approvalMode: 'ANY',
+        role: { status: 'ACTIVE', code: 'OPERATIONS_MANAGER', name: '运营经理', permissions: [{ permission: { code: 'settlement.approve' } }] } }],
+    } as any);
+    prisma.userRoleAssignment.findMany.mockResolvedValue([{
+      scopeType: 'ALL', scopes: [], user: { id: 'approver', name: '审批人', username: 'approver', companyId: 'company-1',
+        employee: { departmentId: 'department-1' }, businessUnits: [{ businessUnitId: 'bu-1' }] },
+    }] as any);
+    prisma.financialSettlementApproval.aggregate.mockResolvedValue({ _max: { round: null } } as any);
+    prisma.financialSettlement.update.mockResolvedValue({ id: 'settlement-review', status: 'PENDING_APPROVAL' } as any);
+
+    const result = await service.confirm('settlement-review', 'maker');
+    expect(result.status).toBe('PENDING_APPROVAL');
+    expect(prisma.approvalFlow.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { contractType: 'FINANCIAL_SETTLEMENT' } }));
+    expect(prisma.financialSettlementApproval.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({
+      assigneeId: 'approver', nodeName: '运营经理', status: 'PENDING',
+    })] });
+    expect(prisma.financialSettlement.update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'PENDING_APPROVAL' } }));
+    current.mockRestore();
+    (service as any).transactional = false;
+  });
+
+  it('最后一个结算审批节点通过后才确认结算', async () => {
+    (service as any).transactional = true;
+    prisma.financialSettlement.findFirst.mockResolvedValue({
+      id: 'settlement-review', contractId: 'contract-1', direction: 'PAYABLE', settlementScope: 'GOODS', status: 'PENDING_APPROVAL',
+      contract: { id: 'contract-1' }, lines: [], approvalTasks: [],
+    } as any);
+    const current = jest.spyOn(PurchaseSettlementBasis.prototype, 'assertCurrent').mockResolvedValue(undefined);
+    prisma.financialSettlementApproval.findMany.mockResolvedValue([{
+      id: 'approval-1', settlementId: 'settlement-review', assigneeId: 'approver', approvalMode: 'ANY', round: 1, step: 1, status: 'PENDING',
+    }] as any);
+    prisma.financialSettlementApproval.updateMany.mockResolvedValue({ count: 1 });
+    prisma.financialSettlementApproval.count.mockResolvedValue(0);
+    prisma.financialSettlementApproval.findFirst.mockResolvedValue(null);
+    prisma.financialSettlement.findUniqueOrThrow.mockResolvedValue({ id: 'settlement-review', status: 'CONFIRMED' } as any);
+
+    const result = await service.approveSettlement('settlement-review', '同意', 'approver');
+    expect(result.status).toBe('CONFIRMED');
+    expect(prisma.financialSettlement.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'CONFIRMED', confirmedBy: 'approver' }) }));
+    current.mockRestore();
+    (service as any).transactional = false;
   });
 
   it('销售最终货款按交付与所选磅单逐车预览，不直接采用计划批次金额', async () => {

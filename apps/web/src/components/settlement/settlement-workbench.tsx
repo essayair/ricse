@@ -60,7 +60,7 @@ interface Fund {
 interface BatchLineForm { orderId: string; quantity: string; unitPrice: string; adjustmentAmount: string; remarks: string }
 
 const STATUS: Record<string, string> = {
-  DRAFT: '草稿', CONFIRMED: '待收付', PARTIALLY_SETTLED: '部分结清', SETTLED: '已结清', VOIDED: '已作废',
+  DRAFT: '草稿', PENDING_APPROVAL: '结算待审批', REJECTED: '结算已驳回', CONFIRMED: '待收付', PARTIALLY_SETTLED: '部分结清', SETTLED: '已结清', VOIDED: '已作废',
   PARTIALLY_ALLOCATED: '部分核销', ALLOCATED: '已核销',
 };
 const ORDER_STATUS: Record<string, string> = {
@@ -81,7 +81,7 @@ export function SettlementWorkbench({ direction, standalone = false, showTitle =
   const balanceLabel = receivable ? '应收' : '应付';
   const cashLabel = receivable ? '收款' : '付款';
   const dueDateLabel = receivable ? '约定收款到期日' : '约定付款到期日';
-  const accent = receivable ? 'text-blue-600' : 'text-orange-600';
+  const accent = receivable ? 'text-business-sales' : 'text-business-purchase';
   const AccentIcon = receivable ? ArrowDownLeft : ArrowUpRight;
 
   const [items, setItems] = useState<Settlement[]>([]);
@@ -249,22 +249,22 @@ export function SettlementWorkbench({ direction, standalone = false, showTitle =
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>{showTitle && <h1 className="text-2xl font-bold">{title}</h1>}<p className="mt-1 text-sm text-muted-foreground">{standalone ? (receivable ? '确认销售业务应收、跟踪核销与逾期状态' : '确认采购业务应付、跟踪核销与逾期状态') : (receivable ? '销售结算、客户回款、预收款、退款与核销' : '采购结算、供应商付款、预付款、退款与核销')}</p></div>
+      <div>{showTitle && <h1 className="text-2xl font-bold">{title}</h1>}</div>
       {can('settlement.create') && <div className="flex gap-2">{!standalone && <Button variant="outline" onClick={openFund}><WalletCards className="mr-1 h-4 w-4" />登记资金流水</Button>}<Button onClick={openSettlement}><Plus className="mr-1 h-4 w-4" />{receivable ? '新建应收结算' : '新建采购结算单'}</Button></div>}
     </div>
 
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label={`${balanceLabel}总额`} value={money(summary.total)} icon={<CircleDollarSign className={accent} />} />
-      <Metric label={`已${cashLabel}核销`} value={money(summary.settled)} icon={<CheckCircle2 className="text-emerald-600" />} />
+      <Metric label={`已${cashLabel}核销`} value={money(summary.settled)} icon={<CheckCircle2 className="text-success" />} />
       <Metric label={`未${cashLabel}金额`} value={money(summary.outstanding)} icon={<AccentIcon className={accent} />} />
-      <Metric label="逾期未结" value={money(summary.overdue)} icon={<CircleDollarSign className="text-red-600" />} />
+      <Metric label="逾期未结" value={money(summary.overdue)} icon={<CircleDollarSign className="text-destructive" />} />
     </div>
 
     <div className="flex flex-wrap items-center justify-between gap-3">
       {!standalone && <div className="flex rounded-md border bg-muted/30 p-1">
         {([['SETTLEMENT', title], ['FUND', '资金流水'], ['CONTRACT', '合同结算台账']] as const).map(([key, label]) => <button key={key} className={`rounded px-4 py-1.5 text-sm ${tab === key ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`} onClick={() => setTab(key)}>{label}</button>)}
       </div>}
-      {(standalone || tab === 'SETTLEMENT') && <div className="flex gap-2"><select className="h-9 rounded-md border bg-background px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option>{['DRAFT', 'CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED', 'VOIDED'].map((value) => <option value={value} key={value}>{STATUS[value]}</option>)}</select><div className="flex"><Input className="w-64 rounded-r-none" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void load()} placeholder="结算单号、合同或对手方"/><Button variant="outline" className="rounded-l-none px-3" onClick={() => void load()}><Search className="h-4 w-4" /></Button></div></div>}
+      {(standalone || tab === 'SETTLEMENT') && <div className="flex gap-2"><select className="h-9 rounded-md border bg-background px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option>{['DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED', 'VOIDED'].map((value) => <option value={value} key={value}>{STATUS[value]}</option>)}</select><div className="flex"><Input className="w-64 rounded-r-none" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void load()} placeholder="结算单号、合同或对手方"/><Button variant="outline" className="rounded-l-none px-3" onClick={() => void load()}><Search className="h-4 w-4" /></Button></div></div>}
     </div>
 
     <Card className="overflow-hidden">
@@ -285,7 +285,7 @@ export function SettlementWorkbench({ direction, standalone = false, showTitle =
       {selectedContract && <div className="grid gap-3 rounded-md bg-muted/40 p-3 text-sm sm:grid-cols-3"><Info label="合同金额" value={money(selectedContract.amount)}/><Info label="累计结算" value={money(selectedContract.settledTotal)}/><Info label="剩余可结算" value={money(selectedContract.remainingSettleable)}/><Info label="我方签约主体" value={selectedContract.signingPartner.name}/><Info label="交易对手方" value={selectedContract.counterparty.name}/><Info label="可用预收预付参考" value={money(selectedContract.advanceBalance)}/></div>}
       {form.settlementScope === 'BATCH' && <div><div className="mb-2 flex items-start justify-between gap-4"><div><h3 className="text-sm font-medium">选择执行批次 *</h3><p className="mt-1 text-xs text-muted-foreground">批次无需完成即可建立结算草稿；已取消批次不可选。请依据实际履约凭证确认本次数量和金额。</p><p className="mt-1 text-xs text-muted-foreground">结算加减项填写正数会增加结算金额，填写负数会扣减结算金额。</p></div><span className="shrink-0 text-sm font-medium">预计结算 {money(batchTotal)}</span></div>{orders.length ? <div className="space-y-2">{orders.map((order) => { const line = batchLines.find((item) => item.orderId === order.id); const adjusted = Number(line?.adjustmentAmount || 0) !== 0; return <div key={order.id} className="rounded-md border p-3"><label className="flex cursor-pointer items-start gap-3"><input className="mt-1" type="checkbox" checked={!!line} onChange={(event) => toggleOrder(order, event.target.checked)}/><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="font-medium">{order.orderNo} · {order.name}</span><StatusText status={order.status}>{ORDER_STATUS[order.status] || order.status}</StatusText></div><div className="mt-1 text-xs text-muted-foreground">批次数量 {order.quantity} {order.unit || ''}；剩余可结算 {order.remainingQuantity} {order.unit || ''} / {money(order.remainingAmount)}；已结算 {money(order.settledAmount)}</div></div></label>{line && <div className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-4"><Field label="本次数量"><Input type="number" min="0.001" max={order.remainingQuantity} step="0.001" value={line.quantity} onChange={(event) => updateBatch(order.id, 'quantity', event.target.value)}/></Field><Field label="结算单价"><Input type="number" min="0" step="0.0001" value={line.unitPrice} onChange={(event) => updateBatch(order.id, 'unitPrice', event.target.value)}/></Field><Field label="结算加减项金额"><Input type="number" step="0.01" placeholder="正数增加，负数扣减" value={line.adjustmentAmount} onChange={(event) => updateBatch(order.id, 'adjustmentAmount', event.target.value)}/></Field><Field label={adjusted ? '调整原因 *' : '明细备注'}><Input placeholder={adjusted ? '请填写价格、质量等调整依据' : ''} value={line.remarks} onChange={(event) => updateBatch(order.id, 'remarks', event.target.value)}/></Field></div>}</div>; })}</div> : <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">该合同暂无可结算执行批次。可改用合同阶段结算。</div>}</div>}
       {form.settlementScope === 'CONTRACT_STAGE' && <div className="grid gap-4 sm:grid-cols-3"><Field label="阶段名称 *"><Input placeholder="如：发货阶段、到货阶段" value={form.stageName} onChange={(event) => setForm((old) => ({ ...old, stageName: event.target.value }))}/></Field><Field label="阶段比例（%）"><Input type="number" min="0.01" max="100" step="0.01" value={form.stageRatio} onChange={(event) => setForm((old) => ({ ...old, stageRatio: event.target.value, grossAmount: event.target.value && selectedContract ? String((selectedContract.amount * Number(event.target.value) / 100).toFixed(2)) : old.grossAmount }))}/></Field><Field label="本次原金额 *"><Input type="number" min="0.01" step="0.01" value={form.grossAmount} onChange={(event) => setForm((old) => ({ ...old, grossAmount: event.target.value, stageRatio: '' }))}/></Field></div>}
-      {form.settlementScope === 'CONTRACT_FINAL' && <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">最终结算金额由系统按“合同金额－累计有效结算金额”自动计算，避免重复或超额结算。</div>}
+      {form.settlementScope === 'CONTRACT_FINAL' && <div className="rounded-md border border-primary-border bg-primary-bg p-3 text-sm text-primary">最终结算金额由系统按“合同金额－累计有效结算金额”自动计算，避免重复或超额结算。</div>}
       {form.settlementScope === 'ADJUSTMENT' && <Field label="调整结算金额 *"><Input type="number" min="0.01" step="0.01" value={form.grossAmount} onChange={(event) => setForm((old) => ({ ...old, grossAmount: event.target.value }))}/></Field>}
       {form.settlementScope !== 'BATCH' && <Field label="结算加减项金额"><Input type="number" step="0.01" placeholder="正数增加结算金额，负数扣减结算金额" value={form.adjustmentAmount} onChange={(event) => setForm((old) => ({ ...old, adjustmentAmount: event.target.value }))}/><p className="text-xs text-muted-foreground">适用于质量扣款、升贴水、价格补差或商务折扣；填写非零金额时必须说明原因。</p></Field>}
       <div className="grid gap-4 sm:grid-cols-2"><Field label={dueDateLabel}><Input type="date" value={form.dueDate} onChange={(event) => setForm((old) => ({ ...old, dueDate: event.target.value }))}/><p className="text-xs text-muted-foreground">超过该日期仍未完成{cashLabel}核销，将从次日起计入逾期未结。</p></Field><Field label={form.settlementScope === 'ADJUSTMENT' || (form.settlementScope !== 'BATCH' && Number(form.adjustmentAmount || 0) !== 0) ? '调整原因 *' : '备注'}><Input placeholder={form.settlementScope !== 'BATCH' && Number(form.adjustmentAmount || 0) !== 0 ? '请填写价格、质量等调整依据' : ''} value={form.remarks} onChange={(event) => setForm((old) => ({ ...old, remarks: event.target.value }))}/></Field></div>

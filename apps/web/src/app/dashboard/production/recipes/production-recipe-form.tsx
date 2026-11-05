@@ -69,7 +69,7 @@ export function ProductionRecipeForm({ id }: { id?: string }) {
 
   return <div className="mx-auto max-w-6xl space-y-6">
     <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">{id ? '编辑生产方案' : '新建生产方案'}</h1><p className="mt-1 text-sm text-muted-foreground">方案定义标准关系，实际库存批次与数量在生产任务中确定</p></div></div>
-    {referenced && <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">该方案已经被生产任务引用。库存主体、产出物料和基准产量已锁定；投料标准和说明的修改只影响后续新任务。</div>}
+    {referenced && <div className="rounded-md border border-warning-border bg-warning-bg p-4 text-sm text-warning">该方案已经被生产任务引用。库存主体、产出物料和基准产量已锁定；投料标准和说明的修改只影响后续新任务。</div>}
     <Card className="space-y-5 p-6"><h2 className="font-semibold">方案基础信息</h2><div className="grid gap-4 md:grid-cols-2">
       <Field label="方案名称 *"><Input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="例如：萤石精粉加工标准方案" /></Field>
       <Field label="库存主体 *"><Select disabled={referenced} value={form.ownerPartnerId} onChange={value => setForm({ ...form, ownerPartnerId: value })} options={partners.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Field>

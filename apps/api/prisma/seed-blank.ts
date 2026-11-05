@@ -47,6 +47,17 @@ const flowDefinitions = [
       { step: 3, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
     ],
   },
+  {
+    contractType: 'FINANCIAL_SETTLEMENT',
+    name: '采购销售结算四级审批流',
+    amountThreshold: null,
+    nodes: [
+      { step: 1, nodeName: '运营经理', roleCode: 'BUSINESS_MANAGER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 2, nodeName: '风控/财务经理', roleCode: 'RISK_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+      { step: 3, nodeName: '业务责任人', roleCode: 'BUSINESS_OWNER', scopeType: 'BUSINESS_UNIT', condition: 'ALWAYS' },
+      { step: 4, nodeName: '总经理', roleCode: 'GENERAL_MANAGER', scopeType: 'ALL', condition: 'ALWAYS' },
+    ],
+  },
 ];
 
 function adminPassword() {

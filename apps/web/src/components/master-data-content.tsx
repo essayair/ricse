@@ -143,8 +143,8 @@ const PARTNER_ROLES = [
 ];
 
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
-  SUPPLIER: { label: '供应商', className: 'text-blue-600 dark:text-blue-400 font-medium' },
-  CUSTOMER: { label: '客户',   className: 'text-emerald-600 dark:text-emerald-400 font-medium' },
+  SUPPLIER: { label: '供应商', className: 'text-business-purchase font-medium' },
+  CUSTOMER: { label: '客户',   className: 'text-business-sales font-medium' },
 };
 
 const VEHICLE_TYPE: Record<string, string> = {
@@ -190,7 +190,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 const RoleBadges = ({ roles, isInternal }: { roles: string[]; isInternal: boolean }) => (
   <span className="text-sm">
     {isInternal && (
-      <span className="text-orange-600 dark:text-orange-400 font-medium">内部</span>
+      <span className="text-muted-foreground font-medium">内部</span>
     )}
     {isInternal && roles.length > 0 && <span className="text-muted-foreground/40 mx-1">·</span>}
     {roles.map((r, i) => {
@@ -576,7 +576,6 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{transportOnly ? '运力管理' : '主数据管理'}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{transportOnly ? '维护日常运输使用的车辆、司机和车队' : '管理基础档案数据，支撑业务运行'}</p>
         </div>
         {tab === 'partners' && (
           <Link href="/dashboard/master-data/partners/new">

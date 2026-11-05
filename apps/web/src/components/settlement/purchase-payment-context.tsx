@@ -11,15 +11,15 @@ export const paymentMoney = (value: unknown) => `¥${Number(value || 0).toLocale
 export const QUALITY_LABELS: Record<string, string> = { PENDING: '待检测', PASS: '合格接收', LEGACY: '历史验收', DEDUCTION_PENDING: '待确认扣款接收', ACCEPT_WITH_DEDUCTION: '已确认扣款接收', REJECT: '拒收', REVIEW_REQUIRED: '待人工判定' };
 export interface GoodsSource {
   id: string; orderId: string; orderNo: string; orderName: string; orderStatus: string; waybillId: string; waybillNo: string; plateNo?: string;
-  materialName?: string; totalQuantity: number; remainingQuantity: number; negotiableQuantity?: number; negotiableRemainingQuantity?: number; negotiatedQuantity?: boolean; settlementQuantity?: number; unitPrice: number; deductionPerTon: number; qualityDisposition: string;
+  materialName?: string; totalQuantity: number; usedQuantity?: number; remainingQuantity: number; negotiableQuantity?: number; negotiableRemainingQuantity?: number; negotiatedQuantity?: boolean; settlementQuantity?: number; unitPrice: number; deductionPerTon: number; qualityDisposition: string;
   qualityTaskId?: string; decisionVersion?: number; taskNo?: string; reportNo?: string; ticketNo?: string; weighTicketId?: string; available: boolean; reasons: string[];
   reportId?: string; defaultReportId?: string; inventoryReportId?: string; inventoryReportNo?: string;
-  availableQualityReports?: Array<{ id: string; reportNo: string; evidenceStage: string; institutionName: string; conclusion: string }>;
+  availableQualityReports?: Array<{ id: string; reportNo: string; evidenceStage: string; institutionName: string; conclusion: string; measuredMoisturePct?: number | null }>;
   inboundNo?: string;
   inboundDate?: string | null; salesCompletionConfirmedAt?: string | null; grossWeight?: number | null; tareWeight?: number | null; netWeight?: number | null;
   inventoryTicketNo?: string; inventoryNetWeight?: number | null; settlementTicketNo?: string; settlementSelectionId?: string;
   customerTicketNo?: string; customerNetWeight?: number | null; shippingNetWeight?: number | null; weightVariance?: number | null;
-  availableWeighTickets?: Array<{ id: string; ticketNo: string; weighingStage: string; netWeight: number | null }>;
+  availableWeighTickets?: Array<{ id: string; ticketNo: string; weighingStage: string; netWeight: number | null; isSelectable?: boolean }>;
   settlementWeightSource?: 'INVENTORY_DEFAULT' | 'EXPLICIT_INVENTORY' | 'SELECTED_OTHER_SIDE';
   measuredMoisturePct?: number | null; dryQuantity?: number | null; pricingQuantityBasis?: string;
   pricingType?: string; gradePrice?: { status: 'READY' | 'REVIEW_REQUIRED'; gradePct?: number | null; moisturePct?: number | null; rate?: number; unitPrice?: number; band?: { lower: number; upper: number }; reasons?: string[] };
@@ -49,7 +49,7 @@ export function GoodsEvidence({ sources, selected, onSelect, reload, canAccept =
     {onSelect && <td className="p-3"><input aria-label={`选用${s.waybillNo}`} type="checkbox" checked={selected?.includes(s.id) || false} onChange={e => onSelect(s.id, e.target.checked)} /></td>}
     <td className="p-3"><Link className="hover:underline" href={`/dashboard/orders/${s.orderId}`}>{s.orderNo}</Link><div className="mt-1 text-xs text-muted-foreground"><Link href={`/dashboard/waybills/${s.waybillId}`}>{s.waybillNo}</Link></div></td>
     <td className="p-3">{s.materialName || '—'}<div className="mt-1 text-xs text-muted-foreground">{s.plateNo || '未登记车牌'}</div></td>
-    <td className="p-3"><span className={['REJECT', 'REVIEW_REQUIRED'].includes(s.qualityDisposition) ? 'text-red-600' : ''}>{QUALITY_LABELS[s.qualityDisposition] || '待确认'}</span>{s.qualityAcceptance && <div className="mt-1 text-xs text-muted-foreground">商务确认：{s.qualityAcceptance.name}</div>}</td>
+    <td className="p-3"><span className={['REJECT', 'REVIEW_REQUIRED'].includes(s.qualityDisposition) ? 'text-destructive' : ''}>{QUALITY_LABELS[s.qualityDisposition] || '待确认'}</span>{s.qualityAcceptance && <div className="mt-1 text-xs text-muted-foreground">商务确认：{s.qualityAcceptance.name}</div>}</td>
     <td className="p-3 text-right tabular-nums">{s.totalQuantity.toFixed(3)} / {(s.settlementQuantity ?? s.remainingQuantity).toFixed(3)}</td><td className="p-3 text-right">{s.pricingType === 'GRADE_TIER' && s.gradePrice?.status !== 'READY' ? '待人工确认' : paymentMoney(s.unitPrice)}{s.gradePrice?.status === 'READY' && <div className="mt-1 text-xs text-muted-foreground">CaF₂ {s.gradePrice.gradePct}% · {s.gradePrice.rate} 元/度</div>}</td><td className="p-3 text-right">{s.deductionPerTon.toFixed(4)}</td>
     <td className="max-w-xs p-3"><div className="flex flex-wrap gap-2 text-xs">{s.weighTicketId && <Link className="underline" href={`/dashboard/weighbridge/${s.weighTicketId}`}>{s.ticketNo}</Link>}{s.qualityTaskId && <Link className="underline" href={`/dashboard/quality/${s.qualityTaskId}`}>{s.reportNo || s.taskNo}</Link>}</div>{s.reasons?.length > 0 && <p className="mt-2 text-xs text-muted-foreground">{s.reasons.join('；')}</p>}{s.evaluation?.items?.length ? <details className="mt-2 text-xs"><summary className="cursor-pointer">查看合同质量计算</summary>{s.evaluation.items.map((i, index) => <p className="mt-1" key={index}>{i.name}：{i.reason}</p>)}</details> : null}{canAccept && s.qualityDisposition === 'DEDUCTION_PENDING' && <Button className="mt-2" size="sm" variant="outline" disabled={!!busy} onClick={() => void accept(s)}>{busy === s.id ? '确认中…' : '确认按合同扣款接收'}</Button>}</td>
   </tr>)}</tbody></table></div>;

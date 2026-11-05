@@ -245,7 +245,7 @@ export default function PartnerEditPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold">编辑合作伙伴</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">修改运营数据，编码和信用代码不可修改</p>
+          <p className="text-sm text-muted-foreground mt-0.5">编码和信用代码不可修改。</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -406,15 +406,15 @@ export default function PartnerEditPage() {
             </div>
             {/* Existing attachments */}
             {attachments.length > 0 && (
-              <div className="mb-3 space-y-1.5">
+              <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {attachments.map((a) => (
-                  <div key={a.id} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
-                    <StoredAttachmentThumbnail name={a.originalName} mimeType={a.mimeType} viewUrlPath={`/partners/attachments/${a.id}/view-url`} />
-                    <span className="flex-1 truncate">{a.originalName}</span>
-                    <span className="text-xs text-muted-foreground">{a.category === 'BUSINESS_LICENSE' ? '营业执照' : ''} · {(a.size / 1024).toFixed(0)} KB</span>
-                    <button type="button" title="查看" onClick={() => void viewAttachment(a.id)} className="text-primary hover:bg-primary/10 rounded p-1"><Eye className="h-3.5 w-3.5" /></button>
-                    <button type="button" title="修改名称" onClick={() => void renameAttachment(a)} className="text-muted-foreground hover:bg-muted rounded p-1"><Pencil className="h-3.5 w-3.5" /></button>
-                    <button type="button" title="删除" onClick={() => void deleteAttachment(a.id)} className="text-destructive hover:bg-destructive/10 rounded p-1"><X className="h-3.5 w-3.5" /></button>
+                  <div key={a.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
+                    <StoredAttachmentThumbnail large name={a.originalName} mimeType={a.mimeType} viewUrlPath={`/partners/attachments/${a.id}/view-url`} />
+                    <div className="truncate font-medium" title={a.originalName}>{a.originalName}</div>
+                    <div className="text-xs text-muted-foreground">{a.category === 'BUSINESS_LICENSE' ? '营业执照' : '附件'} · {(a.size / 1024).toFixed(0)} KB</div>
+                    <div className="flex gap-2"><button type="button" title="放大查看" onClick={() => void viewAttachment(a.id)} className="rounded p-1 text-primary hover:bg-primary/10"><Eye className="h-4 w-4" /></button>
+                    <button type="button" title="修改名称" onClick={() => void renameAttachment(a)} className="rounded p-1 text-muted-foreground hover:bg-muted"><Pencil className="h-4 w-4" /></button>
+                    <button type="button" title="删除" onClick={() => void deleteAttachment(a.id)} className="rounded p-1 text-destructive hover:bg-destructive/10"><X className="h-4 w-4" /></button></div>
                   </div>
                 ))}
               </div>
@@ -426,14 +426,14 @@ export default function PartnerEditPage() {
               <div className="text-sm">追加附件</div>
             </label>
             {newFiles.length > 0 && (
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {newFiles.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm py-1 px-2 rounded bg-primary/5">
-                    <LocalAttachmentThumbnail file={f} />
-                    <span>{f.name}</span>
-                    <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button type="button" onClick={() => viewNewFile(f)} className="ml-auto text-primary"><Eye className="h-3.5 w-3.5" /></button>
-                    <button type="button" onClick={() => setNewFiles((prev) => prev.filter((_, j) => j !== i))} className="text-destructive"><X className="h-3.5 w-3.5" /></button>
+                  <div key={i} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
+                    <LocalAttachmentThumbnail large file={f} />
+                    <div className="truncate font-medium" title={f.name}>{f.name}</div>
+                    <div className="text-xs text-muted-foreground">待上传 · {(f.size / 1024).toFixed(0)} KB</div>
+                    <div className="flex gap-2"><button type="button" title="放大查看" onClick={() => viewNewFile(f)} className="text-primary"><Eye className="h-4 w-4" /></button>
+                    <button type="button" title="移除" onClick={() => setNewFiles((prev) => prev.filter((_, j) => j !== i))} className="text-destructive"><X className="h-4 w-4" /></button></div>
                   </div>
                 ))}
               </div>

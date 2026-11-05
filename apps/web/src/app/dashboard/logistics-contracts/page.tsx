@@ -60,7 +60,6 @@ export default function LogisticsContractsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">物流合同</h1>
-          <p className="mt-1 text-sm text-muted-foreground">维护物流合作约定、合同运价与关联结算记录</p>
         </div>
         {can('logistics.contract.manage') && <Link href="/dashboard/logistics-contracts/new">
           <Button><Plus className="mr-1 h-4 w-4" />新建物流合同</Button>

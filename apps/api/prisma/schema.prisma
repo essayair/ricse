@@ -77,6 +77,9 @@ model User {
   reviewedLogisticsSettlements     LogisticsSettlement[]        @relation("LogisticsSettlementReviewer")
   createdFinancialSettlements      FinancialSettlement[]        @relation("FinancialSettlementCreator")
   confirmedFinancialSettlements    FinancialSettlement[]        @relation("FinancialSettlementConfirmer")
+  createdInvoiceRecords            InvoiceRecord[]             @relation("InvoiceRecordCreator")
+  settlementApprovalTasks           FinancialSettlementApproval[] @relation("FinancialSettlementApprovalAssignee")
+  actedSettlementApprovals          FinancialSettlementApproval[] @relation("FinancialSettlementApprovalActor")
   createdFundTransactions          FundTransaction[]            @relation("FundTransactionCreator")
   claimedFundTransactions          FundTransaction[]            @relation("FundTransactionClaimer")
   confirmedFundTransactions        FundTransaction[]            @relation("FundTransactionConfirmer")
@@ -433,6 +436,8 @@ model Partner {
   ownedProductionTasks               ProductionTask[]      @relation("ProductionTaskOwner")
   financialSettlementsAsLegalEntity  FinancialSettlement[] @relation("FinancialSettlementLegalEntity")
   financialSettlementsAsCounterparty FinancialSettlement[] @relation("FinancialSettlementCounterparty")
+  invoicesAsSeller                  InvoiceRecord[]          @relation("InvoiceRecordSeller")
+  invoicesAsBuyer                   InvoiceRecord[]          @relation("InvoiceRecordBuyer")
   fundTransactionsAsLegalEntity      FundTransaction[]     @relation("FundTransactionLegalEntity")
   fundTransactionsAsCounterparty     FundTransaction[]     @relation("FundTransactionCounterparty")
   paymentRequestsAsLegalEntity       PaymentRequest[]      @relation("PaymentRequestLegalEntity")
@@ -993,6 +998,7 @@ model Contract {
   businessUnit         BusinessUnit?         @relation(fields: [businessUnitId], references: [id], onDelete: Restrict)
   orders               Order[]
   financialSettlements FinancialSettlement[]
+  invoiceRecords        InvoiceRecord[]
   fundTransactions     FundTransaction[]
   paymentRequests      PaymentRequest[]
   fundClaims           FundClaim[]
@@ -1045,7 +1051,7 @@ model FinancialSettlement {
   businessUnitId       String?
   legalEntityPartnerId String
   counterpartyId       String
-  status               String    @default("DRAFT") // DRAFT | CONFIRMED | PARTIALLY_SETTLED | SETTLED | VOIDED
+  status               String    @default("DRAFT") // DRAFT | PENDING_APPROVAL | REJECTED | CONFIRMED | PARTIALLY_SETTLED | SETTLED | VOIDED
   quantity             Decimal?  @db.Decimal(15, 3)
   unit                 String?
   grossAmount          Decimal   @db.Decimal(15, 2)
@@ -1073,6 +1079,8 @@ model FinancialSettlement {
   paymentRequests PaymentRequest[]
   attachments     Attachment[]
   fundEarmarks    FundEarmark[]
+  invoiceRecords  InvoiceRecord[]
+  approvalTasks   FinancialSettlementApproval[]
 
   @@index([direction, status])
   @@index([contractId])
@@ -1080,6 +1088,69 @@ model FinancialSettlement {
   @@index([legalEntityPartnerId])
   @@index([counterpartyId])
   @@map("financial_settlements")
+}
+
+model FinancialSettlementApproval {
+  id           String    @id @default(cuid())
+  settlementId String
+  assigneeId   String
+  actedById    String?
+  nodeName     String
+  roleCode     String?
+  roleName     String?
+  approvalMode String    @default("ALL")
+  step         Int
+  round        Int       @default(1)
+  status       String    @default("WAITING") // WAITING | PENDING | APPROVED | REJECTED | OTHERS_APPROVED | OTHERS_REJECTED | CANCELLED
+  comment      String?
+  actedAt      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  settlement FinancialSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  assignee   User                @relation("FinancialSettlementApprovalAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  actedBy    User?               @relation("FinancialSettlementApprovalActor", fields: [actedById], references: [id], onDelete: Restrict)
+
+  @@index([settlementId, round, step])
+  @@index([assigneeId, status])
+  @@map("financial_settlement_approvals")
+}
+
+/// 业务结算对应的发票登记；首版仅用于数量金额核对，不自动生成凭证。
+model InvoiceRecord {
+  id                 String    @id @default(cuid())
+  settlementId       String
+  contractId         String
+  direction          String // INPUT | OUTPUT
+  invoiceNo          String
+  invoiceCode        String?
+  issuedAt           DateTime
+  sellerPartnerId    String
+  buyerPartnerId     String
+  materialName       String
+  quantity           Decimal?  @db.Decimal(15, 3)
+  unitPrice          Decimal?  @db.Decimal(15, 4)
+  taxRate            Decimal?  @db.Decimal(5, 2)
+  taxAmount          Decimal?  @db.Decimal(15, 2)
+  taxInclusiveAmount Decimal   @db.Decimal(15, 2)
+  remarks            String?
+  status             String    @default("ACTIVE") // ACTIVE | VOIDED
+  createdBy          String
+  createdAt          DateTime  @default(now())
+  voidedBy           String?
+  voidedAt           DateTime?
+  voidReason         String?
+
+  settlement FinancialSettlement @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  contract   Contract            @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  seller     Partner             @relation("InvoiceRecordSeller", fields: [sellerPartnerId], references: [id], onDelete: Restrict)
+  buyer      Partner             @relation("InvoiceRecordBuyer", fields: [buyerPartnerId], references: [id], onDelete: Restrict)
+  creator    User                @relation("InvoiceRecordCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([settlementId, status])
+  @@index([contractId])
+  @@unique([direction, sellerPartnerId, invoiceNo])
+  @@map("invoice_records")
 }
 
 /// 结算单与执行批次的明细关系。快照字段保证批次名称或价格后续调整时历史口径不变。
@@ -1644,6 +1715,11 @@ model WeighTicket {
   plannedQuantity       Decimal   @db.Decimal(15, 3)
   selectedGrossRecordId String?
   selectedTareRecordId  String?
+  weightEntrySource     String    @default("RECORDS") // RECORDS | DIRECT
+  enteredGrossWeight    Decimal?  @db.Decimal(15, 3)
+  enteredTareWeight     Decimal?  @db.Decimal(15, 3)
+  enteredNetWeight      Decimal?  @db.Decimal(15, 3)
+  weightOverrideReason  String?
   grossWeight           Decimal?  @db.Decimal(15, 3)
   tareWeight            Decimal?  @db.Decimal(15, 3)
   netWeight             Decimal?  @db.Decimal(15, 3)
@@ -2574,6 +2650,10 @@ model OutboundReceipt {
   varianceReason     String?
   varianceResolvedBy String?
   varianceResolvedAt DateTime?
+  qualityExceptionReason String?
+  qualityExceptionDetails String?
+  qualityExceptionBy String?
+  qualityExceptionAt DateTime?
   departedAt         DateTime?
   operatorName       String?
   remarks            String?
@@ -2765,7 +2845,7 @@ model Approval {
 model ApprovalFlow {
   id              String   @id @default(cuid())
   name            String
-  contractType    String   @unique // PURCHASE | SALES | BILATERAL | PAYMENT_REQUEST（兼容历史字段名）
+  contractType    String   @unique // PURCHASE | SALES | BILATERAL | PAYMENT_REQUEST | FINANCIAL_SETTLEMENT（兼容历史字段名）
   amountThreshold Decimal? @db.Decimal(15, 2)
   status          String   @default("ACTIVE")
   createdAt       DateTime @default(now())

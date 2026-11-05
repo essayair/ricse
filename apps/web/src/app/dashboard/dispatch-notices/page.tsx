@@ -44,7 +44,6 @@ export default function DispatchNoticesPage() {
     <div className="flex items-center justify-between">
       <div>
         <h1 className="text-2xl font-bold">执行通知管理</h1>
-        <p className="mt-1 text-sm text-muted-foreground">管理供应商发货指令和销售发货通知单，并向下生成物流运单</p>
       </div>
       <Button onClick={() => router.push('/dashboard/dispatch-notices/create')}><Plus className="mr-1 h-4 w-4" />新建执行通知</Button>
     </div>

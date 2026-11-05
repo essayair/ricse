@@ -273,10 +273,10 @@ export default function PartnerDetailPage() {
           <div className="text-xs text-muted-foreground mb-1">合作伙伴角色</div>
           <div className="text-sm font-semibold flex flex-wrap gap-1">
             {p.isInternal && (
-              <span className="text-orange-600 font-medium">内部</span>
+              <span className="text-muted-foreground font-medium">内部</span>
             )}
             {p.roles?.map((r) => (
-              <span key={r} className={r === 'SUPPLIER' ? 'text-blue-600' : 'text-emerald-600'}>
+              <span key={r} className={r === 'SUPPLIER' ? 'text-business-purchase' : 'text-business-sales'}>
                 {r === 'SUPPLIER' ? '供应商' : '客户'}
               </span>
             ))}
@@ -573,18 +573,18 @@ export default function PartnerDetailPage() {
               暂无影像附件
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-4 p-4">
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
               {p.attachments.map((a) => (
-                <div key={a.id} className="border rounded-lg p-3 flex items-start gap-3 hover:bg-muted/30 transition-colors">
-                  <StoredAttachmentThumbnail name={a.originalName} mimeType={a.mimeType} viewUrlPath={`/partners/attachments/${a.id}/view-url`} />
-                  <div className="flex-1 min-w-0">
+                <div key={a.id} className="min-w-0 space-y-2 rounded-lg border p-3">
+                  <StoredAttachmentThumbnail large name={a.originalName} mimeType={a.mimeType} viewUrlPath={`/partners/attachments/${a.id}/view-url`} />
+                  <div className="min-w-0">
                     <div className="text-sm font-medium truncate" title={a.originalName}>{a.originalName}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {a.category === 'BUSINESS_LICENSE' ? '营业执照' : a.category} · {(a.size / 1024).toFixed(0)} KB
                     </div>
                   </div>
                   <Button type="button" variant="ghost" size="sm" onClick={() => void viewAttachment(a.id)}>
-                    <Eye className="mr-1 h-4 w-4" />查看
+                    <Eye className="mr-1 h-4 w-4" />放大查看
                   </Button>
                 </div>
               ))}

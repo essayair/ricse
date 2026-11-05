@@ -170,7 +170,7 @@ export default function InventoryReversalDetailPage() {
       </div>
 
       {item.status === 'REJECTED' && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+        <div className="rounded-lg border border-destructive-border bg-destructive/5 p-4 text-sm">
           <div className="font-medium text-destructive">审批已驳回</div>
           <div className="mt-1">{item.rejectedReason}</div>
         </div>
@@ -261,17 +261,16 @@ export default function InventoryReversalDetailPage() {
         {!item.attachments?.length ? (
           <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无冲销附件</div>
         ) : (
-          <div className="divide-y rounded-md border">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {item.attachments.map((attachment: any) => (
-              <div key={attachment.id} className="flex items-center justify-between gap-3 p-3">
-                <button className="flex min-w-0 items-center gap-2 text-left hover:text-primary" onClick={() => void viewAttachment(attachment)}>
-                  <StoredAttachmentThumbnail name={attachment.originalName} mimeType={attachment.mimeType} viewUrlPath={`/inventory-reversals/attachments/${attachment.id}/view-url`} />
-                  <span className="truncate text-sm">{attachment.originalName}</span>
-                </button>
-                <div className="flex shrink-0 items-center gap-3">
+              <div key={attachment.id} className="min-w-0 space-y-2 rounded-md border p-3">
+                <StoredAttachmentThumbnail large name={attachment.originalName} mimeType={attachment.mimeType} viewUrlPath={`/inventory-reversals/attachments/${attachment.id}/view-url`} />
+                <div className="truncate text-sm font-medium" title={attachment.originalName}>{attachment.originalName}</div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</span>
+                  <Button variant="outline" size="sm" onClick={() => void viewAttachment(attachment)}>放大查看</Button>
                   {item.status === 'DRAFT' && canManage && (
-                    <Button variant="ghost" size="icon" onClick={() => void removeAttachment(attachment)}>
+                    <Button variant="ghost" size="icon" aria-label={`删除 ${attachment.originalName}`} onClick={() => void removeAttachment(attachment)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   )}

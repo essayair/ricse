@@ -14,13 +14,14 @@ import { LogisticsPaymentContext } from './logistics-payment-context';
 import { goodsAmounts, requestCommitment, ACTIVE_PAYMENT_REQUEST_STATUSES } from './payment-balance';
 
 const SETTLEMENT_INCLUDE = {
-  contract: { select: { id: true, contractNo: true, title: true, type: true, totalAmount: true } },
+  contract: { select: { id: true, contractNo: true, title: true, type: true, totalAmount: true, companyId: true, departmentId: true, businessUnitId: true, settlementBasis: true } },
   businessUnit: { select: { id: true, code: true, name: true } },
   legalEntity: { select: { id: true, code: true, name: true } },
   counterparty: { select: { id: true, code: true, name: true } },
   creator: { select: { id: true, name: true, username: true } },
   confirmer: { select: { id: true, name: true, username: true } },
   attachments: { orderBy: { createdAt: 'desc' as const } },
+  approvalTasks: { include: { assignee: { select: { id: true, name: true } }, actedBy: { select: { id: true, name: true } } }, orderBy: [{ round: 'asc' }, { step: 'asc' }, { createdAt: 'asc' }] as Prisma.FinancialSettlementApprovalOrderByWithRelationInput[] },
   lines: {
     include: { order: { select: { id: true, status: true } } },
     orderBy: { createdAt: 'asc' as const },
@@ -224,10 +225,16 @@ export class FinancialSettlementService {
     return new PurchasePaymentContext(this.prisma, this.accessControl).load(contractId, userId, 'settlement.view', excludeRequestId);
   }
 
-  async settlementSources(contractId: string, userId: string, direction?: string) {
-    if (direction === 'RECEIVABLE') return new SalesSettlementBasis(this.prisma, this.accessControl).sources(contractId, userId);
+  async settlementSources(contractId: string, userId: string, direction?: string, excludeSettlementId?: string) {
+    if (excludeSettlementId) {
+      const item = await this.findOne(excludeSettlementId, userId, 'settlement.create');
+      const access = await this.accessControl.assertPermission(userId, 'settlement.create');
+      if (item.contractId !== contractId || item.direction !== direction || item.status !== 'DRAFT' || item.settlementScope !== 'GOODS') throw new BadRequestException('结算草稿与当前合同或方向不一致');
+      if (!access.isAdmin && item.createdBy !== userId) throw new ForbiddenException('只能修改本人创建的结算草稿');
+    }
+    if (direction === 'RECEIVABLE') return new SalesSettlementBasis(this.prisma, this.accessControl).sources(contractId, userId, 'settlement.view', excludeSettlementId, new Map(), new Map(), true);
     if (direction && direction !== 'PAYABLE') throw new BadRequestException('结算方向无效');
-    return new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contractId, userId);
+    return new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contractId, userId, 'settlement.view', excludeSettlementId, new Map(), new Map(), true);
   }
 
   async paymentPrecheck(id: string, userId: string) {
@@ -623,14 +630,15 @@ export class FinancialSettlementService {
     });
   }
 
-  private async createGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false): Promise<any> {
+  private async createGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false, existingId?: string): Promise<any> {
     if (!dto.lines?.length || dto.lines.some(l => !l.waybillLineItemId)) throw new BadRequestException('请勾选本次结算的具体运单货物');
     const gradeTier = contract.pricingType === 'GRADE_TIER';
     if (gradeTier && dto.taxRatePct == null) throw new BadRequestException('品位分档价格为不含税价，请填写并确认本次结算适用税率');
     const ids = dto.lines.map(l => l.waybillLineItemId!);
     if (new Set(ids).size !== ids.length) throw new BadRequestException('同一货物来源不能重复选择');
     const reportChoices = new Map(dto.lines.filter(line => line.qualityReportId).map(line => [line.waybillLineItemId!, line.qualityReportId!]));
-    const sources = await new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', undefined, reportChoices);
+    const ticketChoices = new Map(dto.lines.filter(line => line.weighTicketId).map(line => [line.waybillLineItemId!, line.weighTicketId!]));
+    const sources = await new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', existingId, reportChoices, ticketChoices);
     const lines = dto.lines.map(input => {
       const source = sources.find(s => s.id === input.waybillLineItemId && s.orderId === input.orderId);
       if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于该批次'}`);
@@ -638,6 +646,7 @@ export class FinancialSettlementService {
       const ceiling = input.negotiatedQuantity ? source.negotiableRemainingQuantity : source.remainingQuantity;
       if (qty <= 0 || qty > ceiling) throw new BadRequestException(`${source.waybillNo}本次结算数量超过有依据的剩余可结算数量`);
       if (input.negotiatedQuantity && !input.remarks?.trim()) throw new BadRequestException(`${source.waybillNo}协商数量须填写双方确认的原因`);
+      if (source.settlementWeightSource === 'SELECTED_OTHER_SIDE' && !input.remarks?.trim()) throw new BadRequestException(`${source.waybillNo}改用发货侧磅单须填写依据说明`);
       if (input.qualityReportId && input.qualityReportId !== source.inventoryReportId && !input.remarks?.trim()) {
         throw new BadRequestException(`${source.waybillNo}改用其他检测报告结算须填写原因`);
       }
@@ -666,7 +675,7 @@ export class FinancialSettlementService {
         adjustmentAmount: amounts.adjustmentAmount, totalAmount: amounts.totalAmount, remarks: input.remarks?.trim() };
     });
     const contractItems = await this.prisma.contractLineItem.findMany({ where: { contractId: contract.id } });
-    const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'PAYABLE', deletedAt: null, status: { not: 'VOIDED' } } } });
+    const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'PAYABLE', deletedAt: null, status: { not: 'VOIDED' }, ...(existingId ? { id: { not: existingId } } : {}) } } });
     for (const item of contractItems) {
       const current = lines.filter(line => (line.sourceSnapshot as any).contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity), new Prisma.Decimal(0));
       const previous = existingLines.filter(line => (line.sourceSnapshot as any)?.contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity || 0), new Prisma.Decimal(0));
@@ -680,17 +689,19 @@ export class FinancialSettlementService {
       grossAmount: total('grossAmount'), qualityDeductionAmount: total('qualityDeductionAmount'), adjustmentAmount: total('adjustmentAmount'), totalAmount: total('totalAmount'),
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null, remarks: dto.remarks?.trim(), createdBy: userId };
     if (preview) return { ...data, lines };
+    if (existingId) return this.prisma.financialSettlement.update({ where: { id: existingId }, data: { ...data, createdBy: undefined, lines: { deleteMany: {}, create: lines } }, include: SETTLEMENT_INCLUDE });
     return this.prisma.financialSettlement.create({ data: { ...data, settlementNo: await this.nextNo('YF', 'settlement'), lines: { create: lines } }, include: SETTLEMENT_INCLUDE });
   }
 
-  private async createSalesGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false): Promise<any> {
+  private async createSalesGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false, existingId?: string): Promise<any> {
     if (!dto.lines?.length || dto.lines.some(line => !line.waybillLineItemId)) throw new BadRequestException('请选择本次销售结算的具体运单货物');
     const ids = dto.lines.map(line => line.waybillLineItemId!);
     if (new Set(ids).size !== ids.length) throw new BadRequestException('同一运单货物不能重复结算');
     const gradeTier = contract.pricingType === 'GRADE_TIER';
     if (gradeTier && dto.taxRatePct == null) throw new BadRequestException('品位分档价格为不含税价，请确认本次销售结算税率');
     const reportChoices = new Map(dto.lines.filter(line => line.qualityReportId).map(line => [line.waybillLineItemId!, line.qualityReportId!]));
-    const sources = await new SalesSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', undefined, reportChoices);
+    const ticketChoices = new Map(dto.lines.filter(line => line.weighTicketId).map(line => [line.waybillLineItemId!, line.weighTicketId!]));
+    const sources = await new SalesSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', existingId, reportChoices, ticketChoices);
     const lines = dto.lines.map(input => {
       const source = sources.find(candidate => candidate.id === input.waybillLineItemId && candidate.orderId === input.orderId);
       if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于合同'}`);
@@ -698,6 +709,7 @@ export class FinancialSettlementService {
       const ceiling = input.negotiatedQuantity ? source.negotiableRemainingQuantity : source.remainingQuantity;
       if (qty <= 0 || qty > ceiling) throw new BadRequestException(`${source.waybillNo}本次结算数量超过剩余有依据数量`);
       if (input.negotiatedQuantity && !input.remarks?.trim()) throw new BadRequestException('销售协商数量须填写双方确认的原因');
+      if (source.ticketNo !== source.customerTicketNo && !input.remarks?.trim()) throw new BadRequestException(`${source.waybillNo}改用发货侧磅单须填写依据说明`);
       if (input.qualityReportId && input.qualityReportId !== source.defaultReportId && !input.remarks?.trim()) throw new BadRequestException('改用其他销售检测报告须填写原因');
       if (input.unitPrice != null && new Prisma.Decimal(input.unitPrice).comparedTo(source.unitPrice) !== 0) throw new BadRequestException('销售货款单价按合同与所选检测报告计算；调整价格请走合同变更');
       if (Number(input.adjustmentAmount || 0) !== 0 && !input.remarks?.trim()) throw new BadRequestException('销售结算调整须填写原因');
@@ -724,7 +736,7 @@ export class FinancialSettlementService {
       };
     });
     const contractItems = await this.prisma.contractLineItem.findMany({ where: { contractId: contract.id } });
-    const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'RECEIVABLE', deletedAt: null, status: { not: 'VOIDED' } } } });
+    const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'RECEIVABLE', deletedAt: null, status: { not: 'VOIDED' }, ...(existingId ? { id: { not: existingId } } : {}) } } });
     for (const item of contractItems) {
       const current = lines.filter(line => (line.sourceSnapshot as any).contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity), new Prisma.Decimal(0));
       const previous = existingLines.filter(line => (line.sourceSnapshot as any)?.contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity || 0), new Prisma.Decimal(0));
@@ -740,33 +752,172 @@ export class FinancialSettlementService {
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null, remarks: dto.remarks?.trim(), createdBy: userId,
     };
     if (preview) return { ...data, lines };
+    if (existingId) return this.prisma.financialSettlement.update({ where: { id: existingId }, data: { ...data, createdBy: undefined, lines: { deleteMany: {}, create: lines } }, include: SETTLEMENT_INCLUDE });
     return this.prisma.financialSettlement.create({ data: { ...data, settlementNo: await this.nextNo('YS', 'settlement'), lines: { create: lines } }, include: SETTLEMENT_INCLUDE });
   }
 
-  async previewGoodsSettlement(dto: CreateFinancialSettlementDto, userId: string) {
+  private async editableGoodsSettlement(id: string, dto: CreateFinancialSettlementDto, userId: string) {
+    const item = await this.findOne(id, userId, 'settlement.create');
+    const access = await this.accessControl.assertPermission(userId, 'settlement.create');
+    if (item.status !== 'DRAFT' || item.settlementScope !== 'GOODS') throw new BadRequestException('只有实际货物结算草稿可以修改');
+    if (item.contractId !== dto.contractId || item.direction !== dto.direction) throw new BadRequestException('结算草稿的合同与采购销售方向不能修改');
+    if (!access.isAdmin && item.createdBy !== userId) throw new ForbiddenException('只能修改本人创建的结算草稿');
+    return item;
+  }
+
+  async previewGoodsSettlement(dto: CreateFinancialSettlementDto, userId: string, existingId?: string) {
+    if (existingId) await this.editableGoodsSettlement(existingId, dto, userId);
     const direction = dto.direction === 'RECEIVABLE' ? 'RECEIVABLE' : 'PAYABLE';
     const contract = await this.accessibleContract(dto.contractId, direction, userId, 'settlement.create');
-    if (direction === 'RECEIVABLE') return this.createSalesGoodsSettlement(dto, contract, this.counterpartyId(contract, direction)!, userId, true);
-    return this.createGoodsSettlement(dto, contract, this.counterpartyId(contract, direction)!, userId, true);
+    if (direction === 'RECEIVABLE') return this.createSalesGoodsSettlement(dto, contract, this.counterpartyId(contract, direction)!, userId, true, existingId);
+    return this.createGoodsSettlement(dto, contract, this.counterpartyId(contract, direction)!, userId, true, existingId);
+  }
+
+  async updateGoodsSettlement(id: string, dto: CreateFinancialSettlementDto, userId: string): Promise<SettlementResult> {
+    const existing = await this.editableGoodsSettlement(id, dto, userId);
+    if (!this.transactional) return this.withContractLock(this.paymentLockKey(existing), service => service.updateGoodsSettlement(id, dto, userId));
+    const contract = await this.accessibleContract(dto.contractId, dto.direction, userId, 'settlement.create');
+    const counterpartyId = this.counterpartyId(contract, dto.direction);
+    if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方，不能保存结算草稿');
+    if (dto.direction === 'RECEIVABLE') return this.createSalesGoodsSettlement(dto, contract, counterpartyId, userId, false, id);
+    return this.createGoodsSettlement(dto, contract, counterpartyId, userId, false, id);
   }
 
   async confirm(id: string, userId: string): Promise<SettlementResult> {
     const item = await this.findOne(id, userId, 'settlement.confirm');
     if (!this.transactional) return this.withContractLock(this.paymentLockKey(item), service => service.confirm(id, userId));
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿状态的结算单可以确认');
-    if (item.settlementScope === 'GOODS' && item.lines.some(line => (line.sourceSnapshot as Record<string, any> | null)?.negotiatedQuantity || Number(line.adjustmentAmount || 0) !== 0)
+    if (item.settlementScope === 'GOODS' && (Number(item.adjustmentAmount || 0) !== 0 || item.lines.some(line => (line.sourceSnapshot as Record<string, any> | null)?.negotiatedQuantity || Number(line.adjustmentAmount || 0) !== 0))
       && !item.attachments.some(attachment => attachment.category === 'SIGNED_SETTLEMENT_CONFIRMATION')) {
       throw new BadRequestException('使用协商结算数量或其他加减项时，请先上传双方签章的结算确认单');
     }
     if (item.direction === 'PAYABLE') await new PurchaseSettlementBasis(this.prisma, this.accessControl).assertCurrent(id, userId, 'settlement.confirm');
     if (item.direction === 'RECEIVABLE' && item.settlementScope === 'GOODS') await new SalesSettlementBasis(this.prisma, this.accessControl).assertCurrent(id, userId);
+    if (this.settlementRequiresApproval(item)) {
+      const access = await this.accessControl.assertPermission(userId, 'settlement.confirm');
+      const plan = await this.resolvePaymentApprovalPlan(this.prisma, {
+        amount: item.totalAmount, contract: item.contract, businessUnitId: item.businessUnitId, createdBy: item.createdBy,
+      }, access.isAdmin, 'FINANCIAL_SETTLEMENT', 'settlement.approve');
+      const latest = await this.prisma.financialSettlementApproval.aggregate({ where: { settlementId: id }, _max: { round: true } });
+      const round = (latest._max.round || 0) + 1;
+      await this.prisma.financialSettlementApproval.createMany({ data: plan.flatMap((node, index) => node.members.map(member => ({
+        settlementId: id, assigneeId: member.id, nodeName: node.nodeName, roleCode: node.role.code,
+        roleName: node.role.name, approvalMode: node.approvalMode, step: index + 1, round,
+        status: index === 0 ? 'PENDING' : 'WAITING',
+      }))) });
+      return this.prisma.financialSettlement.update({ where: { id }, data: { status: 'PENDING_APPROVAL' }, include: SETTLEMENT_INCLUDE });
+    }
     return this.prisma.financialSettlement.update({ where: { id }, data: { status: 'CONFIRMED', confirmedBy: userId, confirmedAt: new Date() }, include: SETTLEMENT_INCLUDE });
+  }
+
+  private settlementRequiresApproval(item: { adjustmentAmount: unknown; lines: Array<{ sourceSnapshot: unknown; adjustmentAmount: unknown }> }) {
+    if (Number(item.adjustmentAmount || 0) !== 0) return true;
+    return item.lines.some(line => {
+      const source = line.sourceSnapshot as Record<string, any> | null;
+      return Number(line.adjustmentAmount || 0) !== 0 || Boolean(source?.negotiatedQuantity)
+        || source?.settlementWeightSource === 'SELECTED_OTHER_SIDE'
+        || Boolean(source?.inventoryReportId && source.reportId && source.inventoryReportId !== source.reportId)
+        || Boolean(source?.defaultReportId && source.reportId && source.defaultReportId !== source.reportId)
+        || Boolean(source?.customerTicketNo && source.ticketNo && source.customerTicketNo !== source.ticketNo);
+    });
+  }
+
+  private async currentSettlementApprovalTasks(settlementId: string) {
+    const pending = await this.prisma.financialSettlementApproval.findMany({
+      where: { settlementId, status: 'PENDING' }, orderBy: [{ round: 'desc' }, { step: 'asc' }],
+    });
+    if (!pending.length) throw new BadRequestException('当前没有待处理的结算审批节点');
+    return pending.filter(task => task.round === pending[0].round && task.step === pending[0].step);
+  }
+
+  async settlementApprovalList(userId: string, status: 'PENDING' | 'DONE' = 'PENDING') {
+    const access = await this.accessControl.assertPermission(userId, 'settlement.approve');
+    const scope = await this.accessControl.getContractScope(userId, 'settlement.approve');
+    const rows = await this.prisma.financialSettlementApproval.findMany({
+      where: {
+        ...(status === 'PENDING' ? { status: 'PENDING', ...(access.isAdmin ? {} : { assigneeId: userId }) } : { actedById: userId, status: { in: ['APPROVED', 'REJECTED'] } }),
+        settlement: { deletedAt: null, contract: scope, ...(status === 'PENDING' ? { status: 'PENDING_APPROVAL' } : {}) },
+      },
+      include: { settlement: { include: { contract: true, businessUnit: true } } },
+      orderBy: status === 'PENDING' ? { createdAt: 'asc' } : { actedAt: 'desc' }, take: 300,
+    });
+    const unique = new Map<string, typeof rows[number]>();
+    for (const row of rows) {
+      const key = status === 'PENDING' ? `${row.settlementId}:${row.round}:${row.step}` : row.id;
+      if (!unique.has(key)) unique.set(key, row);
+    }
+    return { status, total: unique.size, list: [...unique.values()].map(row => ({
+      id: row.id, businessType: 'SETTLEMENT' as const, nodeName: row.nodeName, roleName: row.roleName,
+      approvalMode: row.approvalMode, round: row.round, step: row.step, status: row.status,
+      comment: row.comment, actedAt: row.actedAt, contract: row.settlement.contract,
+      settlement: { id: row.settlementId, settlementNo: row.settlement.settlementNo, amount: row.settlement.totalAmount,
+        direction: row.settlement.direction, businessUnit: row.settlement.businessUnit },
+    })) };
+  }
+
+  async settlementApprovalDetail(id: string, userId: string) {
+    const access = await this.accessControl.assertPermission(userId, 'settlement.approve');
+    const item = await this.findOne(id, userId, 'settlement.approve');
+    const pending = item.approvalTasks.filter(task => task.status === 'PENDING');
+    const round = Math.max(0, ...pending.map(task => task.round));
+    const step = Math.min(...pending.filter(task => task.round === round).map(task => task.step));
+    const active = pending.filter(task => task.round === round && task.step === step);
+    return { settlement: item, currentNode: active[0] ? {
+      nodeName: active[0].nodeName, roleName: active[0].roleName, approvalMode: active[0].approvalMode, step: active[0].step,
+      assignees: active.map(task => task.assignee),
+    } : null, canAct: item.status === 'PENDING_APPROVAL' && Boolean(active.length && (access.isAdmin || active.some(task => task.assigneeId === userId))) };
+  }
+
+  async approveSettlement(id: string, comment: string | undefined, userId: string): Promise<SettlementResult> {
+    const access = await this.accessControl.assertPermission(userId, 'settlement.approve');
+    const item = await this.findOne(id, userId, 'settlement.approve');
+    if (!this.transactional) return this.withContractLock(this.paymentLockKey(item), service => service.approveSettlement(id, comment, userId));
+    if (item.status !== 'PENDING_APPROVAL') throw new BadRequestException('只有待审批结算单可以批准');
+    if (item.direction === 'PAYABLE') await new PurchaseSettlementBasis(this.prisma, this.accessControl).assertCurrent(id, userId, 'settlement.approve');
+    if (item.direction === 'RECEIVABLE' && item.settlementScope === 'GOODS') await new SalesSettlementBasis(this.prisma, this.accessControl).assertCurrent(id, userId, 'settlement.approve');
+    const tasks = await this.currentSettlementApprovalTasks(id);
+    const assigned = tasks.find(task => task.assigneeId === userId);
+    if (!access.isAdmin && !assigned) throw new ForbiddenException('当前审批节点未分配给该用户');
+    const task = assigned || tasks[0];
+    const now = new Date();
+    const acted = await this.prisma.financialSettlementApproval.updateMany({
+      where: access.isAdmin ? { settlementId: id, round: task.round, step: task.step, status: 'PENDING' } : { id: task.id, status: 'PENDING' },
+      data: { status: 'APPROVED', actedById: userId, actedAt: now, comment: comment?.trim() || '同意' },
+    });
+    if (!acted.count) throw new BadRequestException('审批任务已处理，请刷新');
+    if (task.approvalMode === 'ANY' && !access.isAdmin) await this.prisma.financialSettlementApproval.updateMany({
+      where: { settlementId: id, round: task.round, step: task.step, status: 'PENDING' }, data: { status: 'OTHERS_APPROVED' },
+    });
+    const remaining = await this.prisma.financialSettlementApproval.count({ where: { settlementId: id, round: task.round, step: task.step, status: 'PENDING' } });
+    if (!remaining) {
+      const next = await this.prisma.financialSettlementApproval.findFirst({ where: { settlementId: id, round: task.round, status: 'WAITING' }, orderBy: { step: 'asc' } });
+      if (next) await this.prisma.financialSettlementApproval.updateMany({ where: { settlementId: id, round: task.round, step: next.step, status: 'WAITING' }, data: { status: 'PENDING' } });
+      else await this.prisma.financialSettlement.update({ where: { id }, data: { status: 'CONFIRMED', confirmedBy: userId, confirmedAt: now } });
+    }
+    return this.prisma.financialSettlement.findUniqueOrThrow({ where: { id }, include: SETTLEMENT_INCLUDE });
+  }
+
+  async rejectSettlement(id: string, reason: string, userId: string): Promise<SettlementResult> {
+    const access = await this.accessControl.assertPermission(userId, 'settlement.approve');
+    const item = await this.findOne(id, userId, 'settlement.approve');
+    if (!this.transactional) return this.withContractLock(this.paymentLockKey(item), service => service.rejectSettlement(id, reason, userId));
+    if (item.status !== 'PENDING_APPROVAL') throw new BadRequestException('只有待审批结算单可以驳回');
+    if (!reason.trim()) throw new BadRequestException('请填写结算审批驳回原因');
+    const tasks = await this.currentSettlementApprovalTasks(id);
+    const assigned = tasks.find(task => task.assigneeId === userId);
+    if (!access.isAdmin && !assigned) throw new ForbiddenException('当前审批节点未分配给该用户');
+    const task = assigned || tasks[0];
+    const acted = await this.prisma.financialSettlementApproval.updateMany({ where: { id: task.id, status: 'PENDING' }, data: { status: 'REJECTED', actedById: userId, actedAt: new Date(), comment: reason.trim() } });
+    if (!acted.count) throw new BadRequestException('审批任务已处理，请刷新');
+    await this.prisma.financialSettlementApproval.updateMany({ where: { settlementId: id, round: task.round, status: { in: ['PENDING', 'WAITING'] } }, data: { status: 'CANCELLED' } });
+    return this.prisma.financialSettlement.update({ where: { id }, data: { status: 'REJECTED' }, include: SETTLEMENT_INCLUDE });
   }
 
   async recordPrint(id: string, userId: string) {
     const item = await this.findOne(id, userId);
-    if (item.status === 'DRAFT') throw new BadRequestException('结算单尚未确认，不能作为正式单据打印存档');
-    if (item.status === 'VOIDED') throw new BadRequestException('已作废结算单不能打印存档');
+    if (!['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(item.status)) {
+      throw new BadRequestException('只有已确认的有效结算单才能作为正式单据打印存档');
+    }
     return item;
   }
 
@@ -775,8 +926,11 @@ export class FinancialSettlementService {
     if (!this.transactional) return this.withContractLock(this.paymentLockKey(item), service => service.voidSettlement(id, userId));
     if (item.status === 'VOIDED') throw new BadRequestException('结算单已作废');
     if (Number(item.settledAmount) > 0 || item.allocations.some((entry) => !entry.reversedAt)) throw new BadRequestException('已有有效核销记录，必须先撤销核销后才能作废');
+    const activeInvoices = await this.prisma.invoiceRecord.count({ where: { settlementId: id, status: 'ACTIVE' } });
+    if (activeInvoices) throw new BadRequestException('结算单已有有效发票，请先处理或作废发票记录');
     const linked = await this.prisma.paymentRequest.count({ where: { settlementId: id, status: { in: ACTIVE_PAYMENT_REQUEST_STATUSES } } });
     if (linked) throw new BadRequestException('结算单有关联有效付款申请，请先处理付款申请及付款记录');
+    await this.prisma.financialSettlementApproval.updateMany({ where: { settlementId: id, status: { in: ['PENDING', 'WAITING'] } }, data: { status: 'CANCELLED' } });
     await this.prisma.fundEarmark.updateMany({ where: { settlementId: id, releasedAt: null }, data: { releasedAt: new Date() } });
     return this.prisma.financialSettlement.update({ where: { id }, data: { status: 'VOIDED' }, include: SETTLEMENT_INCLUDE });
   }
@@ -1269,9 +1423,12 @@ export class FinancialSettlementService {
     client: Prisma.TransactionClient | PrismaService,
     request: any,
     allowAdminFallback = false,
+    flowType = 'PAYMENT_REQUEST',
+    approvePermission = 'settlement.payment.approve',
   ) {
+    const subject = flowType === 'FINANCIAL_SETTLEMENT' ? '结算单' : '付款申请';
     const flow = await client.approvalFlow.findUnique({
-      where: { contractType: 'PAYMENT_REQUEST' },
+      where: { contractType: flowType },
       include: {
         nodes: {
           where: { enabled: true },
@@ -1279,7 +1436,7 @@ export class FinancialSettlementService {
             role: {
               include: {
                 permissions: {
-                  where: { permission: { code: 'settlement.payment.approve' } },
+                  where: { permission: { code: approvePermission } },
                   include: { permission: true },
                 },
               },
@@ -1290,7 +1447,7 @@ export class FinancialSettlementService {
       },
     });
     if (!flow || flow.status !== 'ACTIVE') {
-      throw new BadRequestException('付款申请审批流程未启用，请联系系统管理员配置');
+      throw new BadRequestException(`${subject}审批流程未启用，请联系系统管理员配置`);
     }
     const threshold = Number(flow.amountThreshold || 0);
     const nodes = flow.nodes.filter((node) => node.condition === 'ALWAYS'
@@ -1298,7 +1455,7 @@ export class FinancialSettlementService {
     if (!nodes.length) throw new BadRequestException(`审批流程“${flow.name}”没有符合当前金额条件的审批节点`);
     const invalidNodes = nodes.filter((node) => node.role.status !== 'ACTIVE' || !node.role.permissions.length);
     if (invalidNodes.length) {
-      throw new BadRequestException(`付款审批存在无效节点角色：${invalidNodes.map((node) => node.nodeName).join('、')}`);
+      throw new BadRequestException(`${subject}审批存在无效节点角色：${invalidNodes.map((node) => node.nodeName).join('、')}`);
     }
 
     const companyId = request.contract?.companyId || request.logisticsSettlement?.payerCompanyId || request.logisticsSettlement?.preparer?.companyId || null;
@@ -1323,7 +1480,7 @@ export class FinancialSettlementService {
     for (const node of nodes) {
       if (node.scopeType === 'COMPANY' && !companyId) throw new BadRequestException(`审批节点“${node.nodeName}”需要单据所属企业`);
       if (node.scopeType === 'DEPARTMENT' && !departmentId) throw new BadRequestException(`审批节点“${node.nodeName}”需要合同业务部门`);
-      if (node.scopeType === 'BUSINESS_UNIT' && !businessUnitId) throw new BadRequestException(`审批节点“${node.nodeName}”需要付款申请所属业务单元`);
+      if (node.scopeType === 'BUSINESS_UNIT' && !businessUnitId) throw new BadRequestException(`审批节点“${node.nodeName}”需要${subject}所属业务单元`);
       const now = new Date();
       const assignments = await client.userRoleAssignment.findMany({
         where: {

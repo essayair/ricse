@@ -265,7 +265,9 @@ export class MobileWorkspaceService {
     const pendingContractApprovals = new Set(pendingRows.map((item) => `${item.contractId}:${item.round}:${item.step}`)).size;
     const pendingPaymentApprovals = this.finance && (context.isAdmin || context.permissions.includes('settlement.payment.approve'))
       ? (await this.finance.paymentApprovalList(userId)).total : 0;
-    const pendingCount = pendingContractApprovals + pendingPaymentApprovals;
+    const pendingSettlementApprovals = this.finance && (context.isAdmin || context.permissions.includes('settlement.approve'))
+      ? (await this.finance.settlementApprovalList(userId)).total : 0;
+    const pendingCount = pendingContractApprovals + pendingPaymentApprovals + pendingSettlementApprovals;
     return {
       account: {
         id: context.user.id,
@@ -279,7 +281,7 @@ export class MobileWorkspaceService {
         permissions: context.permissions,
       },
       summary: {
-        pendingApprovals: pendingCount, pendingContractApprovals, pendingPaymentApprovals, contracts: contractCount, executingContracts: executingCount,
+        pendingApprovals: pendingCount, pendingContractApprovals, pendingPaymentApprovals, pendingSettlementApprovals, contracts: contractCount, executingContracts: executingCount,
         // 旧客户端字段保留兼容；新客户端仅使用统一待发运数量。
         pendingDispatch, pendingAssignment: 0, pendingDeparture: pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound,
       },
@@ -421,17 +423,28 @@ export class MobileWorkspaceService {
 
   async approvalCenter(userId: string, status: 'PENDING' | 'DONE' = 'PENDING', type = 'ALL') {
     const access = await this.access.getContext(userId);
-    const [contracts, payments] = await Promise.all([
-      type !== 'PAYMENT_REQUEST' && (access.isAdmin || access.permissions.includes('contract.approve')) ? this.approvalList(userId, status) : { list: [] },
-      type !== 'CONTRACT' && this.finance && (access.isAdmin || access.permissions.includes('settlement.payment.approve')) ? this.finance.paymentApprovalList(userId, status) : { list: [] },
+    const [contracts, payments, settlements] = await Promise.all([
+      (type === 'ALL' || type === 'CONTRACT') && (access.isAdmin || access.permissions.includes('contract.approve')) ? this.approvalList(userId, status) : { list: [] },
+      (type === 'ALL' || type === 'PAYMENT_REQUEST') && this.finance && (access.isAdmin || access.permissions.includes('settlement.payment.approve')) ? this.finance.paymentApprovalList(userId, status) : { list: [] },
+      (type === 'ALL' || type === 'SETTLEMENT') && this.finance && (access.isAdmin || access.permissions.includes('settlement.approve')) ? this.finance.settlementApprovalList(userId, status) : { list: [] },
     ]);
-    const list = [...contracts.list.map(item => ({ ...item, businessType: 'CONTRACT' as const })), ...payments.list];
+    const list = [...contracts.list.map(item => ({ ...item, businessType: 'CONTRACT' as const })), ...payments.list, ...settlements.list];
     return { status, total: list.length, list };
   }
 
   async paymentApprovalDetail(userId: string, id: string) {
     if (!this.finance) throw new NotFoundException('付款审批服务未加载');
     return this.finance.paymentApprovalDetail(id, userId);
+  }
+
+  async settlementApprovalDetail(userId: string, id: string) {
+    if (!this.finance) throw new NotFoundException('结算审批服务未加载');
+    return this.finance.settlementApprovalDetail(id, userId);
+  }
+
+  async decideSettlement(userId: string, id: string, decision: string, comment: string) {
+    if (!this.finance) throw new NotFoundException('结算审批服务未加载');
+    return decision === 'APPROVED' ? this.finance.approveSettlement(id, comment, userId) : this.finance.rejectSettlement(id, comment, userId);
   }
 
   async paymentApprovalAttachment(userId: string, id: string, attachmentId: string) {

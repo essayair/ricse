@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { CreateOutboundReceiptDto } from './dto/create-outbound-receipt.dto';
+import { PostOutboundReceiptDto } from './dto/post-outbound-receipt.dto';
 
 @Injectable()
 export class OutboundService {
@@ -91,6 +92,26 @@ export class OutboundService {
     if ((count > 1 || selected) && selected?.weighTicketId !== ticketId) {
       throw new BadRequestException('该运单有多张我方发货磅单，请先确认采信发货磅单');
     }
+  }
+
+  private async qualityExceptionHints(receipt: {
+    waybillId: string; weighTicketId: string | null;
+    allocations: Array<{ inventoryLot: { lotNo: string; qualityConclusion: string } }>;
+  }) {
+    const hints = receipt.allocations
+      .filter(allocation => allocation.inventoryLot.qualityConclusion !== 'PASS')
+      .map(allocation => `来源批次 ${allocation.inventoryLot.lotNo} 质检结论为 ${allocation.inventoryLot.qualityConclusion}`);
+    const shippingReportCount = await this.prisma.qualityInspection.count({
+      where: {
+        status: 'CONFIRMED', evidenceStage: 'SHIPPING',
+        OR: [
+          { weighTicketId: receipt.weighTicketId },
+          { taskLinks: { some: { unlinkedAt: null, qualityTask: { waybillId: receipt.waybillId } } } },
+        ],
+      },
+    });
+    if (!shippingReportCount) hints.push('缺少我方已确认发货检测报告');
+    return hints;
   }
 
   private async productionReservedQuantity(
@@ -310,7 +331,14 @@ export class OutboundService {
       include: this.orderInclude(),
     });
     if (!item) throw new NotFoundException('出库管理单不存在');
-    return this.withOrderStage(item);
+    const result = this.withOrderStage(item);
+    return {
+      ...result,
+      receipts: await Promise.all(result.receipts.map(async (receipt: any) => ({
+        ...receipt,
+        qualityExceptionHints: receipt.status === 'READY' ? await this.qualityExceptionHints(receipt) : [],
+      }))),
+    };
   }
 
   private withOrderStage(item: any) {
@@ -683,7 +711,7 @@ export class OutboundService {
       include: this.include,
     });
     if (!receipt) throw new NotFoundException('车次出库作业不存在');
-    return receipt;
+    return { ...receipt, qualityExceptionHints: receipt.status === 'READY' ? await this.qualityExceptionHints(receipt) : [] };
   }
 
   async refreshReservation(id: string, userId: string) {
@@ -782,7 +810,7 @@ export class OutboundService {
     });
   }
 
-  async post(id: string, userId: string) {
+  async post(id: string, userId: string, data: PostOutboundReceiptDto = {}) {
     const receipt = await this.findOne(id, userId, 'inventory.manage');
     if (receipt.status !== 'READY') throw new BadRequestException('只有待放行车次可以确认出库');
     if (!receipt.weighTicket || receipt.weighTicket.status !== 'REVIEWED') throw new BadRequestException('必须关联已复核出库磅单');
@@ -801,6 +829,11 @@ export class OutboundService {
     const allocated = receipt.allocations.reduce((sum, item) => sum + Number(item.quantity), 0);
     if (Math.abs(allocated - Number(receipt.outboundQuantity)) > 0.0005) {
       throw new BadRequestException('库存批次分配数量必须等于实际出库数量');
+    }
+    const qualityExceptions = receipt.qualityExceptionHints;
+    const qualityExceptionReason = data.qualityExceptionReason?.trim();
+    if (qualityExceptions.length && !qualityExceptionReason) {
+      throw new BadRequestException(`${qualityExceptions.join('；')}。请填写质量例外放行原因后确认出库`);
     }
     const outboundNo = await this.nextNo('SOUT', 'salesOutbound');
 
@@ -890,7 +923,15 @@ export class OutboundService {
       }
       await tx.outboundReceipt.update({
         where: { id: receipt.id },
-        data: { status: 'POSTED', pricingQuantity: totalPricingQuantity },
+        data: {
+          status: 'POSTED', pricingQuantity: totalPricingQuantity,
+          ...(qualityExceptions.length ? {
+            qualityExceptionReason,
+            qualityExceptionDetails: qualityExceptions.join('；'),
+            qualityExceptionBy: userId,
+            qualityExceptionAt: new Date(),
+          } : {}),
+        },
       });
       const waybillLine = receipt.waybill.lineItems[0];
       if (waybillLine) {

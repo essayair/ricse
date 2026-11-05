@@ -108,7 +108,6 @@ export default function DispatchPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">物流调度工作台</h1>
-          <p className="mt-1 text-sm text-muted-foreground">完成车辆调度、发运、在途跟踪、目的地到达和交接闭环</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => router.push('/dashboard/waybills')}>

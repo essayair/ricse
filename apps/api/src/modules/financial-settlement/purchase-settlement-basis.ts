@@ -14,7 +14,7 @@ export const signature = (value: unknown) => createHash('sha256').update(JSON.st
 export class PurchaseSettlementBasis {
   constructor(private readonly prisma: PrismaService, private readonly access: AccessControlService) {}
 
-  async sources(contractId: string, userId: string, permission = 'settlement.view', excludeSettlementId?: string, reportChoices = new Map<string, string>()) {
+  async sources(contractId: string, userId: string, permission = 'settlement.view', excludeSettlementId?: string, reportChoices = new Map<string, string>(), ticketChoices = new Map<string, string>(), ignoreLegacySelection = false) {
     await this.access.assertPermission(userId, permission);
     const scope = await this.access.getContractScope(userId, permission);
     const contract = await this.prisma.contract.findFirst({
@@ -42,7 +42,7 @@ export class PurchaseSettlementBasis {
         settlementLines: { where: { settlementId: excludeSettlementId ? { not: excludeSettlementId } : undefined, settlement: { deletedAt: null, status: { not: 'VOIDED' } } } },
         waybill: { include: {
           lineItems: true, dispatchNotice: { include: { order: true } },
-          weighTickets: { where: { deletedAt: null, status: { not: 'VOIDED' } }, select: { id: true, ticketNo: true, weighingStage: true, status: true, netWeight: true }, orderBy: { createdAt: 'asc' } },
+          weighTickets: { where: { deletedAt: null, status: { not: 'VOIDED' } }, select: { id: true, ticketNo: true, weighingStage: true, status: true, netWeight: true, grossWeight: true, tareWeight: true, updatedAt: true, deletedAt: true }, orderBy: { createdAt: 'asc' } },
           weightSelections: { where: { isCurrent: true }, include: { weighTicket: true }, orderBy: { selectedAt: 'desc' } },
           qualityTask: { include: {
             basisInspection: { include: { indicators: true } },
@@ -69,9 +69,14 @@ export class PurchaseSettlementBasis {
         : inventoryReport;
       const separateSettlementReport = Boolean(requestedReportId && requestedReportId !== inventoryReport?.id);
       const settlementSelection = w.weightSelections.find(s => s.purpose === 'SETTLEMENT');
-      const separateSettlementTicket = Boolean(settlementSelection && settlementSelection.weighTicketId !== receipt?.weighTicketId);
-      const ticket = separateSettlementTicket ? settlementSelection?.weighTicket : inventoryTicket;
-      const selection = separateSettlementTicket ? settlementSelection : inventorySelection;
+      const requestedTicketId = ticketChoices.get(row.id);
+      const chosenTicket = requestedTicketId ? w.weighTickets.find(candidate => candidate.id === requestedTicketId) : undefined;
+      const legacyTicket = !ignoreLegacySelection && settlementSelection?.weighTicketId !== receipt?.weighTicketId ? settlementSelection?.weighTicket : undefined;
+      const ticket = requestedTicketId ? chosenTicket : legacyTicket || inventoryTicket;
+      const separateSettlementTicket = Boolean(ticket && (ticket.id || receipt?.weighTicketId) !== receipt?.weighTicketId);
+      const selection = requestedTicketId
+        ? w.weightSelections.find(candidate => candidate.purpose === ticket?.weighingStage && candidate.weighTicketId === ticket?.id)
+        : separateSettlementTicket ? settlementSelection : inventorySelection;
       const measuredMoisturePct = separateSettlementReport || posted?.measuredMoisturePct == null
         ? readMeasuredPct(report?.indicators || [], 'MOISTURE')
         : Number(posted.measuredMoisturePct);
@@ -110,12 +115,14 @@ export class PurchaseSettlementBasis {
           reasons.push(`${stage === 'SHIPPING' ? '发货' : '收货'}侧有多张磅单，请先确认采信磅单`);
         }
       }
-      if (settlementSelection && settlementSelection.weighTicket.weighingStage
+      if (!requestedTicketId && !ignoreLegacySelection && settlementSelection && settlementSelection.weighTicket.weighingStage
         && w.weighTickets.some(candidate => candidate.weighingStage === settlementSelection.weighTicket.weighingStage)
         && effectiveByStage.get(settlementSelection.weighTicket.weighingStage)?.id !== settlementSelection.weighTicketId) {
         reasons.push('货款结算磅单与该侧采信磅单不一致，请重新选择');
       }
       if (!posted || totalQuantity <= 0) reasons.push('请先完成采购入库过账；最终货款按入库过账数量结算，提前付款请使用预付款或阶段款申请');
+      if (requestedTicketId && (!chosenTicket || chosenTicket.status !== 'REVIEWED')) reasons.push('本次结算所选磅单不存在或未复核');
+      if (requestedTicketId && chosenTicket && effectiveByStage.get(chosenTicket.weighingStage)?.id !== chosenTicket.id) reasons.push('本次结算所选磅单不是该侧采信磅单');
       if (!inventoryTicket || inventoryTicket.deletedAt || inventoryTicket.status !== 'REVIEWED') reasons.push('请先核对入库过账关联的库存磅单');
       if (separateSettlementTicket && (!ticket || ticket.deletedAt || ticket.status !== 'REVIEWED')) reasons.push('货款依据磅单已失效，请重新选择');
       if (separateSettlementTicket && posted?.pricingQuantityBasis === 'DRY_MATTER' && measuredMoisturePct == null) reasons.push('折干货款结算需要最终报告的水分实测值');
@@ -173,8 +180,9 @@ export class PurchaseSettlementBasis {
         pricingType: contract.pricingType || 'FIXED', gradePrice,
         weightSelectionId: selection?.id, weighTicketId: ticket?.id || receipt?.weighTicketId, ticketNo: ticket?.ticketNo,
         inventoryTicketNo: inventoryTicket?.ticketNo, inventoryNetWeight: inventoryTicket?.netWeight == null ? null : Number(inventoryTicket.netWeight),
-        settlementTicketNo: ticket?.ticketNo, settlementSelectionId: settlementSelection?.id,
-        availableWeighTickets: w.weighTickets.filter(candidate => candidate.status === 'REVIEWED').map(candidate => ({ id: candidate.id, ticketNo: candidate.ticketNo, weighingStage: candidate.weighingStage, netWeight: candidate.netWeight == null ? null : Number(candidate.netWeight) })),
+        settlementTicketNo: ticket?.ticketNo, settlementSelectionId: requestedTicketId ? null : settlementSelection?.id,
+        settlementTicketScoped: Boolean(requestedTicketId),
+        availableWeighTickets: w.weighTickets.filter(candidate => candidate.status === 'REVIEWED').map(candidate => ({ id: candidate.id, ticketNo: candidate.ticketNo, weighingStage: candidate.weighingStage, netWeight: candidate.netWeight == null ? null : Number(candidate.netWeight), isSelectable: effectiveByStage.get(candidate.weighingStage)?.id === candidate.id })),
         settlementWeightSource: separateSettlementTicket ? 'SELECTED_OTHER_SIDE' : settlementSelection ? 'EXPLICIT_INVENTORY' : 'INVENTORY_DEFAULT',
         inboundNo: posted?.inboundNo, inboundPostedAt: posted?.postedAt,
         inboundDate: receipt?.receivedAt || posted?.postedAt || null,
@@ -184,7 +192,7 @@ export class PurchaseSettlementBasis {
         pricingQuantityBasis: posted?.pricingQuantityBasis || 'PHYSICAL',
         qualityTaskId: task?.id, taskNo: task?.taskNo, reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo,
         inventoryReportId: inventoryReport?.id, inventoryReportNo: inventoryReport?.reportNo || inventoryReport?.inspectionNo,
-        availableQualityReports: [...availableReports.values()].map(candidate => ({ id: candidate.id, reportNo: candidate.reportNo || candidate.inspectionNo, evidenceStage: candidate.evidenceStage, institutionName: candidate.institutionName, conclusion: candidate.conclusion })),
+        availableQualityReports: [...availableReports.values()].map(candidate => ({ id: candidate.id, reportNo: candidate.reportNo || candidate.inspectionNo, evidenceStage: candidate.evidenceStage, institutionName: candidate.institutionName, conclusion: candidate.conclusion, measuredMoisturePct: readMeasuredPct(candidate.indicators || [], 'MOISTURE') })),
         qualityDisposition: selectedDisposition || 'PENDING', qualityReady, qualityAcceptance: separateSettlementReport ? null : task?.qualityAcceptanceSnapshot,
         deductionPerTon, evaluation: selectedEvaluation || task?.contractQualityEvaluation, decisionVersion: task?.decisionVersion,
         inboundStatuses: w.inboundReceipts.map(r => r.status), signature: signature(basis), priorSignature: signature(priorBasis), legacySignature: signature(legacyBasis),
@@ -200,7 +208,8 @@ export class PurchaseSettlementBasis {
     const tracked = settlement.lines.filter(l => l.waybillLineItemId);
     if (!tracked.length) return; // 历史人工结算保持原快照，不按新模板自动重算。
     const reportChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.reportId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).reportId)]));
-    const sources = await this.sources(settlement.contractId, userId, permission, settlementId, reportChoices);
+    const ticketChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.settlementTicketScoped && (line.sourceSnapshot as any)?.weighTicketId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).weighTicketId)]));
+    const sources = await this.sources(settlement.contractId, userId, permission, settlementId, reportChoices, ticketChoices);
     for (const line of tracked) {
       const current = sources.find(s => s.id === line.waybillLineItemId);
       const old = line.sourceSnapshot as Record<string, any> | null;

@@ -11,7 +11,7 @@ import { CreateWeighRecordsDto } from './dto/create-weigh-records.dto';
 import { CreateWeighTicketDto } from './dto/create-weigh-ticket.dto';
 import { SelectWaybillWeightDto } from './dto/select-waybill-weight.dto';
 import { WeighTicketService } from './weigh-ticket.service';
-import { SelectEffectiveRecordsDto, UpdateWeighSettlementDto, UpdateWeighTicketInfoDto, UpdateWeighTicketStatusDto, UpdateWeighTicketWaybillDto } from './dto/update-weigh-ticket.dto';
+import { SelectEffectiveRecordsDto, UpdateWeighSettlementDto, UpdateWeighTicketInfoDto, UpdateWeighTicketStatusDto, UpdateWeighTicketWaybillDto, UpdateWeighWeightsDto } from './dto/update-weigh-ticket.dto';
 
 @ApiTags('磅单管理')
 @ApiBearerAuth()
@@ -205,6 +205,12 @@ export class WeighTicketController {
   @Patch(':id/effective-records')
   selectRecords(@Param('id') id: string, @Body() data: SelectEffectiveRecordsDto, @CurrentUser('id') userId: string) {
     return this.service.selectEffectiveRecords(id, data, userId);
+  }
+
+  @Patch(':id/weights')
+  @ApiOperation({ summary: '录入毛重、皮重和净重，或切回称重记录' })
+  updateWeights(@Param('id') id: string, @Body() data: UpdateWeighWeightsDto, @CurrentUser('id') userId: string) {
+    return this.service.updateWeights(id, data, userId);
   }
 
   @Patch(':id/settlement')

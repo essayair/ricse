@@ -132,7 +132,6 @@ export default function ContractsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">合同管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理采购与销售合同全流程；双边合同分别生成采购执行批次与销售执行批次</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => {}}>
@@ -331,7 +330,7 @@ function FulfillmentSummary({ directions }: { directions: FulfillmentDirection[]
     {directions.length > 1 && <div className="mb-1 text-[11px] font-medium text-muted-foreground">{direction.type === 'PURCHASE' ? '采购端' : '销售端'}</div>}
     <div className="grid grid-cols-[52px_1fr_1fr] gap-x-2 text-xs">
       <span className="text-muted-foreground">待执行</span><span>{quantityText(direction.pendingQuantity)}</span><span className="text-right font-mono">{money(direction.pendingAmount)}</span>
-      <span className="text-muted-foreground">执行中</span><span className="text-amber-600">{quantityText(direction.executingQuantity)}</span><span className="text-right font-mono text-amber-600">{money(direction.executingAmount)}</span>
+      <span className="text-muted-foreground">执行中</span><span className="text-warning">{quantityText(direction.executingQuantity)}</span><span className="text-right font-mono text-warning">{money(direction.executingAmount)}</span>
       <span className="text-muted-foreground">已执行</span><span className="text-primary">{quantityText(direction.executedQuantity)}</span><span className="text-right font-mono text-primary">{money(direction.executedAmount)}</span>
     </div>
   </div>)}</div>;

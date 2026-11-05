@@ -10,7 +10,7 @@ import { signature } from './purchase-settlement-basis';
 export class SalesSettlementBasis {
   constructor(private readonly prisma: PrismaService, private readonly access: AccessControlService) {}
 
-  async sources(contractId: string, userId: string, permission = 'settlement.view', excludeSettlementId?: string, reportChoices = new Map<string, string>()) {
+  async sources(contractId: string, userId: string, permission = 'settlement.view', excludeSettlementId?: string, reportChoices = new Map<string, string>(), ticketChoices = new Map<string, string>(), ignoreLegacySelection = false) {
     await this.access.assertPermission(userId, permission);
     const scope = await this.access.getContractScope(userId, permission);
     const contract = await this.prisma.contract.findFirst({ where: { id: contractId, deletedAt: null, AND: [scope] }, include: { lineItems: true } });
@@ -55,9 +55,12 @@ export class SalesSettlementBasis {
       const requestedReportId = reportChoices.get(row.id);
       const report = requestedReportId ? reports.get(requestedReportId) : reports.get(w.salesCompletionReportId || '');
       const settlementSelection = w.weightSelections.find(selection => selection.purpose === 'SETTLEMENT');
-      const ticket = settlementSelection?.weighTicket || w.weighTickets.find(candidate => candidate.id === w.salesCompletionCustomerTicketId);
+      const requestedTicketId = ticketChoices.get(row.id);
+      const chosenTicket = requestedTicketId ? w.weighTickets.find(candidate => candidate.id === requestedTicketId) : undefined;
+      const ticket = requestedTicketId ? chosenTicket : (!ignoreLegacySelection ? settlementSelection?.weighTicket : undefined) || w.weighTickets.find(candidate => candidate.id === w.salesCompletionCustomerTicketId);
       const selectedStage = ticket?.weighingStage;
       const stageSelection = w.weightSelections.find(selection => selection.purpose === selectedStage);
+      const sourceSelection = requestedTicketId ? stageSelection : settlementSelection || stageSelection;
       const stageTickets = selectedStage ? w.weighTickets.filter(candidate => candidate.weighingStage === selectedStage) : [];
       const pricingQuantityBasis = materialBasis.get(row.materialId) || 'PHYSICAL';
       const measuredMoisturePct = readMeasuredPct(report?.indicators || [], 'MOISTURE');
@@ -88,6 +91,7 @@ export class SalesSettlementBasis {
       if (!w.salesCompletionConfirmedAt) reasons.push('请先确认客户签收、收货计量与销售交付完成');
       if (w.dispatchNotice.mode === 'STANDARD' && !outbound) reasons.push('请先完成我方出库过账');
       if (!ticket || ticket.deletedAt || ticket.status !== 'REVIEWED') reasons.push('请先确认已复核的销售货款磅单');
+      if (requestedTicketId && chosenTicket && effectiveByStage.get(chosenTicket.weighingStage)?.id !== chosenTicket.id) reasons.push('本次结算所选磅单不是该侧采信磅单');
       if (stageTickets.length > 1 && stageSelection?.weighTicketId !== ticket?.id) reasons.push('所选侧有多张磅单，请先确认采信磅单');
       for (const stage of ['SHIPPING', 'RECEIVING']) {
         const candidates = w.weighTickets.filter(candidate => candidate.weighingStage === stage);
@@ -117,7 +121,7 @@ export class SalesSettlementBasis {
         salesCompletionConfirmedAt: w.salesCompletionConfirmedAt, salesCompletionReportId: w.salesCompletionReportId,
         salesCompletionCustomerTicketId: w.salesCompletionCustomerTicketId, salesCompletionShippingTicketId: w.salesCompletionShippingTicketId,
         outboundReceiptId: outbound?.id, outboundQuantity: outbound?.outboundQuantity?.toString(), outboundStatus: outbound?.status,
-        weighTicketId: ticket?.id, ticketUpdatedAt: ticket?.updatedAt, weightSelectionId: settlementSelection?.id || stageSelection?.id,
+        weighTicketId: ticket?.id, ticketUpdatedAt: ticket?.updatedAt, weightSelectionId: sourceSelection?.id,
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, reportId: report?.id, reportUpdatedAt: report?.updatedAt,
         pricingQuantityBasis, totalQuantity, unitPrice, gradePrice: gradePrice?.status === 'READY' ? gradePrice : null,
       };
@@ -131,11 +135,12 @@ export class SalesSettlementBasis {
         customerNetWeight: w.salesCompletionCustomerWeight == null ? null : Number(w.salesCompletionCustomerWeight),
         shippingNetWeight: w.salesCompletionShippingWeight == null ? null : Number(w.salesCompletionShippingWeight),
         weightVariance: w.salesCompletionWeightVariance == null ? null : Number(w.salesCompletionWeightVariance),
-        ticketNo: ticket?.ticketNo, weighTicketId: ticket?.id, weightSelectionId: settlementSelection?.id || stageSelection?.id,
-        settlementSelectionId: settlementSelection?.id, settlementTicketNo: ticket?.ticketNo,
-        availableWeighTickets: w.weighTickets.filter(candidate => candidate.status === 'REVIEWED').map(candidate => ({ id: candidate.id, ticketNo: candidate.ticketNo, weighingStage: candidate.weighingStage, netWeight: candidate.netWeight == null ? null : Number(candidate.netWeight) })),
+        ticketNo: ticket?.ticketNo, weighTicketId: ticket?.id, weightSelectionId: sourceSelection?.id,
+        settlementTicketScoped: Boolean(requestedTicketId),
+        settlementSelectionId: requestedTicketId ? null : settlementSelection?.id, settlementTicketNo: ticket?.ticketNo,
+        availableWeighTickets: w.weighTickets.filter(candidate => candidate.status === 'REVIEWED').map(candidate => ({ id: candidate.id, ticketNo: candidate.ticketNo, weighingStage: candidate.weighingStage, netWeight: candidate.netWeight == null ? null : Number(candidate.netWeight), isSelectable: effectiveByStage.get(candidate.weighingStage)?.id === candidate.id })),
         reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo, defaultReportId: w.salesCompletionReportId, qualityTaskId: task?.id,
-        availableQualityReports: [...reports.values()].map(candidate => ({ id: candidate.id, reportNo: candidate.reportNo || candidate.inspectionNo, evidenceStage: candidate.evidenceStage, institutionName: candidate.institutionName, conclusion: candidate.conclusion })),
+        availableQualityReports: [...reports.values()].map(candidate => ({ id: candidate.id, reportNo: candidate.reportNo || candidate.inspectionNo, evidenceStage: candidate.evidenceStage, institutionName: candidate.institutionName, conclusion: candidate.conclusion, measuredMoisturePct: readMeasuredPct(candidate.indicators || [], 'MOISTURE') })),
         netWeight, grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
         measuredMoisturePct, dryQuantity, pricingQuantityBasis, totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity,
         negotiableQuantity, negotiableRemainingQuantity,
@@ -148,13 +153,14 @@ export class SalesSettlementBasis {
     });
   }
 
-  async assertCurrent(settlementId: string, userId: string) {
+  async assertCurrent(settlementId: string, userId: string, permission = 'settlement.confirm') {
     const settlement = await this.prisma.financialSettlement.findUnique({ where: { id: settlementId }, include: { lines: true } });
     if (!settlement) throw new NotFoundException('销售结算单不存在');
     const tracked = settlement.lines.filter(line => line.waybillLineItemId);
     if (!tracked.length) return;
     const reportChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.reportId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).reportId)]));
-    const sources = await this.sources(settlement.contractId, userId, 'settlement.confirm', settlementId, reportChoices);
+    const ticketChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.settlementTicketScoped && (line.sourceSnapshot as any)?.weighTicketId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).weighTicketId)]));
+    const sources = await this.sources(settlement.contractId, userId, permission, settlementId, reportChoices, ticketChoices);
     for (const line of tracked) {
       const source = sources.find(candidate => candidate.id === line.waybillLineItemId);
       if (!source?.available || source.signature !== (line.sourceSnapshot as any)?.signature) {

@@ -27,10 +27,11 @@ import { CreateDriverDto } from '../master-data/dto/driver.dto';
 import { CreateVehicleDto } from '../master-data/dto/vehicle.dto';
 import { BatchCreateWaybillDto } from '../logistics/dto/create-waybill.dto';
 import { AssignWaybillDto } from '../logistics/dto/assign-waybill.dto';
-import { SelectEffectiveRecordsDto, UpdateWeighTicketStatusDto } from '../weighbridge/dto/update-weigh-ticket.dto';
+import { SelectEffectiveRecordsDto, UpdateWeighTicketStatusDto, UpdateWeighWeightsDto } from '../weighbridge/dto/update-weigh-ticket.dto';
 import { SelectWaybillWeightDto } from '../weighbridge/dto/select-waybill-weight.dto';
 import { UpdateQualityStatusDto } from '../quality/dto/update-quality-status.dto';
 import { ResolveOutboundVarianceDto } from '../inventory/dto/resolve-outbound-variance.dto';
+import { PostOutboundReceiptDto } from '../inventory/dto/post-outbound-receipt.dto';
 
 @ApiTags('小程序企业工作台')
 @ApiBearerAuth()
@@ -334,6 +335,11 @@ export class MobileWorkspaceController {
     return this.weighService.selectEffectiveRecords(id, data, userId);
   }
 
+  @Patch('weigh-tickets/:id/weights')
+  updateWeighWeights(@Param('id') id: string, @Body() data: UpdateWeighWeightsDto, @CurrentUser('id') userId: string) {
+    return this.weighService.updateWeights(id, data, userId);
+  }
+
   @Patch('weigh-tickets/:id/status')
   updateWeighStatus(
     @Param('id') id: string,
@@ -571,8 +577,8 @@ export class MobileWorkspaceController {
   ) { return this.outboundService.resolveVariance(id, data, userId); }
 
   @Post('outbound-receipts/:id/post')
-  postOutboundReceipt(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.outboundService.post(id, userId);
+  postOutboundReceipt(@Param('id') id: string, @Body() data: PostOutboundReceiptDto, @CurrentUser('id') userId: string) {
+    return this.outboundService.post(id, userId, data);
   }
 
   @Post('outbound-receipts/:id/attachments')
@@ -612,6 +618,16 @@ export class MobileWorkspaceController {
   @Get('payment-approvals/:id')
   paymentApprovalDetail(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.service.paymentApprovalDetail(userId, id);
+  }
+
+  @Get('settlement-approvals/:id')
+  settlementApprovalDetail(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.service.settlementApprovalDetail(userId, id);
+  }
+
+  @Patch('settlement-approvals/:id')
+  decideSettlement(@CurrentUser('id') userId: string, @Param('id') id: string, @Body() dto: MobileApprovalDecisionDto) {
+    return this.service.decideSettlement(userId, id, dto.decision, dto.comment);
   }
 
   @Patch('payment-approvals/:id')

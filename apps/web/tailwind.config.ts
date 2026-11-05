@@ -15,7 +15,7 @@ const config: Config = {
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         surface: {
-          2: 'hsl(210 40% 98%)',
+          2: 'hsl(var(--surface-2))',
         },
         primary: {
           DEFAULT: 'hsl(var(--primary))',
@@ -50,19 +50,24 @@ const config: Config = {
           DEFAULT: 'hsl(var(--success))',
           foreground: 'hsl(var(--success-foreground))',
           bg: 'hsl(var(--success-bg))',
+          border: 'hsl(var(--success-border))',
         },
         warning: {
           DEFAULT: 'hsl(var(--warning))',
           foreground: 'hsl(var(--warning-foreground))',
           bg: 'hsl(var(--warning-bg))',
+          border: 'hsl(var(--warning-border))',
         },
         info: {
           DEFAULT: 'hsl(var(--info))',
           foreground: 'hsl(var(--info-foreground))',
           bg: 'hsl(var(--info-bg))',
+          border: 'hsl(var(--info-border))',
         },
         'primary-bg': 'hsl(var(--primary-bg))',
+        'primary-border': 'hsl(var(--primary-border))',
         'destructive-bg': 'hsl(var(--destructive-bg))',
+        'destructive-border': 'hsl(var(--destructive-border))',
         business: {
           purchase: {
             DEFAULT: 'hsl(var(--business-purchase))',
@@ -94,6 +99,8 @@ const config: Config = {
           },
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
+          heading: 'hsl(var(--sidebar-heading))',
+          current: 'hsl(var(--sidebar-current))',
         },
       },
       borderRadius: {

@@ -84,7 +84,7 @@ export function QualityRulesEditor({ materialId, scene, value, onChange }: {
     </div>
     {loading && <div className="py-3 text-sm text-muted-foreground">正在读取物料质检模板…</div>}
     {error && <div className="py-2 text-sm text-destructive">{error}</div>}
-    {!loading && snapshot && !snapshot.items.length && <div className="rounded bg-amber-50 p-3 text-sm text-amber-900">该物料尚未配置质检模板。请先在物料/质检模板中配置检测指标，再返回合同选择物料。</div>}
+    {!loading && snapshot && !snapshot.items.length && <div className="rounded bg-warning-bg p-3 text-sm text-warning">该物料尚未配置质检模板。请先在物料/质检模板中配置检测指标，再返回合同选择物料。</div>}
     {snapshot?.items.map((rule, index) => <div key={`${rule.indicatorId || rule.code}-${index}`} className="mt-3 grid grid-cols-12 items-end gap-2 rounded border p-2">
       <div className="col-span-12 md:col-span-3"><div className="text-xs text-muted-foreground">检测指标 / 合同要求</div><div className="mt-1 text-sm font-medium">{rule.symbol || rule.name}　{rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? ` – ${rule.upperValue}` : ''} {rule.unit}</div></div>
       <label className="col-span-6 md:col-span-2 text-xs">偏差处理<select className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" value={rule.deductionMode} onChange={e => update(index, { deductionMode: e.target.value as Rule['deductionMode'] })}><option value="NONE">按标准验收</option><option value="PER_STEP">按偏差扣款</option><option value="FLAT">固定扣款</option></select></label>

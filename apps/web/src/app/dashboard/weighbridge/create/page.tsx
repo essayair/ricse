@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { LocalAttachmentThumbnail } from '@/components/attachment-thumbnail';
+import { calculateWeightInputs, WeightEntryFields, WeightInputs } from '@/components/weighbridge/weight-entry-fields';
 
 interface Waybill {
   id: string; waybillNo: string; status: string; plateNo: string | null; totalQuantity: string;
@@ -45,6 +46,7 @@ export default function CreateWeighTicketPage() {
   const [basisWeight, setBasisWeight] = useState('');
   const [toleranceRate, setToleranceRate] = useState('0.5');
   const [remarks, setRemarks] = useState('');
+  const [weights, setWeights] = useState<WeightInputs>({ gross: '', tare: '', net: '' });
   const [files, setFiles] = useState<File[]>([]);
   const [ticketDate, setTicketDate] = useState(new Date().toISOString().slice(0, 10));
   const [plateNo, setPlateNo] = useState('');
@@ -145,6 +147,10 @@ export default function CreateWeighTicketPage() {
     if (!ticketDate || !plateNo.trim() || !materialName.trim() || !materialSpec.trim() || !shipperName.trim() || !receiverName.trim() || packageCount === '' || !driverName.trim() || !weighmasterName.trim()) return alert('请完整填写磅单日期、车牌、货物、规格、发收货单位、包/袋数、司机和司磅员');
     if (!Number.isInteger(Number(packageCount)) || Number(packageCount) < 0) return alert('包/袋数请手动填写大于等于 0 的整数，散装货物填写 0');
     if (basis !== 'RECEIVING' && Number(basisWeight) <= 0) return alert('请填写所选结算口径的重量');
+    if ([weights.gross, weights.tare, weights.net].some(value => value.trim() !== '' && (!Number.isFinite(Number(value)) || Number(value) <= 0))) return alert('已填写的重量必须大于 0');
+    const weightCheck = calculateWeightInputs(weights);
+    if (weightCheck.invalid || weightCheck.mismatch) return alert('毛重、皮重、净重不一致，请核对后创建');
+    if ((weights.gross || weights.tare || weights.net) && !weightCheck.displayed.net) return alert('请填写净重，或填写毛重和皮重以计算净重');
     const weightField: Record<string, string> = { SHIPPING: 'shippingWeight', CUSTOMER: 'customerWeight', THIRD_PARTY: 'thirdPartyWeight', MANUAL: 'manualWeight' };
     setSaving(true);
     try {
@@ -155,6 +161,9 @@ export default function CreateWeighTicketPage() {
         shipperName: shipperName.trim(), receiverName: receiverName.trim(), packageCount: Number(packageCount),
         driverName: driverName.trim(), weighmasterName: weighmasterName.trim(),
         ...(basis !== 'RECEIVING' ? { [weightField[basis]]: Number(basisWeight) } : {}),
+        ...(weights.gross ? { grossWeight: Number(weights.gross) } : {}),
+        ...(weights.tare ? { tareWeight: Number(weights.tare) } : {}),
+        ...(weights.net ? { netWeight: Number(weights.net) } : {}),
         remarks: remarks || undefined,
       });
       try {
@@ -185,15 +194,16 @@ export default function CreateWeighTicketPage() {
         <div><label className="mb-1 block text-sm font-medium">称重节点 *</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={weighingStage} onChange={event => { setWeighingStage(event.target.value as 'SHIPPING' | 'RECEIVING'); setAdditionReason(''); }}><option value="SHIPPING">发货称重</option><option value="RECEIVING" disabled={!stageAllowed('RECEIVING', selectedWaybill?.status)}>收货称重{selectedWaybill && !stageAllowed('RECEIVING', selectedWaybill.status) ? '（到达后可录入）' : ''}</option></select></div>
         <div><label className="mb-1 block text-sm font-medium">磅差容差（%）</label><Input type="number" min="0" step="0.01" value={toleranceRate} onChange={event => setToleranceRate(event.target.value)} /></div>
       </div>
-      {existingAtStage.length > 0 && <div className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-950"><div className="text-sm font-medium">该节点已有 {existingAtStage.length} 张完整磅单，最近一张为 {existingAtStage[0].ticketNo}</div><p className="text-xs">本次将作为第 {existingAtStage[0].sequence + 1} 张追加磅单保留，原磅单不会被覆盖。</p><div><label className="mb-1 block text-sm font-medium">追加原因 *</label><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm text-foreground" value={additionReason} onChange={event => setAdditionReason(event.target.value)} placeholder="例如：客户复磅、原凭证更正、第三方复核称重" /></div></div>}
+      {existingAtStage.length > 0 && <div className="space-y-3 rounded-md border border-warning-border bg-warning-bg p-4 text-warning"><div className="text-sm font-medium">该节点已有 {existingAtStage.length} 张完整磅单，最近一张为 {existingAtStage[0].ticketNo}</div><p className="text-xs">本次将作为第 {existingAtStage[0].sequence + 1} 张追加磅单保留，原磅单不会被覆盖。</p><div><label className="mb-1 block text-sm font-medium">追加原因 *</label><textarea className="min-h-20 w-full rounded-md border bg-background p-3 text-sm text-foreground" value={additionReason} onChange={event => setAdditionReason(event.target.value)} placeholder="例如：客户复磅、原凭证更正、第三方复核称重" /></div></div>}
       <div><h2 className="mb-3 border-b pb-2 font-semibold">磅单基本信息</h2><div className="grid gap-4 md:grid-cols-3"><div><label className="mb-1 block text-sm font-medium">磅单日期 *</label><Input type="date" value={ticketDate} onChange={event => setTicketDate(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">车牌号 *</label><Input value={plateNo} onChange={event => setPlateNo(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">司机姓名 *</label><Input value={driverName} onChange={event => setDriverName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">货物名称 *</label><Input value={materialName} onChange={event => setMaterialName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">规格型号 *</label><Input value={materialSpec} onChange={event => setMaterialSpec(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">包/袋数 *</label><Input type="number" min="0" step="1" value={packageCount} onChange={event => setPackageCount(event.target.value)} /><p className="mt-1 text-xs text-muted-foreground">散装货物填写 0</p></div><div><label className="mb-1 block text-sm font-medium">发货单位 *</label><Input value={shipperName} onChange={event => setShipperName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">收货单位 *</label><Input value={receiverName} onChange={event => setReceiverName(event.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">司磅员 *</label><Input value={weighmasterName} onChange={event => setWeighmasterName(event.target.value)} /></div></div></div>
       <div className="grid gap-4 md:grid-cols-2">
         <div><label className="mb-1 block text-sm font-medium">结算重量口径</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={basis} onChange={event => { setBasis(event.target.value); setBasisWeight(''); }}>{BASIS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
         {basis !== 'RECEIVING' && <div><label className="mb-1 block text-sm font-medium">对应重量（吨）*</label><Input type="text" inputMode="decimal" value={basisWeight} onChange={event => setBasisWeight(decimalInput(event.target.value))} /></div>}
       </div>
-      <p className="text-xs text-muted-foreground">这里确定本张磅单内部的有效净重；库存与货款结算采用哪张磅单，请分别在“磅单信息”详情确认并留痕。</p>
+      <div><h2 className="mb-2 font-medium">称重重量</h2><WeightEntryFields value={weights} onChange={setWeights} /></div>
+      <p className="text-xs text-muted-foreground">创建时可暂缺重量；完成称重前须有有效净重。库存与货款结算采用哪张磅单，在“磅单信息”详情确认。</p>
       <div><label className="mb-1 block text-sm font-medium">备注</label><textarea className="min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={remarks} onChange={event => setRemarks(event.target.value)} /></div>
-      <div className="space-y-3"><div><label className="block text-sm font-medium">磅单附件 *</label><p className="mt-1 text-xs text-muted-foreground">上传现场磅单照片、设备磅单或扫描件，支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB</p></div><label className="flex cursor-pointer items-center justify-center rounded-md border border-dashed p-5 text-sm text-primary hover:bg-primary/5"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={event => { addFiles(event.currentTarget.files); event.currentTarget.value = ''; }} /><Paperclip className="mr-2 h-4 w-4" />选择磅单附件</label>{files.length > 0 && <div className="space-y-2">{files.map((file, index) => <div key={`${file.name}-${file.size}-${index}`} className="flex items-center gap-3 rounded-md bg-muted px-3 py-2 text-sm"><LocalAttachmentThumbnail file={file} /><span className="min-w-0 flex-1 truncate">{file.name}<span className="ml-2 text-xs text-muted-foreground">{formatFileSize(file.size)}</span></span><button type="button" className="ml-3 text-destructive" onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4" /></button></div>)}</div>}</div>
+      <div className="space-y-3"><div><label className="block text-sm font-medium">磅单附件 *</label><p className="mt-1 text-xs text-muted-foreground">上传现场磅单照片、设备磅单或扫描件，支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB</p></div><label className="flex cursor-pointer items-center justify-center rounded-md border border-dashed p-5 text-sm text-primary hover:bg-primary/5"><input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={event => { addFiles(event.currentTarget.files); event.currentTarget.value = ''; }} /><Paperclip className="mr-2 h-4 w-4" />选择磅单附件</label>{files.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{files.map((file, index) => <div key={`${file.name}-${file.size}-${index}`} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><LocalAttachmentThumbnail large file={file} /><div className="truncate font-medium" title={file.name}>{file.name}</div><div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">待上传 · {formatFileSize(file.size)}</span><button type="button" aria-label={`移除 ${file.name}`} className="text-destructive" onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4" /></button></div></div>)}</div>}</div>
     </Card>
     <div className="flex justify-end gap-3"><Button variant="outline" onClick={() => router.push('/dashboard/weighbridge')}>取消</Button><Button disabled={saving || !waybillId} onClick={() => void submit()}>{saving ? '创建中...' : existingAtStage.length ? '确认追加磅单' : '创建磅单'}</Button></div>
   </div>;

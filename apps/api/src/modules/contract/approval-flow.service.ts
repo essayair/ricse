@@ -58,9 +58,8 @@ export class ApprovalFlowService {
     const node = await this.prisma.approvalFlowNode.findUnique({ where: { id }, include: { flow: true } });
     if (!node) throw new NotFoundException('审批节点不存在');
     if (data.roleId) {
-      const permissionCode = node.flow.contractType === 'PAYMENT_REQUEST'
-        ? 'settlement.payment.approve'
-        : 'contract.approve';
+      const permissionCode = node.flow.contractType === 'PAYMENT_REQUEST' ? 'settlement.payment.approve'
+        : node.flow.contractType === 'FINANCIAL_SETTLEMENT' ? 'settlement.approve' : 'contract.approve';
       const role = await this.prisma.role.findFirst({
         where: {
           id: data.roleId,

@@ -181,6 +181,7 @@ async function main() {
     { contractType: 'SALES', name: '销售合同四级审批流', paymentRequest: false },
     { contractType: 'BILATERAL', name: '双边合同四级审批流', paymentRequest: false },
     { contractType: 'PAYMENT_REQUEST', name: '付款申请三级审批流', paymentRequest: true },
+    { contractType: 'FINANCIAL_SETTLEMENT', name: '采购销售结算四级审批流', paymentRequest: false },
   ];
   for (const definition of flowDefinitions) {
     const flow = await prisma.approvalFlow.upsert({

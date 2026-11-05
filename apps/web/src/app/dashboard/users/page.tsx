@@ -156,7 +156,6 @@ export default function UserManagementPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">用户管理中心</h1>
-          <p className="mt-1 text-sm text-muted-foreground">管理小程序个人用户，并与现有企业后台账号建立一对一关联</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline">个人用户 {data.total}</Badge>
@@ -199,7 +198,7 @@ export default function UserManagementPage() {
                   : data.list.map((user) => (
                     <tr key={user.id} className="border-b align-top hover:bg-muted/20">
                       <td className="px-4 py-3"><button className="text-left font-medium hover:text-primary hover:underline" onClick={() => void openDetail(user.id)}>{user.nickName || '未授权昵称'}</button><div className="mt-1 text-xs text-muted-foreground">注册 {formatDate(user.createdAt)}</div></td>
-                      <td className="px-4 py-3">{user.phone || '—'}{user.phoneVerifiedAt && <div className="mt-1 text-xs text-green-600">微信已验证</div>}</td>
+                      <td className="px-4 py-3">{user.phone || '—'}{user.phoneVerifiedAt && <div className="mt-1 text-xs text-success">微信已验证</div>}</td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{user.openIdMasked}</td>
                       <td className="px-4 py-3"><StatusText status={user.status}>{user.status === 'ACTIVE' ? '正常' : '禁用'}</StatusText></td>
                       <td className="px-4 py-3">{user.linkedUser?.company ? <><div>{user.linkedUser.company.code} {user.linkedUser.company.name}</div><div className="mt-1 text-xs text-muted-foreground">{user.linkedUser.employee?.name || '—'} · {user.linkedUser.employee?.department?.name || '未分部门'}</div></> : '—'}</td>

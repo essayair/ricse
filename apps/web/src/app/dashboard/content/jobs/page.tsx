@@ -43,7 +43,7 @@ export default function ContentJobsPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">采集与 AI</h1><p className="mt-1 text-sm text-muted-foreground">产业资讯仅采集生意社萤石情报；新资讯去重后自动发布到官网和小程序</p></div>
+      <div><h1 className="text-2xl font-bold">采集与 AI</h1><p className="mt-1 text-sm text-muted-foreground">新采集资讯去重后自动发布。</p></div>
       <div className="flex flex-wrap gap-2">
         <Button disabled={!newsCollectionReady} title={newsCollectionReady ? '采集生意社萤石情报' : '生意社资讯源尚未启用'} onClick={() => trigger('NEWS_SYNC')}><Play className="mr-1 h-4 w-4" />{newsCollectionReady ? '采集产业资讯' : '产业资讯已停用'}</Button>
         <Button variant="outline" onClick={() => trigger('MARKET_SYNC')}><Play className="mr-1 h-4 w-4" />采集萤石行情</Button>
@@ -77,7 +77,7 @@ function JobResult({ item }: { item: any }) {
   const filtered = Number(result.filtered ?? sources.reduce((sum: number, source: any) => sum + Number(source.filtered || 0), 0));
   const published = Number(result.published ?? sources.reduce((sum: number, source: any) => sum + Number(source.published || 0), 0));
   return <div className="space-y-1 leading-5">
-    <div className={created ? 'font-medium text-emerald-700' : 'font-medium text-amber-700'}>{created ? `新增并发布 ${published || created} 条资讯` : '执行完成，本次没有新增资讯'}</div>
+    <div className={created ? 'font-medium text-success' : 'font-medium text-warning'}>{created ? `新增并发布 ${published || created} 条资讯` : '执行完成，本次没有新增资讯'}</div>
     <div className="text-muted-foreground">抓取 {fetched} 条 · 重复 {duplicates} 条 · 不符合行业条件 {filtered} 条</div>
     {failed.map((source: any) => <div key={source.code} className="text-destructive">{source.code}：{source.error}</div>)}
   </div>;

@@ -92,7 +92,6 @@ export default function OrdersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">合同执行批次管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">从已审批合同分批生成采购或销售执行批次，并跟踪执行状态</p>
         </div>
         <Button onClick={() => router.push('/dashboard/orders/create')}>
           <Plus className="mr-1 h-4 w-4" />新建执行批次

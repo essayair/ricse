@@ -49,6 +49,7 @@ const TYPE_LABEL: Record<string, string> = {
   SALES: '销售合同',
   BILATERAL: '双边合同',
   PAYMENT_REQUEST: '付款申请',
+  FINANCIAL_SETTLEMENT: '采购销售结算',
 };
 
 const CONDITION_LABEL: Record<string, string> = {
@@ -116,9 +117,8 @@ export default function ApprovalFlowsPage() {
     [flows, selectedFlowId],
   );
   const roleOptions = useMemo(() => {
-    const permissionCode = selectedFlow?.contractType === 'PAYMENT_REQUEST'
-      ? 'settlement.payment.approve'
-      : 'contract.approve';
+    const permissionCode = selectedFlow?.contractType === 'PAYMENT_REQUEST' ? 'settlement.payment.approve'
+      : selectedFlow?.contractType === 'FINANCIAL_SETTLEMENT' ? 'settlement.approve' : 'contract.approve';
     return roles.filter((role) => role.permissions.some((entry) => entry.permission.code === permissionCode));
   }, [roles, selectedFlow]);
 

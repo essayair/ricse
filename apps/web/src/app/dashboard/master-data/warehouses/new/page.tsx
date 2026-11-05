@@ -88,7 +88,6 @@ export default function WarehouseNewPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold">新增仓库</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">录入仓库基本信息，用于后续库存管理和物流调度</p>
           </div>
         </div>
         <div className="flex gap-2">

@@ -32,7 +32,7 @@ export default function OutboundPage() {
   return <div className="space-y-6">
     <div>
       <h1 className="text-2xl font-bold">出库管理</h1>
-      <p className="mt-1 text-sm text-muted-foreground">销售发货通知下达后自动生成；常规出库跟踪库存扣减，直拨发运跟踪物流、过磅、质检与签收</p>
+      <p className="mt-1 text-sm text-muted-foreground">通知下达后自动生成；直拨不扣减我方库存。</p>
     </div>
     <div className="flex flex-wrap gap-3">
       <div className="relative min-w-72 flex-1">

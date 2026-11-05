@@ -83,7 +83,7 @@ describe('MobileWorkspaceService', () => {
     const result = await service.overview('admin');
 
     expect(result.summary).toEqual({
-      pendingApprovals: 2, pendingContractApprovals: 2, pendingPaymentApprovals: 0, contracts: 9, executingContracts: 3,
+      pendingApprovals: 2, pendingContractApprovals: 2, pendingPaymentApprovals: 0, pendingSettlementApprovals: 0, contracts: 9, executingContracts: 3,
       pendingDispatch: 6, pendingAssignment: 0, pendingDeparture: 6, inTransit: 6,
       pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
     });

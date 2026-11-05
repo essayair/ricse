@@ -96,7 +96,7 @@ export default function WeighbridgePage() {
             <td className="px-4 py-4 text-right font-medium">{number(item.totalQuantity)}</td>
             <td className="px-4 py-4"><StageSummary tickets={shipping} /></td>
             <td className="px-4 py-4"><StageSummary tickets={receiving} /></td>
-            <td className="px-4 py-4">{effective ? <div><div className="font-mono font-medium text-primary">{effective.weighTicket.ticketNo}</div><div className="mt-1 text-xs text-muted-foreground">{stageName(item, effective.weighTicket.weighingStage)} · {number(effective.quantity)} 吨</div></div> : <span className="text-amber-700">尚未确定</span>}</td>
+            <td className="px-4 py-4">{effective ? <div><div className="font-mono font-medium text-primary">{effective.weighTicket.ticketNo}</div><div className="mt-1 text-xs text-muted-foreground">{stageName(item, effective.weighTicket.weighingStage)} · {number(effective.quantity)} 吨</div></div> : <span className="text-warning">尚未确定</span>}</td>
             <td className="px-4 py-4"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
           </tr>;
         })}</tbody>
@@ -111,7 +111,7 @@ function StageSummary({ tickets }: { tickets: ChildTicket[] }) {
   return <div><div>{tickets.length} 张 · 最新 {latest.netWeight ? `${number(latest.netWeight)} 吨` : '待称重'}</div><div className="mt-1 text-xs text-muted-foreground">{latest.ticketNo} · {TICKET_STATUS[latest.status]}</div></div>;
 }
 function Summary({ label, value, danger = false, warn = false }: { label: string; value: number; danger?: boolean; warn?: boolean }) {
-  return <Card className="p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 text-xl font-bold ${danger && value ? 'text-destructive' : warn && value ? 'text-amber-700' : ''}`}>{value}</div></Card>;
+  return <Card className="p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 text-xl font-bold ${danger && value ? 'text-destructive' : warn && value ? 'text-warning' : ''}`}>{value}</div></Card>;
 }
 function effectiveSelection(item: ManagementFile) { return item.weightSelections.find(value => value.purpose === 'INVENTORY'); }
 function stageTickets(item: ManagementFile, stage: string) { return item.weighTickets.filter(ticket => ticket.weighingStage === stage && ticket.status !== 'VOIDED'); }

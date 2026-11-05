@@ -12,6 +12,7 @@ import { attachmentMimeType } from '../weighbridge/weigh-ticket.controller';
 import { CreateOutboundReceiptDto } from './dto/create-outbound-receipt.dto';
 import { OutboundService } from './outbound.service';
 import { ResolveOutboundVarianceDto } from './dto/resolve-outbound-variance.dto';
+import { PostOutboundReceiptDto } from './dto/post-outbound-receipt.dto';
 
 @ApiTags('销售出库与库存扣减')
 @ApiBearerAuth()
@@ -128,7 +129,7 @@ export class OutboundReceiptController {
   }
 
   @Post(':id/post')
-  post(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.service.post(id, userId);
+  post(@Param('id') id: string, @Body() data: PostOutboundReceiptDto, @CurrentUser('id') userId: string) {
+    return this.service.post(id, userId, data);
   }
 }

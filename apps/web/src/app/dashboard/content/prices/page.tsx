@@ -48,7 +48,7 @@ export default function PricesPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">价格行情</h1><p className="mt-1 text-sm text-muted-foreground">统一维护手工、百川、fluorspar.com、Business Analytiq 和文件导入的价格数据</p></div>
+      <div><h1 className="text-2xl font-bold">价格行情</h1></div>
       <div className="flex gap-2"><Button variant="outline" onClick={createType}>新增产品类型</Button><Button onClick={() => setOpen(true)}><Plus className="mr-1 h-4 w-4" />新增价格</Button></div>
     </div>
     <div className="flex gap-3">
@@ -58,7 +58,7 @@ export default function PricesPage() {
     <Card className="overflow-hidden">
       {!data.list.length ? <div className="p-12 text-center text-muted-foreground"><CircleDollarSign className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无价格记录</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">业务日期</th><th className="p-3">产品 / 规格</th><th className="p-3">地区 / 市场</th><th className="p-3 text-right">价格</th><th className="p-3 text-right">涨跌</th><th className="p-3">来源</th><th className="p-3">备注</th><th className="p-3">更新时间</th></tr></thead>
-        <tbody>{data.list.map((item: any) => <tr key={item.id} className="border-b"><td className="p-3">{String(item.businessDate).slice(0, 10)}</td><td className="p-3"><div className="font-medium">{item.productType.name}</div><div className="text-xs text-muted-foreground">{item.spec || item.productType.spec || '-'}</div></td><td className="p-3">{item.region}<div className="text-xs text-muted-foreground">{item.marketName || '-'}</div></td><td className="p-3 text-right font-semibold">{Number(item.price).toLocaleString('zh-CN')} {item.unit}</td><td className={`p-3 text-right ${Number(item.changeAmount) > 0 ? 'text-red-600' : Number(item.changeAmount) < 0 ? 'text-emerald-600' : ''}`}>{Number(item.changeAmount || 0) > 0 ? '+' : ''}{Number(item.changeAmount || 0)}</td><td className="p-3"><Badge variant="outline">{SOURCE_LABEL[item.source] || item.source}</Badge></td><td className="max-w-52 p-3 text-xs">{item.remark || '-'}</td><td className="p-3 text-xs">{contentDate(item.updatedAt)}</td></tr>)}</tbody>
+        <tbody>{data.list.map((item: any) => <tr key={item.id} className="border-b"><td className="p-3">{String(item.businessDate).slice(0, 10)}</td><td className="p-3"><div className="font-medium">{item.productType.name}</div><div className="text-xs text-muted-foreground">{item.spec || item.productType.spec || '-'}</div></td><td className="p-3">{item.region}<div className="text-xs text-muted-foreground">{item.marketName || '-'}</div></td><td className="p-3 text-right font-semibold">{Number(item.price).toLocaleString('zh-CN')} {item.unit}</td><td className={`p-3 text-right ${Number(item.changeAmount) > 0 ? 'text-destructive' : Number(item.changeAmount) < 0 ? 'text-success' : ''}`}>{Number(item.changeAmount || 0) > 0 ? '+' : ''}{Number(item.changeAmount || 0)}</td><td className="p-3"><Badge variant="outline">{SOURCE_LABEL[item.source] || item.source}</Badge></td><td className="max-w-52 p-3 text-xs">{item.remark || '-'}</td><td className="p-3 text-xs">{contentDate(item.updatedAt)}</td></tr>)}</tbody>
       </table></div>}
     </Card>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>新增价格记录</DialogTitle></DialogHeader>

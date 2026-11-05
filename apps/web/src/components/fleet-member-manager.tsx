@@ -115,7 +115,7 @@ export function FleetMemberManager({ fleetId, onClose, onChanged }: {
         <DialogTitle>{detail ? `${detail.name} · 成员管理` : '车队成员管理'}</DialogTitle>
         <DialogDescription>司机与车辆分别加入车队，互不强制绑定；移出只解除分组关系，不删除档案。{detail?.carrierPartner ? `挂靠承运商：${detail.carrierPartner.name}` : ''}</DialogDescription>
       </DialogHeader>
-      {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      {error && <div role="alert" className="rounded-md border border-destructive-border bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
       {message && <p role="status" className="text-sm text-primary">{message}</p>}
       {busy && <p role="status" className="text-sm text-muted-foreground">正在处理车队成员，请稍候…</p>}
       {loading ? <p className="py-8 text-center text-sm text-muted-foreground">正在加载车队成员…</p> : !detail ? <Button variant="outline" onClick={() => void reload().catch(reason => setError(reason.message))}>重新加载</Button> : <>

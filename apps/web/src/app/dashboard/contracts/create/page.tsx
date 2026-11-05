@@ -334,7 +334,7 @@ export default function ContractCreatePage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => requestLeave('/dashboard/contracts')}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
-          <div><h1 className="text-2xl font-bold">新建合同</h1><p className="text-sm text-muted-foreground mt-0.5">填写合同信息后提交审批</p></div>
+          <div><h1 className="text-2xl font-bold">新建合同</h1></div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => requestLeave('/dashboard/contracts')}>取消</Button>
@@ -359,7 +359,7 @@ export default function ContractCreatePage() {
             ))}
           </div>
           <SectionTitle>合同基本信息</SectionTitle>
-          <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+          <div className="mb-5 rounded-lg border border-border bg-surface-2 p-4">
             <div className="mb-3 text-xs font-semibold text-muted-foreground">内部管理信息 · 不属于合同正文</div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <FormField label="业务单元（事业部）" required>
@@ -409,8 +409,8 @@ export default function ContractCreatePage() {
           {form.type === 'BILATERAL' ? (
             <>
               <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-3 rounded-lg border border-red-200 bg-red-50/60 p-4 dark:border-red-900/60 dark:bg-red-950/20">
-                  <div className="text-xs font-bold tracking-wider text-red-700 dark:text-red-400">上游交易对手方 · 供应商（采购端）</div>
+                <div className="space-y-3 rounded-lg border border-business-purchase-border bg-business-purchase-bg p-4">
+                  <div className="text-xs font-bold tracking-wider text-business-purchase">上游交易对手方 · 供应商（采购端）</div>
                   <FormField label="上游供应商" required>
                     <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                       <option value="">请选择</option>
@@ -418,8 +418,8 @@ export default function ContractCreatePage() {
                     </select>
                   </FormField>
                 </div>
-                <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
-                  <div className="text-xs font-bold tracking-wider text-blue-700 dark:text-blue-400">下游交易对手方 · 客户（销售端）</div>
+                <div className="space-y-3 rounded-lg border border-business-sales-border bg-business-sales-bg p-4">
+                  <div className="text-xs font-bold tracking-wider text-business-sales">下游交易对手方 · 客户（销售端）</div>
                   <FormField label="下游客户" required>
                     <select value={form.buyerId} onChange={e => handleSelectPartner(e.target.value, 'buyerId')} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                       <option value="">请选择</option>
@@ -553,31 +553,28 @@ export default function ContractCreatePage() {
             }} className="hidden" />
             <div className="text-2xl mb-2">📎</div>
             <div className="text-sm font-semibold">选择合同附件</div>
-            <div className="text-xs text-muted-foreground mt-1">纸质合同扫描件、签章文件等，保存或提交时自动上传</div>
           </label>
-          {uploadedAttachments.length > 0 && <div className="mt-3 space-y-2">{uploadedAttachments.map(item => <div key={item.id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm"><StoredAttachmentThumbnail name={item.originalName} viewUrlPath={`/contracts/attachments/${item.id}/view-url`} /><span className="min-w-0 flex-1 truncate">{item.originalName}</span><span className="shrink-0 text-xs text-muted-foreground">已上传</span><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>查看附件</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div>)}</div>}
+          {uploadedAttachments.length > 0 && <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{uploadedAttachments.map(item => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><StoredAttachmentThumbnail large name={item.originalName} viewUrlPath={`/contracts/attachments/${item.id}/view-url`} /><div className="truncate font-medium" title={item.originalName}>{item.originalName}</div><div className="text-xs text-muted-foreground">已上传</div><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>放大查看</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div></div>)}</div>}
           {files.length > 0 && (
-            <div className="mt-3 space-y-1.5">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {files.map((item, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
-                  <LocalAttachmentThumbnail file={item.file} />
-                  <button type="button" onClick={() => {
-                    try { openLocalAttachment(item.file); }
-                    catch (e: any) { alert(e.message || '附件打开失败'); }
-                  }} className="shrink-0 text-primary hover:underline">查看</button>
+                <div key={i} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
+                  <LocalAttachmentThumbnail large file={item.file} />
                   <Input value={item.name} disabled={submitting} onChange={e => {
                     setIsDirty(true);
                     setFiles(current => current.map((entry, index) => index === i ? { ...entry, name: e.target.value } : entry));
                   }} placeholder="附件名称" />
-                  <span className="shrink-0 text-xs text-muted-foreground">待上传 · {(item.file.size / 1024).toFixed(0)} KB</span>
+                  <div className="text-xs text-muted-foreground">待上传 · {(item.file.size / 1024).toFixed(0)} KB</div>
+                  <div className="flex flex-wrap gap-1">
                   <button type="button" onClick={() => {
                     try { openLocalAttachment(item.file); }
                     catch (e: any) { alert(e.message || '附件打开失败'); }
-                  }} className="text-primary text-xs">预览</button>
+                  }} className="text-primary text-xs">放大查看</button>
                   <button type="button" disabled={submitting} onClick={() => {
                     setIsDirty(true);
                     setFiles(prev => prev.filter((_, j) => j !== i));
-                  }} className="shrink-0 text-destructive text-xs">移除附件</button>
+                  }} className="text-destructive text-xs">移除附件</button>
+                  </div>
                 </div>
               ))}
             </div>

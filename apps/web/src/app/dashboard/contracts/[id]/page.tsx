@@ -185,7 +185,7 @@ function ProtectedStatusDialog({ action, contractNo, onCancel, onConfirm }: {
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent>
         <DialogHeader>
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-warning-bg text-warning">
             <ShieldAlert className="h-5 w-5" />
           </div>
           <DialogTitle>{copy.title}</DialogTitle>
@@ -290,8 +290,8 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
             <div key={a.id} className="flex gap-3">
               <div className="flex flex-col items-center">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  ['APPROVED', 'OTHERS_APPROVED'].includes(a.status) ? 'bg-green-100 text-green-600' :
-                  ['REJECTED', 'OTHERS_REJECTED'].includes(a.status) ? 'bg-red-100 text-red-600' :
+                  ['APPROVED', 'OTHERS_APPROVED'].includes(a.status) ? 'bg-success-bg text-success' :
+                  ['REJECTED', 'OTHERS_REJECTED'].includes(a.status) ? 'bg-destructive-bg text-destructive' :
                   'bg-muted text-muted-foreground'
                 }`}>
                   {['APPROVED', 'OTHERS_APPROVED'].includes(a.status) ? <CheckCircle2 className="h-4 w-4" /> :
@@ -316,7 +316,7 @@ function ApprovalTimeline({ approvals }: { approvals: Approval[] }) {
                   </span>
                 </div>
                 {a.actedBy && a.actedBy.id !== a.assignee?.id && (
-                  <p className="mt-1 text-xs text-amber-600">由系统管理员 {a.actedBy.name} 代为处理</p>
+                  <p className="mt-1 text-xs text-warning">由系统管理员 {a.actedBy.name} 代为处理</p>
                 )}
                 {a.comment && (
                   <p className="text-sm text-muted-foreground mt-1 bg-muted/50 rounded px-2 py-1">
@@ -437,7 +437,7 @@ function FulfillmentProgress({ contract }: { contract: ContractDetail }) {
 function FulfillmentDirectionPanel({ direction, showDirection }: { direction: FulfillmentDirection; showDirection: boolean }) {
   const rows = [
     { label: '待执行', quantity: direction.pendingQuantity, amount: direction.pendingAmount, className: '' },
-    { label: '执行中', quantity: direction.executingQuantity, amount: direction.executingAmount, className: 'text-amber-600' },
+    { label: '执行中', quantity: direction.executingQuantity, amount: direction.executingAmount, className: 'text-warning' },
     { label: '已执行', quantity: direction.executedQuantity, amount: direction.executedAmount, className: 'text-primary' },
   ];
   return <div className="overflow-hidden rounded-lg border">
@@ -629,7 +629,7 @@ export default function ContractDetailPage() {
 
       {/* Header */}
       {c.status === 'TERMINATED' && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="rounded-md border border-warning-border bg-warning-bg px-4 py-3 text-sm text-warning">
           合同已终止，不再创建新的履约任务。已发生的过磅、质检、出入库及资金业务仍需按原单据人工收尾；全部处理完成后，可在下方作废合同。
         </div>
       )}
@@ -644,7 +644,7 @@ export default function ContractDetailPage() {
           <StatusText status={c.status}>{cfg.label}</StatusText>
         </CardHeader>
         <CardContent>
-          <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+          <div className="mb-5 rounded-lg border border-border bg-surface-2 p-4">
             <div className="mb-3 text-xs font-semibold text-muted-foreground">内部管理信息 · 不属于合同正文</div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <Field label="业务单元（事业部）" value={c.businessUnit ? `${c.businessUnit.code} ${c.businessUnit.name}` : '—'} />
@@ -719,7 +719,7 @@ export default function ContractDetailPage() {
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">以下操作需要再次确认</div>
                         {protectedActions.map((action) => (
                           <DropdownMenuItem key={action.next} onSelect={() => setProtectedAction(action)}>
-                            <ShieldAlert className="mr-2 h-4 w-4 text-amber-600" />
+                            <ShieldAlert className="mr-2 h-4 w-4 text-warning" />
                             {action.label}
                           </DropdownMenuItem>
                         ))}
@@ -743,13 +743,13 @@ export default function ContractDetailPage() {
         <Card>
           <CardHeader><CardTitle className="text-base">合同附件</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-2">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {c.attachments.map((att) => (
-                <div key={att.id} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded bg-muted/50">
-                  <StoredAttachmentThumbnail name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
-                  <button type="button" onClick={() => viewAttachment(att.id)} className="flex-1 text-left text-primary hover:underline">{att.originalName}</button>
-                  <span className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</span>
-                  <Button type="button" variant="outline" size="sm" onClick={() => viewAttachment(att.id)}>查看</Button>
+                <div key={att.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
+                  <StoredAttachmentThumbnail large name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
+                  <div className="truncate font-medium" title={att.originalName}>{att.originalName}</div>
+                  <div className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => viewAttachment(att.id)}>放大查看</Button>
                 </div>
               ))}
             </div>

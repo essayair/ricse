@@ -402,12 +402,12 @@ export default function AccessControlPage() {
                     <h2 className="font-semibold">{selectedUser.name}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">{selectedUser.company?.code} {selectedUser.company?.name}</p>
                     {isExternal && (
-                      <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                      <div className="mt-3 rounded-md border border-primary-border bg-primary-bg px-3 py-2 text-sm text-primary">
                         外部企业账号的数据范围固定为“本企业全部关联数据”，仅生效合同、物流、磅单、质检和出入库等业务权限；主数据、组织和系统管理权限即使误配也不会生效。
                       </div>
                     )}
                     {!isExternal && Object.keys(assignmentDraft).length >= 5 && (
-                      <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      <div className="mt-3 rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm text-warning">
                         当前账号已叠加 {Object.keys(assignmentDraft).length} 个角色。请确认均为实际岗位职责，避免使用多个宽权限角色代替明确分工。
                       </div>
                     )}

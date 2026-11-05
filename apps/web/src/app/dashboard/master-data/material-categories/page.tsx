@@ -116,7 +116,6 @@ export default function MaterialCategoriesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">物料分类管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">维护一级大类和二级分类，物料档案从这里引用分类</p>
         </div>
         <div className="flex gap-2">
           <Link href="/dashboard/master-data?tab=materials">

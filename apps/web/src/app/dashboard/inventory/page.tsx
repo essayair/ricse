@@ -176,7 +176,7 @@ export default function InventoryPage() {
               <td className="p-3">{row.warehouseName}</td>
               <td className="p-3 text-right font-medium tabular-nums">{weight(row.physicalQuantity, row.unit)}</td>
               <td className="p-3 text-right font-semibold text-primary tabular-nums">{weight(row.pricingQuantity, row.unit)}</td>
-              <td className="p-3 text-right text-amber-600 tabular-nums">{weight(row.reservedQuantity, row.unit)}</td>
+              <td className="p-3 text-right text-warning tabular-nums">{weight(row.reservedQuantity, row.unit)}</td>
               <td className="p-3 text-right tabular-nums">{weight(row.availableQuantity, row.unit)}</td>
               <td className="p-3 text-right">{row.lotCount}</td>
             </tr>)}</tbody>
@@ -211,7 +211,7 @@ export default function InventoryPage() {
                   <td className="p-3"><StatusText status={lot.status}>{lot.status === 'AVAILABLE' ? '可用' : lot.status === 'DEPLETED' ? '已耗尽' : lot.status}</StatusText><div className="mt-1 text-xs text-muted-foreground">{qualityConclusionLabel(lot.qualityConclusion)}</div></td>
                   <td className="p-3 text-right tabular-nums"><div className="font-medium">{weight(lot.availableQuantity, lot.material?.unit)}</div><div className="mt-1 text-xs text-muted-foreground">初始 {weight(lot.initialQuantity, lot.material?.unit)}</div></td>
                   <td className="p-3 text-right font-semibold text-primary tabular-nums">{weight(lot.pricingAvailableQuantity, lot.material?.unit)}</td>
-                  <td className="p-3 text-right text-amber-600 tabular-nums"><div>{weight(lot.totalReservedQuantity, lot.material?.unit)}</div><div className="mt-1 text-xs">销售 {weight(lot.reservedOutboundQuantity, lot.material?.unit)} · 生产 {weight(lot.reservedProductionQuantity, lot.material?.unit)}</div></td>
+                  <td className="p-3 text-right text-warning tabular-nums"><div>{weight(lot.totalReservedQuantity, lot.material?.unit)}</div><div className="mt-1 text-xs">销售 {weight(lot.reservedOutboundQuantity, lot.material?.unit)} · 生产 {weight(lot.reservedProductionQuantity, lot.material?.unit)}</div></td>
                   <td className="p-3 text-right font-medium tabular-nums">{weight(lot.availableToPromiseQuantity, lot.material?.unit)}</td>
                   <td className="p-3">
                     <div className="font-mono text-xs">{lot.businessInbound?.inboundNo || lot.productionCompletion?.completionNo || '-'}</div>
@@ -301,7 +301,7 @@ function InventorySummaryTable({ title, description, rows, emptyText, name, code
         <thead className="border-b bg-muted/50 text-left"><tr><th className="p-3">{title.replace('各', '').replace('库存', '') || '名称'}</th><th className="p-3 text-right">账面库存</th><th className="p-3 text-right">冻结</th><th className="p-3 text-right">可用</th><th className="p-3 text-right">{extraHeader}</th></tr></thead>
         <tbody>{rows.map((row) => <tr key={id(row)} className={`cursor-pointer border-b transition-colors hover:bg-muted/60 ${selectedId === id(row) ? 'bg-primary/5' : ''}`} onClick={() => onSelect(row)}>
           <td className="p-3"><div className="font-medium">{name(row)}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{code(row)}</div></td>
-          <td className="p-3 text-right font-medium">{quantityUnit ? weight(row.totalPhysicalQuantity, quantityUnit) : '—'}</td><td className="p-3 text-right text-amber-600">{quantityUnit ? weight(row.totalReservedQuantity, quantityUnit) : '—'}</td><td className="p-3 text-right font-medium text-primary">{quantityUnit ? weight(row.totalAvailableQuantity, quantityUnit) : '—'}</td><td className="p-3 text-right">{extraValue(row)}</td>
+          <td className="p-3 text-right font-medium">{quantityUnit ? weight(row.totalPhysicalQuantity, quantityUnit) : '—'}</td><td className="p-3 text-right text-warning">{quantityUnit ? weight(row.totalReservedQuantity, quantityUnit) : '—'}</td><td className="p-3 text-right font-medium text-primary">{quantityUnit ? weight(row.totalAvailableQuantity, quantityUnit) : '—'}</td><td className="p-3 text-right">{extraValue(row)}</td>
         </tr>)}</tbody>
       </table>
       {!rows.length && <div className="p-10 text-center text-muted-foreground">{emptyText}</div>}

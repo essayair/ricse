@@ -362,7 +362,6 @@ export default function ContractEditPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold">编辑合同</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">修改后可重新提交审批</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -386,7 +385,7 @@ export default function ContractEditPage() {
             ))}
           </div>
           <SectionTitle>合同基本信息</SectionTitle>
-          <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+          <div className="mb-5 rounded-lg border border-border bg-surface-2 p-4">
             <div className="mb-3 text-xs font-semibold text-muted-foreground">内部管理信息 · 不属于合同正文</div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <FormField label="业务单元（事业部）" required>
@@ -435,8 +434,8 @@ export default function ContractEditPage() {
           <SectionTitle>交易对手方</SectionTitle>
           {form.type === 'BILATERAL' ? (
             <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-3 rounded-lg border border-red-200 bg-red-50/60 p-4 dark:border-red-900/60 dark:bg-red-950/20">
-                <div className="text-xs font-bold tracking-wider text-red-700 dark:text-red-400">上游交易对手方 · 供应商（采购端）</div>
+              <div className="space-y-3 rounded-lg border border-business-purchase-border bg-business-purchase-bg p-4">
+                <div className="text-xs font-bold tracking-wider text-business-purchase">上游交易对手方 · 供应商（采购端）</div>
                 <FormField label="上游供应商" required>
                   <select value={form.sellerId} onChange={e => set('sellerId', e.target.value)} className={SELECT_CLS}>
                     <option value="">请选择</option>
@@ -444,8 +443,8 @@ export default function ContractEditPage() {
                   </select>
                 </FormField>
               </div>
-              <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
-                <div className="text-xs font-bold tracking-wider text-blue-700 dark:text-blue-400">下游交易对手方 · 客户（销售端）</div>
+              <div className="space-y-3 rounded-lg border border-business-sales-border bg-business-sales-bg p-4">
+                <div className="text-xs font-bold tracking-wider text-business-sales">下游交易对手方 · 客户（销售端）</div>
                 <FormField label="下游客户" required>
                   <select value={form.buyerId} onChange={e => set('buyerId', e.target.value)} className={SELECT_CLS}>
                     <option value="">请选择</option>
@@ -566,7 +565,7 @@ export default function ContractEditPage() {
                 <option value="GRADE_TIER">按 CaF₂ 品位分档计价</option>
                 {!['FIXED', 'GRADE_TIER'].includes(form.pricingType) && <option value={form.pricingType}>历史定价方式</option>}
               </select>
-              {form.pricingType === 'GRADE_TIER' && <span className="text-xs text-amber-700">行项单价与总额仅作预计，实际按确认的品位档位结算。</span>}
+              {form.pricingType === 'GRADE_TIER' && <span className="text-xs text-warning">行项单价与总额仅作预计，实际按确认的品位档位结算。</span>}
             </FormField>
             <FormField label="溢装比例(%)" required>
               <Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} />
@@ -649,37 +648,43 @@ export default function ContractEditPage() {
           <SectionTitle>合同附件（提交审批必需）</SectionTitle>
           <p className="mb-3 text-xs text-muted-foreground">提交审批前至少保留或上传一份纸质合同扫描件或签章文件。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB。</p>
           <div className="space-y-2">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {attachments.map(att => (
-              <div key={att.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                <StoredAttachmentThumbnail name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
-                <button type="button" onClick={() => viewStoredAttachment(att.id)} className="flex-1 text-left text-primary hover:underline">{att.originalName}</button>
-                <span className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</span>
-                <Button type="button" variant="outline" size="sm" onClick={() => viewStoredAttachment(att.id)}>查看</Button>
+              <div key={att.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
+                <StoredAttachmentThumbnail large name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
+                <div className="truncate font-medium" title={att.originalName}>{att.originalName}</div>
+                <div className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</div>
+                <div className="flex flex-wrap gap-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => viewStoredAttachment(att.id)}>放大查看</Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => renameAttachment(att)}>
                   <Pencil className="mr-1 h-4 w-4" />修改名称
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => deleteAttachment(att.id)} aria-label={`删除 ${att.originalName}`} className="text-destructive hover:text-destructive">
                   <Trash2 className="mr-1 h-4 w-4" />删除
                 </Button>
+                </div>
               </div>
             ))}
             {pendingAttachments.map((item, index) => (
-              <div key={`${item.file.name}-${index}`} className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm">
-                <LocalAttachmentThumbnail file={item.file} />
+              <div key={`${item.file.name}-${index}`} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
+                <LocalAttachmentThumbnail large file={item.file} />
                 <Input value={item.name} onChange={e => {
                   setIsDirty(true);
                   setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, name: e.target.value } : entry));
                 }} placeholder="附件名称" />
-                <span className="shrink-0 text-xs text-muted-foreground">{(item.file.size / 1024).toFixed(0)} KB</span>
-                <Button type="button" variant="outline" size="sm" onClick={() => viewPendingAttachment(item.file)}>预览</Button>
+                <div className="text-xs text-muted-foreground">待上传 · {(item.file.size / 1024).toFixed(0)} KB</div>
+                <div className="flex flex-wrap gap-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => viewPendingAttachment(item.file)}>放大查看</Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => {
                   setIsDirty(true);
                   setPendingAttachments(current => current.filter((_, i) => i !== index));
                 }} aria-label={`移除 ${item.name}`}>
                   <X className="mr-1 h-4 w-4" />移除附件
                 </Button>
+                </div>
               </div>
             ))}
+            </div>
             <label className={`inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-muted ${uploadingAttachments ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
               <Paperclip className="mr-2 h-4 w-4" />选择合同附件
               <input aria-label="选择合同附件" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" className="hidden" onChange={e => {

@@ -305,7 +305,7 @@ export default function EmployeeDetailPage() {
                         if (e.key === 'Escape') setEditingPhone(false);
                       }}
                     />
-                    <button onClick={handleUpdatePhone} className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600">
+                    <button onClick={handleUpdatePhone} className="p-1 rounded text-success hover:bg-success-bg">
                       <Check className="h-3.5 w-3.5" />
                     </button>
                     <button onClick={() => setEditingPhone(false)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground">
@@ -334,7 +334,7 @@ export default function EmployeeDetailPage() {
             </div>
             <InfoRow icon={Mail} label="邮箱" value={emp.email || '—'} />
             <div><span className="text-xs text-muted-foreground uppercase tracking-wider">员工状态</span><div className="mt-1"><StatusText status={emp.status}>{EMPLOYEE_STATUS_LABEL[emp.status] || emp.status}</StatusText></div></div>
-            {profileMsg && <p className="text-xs text-green-600">{profileMsg}</p>}
+            {profileMsg && <p className="text-xs text-success">{profileMsg}</p>}
           </div>}
         </Card>
 
@@ -359,7 +359,7 @@ export default function EmployeeDetailPage() {
                       autoFocus
                       onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateUsername(); if (e.key === 'Escape') setEditingUsername(false); }}
                     />
-                    <button onClick={handleUpdateUsername} className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600"><Check className="h-3.5 w-3.5" /></button>
+                    <button onClick={handleUpdateUsername} className="p-1 rounded text-success hover:bg-success-bg"><Check className="h-3.5 w-3.5" /></button>
                     <button onClick={() => setEditingUsername(false)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
                   </div>
                 ) : (
@@ -579,7 +579,7 @@ export default function EmployeeDetailPage() {
             </div>
           )}
           {pwdMsg && (
-            <p className={`mt-3 text-xs ${pwdMsg.includes('成功') ? 'text-green-600' : 'text-destructive'}`}>
+            <p className={`mt-3 text-xs ${pwdMsg.includes('成功') ? 'text-success' : 'text-destructive'}`}>
               {pwdMsg}
             </p>
           )}

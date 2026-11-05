@@ -30,7 +30,7 @@ export default function ProductionPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">生产任务</h1><p className="mt-1 text-sm text-muted-foreground">统一管理自营生产与委外加工的备料、领料、投料、质检、完工入库和批次追溯</p></div>
+      <div><h1 className="text-2xl font-bold">生产任务</h1></div>
       <Link href="/dashboard/production/new"><Button><Plus className="mr-1 h-4 w-4" />新建生产任务</Button></Link>
     </div>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
