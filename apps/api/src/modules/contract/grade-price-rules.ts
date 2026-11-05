@@ -2,6 +2,17 @@ import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 export type GradePriceBand = { lower: number; upper: number; rates: { FRAGMENT: number | null; RUN_OF_MINE: number | null } };
+/**
+ * 选矿回收率扣价（合同价格条款的一部分，只扣不奖）。
+ * 实测回收率低于基准时，每低 1 个百分点按 deductionPerPointPerDegree 元/度（不含税）扣减；
+ * PROPORTIONAL 按实际差额线性计算，FULL_POINT 只按差额的整数百分点计算。
+ */
+export type RecoveryAdjustmentRule = {
+  baselinePct: number;
+  deductionPerPointPerDegree: number;
+  stepMode: 'PROPORTIONAL' | 'FULL_POINT';
+  note?: string;
+};
 export type GradePriceRules = {
   version: 1;
   method: 'CAF2_GRADE_TIER';
@@ -13,7 +24,9 @@ export type GradePriceRules = {
   exceptionHandling: 'MANUAL_REVIEW';
   selectedSpec: 'FRAGMENT' | 'RUN_OF_MINE';
   formulaConfirmed: true;
+  recoveryAdjustment?: RecoveryAdjustmentRule | null;
 };
+type Indicator = { code?: string; name?: string; unit?: string | null; measuredValue?: unknown };
 
 export const DEFAULT_FLUORITE_ORE_BANDS: GradePriceBand[] = [
   [10, 15, 14.8], [15, 20, 18.5], [20, 25, 20.5], [25, 30, 22],
@@ -46,37 +59,80 @@ export function parseGradePriceRules(value: unknown): GradePriceRules {
     }
     previousUpper = band.upper;
   }
+  const recovery = rules.recoveryAdjustment;
+  if (recovery != null) {
+    if (!Number.isFinite(recovery.baselinePct) || recovery.baselinePct <= 0 || recovery.baselinePct > 100) {
+      throw new BadRequestException('选矿回收率基准须为0至100之间的百分比');
+    }
+    if (!Number.isFinite(recovery.deductionPerPointPerDegree) || recovery.deductionPerPointPerDegree <= 0) {
+      throw new BadRequestException('选矿回收率每低1个百分点的扣价须为正数（元/度，不含税）');
+    }
+    if (!['PROPORTIONAL', 'FULL_POINT'].includes(recovery.stepMode)) {
+      throw new BadRequestException('请选择回收率差额按实际差额还是按整百分点计算');
+    }
+  }
   return rules as GradePriceRules;
 }
 
-export function readMeasuredPct(indicators: Array<{ code?: string; name?: string; unit?: string | null; measuredValue?: unknown }>, kind: 'GRADE' | 'MOISTURE'): number | null {
+export function readMeasuredPct(indicators: Indicator[], kind: 'GRADE' | 'MOISTURE' | 'RECOVERY'): number | null {
   const item = indicators.find(indicator => {
     const text = `${indicator.code || ''} ${indicator.name || ''}`.toUpperCase().replace(/\s/g, '');
-    return kind === 'GRADE' ? /CAF2|CAF₂|氟化钙|品位/.test(text) : /MOISTURE|水分/.test(text);
+    const isRecovery = /RECOVERY|回收率/.test(text);
+    if (kind === 'RECOVERY') return isRecovery;
+    // “CaF₂回收率”等指标不能被误读为品位。
+    return !isRecovery && (kind === 'GRADE' ? /CAF2|CAF₂|氟化钙|品位/.test(text) : /MOISTURE|水分/.test(text));
   });
   if (!item || item.measuredValue == null || (item.unit && item.unit !== '%')) return null;
   const measured = Number(item.measuredValue);
   return Number.isFinite(measured) && measured >= 0 && measured <= 100 ? measured : null;
 }
 
-/** 仅计算税前价；缺报告、品位越档或水分超限均转人工，不推测合同外规则。 */
-export function evaluateGradePrice(rulesValue: unknown, spec: 'FRAGMENT' | 'RUN_OF_MINE', quantity: number,
-  indicators: Array<{ code?: string; name?: string; unit?: string | null; measuredValue?: unknown }>) {
+/** 按合同回收率条款计算每吨扣价（不含税）；未约定条款时返回 null。 */
+export function evaluateRecoveryAdjustment(rule: RecoveryAdjustmentRule | null | undefined, gradePct: number, recoveryPct: number | null) {
+  if (!rule) return null;
+  if (recoveryPct === null) return { status: 'MISSING' as const };
+  const rawShortfall = Prisma.Decimal.max(0, new Prisma.Decimal(rule.baselinePct).minus(recoveryPct));
+  const shortfallPoints = (rule.stepMode === 'FULL_POINT' ? rawShortfall.floor() : rawShortfall).toDecimalPlaces(4);
+  const deductionPerDegree = shortfallPoints.mul(rule.deductionPerPointPerDegree).toDecimalPlaces(4);
+  const deductionPerTon = deductionPerDegree.mul(gradePct).toDecimalPlaces(4);
+  return { status: 'APPLIED' as const, measuredPct: recoveryPct, baselinePct: rule.baselinePct,
+    deductionPerPointPerDegree: rule.deductionPerPointPerDegree, stepMode: rule.stepMode,
+    shortfallPoints: shortfallPoints.toNumber(), deductionPerDegree: deductionPerDegree.toNumber(), deductionPerTon: deductionPerTon.toNumber() };
+}
+
+/**
+ * 仅计算税前价；缺报告、品位越档或水分超限均转人工，不推测合同外规则。
+ * unitPrice 为档位原价（实测度数 × 元/度），回收率扣价单列在 recovery.deductionPerTon，不改写原单价。
+ */
+export function evaluateGradePrice(rulesValue: unknown, spec: 'FRAGMENT' | 'RUN_OF_MINE', quantity: number, indicators: Indicator[]) {
   const rules = parseGradePriceRules(rulesValue);
   const gradePct = readMeasuredPct(indicators, 'GRADE');
   const moisturePct = readMeasuredPct(indicators, 'MOISTURE');
+  const hasRecoveryRule = Boolean(rules.recoveryAdjustment);
+  const recoveryPct = hasRecoveryRule ? readMeasuredPct(indicators, 'RECOVERY') : null;
+  // 未约定回收率条款时不输出新增字段，保证存量结算依据签名不变。
+  const recoveryFacts = hasRecoveryRule ? { recoveryPct } : {};
   const reasons: string[] = [];
   if (gradePct === null) reasons.push('缺少有效的 CaF₂ 实测品位');
   if (moisturePct === null) reasons.push('缺少有效的水分实测值');
   if (moisturePct !== null && moisturePct > rules.moistureMaxPct) reasons.push(`水分 ${moisturePct}% 超过合同上限 ${rules.moistureMaxPct}%，须人工确认处理方式`);
+  if (rules.recoveryAdjustment && recoveryPct === null) reasons.push('合同约定选矿回收率扣价，所选检测报告缺少有效的“选矿回收率”实测值');
   const band = gradePct === null ? null : rules.bands.find(row => gradePct >= row.lower && gradePct < row.upper) || null;
   if (gradePct !== null && !band) reasons.push(`CaF₂ ${gradePct}% 不在合同价格表区间内`);
   if (!Number.isFinite(quantity) || quantity <= 0) reasons.push('结算数量必须大于0');
-  if (reasons.length || !band || gradePct === null) return { status: 'REVIEW_REQUIRED' as const, reasons, gradePct, moisturePct, band: band || null };
+  if (reasons.length || !band || gradePct === null) return { status: 'REVIEW_REQUIRED' as const, reasons, gradePct, moisturePct, ...recoveryFacts, band: band || null };
   const rate = band.rates[spec];
-  if (rate == null || rate <= 0) return { status: 'REVIEW_REQUIRED' as const, reasons: ['该规格未配置品位分档单价'], gradePct, moisturePct, band: { lower: band.lower, upper: band.upper } };
+  if (rate == null || rate <= 0) return { status: 'REVIEW_REQUIRED' as const, reasons: ['该规格未配置品位分档单价'], gradePct, moisturePct, ...recoveryFacts, band: { lower: band.lower, upper: band.upper } };
   const unitPrice = new Prisma.Decimal(gradePct).mul(rate).toDecimalPlaces(4).toNumber();
-  const amountExTax = new Prisma.Decimal(quantity).mul(unitPrice).toDecimalPlaces(2).toNumber();
-  return { status: 'READY' as const, reasons: [], gradePct, moisturePct,
-    band: { lower: band.lower, upper: band.upper }, spec, rate, unitPrice, amountExTax };
+  const recovery = evaluateRecoveryAdjustment(rules.recoveryAdjustment, gradePct, recoveryPct);
+  const applied = recovery?.status === 'APPLIED' ? recovery : null;
+  const deductionPerTon = applied?.deductionPerTon || 0;
+  if (deductionPerTon >= unitPrice) {
+    return { status: 'REVIEW_REQUIRED' as const, reasons: ['回收率扣价不低于档位单价，须人工确认合同处理方式'], gradePct, moisturePct, ...recoveryFacts, band: { lower: band.lower, upper: band.upper } };
+  }
+  const netUnitPrice = new Prisma.Decimal(unitPrice).minus(deductionPerTon).toDecimalPlaces(4).toNumber();
+  const amountExTax = new Prisma.Decimal(quantity).mul(netUnitPrice).toDecimalPlaces(2).toNumber();
+  return { status: 'READY' as const, reasons: [], gradePct, moisturePct, ...recoveryFacts,
+    band: { lower: band.lower, upper: band.upper }, spec, rate, unitPrice,
+    ...(hasRecoveryRule ? { recovery: applied, netUnitPrice } : {}), amountExTax };
 }

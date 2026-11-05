@@ -962,7 +962,7 @@ model Contract {
   contactPerson    String? // 对手方联系人
   contactPhone     String? // 对手方电话
   // 货物与价格
-  pricingType      String? // 定价类型：FIXED/BASIS/FLOATING
+  pricingType      String? // 定价类型：FIXED（固定价/一口价）| GRADE_TIER（按 CaF₂ 品位分档计价）
   overfillPct      Decimal?  @default(10) @db.Decimal(5, 2) // 溢装比例(%)，默认10%
   shortfallPct     Decimal?  @default(10) @db.Decimal(5, 2) // 短装比例(%)，默认10%
   // 履约
@@ -1175,6 +1175,19 @@ model FinancialSettlementLine {
   adjustmentAmount Decimal  @default(0) @db.Decimal(15, 2)
   totalAmount      Decimal  @db.Decimal(15, 2)
   remarks          String?
+  // 实际采用的计价事实（可查询）；合同条款原文仍以合同行快照为准，完整计算过程保留在 sourceSnapshot。
+  pricingMethod          String?  // FIXED | GRADE_TIER
+  pricingQuantityBasis   String?  // PHYSICAL（净重）| DRY_MATTER（净重折干）
+  measuredGradePct       Decimal? @db.Decimal(7, 4) // CaF₂ 实测品位（%，即度数）
+  measuredMoisturePct    Decimal? @db.Decimal(7, 4)
+  measuredRecoveryPct    Decimal? @db.Decimal(7, 4) // 选矿回收率实测值（%）
+  gradeBandLower         Decimal? @db.Decimal(7, 4)
+  gradeBandUpper         Decimal? @db.Decimal(7, 4)
+  gradeRateExTax         Decimal? @db.Decimal(15, 4) // 命中档位不含税元/度
+  recoveryDeductionPerTonExTax Decimal? @db.Decimal(15, 4) // 回收率扣价，不含税元/吨
+  taxRatePct             Decimal? @db.Decimal(5, 2)
+  amountExTax            Decimal? @db.Decimal(15, 2) // 扣价后不含税货款
+  taxAmount              Decimal? @db.Decimal(15, 2)
   createdAt        DateTime @default(now())
 
   settlement FinancialSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
@@ -1186,6 +1199,7 @@ model FinancialSettlementLine {
   @@index([settlementId])
   @@index([orderId])
   @@index([waybillLineItemId])
+  @@index([pricingMethod, measuredGradePct])
   @@map("financial_settlement_lines")
 }
 

@@ -38,4 +38,53 @@ describe('萤石矿品位分档计价', () => {
       { code: 'CAF2', measuredValue: 12, unit: '%' }, { code: 'MOISTURE', measuredValue: 4, unit: '%' },
     ])).toMatchObject({ status: 'REVIEW_REQUIRED' });
   });
+
+  describe('选矿回收率扣价', () => {
+    const withRecovery = (stepMode: 'PROPORTIONAL' | 'FULL_POINT' = 'PROPORTIONAL') => ({ ...rules,
+      recoveryAdjustment: { baselinePct: 86, deductionPerPointPerDegree: 0.4, stepMode } });
+    const facts = (recovery?: number) => [
+      { code: 'CAF2', measuredValue: 37, unit: '%' }, { code: 'MOISTURE', measuredValue: 4, unit: '%' },
+      ...(recovery == null ? [] : [{ code: 'RECOVERY', name: 'CaF₂选矿回收率', measuredValue: recovery, unit: '%' }]),
+    ];
+    it('低于基准按差额线性扣价，档位原单价不变', () => {
+      // 37 度 × 0.4 元/度/点 × (86 − 84.5) = 22.2 元/吨
+      expect(evaluateGradePrice(withRecovery(), 'FRAGMENT', 100, facts(84.5))).toMatchObject({
+        status: 'READY', unitPrice: 858.4, recoveryPct: 84.5,
+        recovery: { shortfallPoints: 1.5, deductionPerDegree: 0.6, deductionPerTon: 22.2 },
+        netUnitPrice: 836.2, amountExTax: 83620,
+      });
+    });
+    it('按整百分点计算时，不足1个百分点的差额不扣', () => {
+      expect(evaluateGradePrice(withRecovery('FULL_POINT'), 'FRAGMENT', 100, facts(84.5))).toMatchObject({
+        status: 'READY', recovery: { shortfallPoints: 1, deductionPerTon: 14.8 }, netUnitPrice: 843.6,
+      });
+    });
+    it('达到或高于基准只扣不奖', () => {
+      expect(evaluateGradePrice(withRecovery(), 'FRAGMENT', 100, facts(90))).toMatchObject({
+        status: 'READY', recovery: { shortfallPoints: 0, deductionPerTon: 0 }, netUnitPrice: 858.4, amountExTax: 85840,
+      });
+    });
+    it('合同约定回收率条款但报告缺回收率实测值时转人工', () => {
+      const result = evaluateGradePrice(withRecovery(), 'FRAGMENT', 100, facts());
+      expect(result.status).toBe('REVIEW_REQUIRED');
+      expect(result.reasons.join()).toContain('选矿回收率');
+    });
+    it('回收率指标不会被误读为 CaF₂ 品位', () => {
+      const result = evaluateGradePrice(withRecovery(), 'FRAGMENT', 100, [
+        { code: 'RECOVERY', name: 'CaF₂回收率', measuredValue: 84, unit: '%' },
+        { code: 'CAF2', measuredValue: 37, unit: '%' }, { code: 'MOISTURE', measuredValue: 4, unit: '%' },
+      ]);
+      expect(result).toMatchObject({ status: 'READY', gradePct: 37, recoveryPct: 84 });
+    });
+    it('未约定回收率条款时结果不含回收率字段，存量结算依据签名不变', () => {
+      const result = evaluateGradePrice(rules, 'FRAGMENT', 100, facts(80));
+      expect(result).not.toHaveProperty('recovery');
+      expect(result).not.toHaveProperty('recoveryPct');
+      expect(result).not.toHaveProperty('netUnitPrice');
+    });
+    it('回收率条款参数不完整时不能提交合同', () => {
+      expect(() => parseGradePriceRules({ ...rules, recoveryAdjustment: { baselinePct: 86, deductionPerPointPerDegree: 0, stepMode: 'PROPORTIONAL' } })).toThrow('每低1个百分点');
+      expect(() => parseGradePriceRules({ ...rules, recoveryAdjustment: { baselinePct: 120, deductionPerPointPerDegree: 0.4, stepMode: 'PROPORTIONAL' } })).toThrow('回收率基准');
+    });
+  });
 });

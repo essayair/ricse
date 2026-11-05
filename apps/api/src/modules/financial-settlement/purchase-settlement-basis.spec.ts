@@ -47,6 +47,26 @@ describe('逐车质量结算来源与版本', () => {
       totalQuantity: 48.4, contractTaxRatePct: 13, gradePrice: { status: 'READY', gradePct: 32.5, rate: 22.7, unitPrice: 737.75 } });
     expect(source.waybill.inboundReceipts[0].businessInbound.quantity.toNumber()).toBe(50);
   });
+  it('分档合同约定回收率扣价时，读取最终报告的回收率并单列每吨扣价', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', lineItems: [{
+      id: 'cl', materialName: '萤石矿', unitPrice: new Prisma.Decimal(700), taxRatePct: new Prisma.Decimal(13),
+      priceRulesSnapshot: { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
+        moistureMaxPct: 5, bands: DEFAULT_FLUORITE_ORE_BANDS, exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'FRAGMENT', formulaConfirmed: true,
+        recoveryAdjustment: { baselinePct: 86, deductionPerPointPerDegree: 0.4, stepMode: 'PROPORTIONAL' } },
+    }] } as any);
+    source.waybill.qualityTask.basisInspection.indicators = [
+      { code: 'CAF2', measuredValue: new Prisma.Decimal(37), unit: '%' },
+      { code: 'MOISTURE', measuredValue: new Prisma.Decimal(3), unit: '%' },
+      { code: 'RECOVERY', name: '选矿回收率', measuredValue: new Prisma.Decimal(84.5), unit: '%' },
+    ];
+    const [row] = await service.sources('c', 'u');
+    expect(row).toMatchObject({ available: true, unitPrice: 858.4, deductionPerTon: 40, recoveryDeductionPerTon: 22.2,
+      gradePrice: { status: 'READY', recoveryPct: 84.5, recovery: { shortfallPoints: 1.5 } } });
+    source.waybill.qualityTask.basisInspection.indicators.pop();
+    const [missing] = await service.sources('c', 'u');
+    expect(missing.available).toBe(false);
+    expect(missing.reasons.join()).toContain('选矿回收率');
+  });
   it('逐车结算来源带出入库日期、磅单三重和实测水分，并计算参考干基', async () => {
     const receipt = source.waybill.inboundReceipts[0];
     receipt.receivedAt = new Date('2026-07-23T09:00:00+08:00');

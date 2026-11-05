@@ -89,6 +89,25 @@ describe('FinancialSettlementService payment approvals', () => {
     sources.mockRestore();
   });
 
+  it('合同约定回收率扣价时，档位原价不变，扣价含税单列并写入结算行可查询事实', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller', lineItems: [{ taxRatePct: 13 }] } as any);
+    const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue([{
+      id: 'w', orderId: 'o', available: true, remainingQuantity: 10, unitPrice: 858.4, contractTaxRatePct: 13, deductionPerTon: 0, recoveryDeductionPerTon: 22.2,
+      pricingType: 'GRADE_TIER', pricingQuantityBasis: 'DRY_MATTER',
+      gradePrice: { status: 'READY', gradePct: 37, moisturePct: 3, recoveryPct: 84.5, band: { lower: 35, upper: 40 }, spec: 'FRAGMENT', rate: 23.2, unitPrice: 858.4,
+        recovery: { shortfallPoints: 1.5, deductionPerTon: 22.2 }, netUnitPrice: 836.2 },
+      waybillNo: 'WB-1', orderNo: 'O-1', orderName: '批次', unit: 'TON', contractLineItemId: 'line-1', reasons: [],
+    }] as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'line-1', quantity: 100, materialName: '萤石矿' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    const preview = await service.previewGoodsSettlement({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: [{ orderId: 'o', waybillLineItemId: 'w', quantity: 10 }] }, 'u');
+    // 不含税 8584 − 回收率扣价 222 = 8362；税 1087.06；扣价含税 250.86
+    expect(preview).toMatchObject({ qualityDeductionAmount: 250.86, totalAmount: 9449.06 });
+    expect(preview.lines[0]).toMatchObject({ unitPrice: 969.992, qualityDeductionAmount: 250.86, pricingMethod: 'GRADE_TIER', measuredGradePct: 37,
+      measuredRecoveryPct: 84.5, gradeRateExTax: 23.2, recoveryDeductionPerTonExTax: 22.2, taxRatePct: 13, amountExTax: 8362, taxAmount: 1087.06 });
+    sources.mockRestore();
+  });
+
   it('新分档合同结算沿用合同税率，拒绝与合同不一致的手填税率', async () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller', lineItems: [{ taxRatePct: 13 }] } as any);
     const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue([{

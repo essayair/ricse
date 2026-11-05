@@ -157,6 +157,8 @@ export class PurchaseSettlementBasis {
       if (isGradeTier && !item?.priceRulesSnapshot) reasons.push('合同物料缺少品位分档价格表');
       if (isGradeTier && gradePrice?.status === 'REVIEW_REQUIRED') reasons.push(...gradePrice.reasons);
       const deductionPerTon = !separateSettlementReport && task && ['DEDUCTION_PENDING', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition) ? Number(task.qualityDeductionPerTon || 0) : 0;
+      // 回收率扣价属于合同价格条款（不含税元/吨），与质量扣款规则分开记录，避免触发“分档价与质量扣价叠加”拦截。
+      const recoveryDeductionPerTon = gradePrice?.status === 'READY' ? gradePrice.recovery?.deductionPerTon || 0 : 0;
       const qualityReady = Boolean(task && !task.deletedAt && task.status === 'COMPLETED' && report && !report.deletedAt && report.status === 'CONFIRMED' && (gradePriceCanSettle || ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(selectedDisposition || '')));
       const basis = { contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
         waybillLineItemId: row.id, weightSelectionId: selection?.id, weight: totalQuantity,
@@ -165,7 +167,9 @@ export class PurchaseSettlementBasis {
         settlementQuantityBasis, settlementQuantity: totalQuantity, contractTaxRatePct: item?.taxRatePct?.toString(),
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, qualityDisposition: selectedDisposition,
         reportId: report?.id, reportUpdatedAt: report?.updatedAt, unitPrice: item?.unitPrice.toString(), deductionPerTon,
-        gradePrice: gradePrice?.status === 'READY' ? { gradePct: gradePrice.gradePct, moisturePct: gradePrice.moisturePct, band: gradePrice.band, spec: gradePrice.spec, rate: gradePrice.rate, unitPriceExTax: gradePrice.unitPrice } : null,
+        gradePrice: gradePrice?.status === 'READY' ? { gradePct: gradePrice.gradePct, moisturePct: gradePrice.moisturePct, band: gradePrice.band, spec: gradePrice.spec, rate: gradePrice.rate, unitPriceExTax: gradePrice.unitPrice,
+          // 仅约定回收率条款的合同写入回收率事实，存量依据签名保持不变。
+          ...('recovery' in gradePrice ? { recoveryPct: gradePrice.recoveryPct, recovery: gradePrice.recovery } : {}) } : null,
         priceRulesSnapshot: isGradeTier ? item?.priceRulesSnapshot : null };
       const priorBasis = { ...basis, inboundQuantity: posted?.quantity?.toString() };
       delete (priorBasis as Partial<typeof basis>).inboundPhysicalQuantity;
@@ -198,10 +202,10 @@ export class PurchaseSettlementBasis {
         inventoryReportId: inventoryReport?.id, inventoryReportNo: inventoryReport?.reportNo || inventoryReport?.inspectionNo,
         availableQualityReports: [...availableReports.values()].map(candidate => ({ id: candidate.id, reportNo: candidate.reportNo || candidate.inspectionNo, evidenceStage: candidate.evidenceStage, institutionName: candidate.institutionName, conclusion: candidate.conclusion, measuredMoisturePct: readMeasuredPct(candidate.indicators || [], 'MOISTURE') })),
         qualityDisposition: selectedDisposition || 'PENDING', qualityReady, qualityAcceptance: separateSettlementReport ? null : task?.qualityAcceptanceSnapshot,
-        deductionPerTon, evaluation: selectedEvaluation || task?.contractQualityEvaluation, decisionVersion: task?.decisionVersion,
+        deductionPerTon, recoveryDeductionPerTon, evaluation: selectedEvaluation || task?.contractQualityEvaluation, decisionVersion: task?.decisionVersion,
         inboundStatuses: w.inboundReceipts.map(r => r.status), signature: signature(basis), priorSignature: signature(priorBasis), legacySignature: signature(legacyBasis),
         available: reasons.length === 0, reasons,
-        ...goodsAmounts(remainingQuantity, gradePrice?.status === 'READY' ? gradePrice.unitPrice : item?.unitPrice || 0, deductionPerTon),
+        ...goodsAmounts(remainingQuantity, gradePrice?.status === 'READY' ? gradePrice.unitPrice : item?.unitPrice || 0, deductionPerTon + recoveryDeductionPerTon),
       };
     });
   }

@@ -12,6 +12,7 @@ import { SalesSettlementBasis } from './sales-settlement-basis';
 import { PurchasePaymentContext } from './purchase-payment-context';
 import { LogisticsPaymentContext } from './logistics-payment-context';
 import { goodsAmounts, requestCommitment, ACTIVE_PAYMENT_REQUEST_STATUSES } from './payment-balance';
+import { GRADE_TIER_FORMULA, gradeTierAmounts, settlementPricingFacts } from './settlement-pricing';
 
 const SETTLEMENT_INCLUDE = {
   contract: { select: { id: true, contractNo: true, title: true, type: true, totalAmount: true, companyId: true, departmentId: true, businessUnitId: true, settlementBasis: true } },
@@ -662,21 +663,14 @@ export class FinancialSettlementService {
       if (input.unitPrice != null && new Prisma.Decimal(input.unitPrice).comparedTo(source.unitPrice) !== 0) throw new BadRequestException('实际货物结算单价取自合同及检测报告，价格变化请先确认合同变更或使用有说明的结算调整');
       if (Number(input.adjustmentAmount || 0) !== 0 && !input.remarks?.trim()) throw new BadRequestException('其他结算调整须填写原因，不得重复录入系统已计算的质量扣款');
       const amounts = gradeTier
-        ? (() => {
-          const exTax = new Prisma.Decimal(qty).mul(source.unitPrice).toDecimalPlaces(2);
-          const tax = exTax.mul(new Prisma.Decimal(taxRatePct!).div(100)).toDecimalPlaces(2);
-          const gross = exTax.plus(tax);
-          return { quantity: new Prisma.Decimal(qty).toDecimalPlaces(3).toNumber(), grossAmount: gross.toNumber(),
-            qualityDeductionAmount: 0, adjustmentAmount: money(input.adjustmentAmount || 0),
-            totalAmount: gross.plus(input.adjustmentAmount || 0).toDecimalPlaces(2).toNumber(),
-            taxAmount: tax.toNumber(), amountExTax: exTax.toNumber() };
-        })()
+        ? gradeTierAmounts(qty, source.unitPrice, source.recoveryDeductionPerTon, taxRatePct!, input.adjustmentAmount || 0)
         : goodsAmounts(qty, source.unitPrice, source.deductionPerTon, input.adjustmentAmount || 0);
       if (amounts.totalAmount <= 0) throw new BadRequestException('扣款后货物结算金额须大于零，超额扣款请先复核合同规则和处置');
       return { orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
         waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
         sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity), ...amounts,
-          ...(gradeTier ? { taxRatePct, pricingFormula: '所选磅单净重按合同口径折算 × CaF₂实测百分点 × 档位不含税元/度单价 × (1 + 合同税率)' } : {}) }),
+          ...(gradeTier ? { taxRatePct, pricingFormula: GRADE_TIER_FORMULA } : {}) }),
+        ...settlementPricingFacts(source, amounts, gradeTier, taxRatePct),
         unit: source.unit, unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
         quantity: amounts.quantity, grossAmount: amounts.grossAmount, qualityDeductionAmount: amounts.qualityDeductionAmount,
         adjustmentAmount: amounts.adjustmentAmount, totalAmount: amounts.totalAmount, remarks: input.remarks?.trim() };
@@ -728,24 +722,18 @@ export class FinancialSettlementService {
       if (input.unitPrice != null && new Prisma.Decimal(input.unitPrice).comparedTo(source.unitPrice) !== 0) throw new BadRequestException('销售货款单价按合同与所选检测报告计算；调整价格请走合同变更');
       if (Number(input.adjustmentAmount || 0) !== 0 && !input.remarks?.trim()) throw new BadRequestException('销售结算调整须填写原因');
       const amounts = gradeTier
-        ? (() => {
-          const exTax = new Prisma.Decimal(qty).mul(source.unitPrice).toDecimalPlaces(2);
-          const tax = exTax.mul(new Prisma.Decimal(taxRatePct!).div(100)).toDecimalPlaces(2);
-          const gross = exTax.plus(tax);
-          return { quantity: new Prisma.Decimal(qty).toDecimalPlaces(3).toNumber(), grossAmount: gross.toNumber(), qualityDeductionAmount: 0,
-            adjustmentAmount: money(input.adjustmentAmount || 0), totalAmount: gross.plus(input.adjustmentAmount || 0).toDecimalPlaces(2).toNumber(),
-            taxAmount: tax.toNumber(), amountExTax: exTax.toNumber() };
-        })()
+        ? gradeTierAmounts(qty, source.unitPrice, source.recoveryDeductionPerTon, taxRatePct!, input.adjustmentAmount || 0)
         : goodsAmounts(qty, source.unitPrice, 0, input.adjustmentAmount || 0);
       if (amounts.totalAmount <= 0) throw new BadRequestException('销售结算金额须大于零');
       return {
         orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
         waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
         sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity), ...amounts,
-          ...(gradeTier ? { taxRatePct, pricingFormula: '所选磅单净重按合同口径折算 × CaF₂实测百分点 × 档位不含税元/度单价 × (1 + 合同税率)' } : {}) }),
+          ...(gradeTier ? { taxRatePct, pricingFormula: GRADE_TIER_FORMULA } : {}) }),
+        ...settlementPricingFacts(source, amounts, gradeTier, taxRatePct),
         quantity: amounts.quantity, unit: source.unit,
         unitPrice: gradeTier ? new Prisma.Decimal(source.unitPrice).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(taxRatePct!).div(100))).toDecimalPlaces(4).toNumber() : source.unitPrice,
-        grossAmount: amounts.grossAmount, qualityDeductionAmount: 0, adjustmentAmount: amounts.adjustmentAmount,
+        grossAmount: amounts.grossAmount, qualityDeductionAmount: amounts.qualityDeductionAmount, adjustmentAmount: amounts.adjustmentAmount,
         totalAmount: amounts.totalAmount, remarks: input.remarks?.trim(),
       };
     });
@@ -757,12 +745,12 @@ export class FinancialSettlementService {
       const limit = new Prisma.Decimal(item.quantity).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(contract.overfillPct || 0).div(100)));
       if (current.plus(previous).greaterThan(limit)) throw new BadRequestException(`物料“${item.materialName || item.materialId}”销售累计结算数量超过合同与溢装约定，请先处理合同变更`);
     }
-    const total = (key: 'grossAmount' | 'adjustmentAmount' | 'totalAmount' | 'quantity') => lines.reduce((sum, line) => sum.plus(line[key]), new Prisma.Decimal(0)).toDecimalPlaces(key === 'quantity' ? 3 : 2).toNumber();
+    const total = (key: 'grossAmount' | 'qualityDeductionAmount' | 'adjustmentAmount' | 'totalAmount' | 'quantity') => lines.reduce((sum, line) => sum.plus(line[key]), new Prisma.Decimal(0)).toDecimalPlaces(key === 'quantity' ? 3 : 2).toNumber();
     const data = {
       direction: 'RECEIVABLE', sourceType: 'CONTRACT', contractId: contract.id, businessUnitId: contract.businessUnitId,
       legalEntityPartnerId: contract.signingPartnerId, counterpartyId, settlementScope: dto.settlementScope,
       sourceNo: [...new Set(lines.map(line => line.orderNo))].join('、'), quantity: total('quantity'), unit: 'TON',
-      grossAmount: total('grossAmount'), adjustmentAmount: total('adjustmentAmount'), totalAmount: total('totalAmount'),
+      grossAmount: total('grossAmount'), qualityDeductionAmount: total('qualityDeductionAmount'), adjustmentAmount: total('adjustmentAmount'), totalAmount: total('totalAmount'),
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null, remarks: dto.remarks?.trim(), createdBy: userId,
     };
     if (preview) return { ...data, lines };

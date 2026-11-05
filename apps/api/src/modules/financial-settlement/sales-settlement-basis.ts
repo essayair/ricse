@@ -104,10 +104,8 @@ export class SalesSettlementBasis {
       }
       if (!report || report.status !== 'CONFIRMED' || report.deletedAt) reasons.push('请先选择本车已确认的货款检测报告');
       if (report?.evidenceStage === 'UNSPECIFIED') reasons.push('货款检测报告未标明发货或收货环节');
-      if (report && report.conclusion !== 'PASS') reasons.push('所选检测报告未形成合格结论，须先处理销售质量争议与扣价');
       if (pricingQuantityBasis === 'DRY_MATTER' && measuredMoisturePct == null) reasons.push('折干销售结算缺少检测报告水分实测值');
       if (!task || task.deletedAt || task.status !== 'COMPLETED') reasons.push('请先完成质检任务最终判定');
-      if (task && ['REJECT', 'REVIEW_REQUIRED', 'DEDUCTION_PENDING', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition)) reasons.push('销售质量处置尚未形成可直接结算的价格，须先人工确认');
       if (report?.conclusion === 'FUSE') reasons.push('所选报告结论为拒收，请先处理质量争议');
       if (!item) reasons.push('无法匹配销售合同物料行');
       if (legacyContract || legacyOrders.has(order.id)) reasons.push('存在未映射到具体货物的历史应收，请先处理重叠结算');
@@ -116,7 +114,16 @@ export class SalesSettlementBasis {
       const rules = gradeRules;
       const gradePrice = gradeTier && rules ? evaluateGradePrice(rules, (rules as any).selectedSpec, remainingQuantity, report?.indicators || []) : null;
       if (gradeTier && gradePrice?.status !== 'READY') reasons.push(...(gradePrice?.reasons || ['销售合同品位分档价缺少有效依据']));
+      // 合同已约定回收率扣价时，仅“选矿回收率”未达标不再视为质量争议：差额已按合同条款计入扣价。
+      const recoveryPricedByContract = gradePrice?.status === 'READY' && Boolean(gradePrice.recovery) && report?.conclusion === 'DEDUCTION'
+        && report.indicators.filter(indicator => indicator.result === 'FAIL' || indicator.result === 'FUSE').every(indicator => readMeasuredPct([indicator], 'RECOVERY') !== null && indicator.result === 'FAIL');
+      if (report && report.conclusion !== 'PASS' && !recoveryPricedByContract) reasons.push('所选检测报告未形成合格结论，须先处理销售质量争议与扣价');
+      // 无合同质量规则时，报告非全部合格会使任务处置为待复核；若仅因已计价的回收率未达标，则不重复拦截。
+      const dispositionPricedByContract = recoveryPricedByContract && !task?.contractQualitySnapshot
+        && task?.qualityDisposition === 'REVIEW_REQUIRED' && task.basisInspectionId === report?.id;
+      if (task && ['REJECT', 'REVIEW_REQUIRED', 'DEDUCTION_PENDING', 'ACCEPT_WITH_DEDUCTION'].includes(task.qualityDisposition) && !dispositionPricedByContract) reasons.push('销售质量处置尚未形成可直接结算的价格，须先人工确认');
       const unitPrice = gradePrice?.status === 'READY' ? gradePrice.unitPrice : Number(contract.type === 'BILATERAL' ? item?.salesUnitPrice || 0 : item?.unitPrice || 0);
+      const recoveryDeductionPerTon = gradePrice?.status === 'READY' ? gradePrice.recovery?.deductionPerTon || 0 : 0;
       const basis = {
         waybillLineItemId: row.id, contractLineItemId: item?.id, waybillId: w.id,
         salesCompletionConfirmedAt: w.salesCompletionConfirmedAt, salesCompletionReportId: w.salesCompletionReportId,
@@ -145,11 +152,11 @@ export class SalesSettlementBasis {
         netWeight, grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
         measuredMoisturePct, dryQuantity, pricingQuantityBasis, totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity,
         negotiableQuantity, negotiableRemainingQuantity,
-        unitPrice, contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct), pricingType: contract.pricingType || 'FIXED', gradePrice, deductionPerTon: 0,
+        unitPrice, contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct), pricingType: contract.pricingType || 'FIXED', gradePrice, deductionPerTon: 0, recoveryDeductionPerTon,
         qualityDisposition: task?.qualityDisposition && task.qualityDisposition !== 'PENDING'
           ? task.qualityDisposition : report?.conclusion === 'PASS' ? 'PASS' : report?.conclusion === 'FUSE' ? 'REJECT' : 'REVIEW_REQUIRED',
         signature: signature(basis), basis, available: reasons.length === 0, reasons,
-        ...goodsAmounts(remainingQuantity, unitPrice, 0),
+        ...goodsAmounts(remainingQuantity, unitPrice, recoveryDeductionPerTon),
       };
     });
   }
