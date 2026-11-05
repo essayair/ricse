@@ -69,6 +69,44 @@ describe('销售交付后的逐车应收来源', () => {
     expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
   });
 
+  describe('双边合同销售方向回收率扣价', () => {
+    const rules = (recoveryAdjustment: object) => ({ version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
+      quantityBasis: 'PHYSICAL', moistureMaxPct: 5, bands: DEFAULT_FLUORITE_ORE_BANDS,
+      exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'FRAGMENT', formulaConfirmed: true, recoveryAdjustment });
+    beforeEach(() => {
+      prisma.contract.findFirst.mockResolvedValue({ id: 'contract', type: 'BILATERAL', pricingType: 'GRADE_TIER', lineItems: [{
+        id: 'contract-line', unitPrice: new Prisma.Decimal(700), salesUnitPrice: new Prisma.Decimal(900), taxRatePct: new Prisma.Decimal(13),
+        // 采购方向条款故意与销售方向不同，确保销售结算不会误用。
+        priceRulesSnapshot: rules({ baselinePct: 90, deductionPerPointPerDegree: 1, stepMode: 'PROPORTIONAL' }),
+        salesPriceRulesSnapshot: rules({ baselinePct: 86, deductionPerPointPerDegree: 0.4, stepMode: 'PROPORTIONAL' }),
+      }] } as any);
+      row.waybill.qualityTask.basisInspection.indicators = [
+        { code: 'CAF2', measuredValue: new Prisma.Decimal(37), unit: '%', result: 'PASS' },
+        { code: 'MOISTURE', measuredValue: new Prisma.Decimal(3), unit: '%', result: 'PASS' },
+        { code: 'RECOVERY', name: '选矿回收率', measuredValue: new Prisma.Decimal(84.5), unit: '%', result: 'PASS' },
+      ];
+    });
+
+    it('按销售方向条款计算扣价，不误用采购方向条款', async () => {
+      const source = (await basis.sources('contract', 'user'))[0];
+      expect(source).toMatchObject({ available: true, totalQuantity: 98, unitPrice: 858.4, recoveryDeductionPerTon: 22.2,
+        gradePrice: { status: 'READY', gradePct: 37, recoveryPct: 84.5, recovery: { baselinePct: 86, shortfallPoints: 1.5, deductionPerTon: 22.2 } } });
+    });
+
+    it('仅回收率未达标且已按合同扣价时不重复拦截，其他指标不合格仍拦截', async () => {
+      const report = row.waybill.qualityTask.basisInspection;
+      report.conclusion = 'DEDUCTION';
+      report.indicators[2].result = 'FAIL';
+      Object.assign(row.waybill.qualityTask, { qualityDisposition: 'REVIEW_REQUIRED', contractQualitySnapshot: null, basisInspectionId: 'customer-report' });
+      expect((await basis.sources('contract', 'user'))[0].available).toBe(true);
+
+      report.indicators[0].result = 'FAIL';
+      const blocked = (await basis.sources('contract', 'user'))[0];
+      expect(blocked.available).toBe(false);
+      expect(blocked.reasons.join('；')).toContain('所选检测报告未形成合格结论');
+    });
+  });
+
   it('同一侧追加第二张待复核磅单后，禁止静默编制销售结算', async () => {
     row.waybill.weighTickets.push({ id: 'receiving-2', ticketNo: '收货复磅', weighingStage: 'RECEIVING', status: 'PENDING', deletedAt: null });
     row.waybill.weightSelections = row.waybill.weightSelections.filter((selection: any) => selection.purpose !== 'RECEIVING');
