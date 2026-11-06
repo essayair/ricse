@@ -546,6 +546,7 @@ export default function WeighTicketDetailPage() {
           )}
         </Card>}
         <AttachmentPanel
+          fitPanel
           title="磅单附件"
           description="现场磅单照片、设备导出磅单或扫描件；完成称重前至少需要一份"
           attachments={ticket.attachments}

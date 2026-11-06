@@ -36,6 +36,28 @@ describe('FinancialSettlementService payment approvals', () => {
     }));
   });
 
+  it('合同结算记录按合同精确筛选且保留事业部数据权限，草稿与作废不计入汇总', async () => {
+    const scope = { businessUnitId: { in: ['unit-1'] } };
+    accessControl.getContractScope.mockResolvedValue(scope as any);
+    prisma.financialSettlement.findMany.mockResolvedValue([
+      { id: 'confirmed', status: 'CONFIRMED', totalAmount: 100, settledAmount: 20 },
+      { id: 'draft', status: 'DRAFT', totalAmount: 900, settledAmount: 0 },
+      { id: 'void', status: 'VOIDED', totalAmount: 800, settledAmount: 0 },
+    ] as any);
+    const result = await service.findAll({ contractId: 'contract-1' }, 'user-1');
+    expect(prisma.financialSettlement.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {
+      deletedAt: null, contractId: 'contract-1', contract: scope,
+    } }));
+    expect(result.items).toHaveLength(3);
+    expect(result.summary).toMatchObject({ total: 100, settled: 20, outstanding: 80 });
+  });
+
+  it('无结算查看权限时不能通过合同筛选读取结算记录', async () => {
+    accessControl.assertPermission.mockRejectedValueOnce(new Error('缺少权限：settlement.view'));
+    await expect(service.findAll({ contractId: 'contract-1' }, 'user-1')).rejects.toThrow('settlement.view');
+    expect(prisma.financialSettlement.findMany).not.toHaveBeenCalled();
+  });
+
   it('结算审批中或驳回后不能打印正式结算单', async () => {
     prisma.financialSettlement.findFirst.mockResolvedValue({ id: 'settlement-1', status: 'PENDING_APPROVAL' } as any);
     await expect(service.recordPrint('settlement-1', 'user-1')).rejects.toThrow('只有已确认的有效结算单');
@@ -69,6 +91,75 @@ describe('FinancialSettlementService payment approvals', () => {
     expect(sources).toHaveBeenCalledWith('c', 'u', 'settlement.create', undefined, expect.any(Map), new Map([['w', 'shipping-ticket']]));
     expect(prisma.waybillWeightSelection.update).not.toHaveBeenCalled();
     sources.mockRestore();
+  });
+
+  it('多车合计超出合同数量时仍可试算，填写原因并确认当前差异后允许保存', async () => {
+    const sources = jest.spyOn(PurchaseSettlementBasis.prototype, 'sources').mockResolvedValue(['w1', 'w2'].map(id => ({
+      id, orderId: 'o', available: true, remainingQuantity: 60, negotiableRemainingQuantity: 60,
+      unitPrice: 100, deductionPerTon: 0, waybillNo: id, orderNo: 'O-1', orderName: '批次', unit: 'TON',
+      contractLineItemId: 'line-1', reasons: [],
+    })) as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'line-1', quantity: 100, materialName: '萤石精粉' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    const contract = { id: 'c', pricingType: 'FIXED', overfillPct: 0, signingPartnerId: 'owner', businessUnitId: 'unit' };
+    const dto = { contractId: 'c', direction: 'PAYABLE', settlementScope: 'GOODS', lines: ['w1', 'w2'].map(waybillLineItemId => ({ orderId: 'o', waybillLineItemId, quantity: 60 })) };
+    const preview = await (service as any).createGoodsSettlement(dto, contract, 'seller', 'u', true);
+    expect(preview.totalAmount).toBe(12000);
+    expect(preview.quantityReview.differences).toEqual([expect.objectContaining({ type: 'OVER', upperQuantity: 100, difference: 20 })]);
+    await expect((service as any).createGoodsSettlement(dto, contract, 'seller', 'u', false)).rejects.toThrow('填写数量差异说明');
+    const accepted = { ...dto, quantityVarianceReason: '双方确认按实际发货数量结算', quantityVarianceConfirmed: true, quantityVarianceKey: preview.quantityReview.key };
+    await expect((service as any).createGoodsSettlement({ ...accepted, quantityVarianceKey: 'old' }, contract, 'seller', 'u', false)).rejects.toThrow('重新预览并确认');
+    const numbering = jest.spyOn(service as any, 'nextNo').mockResolvedValue('YF-TEST');
+    prisma.financialSettlement.create.mockResolvedValue({ id: 'saved' } as any);
+    await (service as any).createGoodsSettlement(accepted, contract, 'seller', 'u', false);
+    expect(prisma.financialSettlement.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ lines: { create: expect.arrayContaining([
+      expect.objectContaining({ sourceSnapshot: expect.objectContaining({ settlementQuantityReview: expect.objectContaining({ confirmed: true, reason: accepted.quantityVarianceReason, recordedBy: 'u' }) }) }),
+    ]) } }) }));
+    numbering.mockRestore();
+    sources.mockRestore();
+  });
+
+  it('销售多车合计超限也要求填写原因并确认，而非强制修改合同', async () => {
+    const sources = jest.spyOn(SalesSettlementBasis.prototype, 'sources').mockResolvedValue(['w1', 'w2'].map(id => ({
+      id, orderId: 'o', available: true, remainingQuantity: 60, negotiableRemainingQuantity: 60,
+      unitPrice: 100, waybillNo: id, orderNo: 'O-1', orderName: '批次', unit: 'TON',
+      contractLineItemId: 'line-1', reasons: [],
+    })) as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'line-1', quantity: 100, materialName: '萤石精粉' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    const contract = { id: 'c', pricingType: 'FIXED', overfillPct: 0, signingPartnerId: 'owner', businessUnitId: 'unit' };
+    const dto = { contractId: 'c', direction: 'RECEIVABLE', settlementScope: 'GOODS', lines: ['w1', 'w2'].map(waybillLineItemId => ({ orderId: 'o', waybillLineItemId, quantity: 60 })) };
+    const preview = await (service as any).createSalesGoodsSettlement(dto, contract, 'buyer', 'u', true);
+    expect(preview.totalAmount).toBe(12000);
+    expect(preview.quantityReview.differences).toEqual([expect.objectContaining({ type: 'OVER', upperQuantity: 100, difference: 20 })]);
+    await expect((service as any).createSalesGoodsSettlement(dto, contract, 'buyer', 'u', false)).rejects.toThrow('填写数量差异说明');
+    sources.mockRestore();
+  });
+
+  it('仅溢短装数量确认不触发线上审批', () => {
+    expect((service as any).settlementRequiresApproval({ adjustmentAmount: 0, lines: [{ adjustmentAmount: 0,
+      sourceSnapshot: { settlementQuantityReview: { confirmed: true, reason: '线下盖章确认', differences: [{ type: 'OVER' }] } } }] })).toBe(false);
+  });
+
+  it('数量差异确认后合同允许范围发生变化，正式确认前要求重新核对', async () => {
+    (service as any).transactional = true;
+    prisma.financialSettlement.findFirst.mockResolvedValue({ id: 's', contractId: 'c', direction: 'PAYABLE', status: 'DRAFT', settlementScope: 'GOODS',
+      lines: [{ quantity: 120, sourceSnapshot: { contractLineItemId: 'a', settlementQuantityReview: { finalSettlement: false, confirmed: true, reason: '双方同意', differences: [{ type: 'OVER' }] } } }] } as any);
+    prisma.contract.findUniqueOrThrow.mockResolvedValue({ overfillPct: 30, shortfallPct: 10 } as any);
+    prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'a', quantity: 100, materialName: '萤石' }] as any);
+    prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+    await expect(service.confirm('s', 'u')).rejects.toThrow('重新核对数量差异');
+    expect(prisma.financialSettlement.update).not.toHaveBeenCalled();
+  });
+
+  it('结算确认后允许补传线下盖章文件，作废单据仍不允许', async () => {
+    (service as any).transactional = true;
+    prisma.financialSettlement.findFirst.mockResolvedValue({ id: 's', status: 'CONFIRMED' } as any);
+    prisma.attachment.create.mockResolvedValue({ id: 'file' } as any);
+    const file = { fileName: 'signed.pdf', originalName: '双方盖章.pdf', mimeType: 'application/pdf', size: 10, category: 'SIGNED_SETTLEMENT_CONFIRMATION' };
+    await expect(service.createDocumentAttachment({ financialSettlementId: 's' }, file, 'u')).resolves.toMatchObject({ id: 'file' });
+    prisma.financialSettlement.findFirst.mockResolvedValue({ id: 's', status: 'VOIDED' } as any);
+    await expect(service.createDocumentAttachment({ financialSettlementId: 's' }, file, 'u')).rejects.toThrow('当前结算单状态不能上传附件');
   });
 
   it('按实测 37 度、23.20 元/度、10 吨、13% 税率生成含税结算预览', async () => {

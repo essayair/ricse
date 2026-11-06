@@ -45,6 +45,9 @@ describe('逐车质量结算来源与版本', () => {
     const [row] = await service.sources('c', 'u');
     expect(row).toMatchObject({ pricingQuantityBasis: 'DRY_MATTER', netWeight: 50, dryQuantity: 48.4,
       totalQuantity: 48.4, contractTaxRatePct: 13, gradePrice: { status: 'READY', gradePct: 32.5, rate: 22.7, unitPrice: 737.75 } });
+    expect(row.availableQualityReports).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'report', measuredGradePct: 32.5, measuredMoisturePct: 3.2 }),
+    ]));
     expect(source.waybill.inboundReceipts[0].businessInbound.quantity.toNumber()).toBe(50);
   });
   it('分档合同约定回收率扣价时，读取最终报告的回收率并单列每吨扣价', async () => {

@@ -10,11 +10,11 @@ import { confirmAction } from '@/lib/system-dialog';
 import { StoredAttachmentThumbnail } from '@/components/attachment-thumbnail';
 
 export interface SettlementAttachment {
-  id: string; originalName: string; mimeType: string; size: number;
+  id: string; originalName: string; mimeType: string; size: number; category?: string;
 }
 
-export function SettlementAttachments({ attachments = [], uploadPath, editable, onChanged }: {
-  attachments?: SettlementAttachment[]; uploadPath: string; editable: boolean; onChanged: () => Promise<void> | void;
+export function SettlementAttachments({ attachments = [], uploadPath, editable, canDelete = editable, title = '业务依据与银行回单', onChanged }: {
+  attachments?: SettlementAttachment[]; uploadPath: string; editable: boolean; canDelete?: boolean; title?: string; onChanged: () => Promise<void> | void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -37,8 +37,8 @@ export function SettlementAttachments({ attachments = [], uploadPath, editable, 
     catch (error: any) { alert(error.message); }
   };
   return <div className="space-y-2 rounded-md border p-3">
-    <div className="flex items-center justify-between"><div className="flex items-center gap-2 text-sm font-medium"><Paperclip className="h-4 w-4"/>业务依据与银行回单</div>{editable && <><input ref={inputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => void upload(event.target.files?.[0])}/><Button size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}><Upload className="mr-1 h-4 w-4"/>{busy ? '上传中…' : '上传附件'}</Button></>}</div>
-    {!attachments.length ? <p className="text-xs text-muted-foreground">暂无附件，支持 JPG、PNG、WEBP、PDF，单个文件不超过 20MB。</p> : <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{attachments.map((item) => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><StoredAttachmentThumbnail large name={item.originalName} mimeType={item.mimeType} viewUrlPath={`/financial-settlements/attachments/${item.id}/view-url`} /><div className="truncate font-medium" title={item.originalName}>{item.originalName}</div><div className="flex gap-1"><Button type="button" size="sm" variant="outline" onClick={() => void view(item)}><Eye className="mr-1 h-4 w-4"/>放大查看</Button>{editable && <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => void remove(item)}><Trash2 className="h-4 w-4"/>删除</Button>}</div></div>)}</div>}
+    <div className="flex items-center justify-between"><div className="flex items-center gap-2 text-sm font-medium"><Paperclip className="h-4 w-4"/>{title}</div>{editable && <><input ref={inputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => void upload(event.target.files?.[0])}/><Button size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}><Upload className="mr-1 h-4 w-4"/>{busy ? '上传中…' : '上传附件'}</Button></>}</div>
+    {!attachments.length ? <p className="text-xs text-muted-foreground">暂无附件，支持 JPG、PNG、WEBP、PDF，单个文件不超过 20MB。</p> : <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{attachments.map((item) => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><StoredAttachmentThumbnail large name={item.originalName} mimeType={item.mimeType} viewUrlPath={`/financial-settlements/attachments/${item.id}/view-url`} /><div className="truncate font-medium" title={item.originalName}>{item.originalName}</div>{item.category === 'QUANTITY_VARIANCE_EVIDENCE' && <div className="text-xs text-muted-foreground">数量差异依据</div>}<div className="flex gap-1"><Button type="button" size="sm" variant="outline" onClick={() => void view(item)}><Eye className="mr-1 h-4 w-4"/>放大查看</Button>{canDelete && <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => void remove(item)}><Trash2 className="h-4 w-4"/>删除</Button>}</div></div>)}</div>}
     <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}><DialogContent className="h-[88vh] max-w-5xl"><DialogHeader><DialogTitle>{preview?.name}</DialogTitle></DialogHeader>{preview && (preview.mimeType === 'application/pdf' ? <iframe title={preview.name} src={preview.url} className="h-full w-full rounded-md border"/> : <div className="relative h-full w-full overflow-hidden"><Image unoptimized fill src={preview.url} alt={preview.name} className="object-contain"/></div>)}</DialogContent></Dialog>
   </div>;
 }

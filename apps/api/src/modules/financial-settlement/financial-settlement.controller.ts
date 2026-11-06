@@ -259,8 +259,9 @@ export class FinancialSettlementController {
   @Post(':id/attachments')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
-  async uploadSettlementAttachment(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser('id') userId: string) {
-    return this.uploadAttachment(file, { financialSettlementId: id }, userId, 'SIGNED_SETTLEMENT_CONFIRMATION');
+  async uploadSettlementAttachment(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser('id') userId: string, @Query('category') category?: string) {
+    if (category && !['SIGNED_SETTLEMENT_CONFIRMATION', 'QUANTITY_VARIANCE_EVIDENCE'].includes(category)) throw new BadRequestException('不支持的结算附件类型');
+    return this.uploadAttachment(file, { financialSettlementId: id }, userId, category || 'SIGNED_SETTLEMENT_CONFIRMATION');
   }
 
   @Get('attachments/:id/view-url')
@@ -307,8 +308,9 @@ export class FinancialSettlementController {
     @Query('direction') direction?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('contractId') contractId?: string,
   ) {
-    return this.service.findAll({ direction, status, search }, userId);
+    return this.service.findAll({ direction, status, search, contractId }, userId);
   }
 
   @Post()

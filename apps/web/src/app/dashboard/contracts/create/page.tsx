@@ -567,12 +567,12 @@ export default function ContractCreatePage() {
             <div className="text-2xl mb-2">📎</div>
             <div className="text-sm font-semibold">选择合同附件</div>
           </label>
-          {uploadedAttachments.length > 0 && <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{uploadedAttachments.map(item => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><StoredAttachmentThumbnail large name={item.originalName} viewUrlPath={`/contracts/attachments/${item.id}/view-url`} /><div className="truncate font-medium" title={item.originalName}>{item.originalName}</div><div className="text-xs text-muted-foreground">已上传</div><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>放大查看</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div></div>)}</div>}
+          {uploadedAttachments.length > 0 && <div className="mt-3 grid min-w-0 grid-cols-1 gap-4">{uploadedAttachments.map(item => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><StoredAttachmentThumbnail large fitPanel name={item.originalName} viewUrlPath={`/contracts/attachments/${item.id}/view-url`} /><div className="truncate font-medium" title={item.originalName}>{item.originalName}</div><div className="text-xs text-muted-foreground">已上传</div><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>放大查看</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div></div>)}</div>}
           {files.length > 0 && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-3 grid min-w-0 grid-cols-1 gap-4">
               {files.map((item, i) => (
                 <div key={i} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
-                  <LocalAttachmentThumbnail large file={item.file} />
+                  <LocalAttachmentThumbnail large fitPanel file={item.file} />
                   <Input value={item.name} disabled={submitting} onChange={e => {
                     setIsDirty(true);
                     setFiles(current => current.map((entry, index) => index === i ? { ...entry, name: e.target.value } : entry));

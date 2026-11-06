@@ -9,6 +9,7 @@ import { BusinessOperationHistory, type BusinessOperationLog } from '@/component
 import { GoodsEvidence, GoodsSource, paymentMoney } from '@/components/settlement/purchase-payment-context';
 import { SettlementAttachments, type SettlementAttachment } from '@/components/settlement/settlement-attachments';
 import { SettlementInvoicePanel } from '@/components/settlement/settlement-invoice-panel';
+import { QuantityReviewSummary } from '@/components/settlement/settlement-quantity-review';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -123,6 +124,7 @@ export default function SettlementDetailPage() {
   const dueDateLabel = item.direction === 'PAYABLE' ? '约定付款到期日' : '约定收款到期日';
   const outstanding = Number(item.totalAmount) - Number(item.settledAmount);
   const goodsPurchase = item.settlementScope === 'GOODS';
+  const quantityReview = item.lines.find(line => line.sourceSnapshot?.settlementQuantityReview)?.sourceSnapshot?.settlementQuantityReview;
   const canReview = item.status === 'PENDING_APPROVAL' && can('settlement.approve')
     && (isAdmin || item.approvalTasks?.some(task => task.status === 'PENDING' && task.assignee.id === userId));
 
@@ -139,7 +141,8 @@ export default function SettlementDetailPage() {
     {!goodsPurchase && item.lines.length > 0 && <Card className="overflow-hidden"><div className="border-b p-4 font-semibold">执行批次明细</div><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead className="bg-muted/40 text-left text-muted-foreground"><tr><th className="p-3">批次</th><th className="p-3">当前状态</th><th className="p-3 text-right">数量</th><th className="p-3 text-right">单价</th><th className="p-3 text-right">加减项</th><th className="p-3">调整原因</th><th className="p-3 text-right">结算金额</th></tr></thead><tbody>{item.lines.map((line) => <tr key={line.id} className="border-t"><td className="p-3">{line.orderId ? <Link className="font-medium text-primary hover:underline" href={`/dashboard/orders/${line.orderId}`}>{line.orderNo} · {line.orderName}</Link> : `${line.orderNo || '—'} · ${line.orderName || '—'}`}</td><td className="p-3">{line.order ? <StatusText status={line.order.status}>{ORDER_STATUS[line.order.status] || line.order.status}</StatusText> : '—'}</td><td className="p-3 text-right">{line.quantity || '—'} {line.unit || ''}</td><td className="p-3 text-right">{money(line.unitPrice)}</td><td className="p-3 text-right">{money(line.adjustmentAmount)}</td><td className="p-3">{line.remarks || '—'}</td><td className="p-3 text-right font-medium">{money(line.totalAmount)}</td></tr>)}</tbody></table></div></Card>}
 
     {item.direction === 'PAYABLE' && <Card className="space-y-4 p-5"><div className="grid gap-4 text-sm sm:grid-cols-4"><div>货物原金额<p className="mt-1 font-medium">{paymentMoney(item.grossAmount)}</p></div><div>质量价格扣款<p className="mt-1 font-medium">{paymentMoney(item.qualityDeductionAmount)}</p></div><div>其他加减项<p className="mt-1 font-medium">{paymentMoney(item.adjustmentAmount)}</p></div><div>结算净额<p className="mt-1 font-medium">{paymentMoney(item.totalAmount)}</p></div></div>{item.lines.some(l => l.sourceSnapshot) && <GoodsEvidence sources={item.lines.map(l => l.sourceSnapshot).filter(Boolean) as GoodsSource[]}/>}</Card>}
-    <SettlementAttachments attachments={item.attachments} uploadPath={`/financial-settlements/${item.id}/attachments`} editable={item.status === 'DRAFT' && can('settlement.create')} onChanged={load} />
+    {quantityReview?.differences.length ? <Card className="space-y-3 p-5"><h2 className="font-semibold">数量差异确认</h2><QuantityReviewSummary review={quantityReview} /><p className="whitespace-pre-wrap text-sm"><span className="text-muted-foreground">双方确认说明：</span>{quantityReview.reason}</p><p className="text-xs text-muted-foreground">{quantityReview.recordedByName || '经办人'} · {quantityReview.recordedAt ? new Date(quantityReview.recordedAt).toLocaleString('zh-CN') : '—'} · 按实际数量生成，线下签字盖章</p></Card> : null}
+    <SettlementAttachments title="结算依据与双方盖章文件" attachments={item.attachments} uploadPath={`/financial-settlements/${item.id}/attachments`} editable={['DRAFT', 'CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(item.status) && can('settlement.create')} canDelete={item.status === 'DRAFT' && can('settlement.create')} onChanged={load} />
 
     {item.status !== 'VOIDED' && <SettlementInvoicePanel settlementId={item.id} status={item.status} canCreate={can('settlement.create')} canVoid={can('settlement.reverse')} materialName={item.lines[0]?.sourceSnapshot?.materialName} />}
 

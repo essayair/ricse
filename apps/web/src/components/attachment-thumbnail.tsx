@@ -17,11 +17,12 @@ function isPdf(name: string, mimeType?: string) {
 }
 
 /** Thumbnails are read through the same permission-checked view-url endpoint as the full preview. */
-export function StoredAttachmentThumbnail({ name, mimeType, viewUrlPath, large = false }: {
+export function StoredAttachmentThumbnail({ name, mimeType, viewUrlPath, large = false, fitPanel = false }: {
   name: string;
   mimeType?: string;
   viewUrlPath: string;
   large?: boolean;
+  fitPanel?: boolean;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -50,9 +51,11 @@ export function StoredAttachmentThumbnail({ name, mimeType, viewUrlPath, large =
     return () => { active = false; };
   }, [image, large, pdf, viewUrlPath]);
 
-  if (large) return <div ref={node} aria-label={`${name}附件预览`} className="relative flex h-72 w-full items-center justify-center overflow-hidden rounded-md border bg-muted/30 text-muted-foreground">
-    {url && !failed && image ? <Image unoptimized fill src={url} alt={name} className="object-contain" onError={() => setFailed(true)} />
-      : url && !failed && pdf ? <iframe title={`${name}首页预览`} src={`${url}${url.includes('#') ? '' : '#toolbar=0&navpanes=0&scrollbar=0'}`} loading="lazy" className="h-full w-full border-0 bg-white" />
+  if (large) return <div ref={node} aria-label={`${name}附件预览`} className={`relative flex min-w-0 w-full max-w-full items-center justify-center overflow-hidden rounded-md border bg-muted/30 text-muted-foreground ${fitPanel ? image ? 'min-h-64' : 'h-[75vh] min-h-96 max-h-[1000px]' : 'h-72'}`}>
+    {url && !failed && image ? fitPanel
+      ? <Image unoptimized src={url} alt={name} width={1200} height={1600} className="h-auto w-full object-contain" onError={() => setFailed(true)} />
+      : <Image unoptimized fill src={url} alt={name} className="object-contain" onError={() => setFailed(true)} />
+      : url && !failed && pdf ? <iframe title={`${name}首页预览`} src={`${url}${url.includes('#') ? '' : fitPanel ? '#toolbar=0&navpanes=0&view=FitH' : '#toolbar=0&navpanes=0&scrollbar=0'}`} loading="lazy" className="h-full w-full border-0 bg-white" />
         : <div className="flex flex-col items-center gap-2">{pdf ? <FileText className="h-14 w-14" /> : <ImageIcon className="h-14 w-14" />}<span className="text-xs">{failed ? '预览加载失败，可放大查看' : '正在加载预览…'}</span></div>}
   </div>;
 
@@ -62,7 +65,7 @@ export function StoredAttachmentThumbnail({ name, mimeType, viewUrlPath, large =
   </div>;
 }
 
-export function LocalAttachmentThumbnail({ file, large = false }: { file: File; large?: boolean }) {
+export function LocalAttachmentThumbnail({ file, large = false, fitPanel = false }: { file: File; large?: boolean; fitPanel?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   const image = isImage(file.name, file.type);
   const pdf = isPdf(file.name, file.type);
@@ -72,9 +75,11 @@ export function LocalAttachmentThumbnail({ file, large = false }: { file: File; 
     setUrl(objectUrl);
     return () => URL.revokeObjectURL(objectUrl);
   }, [file, image, large, pdf]);
-  if (large) return <div aria-label={`${file.name}附件预览`} className="relative flex h-72 w-full items-center justify-center overflow-hidden rounded-md border bg-muted/30 text-muted-foreground">
-    {url && image ? <Image unoptimized fill src={url} alt={file.name} className="object-contain" />
-      : url && pdf ? <iframe title={`${file.name}首页预览`} src={`${url}#toolbar=0&navpanes=0&scrollbar=0`} className="h-full w-full border-0 bg-white" />
+  if (large) return <div aria-label={`${file.name}附件预览`} className={`relative flex min-w-0 w-full max-w-full items-center justify-center overflow-hidden rounded-md border bg-muted/30 text-muted-foreground ${fitPanel ? image ? 'min-h-64' : 'h-[75vh] min-h-96 max-h-[1000px]' : 'h-72'}`}>
+    {url && image ? fitPanel
+      ? <Image unoptimized src={url} alt={file.name} width={1200} height={1600} className="h-auto w-full object-contain" />
+      : <Image unoptimized fill src={url} alt={file.name} className="object-contain" />
+      : url && pdf ? <iframe title={`${file.name}首页预览`} src={`${url}#toolbar=0&navpanes=0&${fitPanel ? 'view=FitH' : 'scrollbar=0'}`} className="h-full w-full border-0 bg-white" />
         : <div className="flex flex-col items-center gap-2">{pdf ? <FileText className="h-14 w-14" /> : <ImageIcon className="h-14 w-14" />}<span className="text-xs">正在加载预览…</span></div>}
   </div>;
   return <div aria-hidden="true" className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40 text-muted-foreground">

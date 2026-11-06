@@ -95,6 +95,18 @@ export class CreateFinancialSettlementDto {
   @Max(100)
   taxRatePct?: number;
 
+  @IsOptional() @IsBoolean()
+  isFinalSettlement?: boolean;
+
+  @IsOptional() @IsBoolean()
+  quantityVarianceConfirmed?: boolean;
+
+  @IsOptional() @IsString()
+  quantityVarianceReason?: string;
+
+  @IsOptional() @IsString()
+  quantityVarianceKey?: string;
+
   @IsOptional()
   @IsDateString()
   dueDate?: string;

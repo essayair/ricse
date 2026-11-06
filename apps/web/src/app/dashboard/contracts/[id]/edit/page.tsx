@@ -664,10 +664,10 @@ export default function ContractEditPage() {
           <SectionTitle>合同附件（提交审批必需）</SectionTitle>
           <p className="mb-3 text-xs text-muted-foreground">提交审批前至少保留或上传一份纸质合同扫描件或签章文件。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB。</p>
           <div className="space-y-2">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 gap-4">
             {attachments.map(att => (
               <div key={att.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
-                <StoredAttachmentThumbnail large name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
+                <StoredAttachmentThumbnail large fitPanel name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
                 <div className="truncate font-medium" title={att.originalName}>{att.originalName}</div>
                 <div className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</div>
                 <div className="flex flex-wrap gap-1">
@@ -683,7 +683,7 @@ export default function ContractEditPage() {
             ))}
             {pendingAttachments.map((item, index) => (
               <div key={`${item.file.name}-${index}`} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
-                <LocalAttachmentThumbnail large file={item.file} />
+                <LocalAttachmentThumbnail large fitPanel file={item.file} />
                 <Input value={item.name} onChange={e => {
                   setIsDirty(true);
                   setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, name: e.target.value } : entry));

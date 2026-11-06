@@ -66,6 +66,9 @@ describe('销售交付后的逐车应收来源', () => {
     expect(source).toMatchObject({ available: true, pricingQuantityBasis: 'DRY_MATTER', netWeight: 98,
       dryQuantity: 94.864, totalQuantity: 94.864, contractTaxRatePct: 13,
       gradePrice: { status: 'READY', gradePct: 32.5, rate: 22.7, unitPrice: 737.75 } });
+    expect(source.availableQualityReports).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'customer-report', measuredGradePct: 32.5, measuredMoisturePct: 3.2 }),
+    ]));
     expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
   });
 

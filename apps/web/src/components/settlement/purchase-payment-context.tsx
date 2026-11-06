@@ -6,15 +6,17 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { promptAction } from '@/lib/system-dialog';
+import type { SettlementQuantityReview } from './settlement-quantity-review';
 
 export const paymentMoney = (value: unknown) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const QUALITY_LABELS: Record<string, string> = { PENDING: '待检测', PASS: '合格接收', LEGACY: '历史验收', DEDUCTION_PENDING: '待确认扣款接收', ACCEPT_WITH_DEDUCTION: '已确认扣款接收', REJECT: '拒收', REVIEW_REQUIRED: '待人工判定' };
 export interface GoodsSource {
+  settlementQuantityReview?: SettlementQuantityReview;
   id: string; orderId: string; orderNo: string; orderName: string; orderStatus: string; waybillId: string; waybillNo: string; plateNo?: string;
   materialName?: string; totalQuantity: number; usedQuantity?: number; remainingQuantity: number; negotiableQuantity?: number; negotiableRemainingQuantity?: number; negotiatedQuantity?: boolean; settlementQuantity?: number; unitPrice: number; deductionPerTon: number; qualityDisposition: string;
   qualityTaskId?: string; decisionVersion?: number; taskNo?: string; reportNo?: string; ticketNo?: string; weighTicketId?: string; available: boolean; reasons: string[];
   reportId?: string; defaultReportId?: string; inventoryReportId?: string; inventoryReportNo?: string;
-  availableQualityReports?: Array<{ id: string; reportNo: string; evidenceStage: string; institutionName: string; conclusion: string; measuredMoisturePct?: number | null }>;
+  availableQualityReports?: Array<{ id: string; reportNo: string; evidenceStage: string; institutionName: string; conclusion: string; measuredGradePct?: number | null; measuredMoisturePct?: number | null; measuredRecoveryPct?: number | null }>;
   inboundNo?: string;
   inboundDate?: string | null; salesCompletionConfirmedAt?: string | null; grossWeight?: number | null; tareWeight?: number | null; netWeight?: number | null;
   inventoryTicketNo?: string; inventoryNetWeight?: number | null; settlementTicketNo?: string; settlementSelectionId?: string;

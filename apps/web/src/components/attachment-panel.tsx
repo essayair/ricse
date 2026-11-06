@@ -29,6 +29,7 @@ export function AttachmentPanel({
   uploadLabel = '上传附件',
   canUpload = true,
   canDelete = true,
+  fitPanel = false,
   onChanged,
 }: {
   title: string;
@@ -40,6 +41,7 @@ export function AttachmentPanel({
   uploadLabel?: string;
   canUpload?: boolean;
   canDelete?: boolean;
+  fitPanel?: boolean;
   onChanged: () => Promise<void> | void;
 }) {
   const [uploading, setUploading] = useState(false);
@@ -94,7 +96,7 @@ export function AttachmentPanel({
       <div><div className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-primary" /><h2 className="font-semibold">{title}</h2></div><p className="mt-1 text-xs text-muted-foreground">{description}</p></div>
       {canUpload && <div className="flex gap-2"><Button type="button" variant="outline" disabled={uploading} onClick={() => void readClipboardAttachmentFiles().then(files => upload(files)).catch(error => alert(error.message || '粘贴附件失败'))}>粘贴附件</Button><label><input className="hidden" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={uploading} onChange={event => { void upload(Array.from(event.currentTarget.files || [])); event.currentTarget.value = ''; }} /><span className="inline-flex h-9 cursor-pointer items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"><Upload className="mr-2 h-4 w-4" />{uploading ? '上传中...' : uploadLabel}</span></label></div>}
     </div>
-    {attachments.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{attachments.map(item => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3"><StoredAttachmentThumbnail large name={item.originalName} mimeType={item.mimeType} viewUrlPath={`${attachmentPath}/${item.id}/view-url`} /><div className="truncate text-sm font-medium" title={item.originalName}>{item.originalName}</div><div className="text-xs text-muted-foreground">{formatSize(item.size)} · {new Date(item.createdAt).toLocaleString('zh-CN')}</div><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void view(item.id)}><Eye className="mr-1 h-4 w-4" />放大查看</Button>{canDelete && <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => void remove(item.id)}><Trash2 className="mr-1 h-4 w-4" />删除</Button>}</div></div>)}</div> : <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无附件</div>}
+    {attachments.length ? <div className={fitPanel ? 'grid min-w-0 grid-cols-1 gap-4' : 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3'}>{attachments.map(item => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3"><StoredAttachmentThumbnail large fitPanel={fitPanel} name={item.originalName} mimeType={item.mimeType} viewUrlPath={`${attachmentPath}/${item.id}/view-url`} /><div className="truncate text-sm font-medium" title={item.originalName}>{item.originalName}</div><div className="text-xs text-muted-foreground">{formatSize(item.size)} · {new Date(item.createdAt).toLocaleString('zh-CN')}</div><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void view(item.id)}><Eye className="mr-1 h-4 w-4" />放大查看</Button>{canDelete && <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => void remove(item.id)}><Trash2 className="mr-1 h-4 w-4" />删除</Button>}</div></div>)}</div> : <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无附件</div>}
   </Card>;
 }
 

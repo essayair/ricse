@@ -1,5 +1,6 @@
 'use client';
 import { PurchasePaymentShortcut } from '@/components/settlement/purchase-payment-shortcut';
+import { ContractSettlementRecords } from '@/components/settlement/contract-settlement-records';
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -427,7 +428,7 @@ function FulfillmentProgress({ contract }: { contract: ContractDetail }) {
           <ProgressModule icon={ClipboardList} label="执行通知" status={notices.length ? `${notices.length} 张，${notices.filter(item => item.status === 'COMPLETED').length} 张已完成` : '暂无关联单据'} active={notices.length > 0} />
           <ProgressModule icon={Truck} label="物流运输" status={waybillCount ? `${waybillCount} 张物流运单` : '暂无关联单据'} active={waybillCount > 0} />
           <ProgressModule icon={Warehouse} label="出入库执行" status="暂无关联单据" />
-          <ProgressModule icon={ReceiptText} label="结算执行" status="暂无关联单据" />
+          <a href="#contract-settlement-records" className="block rounded-lg hover:bg-muted/40"><ProgressModule icon={ReceiptText} label="结算执行" status="查看结算记录" /></a>
         </div>
       </CardContent>
     </Card>
@@ -738,15 +739,16 @@ export default function ContractDetailPage() {
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
+      <ContractSettlementRecords contractId={c.id} />
       {/* Attachments */}
       {c.attachments && c.attachments.length > 0 && (
         <Card>
           <CardHeader><CardTitle className="text-base">合同附件</CardTitle></CardHeader>
           <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 gap-4">
               {c.attachments.map((att) => (
                 <div key={att.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
-                  <StoredAttachmentThumbnail large name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
+                  <StoredAttachmentThumbnail large fitPanel name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
                   <div className="truncate font-medium" title={att.originalName}>{att.originalName}</div>
                   <div className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</div>
                   <Button type="button" variant="outline" size="sm" onClick={() => viewAttachment(att.id)}>放大查看</Button>

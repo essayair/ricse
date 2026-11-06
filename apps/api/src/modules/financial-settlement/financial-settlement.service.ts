@@ -13,6 +13,7 @@ import { PurchasePaymentContext } from './purchase-payment-context';
 import { LogisticsPaymentContext } from './logistics-payment-context';
 import { goodsAmounts, requestCommitment, ACTIVE_PAYMENT_REQUEST_STATUSES } from './payment-balance';
 import { GRADE_TIER_FORMULA, gradeTierAmounts, settlementPricingFacts } from './settlement-pricing';
+import { settlementQuantityReview } from './settlement-quantity-review';
 
 const SETTLEMENT_INCLUDE = {
   contract: { select: { id: true, contractNo: true, title: true, type: true, totalAmount: true, companyId: true, departmentId: true, businessUnitId: true, settlementBasis: true } },
@@ -484,11 +485,12 @@ export class FinancialSettlementService {
     });
   }
 
-  async findAll(query: { direction?: string; status?: string; search?: string }, userId: string) {
+  async findAll(query: { direction?: string; status?: string; search?: string; contractId?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'settlement.view');
     const contractScope = await this.accessControl.getContractScope(userId, 'settlement.view');
     const where: Prisma.FinancialSettlementWhereInput = {
       deletedAt: null, contract: contractScope,
+      ...(query.contractId ? { contractId: query.contractId } : {}),
       ...(query.direction ? { direction: query.direction } : {}), ...(query.status ? { status: query.status } : {}),
       ...(query.search ? { OR: [
         { settlementNo: { contains: query.search, mode: 'insensitive' } },
@@ -675,21 +677,14 @@ export class FinancialSettlementService {
         quantity: amounts.quantity, grossAmount: amounts.grossAmount, qualityDeductionAmount: amounts.qualityDeductionAmount,
         adjustmentAmount: amounts.adjustmentAmount, totalAmount: amounts.totalAmount, remarks: input.remarks?.trim() };
     });
-    const contractItems = await this.prisma.contractLineItem.findMany({ where: { contractId: contract.id } });
-    const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'PAYABLE', deletedAt: null, status: { not: 'VOIDED' }, ...(existingId ? { id: { not: existingId } } : {}) } } });
-    for (const item of contractItems) {
-      const current = lines.filter(line => (line.sourceSnapshot as any).contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity), new Prisma.Decimal(0));
-      const previous = existingLines.filter(line => (line.sourceSnapshot as any)?.contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity || 0), new Prisma.Decimal(0));
-      const limit = new Prisma.Decimal(item.quantity).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(contract.overfillPct || 0).div(100)));
-      if (current.plus(previous).greaterThan(limit)) throw new BadRequestException(`物料“${item.materialName || item.materialId}”累计结算数量超过合同及溢装约定，请先处理合同变更`);
-    }
+    const quantityReview = await this.prepareQuantityReview(dto, contract, lines, userId, preview, existingId);
     const total = (key: 'grossAmount' | 'qualityDeductionAmount' | 'adjustmentAmount' | 'totalAmount' | 'quantity') => new Prisma.Decimal(lines.reduce((sum, l) => sum.plus(l[key]), new Prisma.Decimal(0))).toDecimalPlaces(key === 'quantity' ? 3 : 2).toNumber();
     const data = { direction: 'PAYABLE', sourceType: 'CONTRACT', contractId: contract.id, businessUnitId: contract.businessUnitId,
       legalEntityPartnerId: contract.signingPartnerId, counterpartyId, settlementScope: dto.settlementScope,
       sourceNo: [...new Set(lines.map(l => l.orderNo))].join('、'), quantity: total('quantity'), unit: 'TON',
       grossAmount: total('grossAmount'), qualityDeductionAmount: total('qualityDeductionAmount'), adjustmentAmount: total('adjustmentAmount'), totalAmount: total('totalAmount'),
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null, remarks: dto.remarks?.trim(), createdBy: userId };
-    if (preview) return { ...data, lines };
+    if (preview) return { ...data, lines, quantityReview };
     if (existingId) return this.prisma.financialSettlement.update({ where: { id: existingId }, data: { ...data, createdBy: undefined, lines: { deleteMany: {}, create: lines } }, include: SETTLEMENT_INCLUDE });
     return this.prisma.financialSettlement.create({ data: { ...data, settlementNo: await this.nextNo('YF', 'settlement'), lines: { create: lines } }, include: SETTLEMENT_INCLUDE });
   }
@@ -737,14 +732,7 @@ export class FinancialSettlementService {
         totalAmount: amounts.totalAmount, remarks: input.remarks?.trim(),
       };
     });
-    const contractItems = await this.prisma.contractLineItem.findMany({ where: { contractId: contract.id } });
-    const existingLines = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: contract.id, direction: 'RECEIVABLE', deletedAt: null, status: { not: 'VOIDED' }, ...(existingId ? { id: { not: existingId } } : {}) } } });
-    for (const item of contractItems) {
-      const current = lines.filter(line => (line.sourceSnapshot as any).contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity), new Prisma.Decimal(0));
-      const previous = existingLines.filter(line => (line.sourceSnapshot as any)?.contractLineItemId === item.id).reduce((sum, line) => sum.plus(line.quantity || 0), new Prisma.Decimal(0));
-      const limit = new Prisma.Decimal(item.quantity).mul(new Prisma.Decimal(1).plus(new Prisma.Decimal(contract.overfillPct || 0).div(100)));
-      if (current.plus(previous).greaterThan(limit)) throw new BadRequestException(`物料“${item.materialName || item.materialId}”销售累计结算数量超过合同与溢装约定，请先处理合同变更`);
-    }
+    const quantityReview = await this.prepareQuantityReview(dto, contract, lines, userId, preview, existingId);
     const total = (key: 'grossAmount' | 'qualityDeductionAmount' | 'adjustmentAmount' | 'totalAmount' | 'quantity') => lines.reduce((sum, line) => sum.plus(line[key]), new Prisma.Decimal(0)).toDecimalPlaces(key === 'quantity' ? 3 : 2).toNumber();
     const data = {
       direction: 'RECEIVABLE', sourceType: 'CONTRACT', contractId: contract.id, businessUnitId: contract.businessUnitId,
@@ -753,9 +741,30 @@ export class FinancialSettlementService {
       grossAmount: total('grossAmount'), qualityDeductionAmount: total('qualityDeductionAmount'), adjustmentAmount: total('adjustmentAmount'), totalAmount: total('totalAmount'),
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null, remarks: dto.remarks?.trim(), createdBy: userId,
     };
-    if (preview) return { ...data, lines };
+    if (preview) return { ...data, lines, quantityReview };
     if (existingId) return this.prisma.financialSettlement.update({ where: { id: existingId }, data: { ...data, createdBy: undefined, lines: { deleteMany: {}, create: lines } }, include: SETTLEMENT_INCLUDE });
     return this.prisma.financialSettlement.create({ data: { ...data, settlementNo: await this.nextNo('YS', 'settlement'), lines: { create: lines } }, include: SETTLEMENT_INCLUDE });
+  }
+
+  private async prepareQuantityReview(dto: CreateFinancialSettlementDto, contract: any,
+    lines: Array<{ quantity: number; sourceSnapshot: unknown }>, userId: string, preview: boolean, existingId?: string) {
+    const items = await this.prisma.contractLineItem.findMany({ where: { contractId: contract.id } });
+    const previous = await this.prisma.financialSettlementLine.findMany({ where: { settlement: {
+      contractId: contract.id, direction: dto.direction, deletedAt: null, status: { not: 'VOIDED' }, ...(existingId ? { id: { not: existingId } } : {}),
+    } } });
+    const calculated = settlementQuantityReview(contract, items, lines, previous, Boolean(dto.isFinalSettlement));
+    const operator = !preview ? await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, username: true } }) : null;
+    const review = { ...calculated, key: signature(calculated),
+      reason: dto.quantityVarianceReason?.trim() || '', confirmed: Boolean(dto.quantityVarianceConfirmed),
+      recordedBy: userId, recordedByName: operator?.name || operator?.username || '', recordedAt: new Date().toISOString() };
+    if (!preview && review.differences.length && (!review.confirmed || !review.reason)) {
+      throw new BadRequestException('本次结算存在超出溢短装范围的数量差异，请填写数量差异说明并确认按实际数量生成');
+    }
+    if (!preview && review.differences.length && dto.quantityVarianceKey !== review.key) {
+      throw new BadRequestException('累计结算数量或合同范围已变化，请重新预览并确认数量差异');
+    }
+    if (lines[0]) lines[0].sourceSnapshot = snapshotJson({ ...(lines[0].sourceSnapshot as object), settlementQuantityReview: review });
+    return review;
   }
 
   private async editableGoodsSettlement(id: string, dto: CreateFinancialSettlementDto, userId: string) {
@@ -789,6 +798,18 @@ export class FinancialSettlementService {
     const item = await this.findOne(id, userId, 'settlement.confirm');
     if (!this.transactional) return this.withContractLock(this.paymentLockKey(item), service => service.confirm(id, userId));
     if (item.status !== 'DRAFT') throw new BadRequestException('只有草稿状态的结算单可以确认');
+    const quantityReview = item.lines.map(line => (line.sourceSnapshot as any)?.settlementQuantityReview).find(Boolean);
+    if (item.settlementScope === 'GOODS' && quantityReview) {
+      const contract = await this.prisma.contract.findUniqueOrThrow({ where: { id: item.contractId }, select: { overfillPct: true, shortfallPct: true } });
+      const items = await this.prisma.contractLineItem.findMany({ where: { contractId: item.contractId } });
+      const previous = await this.prisma.financialSettlementLine.findMany({ where: { settlement: { contractId: item.contractId,
+        direction: item.direction, deletedAt: null, status: { not: 'VOIDED' }, id: { not: id } } } });
+      const current = settlementQuantityReview(contract, items, item.lines, previous, quantityReview.finalSettlement);
+      if (JSON.stringify(current.differences) !== JSON.stringify(quantityReview.differences)
+        || current.differences.length && (!quantityReview.confirmed || !quantityReview.reason?.trim())) {
+        throw new BadRequestException('合同允许数量或累计结算数量已变化，请编辑草稿重新核对数量差异');
+      }
+    }
     if (item.settlementScope === 'GOODS' && (Number(item.adjustmentAmount || 0) !== 0 || item.lines.some(line => (line.sourceSnapshot as Record<string, any> | null)?.negotiatedQuantity || Number(line.adjustmentAmount || 0) !== 0))
       && !item.attachments.some(attachment => attachment.category === 'SIGNED_SETTLEMENT_CONFIRMATION')) {
       throw new BadRequestException('使用协商结算数量或其他加减项时，请先上传双方签章的结算确认单');
@@ -1120,7 +1141,7 @@ export class FinancialSettlementService {
     } else if (target.financialSettlementId) {
       const settlement = await this.findOne(target.financialSettlementId, userId, 'settlement.create');
       if (!this.transactional) return this.withContractLock(this.paymentLockKey(settlement), service => service.createDocumentAttachment(target, data, userId));
-      if (settlement.status !== 'DRAFT') throw new BadRequestException('仅草稿结算单可以上传结算确认附件');
+      if (!['DRAFT', 'CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(settlement.status)) throw new BadRequestException('当前结算单状态不能上传附件');
     } else {
       throw new BadRequestException('附件缺少关联单据');
     }

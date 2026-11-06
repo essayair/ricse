@@ -6,6 +6,7 @@ import { ArrowLeft, Printer } from 'lucide-react';
 import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
 import { Button } from '@/components/ui/button';
+import { quantityReviewPrintText, type SettlementQuantityReview } from '@/components/settlement/settlement-quantity-review';
 
 interface SettlementLine {
   id: string;
@@ -23,6 +24,7 @@ interface SettlementLine {
     waybillNo?: string; plateNo?: string; materialName?: string; ticketNo?: string; reportNo?: string;
     inboundDate?: string | null; salesCompletionConfirmedAt?: string | null; grossWeight?: number | null; tareWeight?: number | null; netWeight?: number | null;
     measuredMoisturePct?: number | null; dryQuantity?: number | null; pricingQuantityBasis?: string;
+    settlementQuantityReview?: SettlementQuantityReview;
   } | null;
 }
 
@@ -105,6 +107,7 @@ export default function SettlementPrintPage() {
   const dryDifference = dryBasis && dryTotal != null && settledTons != null
     ? Math.round((dryTotal - settledTons) * 1000) / 1000 : null;
   const uniquePrices = [...new Set(item.lines.map(line => line.unitPrice).filter(Boolean))];
+  const quantityReview = item.lines.find(line => line.sourceSnapshot?.settlementQuantityReview)?.sourceSnapshot?.settlementQuantityReview;
 
   return <div className="settlement-print-page -m-6 min-h-screen bg-slate-100 p-6">
     <div className="settlement-print-actions mx-auto mb-4 flex max-w-[1120px] items-center justify-between gap-3 rounded-lg border bg-white p-3 shadow-sm">
@@ -132,7 +135,7 @@ export default function SettlementPrintPage() {
       </section> : <section className="mt-4"><table className="w-full border-collapse text-[11px]"><thead><tr><Th>序号</Th><Th>执行批次 / 结算依据</Th><Th>数量</Th><Th>单价（元）</Th><Th>原金额（元）</Th><Th>质量扣款（元）</Th><Th>其他加减项（元）</Th><Th>结算金额（元）</Th><Th>备注</Th></tr></thead><tbody>{item.lines.length ? item.lines.map((line, index) => <tr key={line.id}><Td center>{index + 1}</Td><Td>{line.orderNo || item.sourceNo || item.contract.contractNo}{line.orderName ? ` · ${line.orderName}` : ''}</Td><Td right>{tons(line.quantity)} {line.unit ? unitLabel(line.unit) : ''}</Td><Td right>{line.unitPrice == null ? '—' : amount(line.unitPrice)}</Td><Td right>{amount(line.grossAmount)}</Td><Td right>{amount(line.qualityDeductionAmount)}</Td><Td right>{amount(line.adjustmentAmount)}</Td><Td right>{amount(line.totalAmount)}</Td><Td>{line.remarks || '—'}</Td></tr>) : <tr><Td center>1</Td><Td>{item.sourceNo || item.contract.contractNo}</Td><Td colSpan={2} /><Td right>{amount(item.grossAmount)}</Td><Td right>{amount(item.qualityDeductionAmount)}</Td><Td right>{amount(item.adjustmentAmount)}</Td><Td right>{amount(item.totalAmount)}</Td><Td>{item.remarks || '—'}</Td></tr>}</tbody></table></section>}
 
       <div className="mt-3 flex justify-end gap-6 border-b border-black pb-2 text-[12px]"><span>质量扣款：{amount(item.qualityDeductionAmount)} 元</span><span>其他加减项：{signedAmount(Number(item.adjustmentAmount || 0))} 元</span><strong>本次结算金额：{amount(item.totalAmount)} 元</strong></div>
-      <div className="print-avoid mt-3 min-h-[36px] border border-black p-2 text-[11px]"><strong>备注／双方确认事项：</strong>{item.remarks || '　'}</div>
+      <div className="print-avoid mt-3 min-h-[36px] border border-black p-2 text-[11px]"><strong>备注／双方确认事项：</strong>{item.remarks || '　'}{quantityReview?.differences.length ? <p className="mt-1 whitespace-pre-wrap">{quantityReviewPrintText(quantityReview)}</p> : null}</div>
       {goodsPurchase && item.lines.some(line => line.remarks) && <div className="mt-2 text-[10px]">逐车说明：{item.lines.filter(line => line.remarks).map(line => `${line.sourceSnapshot?.plateNo || line.sourceSnapshot?.waybillNo || '车辆'}：${line.remarks}`).join('；')}</div>}
       <div className="print-avoid mt-5 grid grid-cols-2 gap-8 text-[11px]"><Signature title="供方确认" name={supplier.name} /><Signature title="需方确认" name={purchaser.name} /></div>
     </article>
