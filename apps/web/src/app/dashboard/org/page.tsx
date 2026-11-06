@@ -10,6 +10,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Building2, Users, Layers, Network, Plus, Loader2, ChevronDown, ChevronRight, Trash2, Check, X, Pencil, ArrowUp, ArrowDown, GripVertical, Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
 import { confirmAction } from '@/lib/system-dialog';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/;
@@ -1097,8 +1098,8 @@ function OrgPageInner() {
                                 </thead>
                                 <tbody>
                                   {companyEmps.map((e) => (
-                                    <tr key={e.id} className="border-b hover:bg-muted/50 transition-colors">
-                                      <td className="px-4 py-2 font-medium">{e.name}</td>
+                                    <ClickableRow key={e.id} href={`/dashboard/org/employees/${e.id}`} className="border-b hover:bg-muted/50 transition-colors">
+                                      <td className="px-4 py-2 font-medium"><Link href={`/dashboard/org/employees/${e.id}`} className="hover:text-primary hover:underline">{e.name}</Link></td>
                                       <td className="px-4 py-2 text-muted-foreground text-xs">{e.department?.name || '—'}</td>
                                       <td className="px-4 py-2">{e.position || '—'}</td>
                                       <td className="px-4 py-2 text-muted-foreground text-xs"><div>{e.phone || '—'}</div><div className="mt-1">{e.email || '无邮箱'}</div></td>
@@ -1122,7 +1123,7 @@ function OrgPageInner() {
                                           )}
                                         </div>
                                       </td>
-                                    </tr>
+                                    </ClickableRow>
                                   ))}
                                 </tbody>
                               </table>

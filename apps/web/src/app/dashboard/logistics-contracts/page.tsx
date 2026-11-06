@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation';
 import { Plus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -37,8 +39,8 @@ export default function LogisticsContractsPage() {
   const carrierPartnerId = searchParams.get('carrierPartnerId') || '';
   const carrierName = searchParams.get('carrierName') || '';
   const [items, setItems] = useState<ContractItem[]>([]);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', status: '' });
+  const { search, status } = query;
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -70,11 +72,11 @@ export default function LogisticsContractsPage() {
         <div className="relative w-72">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input className="pl-9" placeholder="编号、合同名称或签约企业" value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => setQuery({ search: e.target.value })}
             onKeyDown={(e) => e.key === 'Enter' && void load()} />
         </div>
         <select className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          value={status} onChange={(e) => { setStatus(e.target.value); }}>
+          value={status} onChange={(e) => setQuery({ status: e.target.value })}>
           <option value="">全部状态</option>
           {Object.entries(STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -110,8 +112,8 @@ export default function LogisticsContractsPage() {
               </thead>
               <tbody>
                 {items.map((item) => (
-                  <tr key={item.id} className="border-b">
-                    <td className="min-w-56 p-3"><div className="font-mono">{item.contractNo}</div><div className="mt-1">{item.title || '—'}</div>{item.externalContractNo && <div className="mt-1 text-xs text-muted-foreground">外部合同号：{item.externalContractNo}</div>}</td>
+                  <ClickableRow key={item.id} href={`/dashboard/logistics-contracts/${item.id}`} className="border-b hover:bg-muted/40">
+                    <td className="min-w-56 p-3"><Link href={`/dashboard/logistics-contracts/${item.id}`} className="font-mono hover:text-primary hover:underline">{item.contractNo}</Link><div className="mt-1">{item.title || '—'}</div>{item.externalContractNo && <div className="mt-1 text-xs text-muted-foreground">外部合同号：{item.externalContractNo}</div>}</td>
                     <td className="p-3">
                       <div className="font-medium">{item.carrierPartner.name}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{item.carrierPartner.code}</div>
@@ -129,7 +131,7 @@ export default function LogisticsContractsPage() {
                         <Button size="sm" variant="ghost">详情</Button>
                       </Link>
                     </td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>

@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Search, Warehouse } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 
 const STATUS: Record<string, string> = {
   PENDING: '作业中', RECEIVED: '已收货', POSTED: '已入账', CANCELLED: '已作废',
@@ -29,11 +31,9 @@ const STAGES: Record<string, string> = {
 };
 
 export default function InboundPage() {
-  const router = useRouter();
   const [items, setItems] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [stage, setStage] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', status: '', stage: '' });
+  const { search, status, stage } = query;
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -77,14 +77,14 @@ export default function InboundPage() {
             className="pl-9"
             placeholder="搜索入库作业单、事业部、运单、磅单、质检单、合同、物料、供应商或车牌"
             value={search}
-            onChange={event => setSearch(event.target.value)}
+            onChange={event => setQuery({ search: event.target.value })}
           />
         </div>
-        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={stage} onChange={event => setStage(event.target.value)}>
+        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={stage} onChange={event => setQuery({ stage: event.target.value })}>
           <option value="">全部作业阶段</option>
           {Object.entries(STAGES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
-        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}>
+        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setQuery({ status: event.target.value })}>
           <option value="">全部单据状态</option>
           {Object.entries(STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -121,13 +121,13 @@ export default function InboundPage() {
                   const order = item.waybill?.dispatchNotice?.order;
                   const workflow = item.workflow || {};
                   return (
-                    <tr
+                    <ClickableRow
                       key={item.id}
-                      className="cursor-pointer border-b hover:bg-muted/50"
-                      onClick={() => router.push(`/dashboard/inbound/${item.id}`)}
+                      href={`/dashboard/inbound/${item.id}`}
+                      className="border-b hover:bg-muted/50"
                     >
                       <td className="p-3">
-                        <div className="font-mono font-medium text-primary">{item.receiptNo}</div>
+                        <Link href={`/dashboard/inbound/${item.id}`} className="block font-mono font-medium text-primary hover:underline">{item.receiptNo}</Link>
                         <StatusText status={item.status} className={`mt-2 ${stageClass(workflow.tone)}`}>
                           {workflow.stageLabel || STATUS[item.status] || item.status}
                         </StatusText>
@@ -161,7 +161,7 @@ export default function InboundPage() {
                         <div className={workflow.tone === 'danger' ? 'text-destructive' : 'text-muted-foreground'}>{workflow.blocker || '-'}</div>
                         <div className="mt-1 text-xs text-muted-foreground">创建：{formatDateTimeToSecond(item.createdAt)}</div>
                       </td>
-                    </tr>
+                    </ClickableRow>
                   );
                 })}
               </tbody>

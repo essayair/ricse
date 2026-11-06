@@ -7,6 +7,7 @@ import {
   Clock3, List, MapPin, Plus, RefreshCw, Search, Truck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useListQuery } from '@/lib/use-list-query';
 import { confirmAction } from '@/lib/system-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,9 +54,9 @@ export default function DispatchPage() {
   const router = useRouter();
   const [items, setItems] = useState<Waybill[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [type, setType] = useState('');
-  const [onlyException, setOnlyException] = useState(false);
+  const [query, setQuery] = useListQuery({ search: '', type: '', exception: '' });
+  const { search, type } = query;
+  const onlyException = query.exception === '1';
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -130,14 +131,14 @@ export default function DispatchPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-64 max-w-md flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9" placeholder="搜索运单、通知、合同、车辆或司机" value={search} onChange={event => setSearch(event.target.value)} />
+          <Input className="pl-9" placeholder="搜索运单、通知、合同、车辆或司机" value={search} onChange={event => setQuery({ search: event.target.value })} />
         </div>
-        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={type} onChange={event => setType(event.target.value)}>
+        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={type} onChange={event => setQuery({ type: event.target.value })}>
           <option value="">全部业务类型</option>
           <option value="PURCHASE">采购运输</option>
           <option value="SALES">销售运输</option>
         </select>
-        <Button variant={onlyException ? 'default' : 'outline'} onClick={() => setOnlyException(value => !value)}>
+        <Button variant={onlyException ? 'default' : 'outline'} onClick={() => setQuery({ exception: onlyException ? '' : '1' })}>
           <AlertTriangle className="mr-1 h-4 w-4" />只看异常
         </Button>
         <Button variant="ghost" size="icon" onClick={() => void load()} title="刷新">

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
+import { useListQuery } from '@/lib/use-list-query';
 import { StatusText } from '@/components/status-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,8 +22,9 @@ const DIMENSIONS: Array<{ value: InventoryDimension; label: string; description:
 export default function InventoryPage() {
   const [data, setData] = useState<any>({ lots: [], businessUnitSummaries: [], ownerSummaries: [], warehouseSummaries: [], ownerWarehouseSummaries: [], summary: {} });
   const [ledger, setLedger] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
-  const [dimension, setDimension] = useState<InventoryDimension>('BUSINESS_UNIT');
+  const [query, setQuery] = useListQuery({ search: '', dimension: 'BUSINESS_UNIT' });
+  const { search } = query;
+  const dimension: InventoryDimension = DIMENSIONS.some(item => item.value === query.dimension) ? query.dimension as InventoryDimension : 'BUSINESS_UNIT';
   const [selectedScope, setSelectedScope] = useState<{ dimension: InventoryDimension; id: string; label: string } | null>(null);
   const onlyUnit = data.summary.quantityTotalsByUnit?.length === 1 ? data.summary.quantityTotalsByUnit[0] : null;
   const pricingGroups = new Map<string, { unit: string; basis: string; quantity: number }>();
@@ -127,7 +129,7 @@ export default function InventoryPage() {
         <Input
           className="pl-9"
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => setQuery({ search: event.target.value })}
           placeholder="搜索业务单元、库存主体、批次、商品或供应商"
         />
       </div>
@@ -146,7 +148,7 @@ export default function InventoryPage() {
               key={item.value}
               type="button"
               className={`rounded-lg border px-4 py-2 text-left transition-colors ${dimension === item.value ? 'border-primary bg-primary/10 text-primary' : 'bg-background hover:bg-muted/60'}`}
-              onClick={() => { setDimension(item.value); setSelectedScope(null); }}
+              onClick={() => { setQuery({ dimension: item.value }); setSelectedScope(null); }}
             >
               <div className="text-sm font-medium">{item.label}</div>
               <div className="mt-0.5 text-xs text-muted-foreground">{item.description}</div>

@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Building2, Link2, Loader2, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
 
 interface BackendAccount {
@@ -55,10 +57,10 @@ const actionLabel: Record<string, string> = { BIND: '关联', REBIND: '重新关
 
 export default function UserManagementPage() {
   const [data, setData] = useState<PageResult>({ total: 0, pageNo: 1, pageSize: 20, list: [] });
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [bindingStatus, setBindingStatus] = useState('');
-  const [pageNo, setPageNo] = useState(1);
+  const [query, setQuery] = useListQuery({ search: '', status: '', bindingStatus: '', page: '1' });
+  const { search, status, bindingStatus } = query;
+  const pageNo = Math.max(1, Number(query.page) || 1);
+  const setPageNo = (page: number) => setQuery({ page: String(page) });
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<PlatformUser | null>(null);
   const [bindingUser, setBindingUser] = useState<PlatformUser | null>(null);
@@ -169,16 +171,16 @@ export default function UserManagementPage() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[260px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)}
+            <Input className="pl-9" value={search} onChange={(event) => setQuery({ search: event.target.value, page: '1' })}
               onKeyDown={(event) => { if (event.key === 'Enter') { setPageNo(1); void load(); } }}
               placeholder="搜索昵称、手机号、OpenID、企业、员工或后台用户名" />
           </div>
           <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={bindingStatus}
-            onChange={(event) => { setBindingStatus(event.target.value); setPageNo(1); }}>
+            onChange={(event) => setQuery({ bindingStatus: event.target.value, page: '1' })}>
             <option value="">全部关联状态</option><option value="BOUND">已关联</option><option value="UNBOUND">未关联</option>
           </select>
           <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={status}
-            onChange={(event) => { setStatus(event.target.value); setPageNo(1); }}>
+            onChange={(event) => setQuery({ status: event.target.value, page: '1' })}>
             <option value="">全部用户状态</option><option value="ACTIVE">正常</option><option value="DISABLED">禁用</option>
           </select>
           <Button onClick={() => { setPageNo(1); void load(); }}><Search className="mr-1 h-4 w-4" />查询</Button>
@@ -196,7 +198,7 @@ export default function UserManagementPage() {
               {loading && data.list.length === 0 ? <tr><td colSpan={8} className="p-10 text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />加载中</td></tr>
                 : data.list.length === 0 ? <tr><td colSpan={8} className="p-10 text-center text-muted-foreground">暂无小程序个人用户；用户完成微信登录后会自动进入本列表。</td></tr>
                   : data.list.map((user) => (
-                    <tr key={user.id} className="border-b align-top hover:bg-muted/20">
+                    <ClickableRow key={user.id} onOpen={() => void openDetail(user.id)} className="border-b align-top hover:bg-muted/20">
                       <td className="px-4 py-3"><button className="text-left font-medium hover:text-primary hover:underline" onClick={() => void openDetail(user.id)}>{user.nickName || '未授权昵称'}</button><div className="mt-1 text-xs text-muted-foreground">注册 {formatDate(user.createdAt)}</div></td>
                       <td className="px-4 py-3">{user.phone || '—'}{user.phoneVerifiedAt && <div className="mt-1 text-xs text-success">微信已验证</div>}</td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{user.openIdMasked}</td>
@@ -209,14 +211,14 @@ export default function UserManagementPage() {
                         {user.linkedUser && <button className="text-xs text-destructive hover:underline" onClick={() => void unbind(user)}>解除关联</button>}
                         <button className="text-xs text-muted-foreground hover:underline" onClick={() => void toggleStatus(user)}>{user.status === 'ACTIVE' ? '禁用' : '启用'}</button>
                       </div></td>
-                    </tr>
+                    </ClickableRow>
                   ))}
             </tbody>
           </table>
         </div>
         <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
           <span>共 {data.total} 条，第 {data.pageNo}/{totalPages} 页</span>
-          <div className="flex gap-2"><Button size="sm" variant="outline" disabled={pageNo <= 1} onClick={() => setPageNo((value) => value - 1)}>上一页</Button><Button size="sm" variant="outline" disabled={pageNo >= totalPages} onClick={() => setPageNo((value) => value + 1)}>下一页</Button></div>
+          <div className="flex gap-2"><Button size="sm" variant="outline" disabled={pageNo <= 1} onClick={() => setPageNo(pageNo - 1)}>上一页</Button><Button size="sm" variant="outline" disabled={pageNo >= totalPages} onClick={() => setPageNo(pageNo + 1)}>下一页</Button></div>
         </div>
       </Card>
 

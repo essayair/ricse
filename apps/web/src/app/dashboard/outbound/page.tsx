@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { PackageMinus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
@@ -9,16 +9,17 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 
 const STATUS: Record<string, string> = {
   PENDING: '待出库', PARTIAL: '部分出库', COMPLETED: '已完成', CANCELLED: '已取消',
 };
 
 export default function OutboundPage() {
-  const router = useRouter();
   const [items, setItems] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', status: '' });
+  const { search, status } = query;
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -37,9 +38,9 @@ export default function OutboundPage() {
     <div className="flex flex-wrap gap-3">
       <div className="relative min-w-72 flex-1">
         <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-9" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索出库管理单、事业部、发货通知、执行批次、合同或物料" />
+        <Input className="pl-9" value={search} onChange={event => setQuery({ search: event.target.value })} placeholder="搜索出库管理单、事业部、发货通知、执行批次、合同或物料" />
       </div>
-      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}>
+      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setQuery({ status: event.target.value })}>
         <option value="">全部状态</option>
         {Object.entries(STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </select>
@@ -56,8 +57,8 @@ export default function OutboundPage() {
           <tbody>{items.map(item => {
             const waybills = item.dispatchNotice.waybills || [];
             const tickets = waybills.flatMap((waybill: any) => waybill.weighTickets || []);
-            return <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/outbound/${item.id}`)}>
-              <td className="p-3"><div className="flex items-center gap-2"><span className="font-mono font-medium text-primary">{item.orderNo}</span><Badge variant="outline">{item.dispatchNotice.mode === 'DIRECT' ? '直拨' : '常规'}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{item.stageLabel}</div></td>
+            return <ClickableRow key={item.id} href={`/dashboard/outbound/${item.id}`} className="border-b hover:bg-muted/50">
+              <td className="p-3"><div className="flex items-center gap-2"><Link href={`/dashboard/outbound/${item.id}`} className="font-mono font-medium text-primary hover:underline">{item.orderNo}</Link><Badge variant="outline">{item.dispatchNotice.mode === 'DIRECT' ? '直拨' : '常规'}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{item.stageLabel}</div></td>
               <td className="p-3 font-mono text-xs">{item.dispatchNotice.noticeNo}</td>
               <td className="max-w-56 p-3"><div>{item.dispatchNotice.order.contract.contractNo}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.order.name}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.businessUnit?.name || '未归属业务单元'}</div></td>
               <td className="p-3"><StatusText status={item.status} tone={Number(item.shortageQuantity) > 0 ? 'destructive' : undefined}>{STATUS[item.status] || item.status}</StatusText></td>
@@ -68,7 +69,7 @@ export default function OutboundPage() {
               <td className="p-3 text-right font-medium">{weight(item.actualQuantity)}</td>
               <td className="p-3"><div>{waybills.length} 个车次</div><div className="mt-1 text-xs text-muted-foreground">{tickets.length} 张磅单</div></td>
               <td className="p-3 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</td>
-            </tr>;
+            </ClickableRow>;
           })}</tbody>
         </table></div>}
     </Card>

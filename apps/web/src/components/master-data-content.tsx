@@ -15,6 +15,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 import { FleetMemberManager } from '@/components/fleet-member-manager';
 import { ORGANIZATION_TYPES } from '@/app/dashboard/master-data/service-organizations/service-organization-form';
 
@@ -222,8 +224,6 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
       setCanManageTransport(user.role === 'ADMIN' || user.roles?.includes('ADMIN') || user.permissions?.includes('transport_resource.manage'));
     } catch { setCanManageTransport(false); }
   }, []);
-  const typeFromUrl = searchParams.get('type') as OrganizationType | null;
-  const resourceFromUrl = searchParams.get('resource') as ResourceTab | null;
 
   const setTab = (t: TabKey) => {
     if (transportOnly && t !== 'vehicles') return;
@@ -242,11 +242,6 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
     }
   }, [router, searchParams, tabFromUrl, transportOnly]);
 
-  useEffect(() => {
-    if (typeFromUrl && typeFromUrl in ORGANIZATION_TYPES) {
-      setServiceOrgType(typeFromUrl);
-    }
-  }, [typeFromUrl]);
 
   // Data
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -258,7 +253,6 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [fleets, setFleets] = useState<Fleet[]>([]);
   const [serviceOrgs, setServiceOrgs] = useState<ServiceOrgItem[]>([]);
-  const [serviceOrgType, setServiceOrgType] = useState<OrganizationType>('LOGISTICS_CARRIER');
   const [qualityTab, setQualityTab] = useState<QualityTab>('indicators');
   const [qualityIndicators, setQualityIndicators] = useState<QualityIndicator[]>([]);
   const [qualityMethods, setQualityMethods] = useState<QualityMethod[]>([]);
@@ -268,17 +262,29 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
   const [methodForm, setMethodForm] = useState(() => emptyMethodForm());
   const [templateForm, setTemplateForm] = useState(() => emptyTemplateForm());
 
-  // Filter state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [vehicleOwnerFilter, setVehicleOwnerFilter] = useState('');
-  const [vehicleOwnerIdFilter, setVehicleOwnerIdFilter] = useState('');
-  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('');
-  const [vehicleStatusFilter, setVehicleStatusFilter] = useState('');
-  const [resourceTab, setResourceTab] = useState<ResourceTab>(resourceFromUrl && RESOURCE_TABS.some(item => item.key === resourceFromUrl) ? resourceFromUrl : 'vehicle');
-  const [driverOrgFilter, setDriverOrgFilter] = useState('');
-  const [driverFleetFilter, setDriverFleetFilter] = useState('');
+  // 筛选条件与子页签保存在 URL 中，从详情页返回时保持原样
+  const [query, setQuery] = useListQuery({
+    search: '', role: '', category: '', type: 'LOGISTICS_CARRIER', resource: 'vehicle',
+    vehicleOwner: '', vehicleOwnerId: '', vehicleType: '', vehicleStatus: '', driverOrg: '', driverFleet: '',
+  });
+  const {
+    search: searchTerm, role: roleFilter, category: categoryFilter,
+    vehicleOwner: vehicleOwnerFilter, vehicleOwnerId: vehicleOwnerIdFilter, vehicleType: vehicleTypeFilter, vehicleStatus: vehicleStatusFilter,
+    driverOrg: driverOrgFilter, driverFleet: driverFleetFilter,
+  } = query;
+  const serviceOrgType: OrganizationType = query.type in ORGANIZATION_TYPES ? query.type as OrganizationType : 'LOGISTICS_CARRIER';
+  const resourceTab: ResourceTab = RESOURCE_TABS.find(item => item.key === query.resource)?.key || 'vehicle';
+  const setSearchTerm = (search: string) => setQuery({ search });
+  const setRoleFilter = (role: string) => setQuery({ role });
+  const setCategoryFilter = (category: string) => setQuery({ category });
+  const setVehicleOwnerFilter = (vehicleOwner: string) => setQuery({ vehicleOwner });
+  const setVehicleOwnerIdFilter = (vehicleOwnerId: string) => setQuery({ vehicleOwnerId });
+  const setVehicleTypeFilter = (vehicleType: string) => setQuery({ vehicleType });
+  const setVehicleStatusFilter = (vehicleStatus: string) => setQuery({ vehicleStatus });
+  const setDriverOrgFilter = (driverOrg: string) => setQuery({ driverOrg });
+  const setDriverFleetFilter = (driverFleet: string) => setQuery({ driverFleet });
+  const setResourceTab = (resource: ResourceTab) => setQuery({ resource });
+  const setServiceOrgType = (type: OrganizationType) => setQuery({ type });
 
   // 司机独立管理：表单状态
   const [driverForm, setDriverForm] = useState({ ...driverEmpty });
@@ -293,11 +299,6 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
   const [fleetSaving, setFleetSaving] = useState(false);
   const [fleetMembersId, setFleetMembersId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (resourceFromUrl && RESOURCE_TABS.some(item => item.key === resourceFromUrl)) {
-      setResourceTab(resourceFromUrl);
-    }
-  }, [resourceFromUrl]);
 
   const fetchPartners = useCallback(() => {
     const params = new URLSearchParams();
@@ -367,8 +368,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
   useEffect(() => { if (!transportOnly) fetchServiceOrgs(); }, [fetchServiceOrgs, transportOnly]);
   useEffect(() => { if (!transportOnly) fetchQualityData(); }, [fetchQualityData, transportOnly]);
 
-  // Clear search when switching tabs
-  useEffect(() => { setSearchTerm(''); }, [tab]);
+  // 切换主页签会重写 URL（只保留 tab），各页签的筛选条件由 useListQuery 分别记忆
 
   // Status toggles
   const toggleMaterialStatus = async (id: string, currentStatus: string) => {
@@ -881,13 +881,14 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
         {tab === 'partners' && (
           <DataTable
             headers={['编码 / 信用代码', '企业名称', '合作伙伴角色', '状态', '省市', '法人', '联系人 / 电话', '类别', '纳税评级', '授信额度', '操作']}
+            rowHrefs={partners.map((p) => `/dashboard/master-data/partners/${p.id}`)}
             rows={partners.map((p) => {
               const catCfg = p.category ? CATEGORY_CONFIG[p.category] : null;
               const creditNum = p.creditLimit ? parseFloat(p.creditLimit) : 0;
               return [
                 <div key="c"><div className="font-mono text-xs">{p.code}</div><div className="mt-1 max-w-44 truncate font-mono text-[11px] text-muted-foreground">{p.taxId || '无统一信用代码'}</div></div>,
                 <div key="n">
-                  <div className="font-medium text-sm">{p.name}</div>
+                  <Link href={`/dashboard/master-data/partners/${p.id}`} className="font-medium text-sm hover:text-primary hover:underline">{p.name}</Link>
                   {p.shortName && <div className="text-xs text-muted-foreground">{p.shortName}</div>}
                 </div>,
                 <RoleBadges key="r" roles={p.roles} isInternal={p.isInternal} />,
@@ -958,6 +959,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
         {tab === 'materials' && (
           <DataTable
             headers={['业务编码 / 标准编码', '商品名称 / 形态规格', '参考类型 / 包装', '状态', '商品分类', '核心指标', '单位', '质检模板', '操作']}
+            rowHrefs={materials.map((m) => `/dashboard/master-data/materials/${m.id}`)}
             rows={materials.map((m) => [
               <div key="c"><div className="font-mono text-xs">{m.code}</div><div className="mt-1 font-mono text-[11px] text-muted-foreground">{m.standardCommodity?.code || '历史物料'}</div></div>,
               <div key="n"><Link href={`/dashboard/master-data/materials/${m.id}`} className="font-medium hover:text-primary hover:underline">{m.name}</Link><div className="mt-1 max-w-56 truncate text-xs text-muted-foreground">{m.commodityForm || '未设置形态/规格'}</div></div>,
@@ -1022,6 +1024,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
         {tab === 'vehicles' && resourceTab === 'vehicle' && (
           <DataTable
             headers={['车牌号', '车型 / 品牌', '核定载重 / 皮重', '运行 / 档案状态', '定位设备', '运力归属 / 车主', '关联司机', '引用运单', '操作']}
+            rowHrefs={vehicles.map((v) => `/dashboard/master-data/vehicles/${v.id}`)}
             rows={vehicles.map((v) => [
               <Link key="p" href={`/dashboard/master-data/vehicles/${v.id}`} className="font-mono font-medium text-primary hover:underline">{v.plateNo}</Link>,
               <div key="vt"><div>{VEHICLE_TYPE[v.vehicleType] || v.vehicleType}</div><div className="mt-1 text-xs text-muted-foreground">{v.brand || '未设置品牌'}</div></div>,
@@ -1063,6 +1066,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
         {tab === 'vehicles' && resourceTab === 'driver' && (
           <DataTable
             headers={['司机 / 手机', '所属承运商', '所属车队', '驾驶证 / 准驾车型', '状态', '有效期', '引用运单', '操作']}
+            rowHrefs={drivers.map((d) => `/dashboard/master-data/drivers/${d.id}`)}
             rows={drivers.map((d) => [
               <div key="n"><Link href={`/dashboard/master-data/drivers/${d.id}`} className="font-medium text-primary hover:underline">{d.name}</Link><div className="mt-1 text-xs text-muted-foreground">{d.phone}</div></div>,
               d.serviceOrganization
@@ -1348,8 +1352,10 @@ function QualityTemplateItems({ value, indicators, onChange }: {
 
 /* ── Shared DataTable ── */
 
-function DataTable({ headers, rows, empty }: {
+function DataTable({ headers, rows, empty, rowHrefs }: {
   headers: string[]; rows: React.ReactNode[][]; empty: React.ReactNode;
+  /** 各行详情页地址；提供时整行可点击打开详情。 */
+  rowHrefs?: Array<string | undefined>;
 }) {
   if (rows.length === 0) {
     return <div className="p-12 text-center text-muted-foreground text-sm">{empty}</div>;
@@ -1368,11 +1374,19 @@ function DataTable({ headers, rows, empty }: {
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b hover:bg-muted/50 transition-colors">
-              {row.map((cell, j) => (
-                <td key={j} className="px-4 py-3">{cell}</td>
-              ))}
-            </tr>
+            rowHrefs?.[i] ? (
+              <ClickableRow key={i} href={rowHrefs[i]} className="border-b hover:bg-muted/50 transition-colors">
+                {row.map((cell, j) => (
+                  <td key={j} className="px-4 py-3">{cell}</td>
+                ))}
+              </ClickableRow>
+            ) : (
+              <tr key={i} className="border-b hover:bg-muted/50 transition-colors">
+                {row.map((cell, j) => (
+                  <td key={j} className="px-4 py-3">{cell}</td>
+                ))}
+              </tr>
+            )
           ))}
         </tbody>
       </table>

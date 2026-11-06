@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -10,6 +11,8 @@ import { ArrowDownToLine, ArrowUpFromLine, ChevronRight, Plus, Search, Trash2 } 
 import { unitLabel } from '@/lib/unit';
 import { BusinessDirectionBadge, businessDirectionFilterClass, businessDirectionStyle } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 import { confirmAction } from '@/lib/system-dialog';
 
 interface Order {
@@ -40,9 +43,8 @@ export default function OrdersPage() {
   const router = useRouter();
   const [data, setData] = useState<{ items: Order[]; pagination: { total: number } } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [type, setType] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', status: '', type: '' });
+  const { search, status, type } = query;
   const [typeTotals, setTypeTotals] = useState({ purchase: 0, sales: 0 });
 
   const load = async () => {
@@ -109,15 +111,15 @@ export default function OrdersPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-9" placeholder="搜索批次名称、编号、合同号或合同标题" value={search} onChange={event => setSearch(event.target.value)} />
+            <Input className="pl-9" placeholder="搜索批次名称、编号、合同号或合同标题" value={search} onChange={event => setQuery({ search: event.target.value })} />
           </div>
-          <button onClick={() => setType('')} className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${type === '' ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:bg-muted/60'}`}>全部类型 {typeTotals.purchase + typeTotals.sales}</button>
-          <button onClick={() => setType('PURCHASE')} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors ${businessDirectionFilterClass('PURCHASE', type === 'PURCHASE')}`}><ArrowDownToLine className="h-3.5 w-3.5" />采购执行 {typeTotals.purchase}</button>
-          <button onClick={() => setType('SALES')} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors ${businessDirectionFilterClass('SALES', type === 'SALES')}`}><ArrowUpFromLine className="h-3.5 w-3.5" />销售执行 {typeTotals.sales}</button>
+          <button onClick={() => setQuery({ type: '' })} className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${type === '' ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:bg-muted/60'}`}>全部类型 {typeTotals.purchase + typeTotals.sales}</button>
+          <button onClick={() => setQuery({ type: 'PURCHASE' })} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors ${businessDirectionFilterClass('PURCHASE', type === 'PURCHASE')}`}><ArrowDownToLine className="h-3.5 w-3.5" />采购执行 {typeTotals.purchase}</button>
+          <button onClick={() => setQuery({ type: 'SALES' })} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors ${businessDirectionFilterClass('SALES', type === 'SALES')}`}><ArrowUpFromLine className="h-3.5 w-3.5" />销售执行 {typeTotals.sales}</button>
         </div>
         <div className="flex flex-wrap gap-2">
           {['', 'DRAFT', 'CONFIRMED', 'DISPATCHED', 'COMPLETED', 'CANCELLED'].map(value => (
-            <button key={value} onClick={() => setStatus(value)}
+            <button key={value} onClick={() => setQuery({ status: value })}
               className={`rounded-full border px-3 py-1.5 text-xs ${status === value ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground'}`}>
               {value ? STATUS_MAP[value].label : '全部状态'}
             </button>
@@ -148,13 +150,13 @@ export default function OrdersPage() {
             </thead>
             <tbody>
               {items.map(order => (
-                <tr key={order.id} className={`cursor-pointer border-b align-middle transition-colors ${businessDirectionStyle(order.type).hover}`} onClick={() => router.push(`/dashboard/orders/${order.id}`)}>
+                <ClickableRow key={order.id} href={`/dashboard/orders/${order.id}`} className={`border-b align-middle transition-colors ${businessDirectionStyle(order.type).hover}`}>
                   <td className="px-4 py-3">
                     <div className="mb-1.5 flex items-center gap-2">
                       <OrderTypeBadge type={order.type} />
                       <div className="min-w-0 truncate font-medium" title={order.name}>{order.name}</div>
                     </div>
-                    <div className="whitespace-nowrap font-mono text-xs text-muted-foreground">{order.orderNo}</div>
+                    <Link href={`/dashboard/orders/${order.id}`} className="whitespace-nowrap font-mono text-xs text-muted-foreground hover:text-primary hover:underline">{order.orderNo}</Link>
                   </td>
                   <td className="px-4 py-3">
                     <div className="whitespace-nowrap font-medium">{order.contract.contractNo}</div>
@@ -173,7 +175,7 @@ export default function OrdersPage() {
                       </button>
                     ) : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                   </td>
-                </tr>
+                </ClickableRow>
               ))}
             </tbody>
           </table>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, RotateCcw, Search } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -9,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 
 const STATUS: Record<string, string> = {
   DRAFT: '草稿',
@@ -22,9 +25,8 @@ const STATUS: Record<string, string> = {
 export default function InventoryReversalListPage() {
   const router = useRouter();
   const [items, setItems] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
-  const [type, setType] = useState('');
-  const [status, setStatus] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', type: '', status: '' });
+  const { search, type, status } = query;
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -54,16 +56,16 @@ export default function InventoryReversalListPage() {
           <Input
             className="pl-9"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => setQuery({ search: event.target.value })}
             placeholder="搜索冲销单、原业务单或冲销原因"
           />
         </div>
-        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={type} onChange={(event) => setType(event.target.value)}>
+        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={type} onChange={(event) => setQuery({ type: event.target.value })}>
           <option value="">全部类型</option>
           <option value="INBOUND">入库冲销</option>
           <option value="OUTBOUND">出库冲销</option>
         </select>
-        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={(event) => setQuery({ status: event.target.value })}>
           <option value="">全部状态</option>
           {Object.entries(STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -94,13 +96,13 @@ export default function InventoryReversalListPage() {
                 {items.map((item) => {
                   const source = item.type === 'INBOUND' ? item.businessInbound : item.salesOutbound;
                   return (
-                    <tr
+                    <ClickableRow
                       key={item.id}
-                      className="cursor-pointer border-b hover:bg-muted/50"
-                      onClick={() => router.push(`/dashboard/inventory-reversals/${item.id}`)}
+                      href={`/dashboard/inventory-reversals/${item.id}`}
+                      className="border-b hover:bg-muted/50"
                     >
                       <td className="p-3">
-                        <div className="font-mono font-medium text-primary">{item.reversalNo}</div>
+                        <Link href={`/dashboard/inventory-reversals/${item.id}`} className="block font-mono font-medium text-primary hover:underline">{item.reversalNo}</Link>
                         <div className="mt-1 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</div>
                       </td>
                       <td className="p-3">{item.type === 'INBOUND' ? '入库冲销' : '出库冲销'}</td>
@@ -114,7 +116,7 @@ export default function InventoryReversalListPage() {
                       <td className="max-w-64 p-3"><div className="truncate">{item.reason}</div></td>
                       <td className="p-3">{item.creator.name}</td>
                       <td className="p-3">{item.approver?.name || '-'}</td>
-                    </tr>
+                    </ClickableRow>
                   );
                 })}
               </tbody>

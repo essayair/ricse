@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, ChevronRight, Plus, Search, Scale } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -10,6 +11,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { BusinessDirectionBadge } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 
 interface ChildTicket {
   id: string; ticketNo: string; status: string; weighingStage: string; sequence: number;
@@ -37,9 +40,9 @@ const TICKET_STATUS: Record<string, string> = {
 export default function WeighbridgePage() {
   const router = useRouter();
   const [items, setItems] = useState<ManagementFile[]>([]);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [abnormal, setAbnormal] = useState(false);
+  const [query, setQuery] = useListQuery({ search: '', status: '', abnormal: '' });
+  const { search, status } = query;
+  const abnormal = query.abnormal === '1';
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -69,11 +72,11 @@ export default function WeighbridgePage() {
       <Summary label="存在磅差异常" value={summary.abnormal} danger />
     </div>
     <div className="flex flex-wrap gap-3">
-      <div className="relative max-w-xl flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="搜索运单、磅单、执行通知、批次、车牌或货物" value={search} onChange={event => setSearch(event.target.value)} /></div>
-      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}>
+      <div className="relative max-w-xl flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="搜索运单、磅单、执行通知、批次、车牌或货物" value={search} onChange={event => setQuery({ search: event.target.value })} /></div>
+      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setQuery({ status: event.target.value })}>
         <option value="">全部子磅单状态</option>{Object.entries(TICKET_STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
-      <Button variant={abnormal ? 'default' : 'outline'} onClick={() => setAbnormal(value => !value)}><AlertTriangle className="mr-1 h-4 w-4" />只看异常</Button>
+      <Button variant={abnormal ? 'default' : 'outline'} onClick={() => setQuery({ abnormal: abnormal ? '' : '1' })}><AlertTriangle className="mr-1 h-4 w-4" />只看异常</Button>
     </div>
     {!items.length ? <Card><div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无磅单信息</div></Card> : <Card className="overflow-hidden">
       <div className="overflow-x-auto"><table className="min-w-[1500px] w-full text-sm">
@@ -85,9 +88,9 @@ export default function WeighbridgePage() {
           const receiving = stageTickets(item, 'RECEIVING');
           const effective = effectiveSelection(item);
           const state = managementState(item);
-          return <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/weighbridge/management/${item.id}`)}>
+          return <ClickableRow key={item.id} href={`/dashboard/weighbridge/management/${item.id}`} className="border-b hover:bg-muted/50">
             <td className="px-4 py-4 text-center">{index + 1}</td>
-            <td className="px-4 py-4"><div className="font-mono font-medium text-primary">{item.weighTask.taskNo}</div><div className="mt-1 font-mono text-xs">{item.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.originLocation || '-'} → {item.destinationLocation || '-'}</div></td>
+            <td className="px-4 py-4"><Link href={`/dashboard/weighbridge/management/${item.id}`} className="font-mono font-medium text-primary hover:underline">{item.weighTask.taskNo}</Link><div className="mt-1 font-mono text-xs">{item.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.originLocation || '-'} → {item.destinationLocation || '-'}</div></td>
             <td className="px-4 py-4"><BusinessDirectionBadge type={item.dispatchNotice.type} /></td>
             <td className="px-4 py-4"><StatusText status={item.weighTask.status}>{state.label}</StatusText>{item.weighTickets.some(ticket => ticket.abnormal) && <Badge className="ml-2" variant="destructive">异常</Badge>}</td>
             <td className="px-4 py-4"><div className="font-medium">{item.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.noticeNo}</div></td>
@@ -98,7 +101,7 @@ export default function WeighbridgePage() {
             <td className="px-4 py-4"><StageSummary tickets={receiving} /></td>
             <td className="px-4 py-4">{effective ? <div><div className="font-mono font-medium text-primary">{effective.weighTicket.ticketNo}</div><div className="mt-1 text-xs text-muted-foreground">{stageName(item, effective.weighTicket.weighingStage)} · {number(effective.quantity)} 吨</div></div> : <span className="text-warning">尚未确定</span>}</td>
             <td className="px-4 py-4"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
-          </tr>;
+          </ClickableRow>;
         })}</tbody>
       </table></div>
     </Card>}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,8 @@ import { api } from '@/lib/api';
 import { unitLabel } from '@/lib/unit';
 import { BusinessDirectionBadge, businessDirectionStyle } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 import { confirmAction } from '@/lib/system-dialog';
 
 interface Contract {
@@ -63,11 +66,9 @@ export default function ContractsPage() {
   const router = useRouter();
   const [data, setData] = useState<{ items: Contract[]; pagination: any } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [businessUnitFilter, setBusinessUnitFilter] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', status: '', type: '', businessUnitId: '' });
+  const { search: searchTerm, status: statusFilter, type: typeFilter, businessUnitId: businessUnitFilter } = query;
   const [businessUnits, setBusinessUnits] = useState<Array<{ id: string; code: string; name: string }>>([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [userRole, setUserRole] = useState('');
   const [currentUserId, setCurrentUserId] = useState('');
   const [permissions, setPermissions] = useState<string[]>([]);
@@ -167,20 +168,20 @@ export default function ContractsPage() {
               placeholder="搜索合同编号 / 标题 / 合作方..."
               className="pl-9"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => setQuery({ search: e.target.value })}
             />
           </div>
           {/* 合同类型 */}
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <span>类型:</span>
             {[['', '全部'], ['PURCHASE', '采购'], ['SALES', '销售'], ['BILATERAL', '双边']].map(([v, label]) => (
-              <button key={v} onClick={() => setTypeFilter(v)}
+              <button key={v} onClick={() => setQuery({ type: v })}
                 className={`px-2.5 py-1 rounded border text-xs transition-colors ${typeFilter === v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border hover:bg-accent'}`}>
                 {label}
               </button>
             ))}
           </div>
-          <select value={businessUnitFilter} onChange={(event) => setBusinessUnitFilter(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs">
+          <select value={businessUnitFilter} onChange={(event) => setQuery({ businessUnitId: event.target.value })} className="h-8 rounded-md border border-input bg-background px-2 text-xs">
             <option value="">全部业务单元（事业部）</option>
             {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.code} {unit.name}</option>)}
           </select>
@@ -190,7 +191,7 @@ export default function ContractsPage() {
           {['', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED', 'VOIDED'].map((s) => (
             <button
               key={s}
-              onClick={() => setStatusFilter(s)}
+              onClick={() => setQuery({ status: s })}
               className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
                 statusFilter === s
                   ? 'bg-primary text-primary-foreground border-primary'
@@ -227,13 +228,13 @@ export default function ContractsPage() {
             </thead>
             <tbody>
               {data.items.map((c) => (
-                <tr
+                <ClickableRow
                   key={c.id}
-                  className={`border-b cursor-pointer transition-colors ${businessDirectionStyle(c.type).hover}`}
-                  onClick={() => router.push(`/dashboard/contracts/${c.id}`)}
+                  href={`/dashboard/contracts/${c.id}`}
+                  className={`border-b transition-colors ${businessDirectionStyle(c.type).hover}`}
                 >
                   <td className="px-4 py-3">
-                    <div className="font-mono text-xs font-medium">{c.contractNo}</div>
+                    <Link href={`/dashboard/contracts/${c.id}`} className="font-mono text-xs font-medium hover:text-primary hover:underline">{c.contractNo}</Link>
                     <div className="mt-1 text-xs text-muted-foreground">{c.externalNo || '无外部编号'}</div>
                   </td>
                   <td className="max-w-64 px-4 py-3">
@@ -291,7 +292,7 @@ export default function ContractsPage() {
                       </button>
                     ) : <span className="text-muted-foreground">—</span>}
                   </td>
-                </tr>
+                </ClickableRow>
               ))}
             </tbody>
           </table>

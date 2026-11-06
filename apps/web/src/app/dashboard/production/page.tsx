@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Factory, Plus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
@@ -12,13 +11,13 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 
 export default function ProductionPage() {
-  const router = useRouter();
   const [data, setData] = useState<any>({ items: [], summary: {} });
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [mode, setMode] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', status: '', mode: '' });
+  const { search, status, mode } = query;
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -42,15 +41,15 @@ export default function ProductionPage() {
       <Summary label="合格入库" value={quantity(data.summary.qualifiedQuantity)} />
     </div>
     <div className="flex flex-wrap gap-3">
-      <div className="relative min-w-72 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索任务编号、名称、事业部、来源单号、产出物料或加工商" /></div>
-      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={mode} onChange={event => setMode(event.target.value)}><option value="">全部模式</option><option value="INTERNAL">自营生产</option><option value="OUTSOURCED">委外加工</option></select>
-      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(PRODUCTION_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <div className="relative min-w-72 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={event => setQuery({ search: event.target.value })} placeholder="搜索任务编号、名称、事业部、来源单号、产出物料或加工商" /></div>
+      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={mode} onChange={event => setQuery({ mode: event.target.value })}><option value="">全部模式</option><option value="INTERNAL">自营生产</option><option value="OUTSOURCED">委外加工</option></select>
+      <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setQuery({ status: event.target.value })}><option value="">全部状态</option>{Object.entries(PRODUCTION_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     </div>
     <Card className="overflow-hidden">
       {!data.items.length ? <div className="p-12 text-center text-muted-foreground"><Factory className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无生产任务</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1680px] text-sm">
         <thead className="border-b bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">任务编号 / 名称</th><th className="p-3">生产方式</th><th className="p-3">业务单元（事业部）</th><th className="p-3">状态</th><th className="p-3">库存主体</th><th className="p-3">产出物料</th><th className="p-3">原料仓 → 成品仓</th><th className="p-3">加工服务商</th><th className="p-3 text-right">计划产量</th><th className="p-3 text-right">已入库</th><th className="p-3 text-right">实际收率</th><th className="p-3">来源</th><th className="p-3">创建时间</th></tr></thead>
-        <tbody>{data.items.map((item: any) => <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/production/${item.id}`)}>
-          <td className="p-3"><div className="font-mono font-medium text-primary">{item.taskNo}</div><div className="mt-1 max-w-56 truncate">{item.name}</div></td>
+        <tbody>{data.items.map((item: any) => <ClickableRow key={item.id} href={`/dashboard/production/${item.id}`} className="border-b hover:bg-muted/50">
+          <td className="p-3"><Link href={`/dashboard/production/${item.id}`} className="block font-mono font-medium text-primary hover:underline">{item.taskNo}</Link><div className="mt-1 max-w-56 truncate">{item.name}</div></td>
           <td className="p-3"><Badge variant="outline">{item.mode === 'OUTSOURCED' ? '委外加工' : '自营生产'}</Badge></td>
           <td className="p-3"><div>{item.businessUnit?.name || '未归属'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.businessUnit?.code || '-'}</div></td>
           <td className="p-3"><StatusText status={item.status}>{PRODUCTION_STATUS[item.status] || item.status}</StatusText></td>
@@ -59,7 +58,7 @@ export default function ProductionPage() {
           <td className="p-3 text-right">{quantity(item.plannedOutputQuantity)}</td><td className="p-3 text-right font-medium text-primary">{quantity(item.qualifiedQuantity)}</td><td className="p-3 text-right">{percent(item.actualYieldRate)}</td>
           <td className="p-3"><div>{item.sourceType === 'SALES_ORDER' ? '销售需求' : '手工创建'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.sourceOrderNo || '-'}</div></td>
           <td className="p-3 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</td>
-        </tr>)}</tbody>
+        </ClickableRow>)}</tbody>
       </table></div>}
     </Card>
   </div>;

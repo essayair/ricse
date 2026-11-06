@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { CheckCircle2, Clock3, FlaskConical, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTimeToSecond } from '@/lib/date-time';
@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 
 interface QualityTask {
   id: string; taskNo: string; status: string; finalConclusion: string; plannedReportCount: number;
@@ -30,14 +32,11 @@ const STATUS: Record<string, string> = {
 const CONCLUSION: Record<string, string> = { PENDING: '待判定', PASS: '合格', DEDUCTION: '超标扣款', FUSE: '不合格（拒收）' };
 
 export default function QualityPage() {
-  const router = useRouter();
   const [data, setData] = useState<{ items: QualityTask[]; pagination: { total: number } } | null>(null);
-  const [draftSearch, setDraftSearch] = useState('');
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [conclusion, setConclusion] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [query, setQuery, resetQuery] = useListQuery({ search: '', status: '', conclusion: '', dateFrom: '', dateTo: '' });
+  const { search, status, conclusion, dateFrom, dateTo } = query;
+  const [draftSearch, setDraftSearch] = useState(search);
+  useEffect(() => setDraftSearch(search), [search]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -70,11 +69,11 @@ export default function QualityPage() {
 
     <Card className="p-4">
       <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 text-sm">
-        <div className="relative min-w-72 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={draftSearch} onChange={event => setDraftSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') setSearch(draftSearch.trim()); }} placeholder="检索任务号、运单、批次、物料、车牌、机构或报告号" /></div>
-        <Button className="shrink-0" variant="outline" onClick={() => setSearch(draftSearch.trim())}>检索</Button>
-        <select className="h-10 shrink-0 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
-        <select className="h-10 shrink-0 rounded-md border bg-background px-3 text-sm" value={conclusion} onChange={event => setConclusion(event.target.value)}><option value="">全部结论</option>{Object.entries(CONCLUSION).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
-        <span className="shrink-0 text-muted-foreground">任务日期</span><Input className="w-36 shrink-0" type="date" value={dateFrom} onChange={event => setDateFrom(event.target.value)} /><span className="shrink-0">至</span><Input className="w-36 shrink-0" type="date" min={dateFrom || undefined} value={dateTo} onChange={event => setDateTo(event.target.value)} />{(search || status || conclusion || dateFrom || dateTo) && <Button className="shrink-0" variant="ghost" size="sm" onClick={() => { setDraftSearch(''); setSearch(''); setStatus(''); setConclusion(''); setDateFrom(''); setDateTo(''); }}>清空条件</Button>}
+        <div className="relative min-w-72 flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={draftSearch} onChange={event => setDraftSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') setQuery({ search: draftSearch.trim() }); }} placeholder="检索任务号、运单、批次、物料、车牌、机构或报告号" /></div>
+        <Button className="shrink-0" variant="outline" onClick={() => setQuery({ search: draftSearch.trim() })}>检索</Button>
+        <select className="h-10 shrink-0 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setQuery({ status: event.target.value })}><option value="">全部状态</option>{Object.entries(STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
+        <select className="h-10 shrink-0 rounded-md border bg-background px-3 text-sm" value={conclusion} onChange={event => setQuery({ conclusion: event.target.value })}><option value="">全部结论</option>{Object.entries(CONCLUSION).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
+        <span className="shrink-0 text-muted-foreground">任务日期</span><Input className="w-36 shrink-0" type="date" value={dateFrom} onChange={event => setQuery({ dateFrom: event.target.value })} /><span className="shrink-0">至</span><Input className="w-36 shrink-0" type="date" min={dateFrom || undefined} value={dateTo} onChange={event => setQuery({ dateTo: event.target.value })} />{(search || status || conclusion || dateFrom || dateTo) && <Button className="shrink-0" variant="ghost" size="sm" onClick={resetQuery}>清空条件</Button>}
       </div>
     </Card>
 
@@ -84,8 +83,8 @@ export default function QualityPage() {
         <tbody>{items.map(item => {
           const confirmed = item.reports.filter(report => report.status === 'CONFIRMED').length;
           const party = item.waybill.dispatchNotice.type === 'PURCHASE' ? item.waybill.dispatchNotice.order.contract.seller?.name : item.waybill.dispatchNotice.order.contract.buyer?.name;
-          return <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => router.push(`/dashboard/quality/${item.id}`)}>
-            <td className="px-4 py-3"><div className="font-mono font-medium text-primary">{item.taskNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.arrivedAt ? formatDateTimeToSecond(item.waybill.arrivedAt) : formatDateTimeToSecond(item.createdAt)}</div></td>
+          return <ClickableRow key={item.id} href={`/dashboard/quality/${item.id}`} className="border-b hover:bg-muted/50">
+            <td className="px-4 py-3"><Link href={`/dashboard/quality/${item.id}`} className="font-mono font-medium text-primary hover:underline">{item.taskNo}</Link><div className="mt-1 text-xs text-muted-foreground">{item.waybill.arrivedAt ? formatDateTimeToSecond(item.waybill.arrivedAt) : formatDateTimeToSecond(item.createdAt)}</div></td>
             <td className="max-w-56 px-4 py-3"><div className="truncate font-medium">{item.waybill.lineItems.map(line => line.materialName).filter(Boolean).join('、') || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.dispatchNotice.type === 'PURCHASE' ? '采购到货质检' : '销售交付质检'}</div></td>
             <td className="max-w-56 px-4 py-3"><div className="truncate">{party || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.waybill.plateNo || '无车牌'}</div></td>
             <td className="px-4 py-3"><ConclusionBadge value={item.finalConclusion} /><div className="mt-1 flex items-center gap-1"><Clock3 className="h-3 w-3 text-muted-foreground" /><StatusText status={item.status}>{STATUS[item.status] || item.status}</StatusText></div></td>
@@ -93,7 +92,7 @@ export default function QualityPage() {
             <td className="px-4 py-3"><div>{item.waybill.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.waybill.waybillNo}</div></td>
             <td className="px-4 py-3"><div>{item.waybill.weighTickets.length} 张磅单</div><div className="mt-1 text-xs text-muted-foreground">已复核 {item.waybill.weighTickets.filter(ticket => ticket.status === 'REVIEWED').length} 张</div></td>
             <td className="px-4 py-3"><div>{item.handler?.name || '待处理'}</div><div className="mt-1 text-xs text-muted-foreground">{item.samplerName ? `取样：${item.samplerName}` : '质检管理人员可处理'}</div></td>
-          </tr>;
+          </ClickableRow>;
         })}</tbody>
       </table></div>}
     </Card>

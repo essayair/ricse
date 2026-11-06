@@ -9,6 +9,8 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { StatusText } from '@/components/status-text';
+import { ClickableRow } from '@/components/clickable-row';
+import { useListQuery } from '@/lib/use-list-query';
 import { BusinessOperationHistory, type BusinessOperationLog } from '@/components/business-operation-history';
 import { SettlementAttachments, type SettlementAttachment } from './settlement-attachments';
 import { confirmAction } from '@/lib/system-dialog';
@@ -56,8 +58,8 @@ export function FundWorkbench({ direction, showTitle = true }: { direction: Cash
   const [contracts, setContracts] = useState<Record<BusinessType, ContractOption[]>>({ PURCHASE: [], SALES: [] });
   const [legalEntities, setLegalEntities] = useState<LegalEntityOption[]>([]);
   const [originalFunds, setOriginalFunds] = useState<Fund[]>([]);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [query, setQuery] = useListQuery({ search: '', status: '' });
+  const { search, status } = query;
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Fund | null>(null);
@@ -183,8 +185,8 @@ export function FundWorkbench({ direction, showTitle = true }: { direction: Cash
     <div className="flex flex-wrap items-center justify-between gap-3">
       <span className="text-sm text-muted-foreground">共 {available.length} 张{documentName}</span>
       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-        <select aria-label={`${documentName}状态筛选`} className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(STATUS).filter(([value]) => receipt || !['PENDING_CLAIM', 'PARTIALLY_CLAIMED'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <div className="relative min-w-64 flex-1 sm:w-96"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input aria-label={`搜索${documentName}`} className="pl-9" placeholder="单号、合同、付款方、收款方或流水号" value={search} onChange={event => setSearch(event.target.value)}/></div>
+        <select aria-label={`${documentName}状态筛选`} className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setQuery({ status: event.target.value })}><option value="">全部状态</option>{Object.entries(STATUS).filter(([value]) => receipt || !['PENDING_CLAIM', 'PARTIALLY_CLAIMED'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <div className="relative min-w-64 flex-1 sm:w-96"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input aria-label={`搜索${documentName}`} className="pl-9" placeholder="单号、合同、付款方、收款方或流水号" value={search} onChange={event => setQuery({ search: event.target.value })}/></div>
       </div>
     </div>
     <Card className="overflow-hidden">{loading ? <Empty text={`正在加载${title}…`}/> : !available.length ? <Empty text={search || status ? `没有符合条件的${documentName}` : `暂无${documentName}`}/> : <FundListTable items={available} direction={direction} documentName={documentName}/>}</Card>
@@ -229,7 +231,7 @@ function FundListTable({ items, direction, documentName }: { items: Fund[]; dire
         const logistics = item.paymentRequest?.logisticsSettlement;
         const relatedNo = logistics?.settlementNo || item.contract?.contractNo || (item.direction === 'RECEIPT' ? '待认领合同' : '未关联合同');
         const relatedTitle = logistics ? '物流运费结算' : item.contract?.title || (item.direction === 'RECEIPT' ? '到账登记后由业务人员认领' : '以关联付款申请为依据');
-        return <tr key={item.id} className="group border-b last:border-b-0 hover:bg-muted/30">
+        return <ClickableRow key={item.id} href={href} className="group border-b last:border-b-0 hover:bg-muted/30">
           <td className={`${cellClass} sticky left-0 z-10 border-r bg-background group-hover:bg-muted`}><Link className="block truncate font-mono text-xs font-medium hover:text-primary" title={item.transactionNo} href={href}>{item.transactionNo}</Link>{item.paymentRequest && <div className="mt-1 truncate text-xs text-muted-foreground" title={`付款申请：${item.paymentRequest.requestNo}`}>申请：{item.paymentRequest.requestNo}</div>}</td>
           <td className={`${cellClass} break-words leading-5`}>{fundType(item)}</td>
           <td className={cellClass}><div className="truncate font-mono text-xs" title={relatedNo}>{relatedNo}</div><div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground" title={relatedTitle}>{relatedTitle}</div></td>
@@ -241,7 +243,7 @@ function FundListTable({ items, direction, documentName }: { items: Fund[]; dire
           <td className={cellClass}><div className="truncate text-xs" title={METHOD[item.paymentMethod] || item.paymentMethod}>{METHOD[item.paymentMethod] || item.paymentMethod}</div><div className="mt-1 truncate font-mono text-xs text-muted-foreground" title={item.bankReference || undefined}>{item.bankReference || '—'}</div></td>
           <td className={`${cellClass} whitespace-nowrap text-xs`}>{day(item.occurredAt)}</td>
           <td className={`${cellClass} sticky right-0 z-10 border-l bg-background text-center group-hover:bg-muted`}><Button size="sm" variant="ghost" className="h-8 px-2 text-xs text-primary" asChild><Link aria-label={`查看${documentName}${item.transactionNo}`} href={href}>详情</Link></Button></td>
-        </tr>;
+        </ClickableRow>;
       })}</tbody>
     </table>
   </div>;
