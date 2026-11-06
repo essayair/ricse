@@ -1119,12 +1119,14 @@ model FinancialSettlementApproval {
   @@map("financial_settlement_approvals")
 }
 
-/// 业务结算对应的发票登记；首版仅用于数量金额核对，不自动生成凭证。
+/// 发票登记：货款发票挂采购/销售结算单，运费发票挂物流结算单（二者必居其一）；仅用于数量金额核对，不自动生成凭证。
 model InvoiceRecord {
-  id                 String    @id @default(cuid())
-  settlementId       String
-  contractId         String
-  direction          String // INPUT | OUTPUT
+  id                    String    @id @default(cuid())
+  sourceType            String    @default("GOODS") // GOODS 货款 | FREIGHT 运费
+  settlementId          String?
+  logisticsSettlementId String?
+  contractId            String?
+  direction             String // INPUT 进项 | OUTPUT 销项；运费发票固定为 INPUT
   invoiceNo          String
   invoiceCode        String?
   issuedAt           DateTime
@@ -1144,14 +1146,17 @@ model InvoiceRecord {
   voidedAt           DateTime?
   voidReason         String?
 
-  settlement FinancialSettlement @relation(fields: [settlementId], references: [id], onDelete: Restrict)
-  contract   Contract            @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  settlement          FinancialSettlement? @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  logisticsSettlement LogisticsSettlement? @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
+  contract            Contract?            @relation(fields: [contractId], references: [id], onDelete: Restrict)
   seller     Partner             @relation("InvoiceRecordSeller", fields: [sellerPartnerId], references: [id], onDelete: Restrict)
   buyer      Partner             @relation("InvoiceRecordBuyer", fields: [buyerPartnerId], references: [id], onDelete: Restrict)
   creator    User                @relation("InvoiceRecordCreator", fields: [createdBy], references: [id], onDelete: Restrict)
 
   @@index([settlementId, status])
+  @@index([logisticsSettlementId, status])
   @@index([contractId])
+  @@index([direction, issuedAt])
   @@unique([direction, sellerPartnerId, invoiceNo])
   @@map("invoice_records")
 }
@@ -1911,6 +1916,7 @@ model LogisticsSettlement {
   paymentAllocations LogisticsPaymentAllocation[]
   adjustments LogisticsSettlementAdjustment[]
   attachments Attachment[]
+  invoiceRecords InvoiceRecord[]
 
   @@index([payerCompanyId])
   @@index([payerPartnerId])

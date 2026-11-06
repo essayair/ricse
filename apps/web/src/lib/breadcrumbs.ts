@@ -236,94 +236,69 @@ function resolveOrganization(pathname: string, params?: BreadcrumbSearchParams):
   return null;
 }
 
-function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): BreadcrumbResult {
-  if (pathname === '/dashboard') return { items: [{ label: '首页' }], supported: true };
+const PAYABLE: BreadcrumbItem = { label: '应付管理' };
+const RECEIVABLE: BreadcrumbItem = { label: '应收管理' };
 
-  if (pathname === '/dashboard/payment-requests/new' || /^\/dashboard\/payment-requests\/[^/]+\/edit$/.test(pathname)) {
-    return { supported: true, items: withHome([{ label: '资金结算' }, { label: '付款申请单', href: '/dashboard/payment-requests' }, { label: pathname.endsWith('/edit') ? '编辑付款申请' : '新建付款申请' }]) };
-  }
-  if (pathname === '/dashboard/payable-settlements' || pathname === '/dashboard/payable-settlements/new') {
-    return { supported: true, items: withHome([{ label: '资金结算' }, { label: '采购结算单', ...(pathname.endsWith('/new') ? { href: '/dashboard/payable-settlements' } : {}) }, ...(pathname.endsWith('/new') ? [{ label: '新建采购结算单' }] : [])]) };
-  }
+/** 应付管理、应收管理两组菜单下的列表、新建、详情与打印页。 */
+function resolveFinance(pathname: string, params?: BreadcrumbSearchParams): BreadcrumbItem[] | null {
+  const lists: Record<string, BreadcrumbItem[]> = {
+    '/dashboard/payment-requests': [PAYABLE, { label: '付款申请单' }],
+    '/dashboard/payables': [PAYABLE, { label: '付款申请单' }],
+    '/dashboard/payable-settlements': [PAYABLE, { label: '采购结算单' }],
+    '/dashboard/payments': [PAYABLE, { label: '付款单' }],
+    '/dashboard/input-invoices': [PAYABLE, { label: '进项发票' }],
+    '/dashboard/payable-ledger': [PAYABLE, { label: '应付台账' }],
+    '/dashboard/settlement-ledger': [PAYABLE, { label: '应付台账' }],
+    '/dashboard/settlement': [RECEIVABLE, { label: '销售结算单' }],
+    '/dashboard/receivables': [RECEIVABLE, { label: '销售结算单' }],
+    '/dashboard/receipts': [RECEIVABLE, { label: '收款单' }],
+    '/dashboard/output-invoices': [RECEIVABLE, { label: '销项发票' }],
+    '/dashboard/receivable-ledger': [RECEIVABLE, { label: '应收台账' }],
+  };
+  if (lists[pathname]) return withHome(lists[pathname]);
 
-  if (/^\/dashboard\/settlements\/[^/]+\/print$/.test(pathname)) {
-    return {
-      items: withHome([
-        { label: '资金结算' },
-        { label: '结算单', href: '/dashboard/settlement-ledger' },
-        { label: '打印存档' },
-      ]),
-      supported: true,
-    };
-  }
+  const paymentRequests: BreadcrumbItem = { label: '付款申请单', href: '/dashboard/payment-requests' };
+  if (pathname === '/dashboard/payment-requests/new') return withHome([PAYABLE, paymentRequests, { label: '新建付款申请' }]);
+  if (pathname === '/dashboard/payable-settlements/new') return withHome([PAYABLE, { label: '采购结算单', href: '/dashboard/payable-settlements' }, { label: '新建采购结算单' }]);
+  if (pathname === '/dashboard/receivables/new') return withHome([RECEIVABLE, { label: '销售结算单', href: '/dashboard/receivables' }, { label: '新建销售结算单' }]);
+  if (pathname === '/dashboard/payments/create') return withHome([PAYABLE, { label: '付款单', href: '/dashboard/payments' }, { label: '创建付款单' }]);
 
-  if (/^\/dashboard\/settlements\/[^/]+$/.test(pathname)) {
-    return {
-      items: withHome([
-        { label: '资金结算' },
-        { label: '结算台账', href: '/dashboard/settlement-ledger' },
-        { label: '结算单详情' },
-      ]),
-      supported: true,
-    };
-  }
-
-  if (/^\/dashboard\/payment-requests\/[^/]+\/print$/.test(pathname)) {
-    const requestId = pathname.split('/')[3];
-    return {
-      items: withHome([
-        { label: '资金结算' },
-        { label: '付款申请单', href: '/dashboard/payment-requests' },
-        { label: '付款申请详情', href: `/dashboard/payment-requests/${requestId}` },
-        { label: '打印存档' },
-      ]),
-      supported: true,
-    };
+  const request = pathname.match(/^\/dashboard\/payment-requests\/([^/]+)(?:\/(edit|print))?$/);
+  if (request) {
+    const [, id, action] = request;
+    if (action === 'edit') return withHome([PAYABLE, paymentRequests, { label: '编辑付款申请' }]);
+    if (action === 'print') return withHome([PAYABLE, paymentRequests, { label: '付款申请详情', href: `/dashboard/payment-requests/${id}` }, { label: '打印存档' }]);
+    return withHome([PAYABLE, paymentRequests, { label: '付款申请详情' }]);
   }
 
-  if (/^\/dashboard\/payment-requests\/[^/]+$/.test(pathname)) {
-    return {
-      items: withHome([
-        { label: '资金结算' },
-        { label: '付款申请单', href: '/dashboard/payment-requests' },
-        { label: '付款申请详情' },
-      ]),
-      supported: true,
-    };
-  }
-
-  if (pathname === '/dashboard/payments/create') {
-    return {
-      items: withHome([
-        { label: '资金结算' },
-        { label: '付款单', href: '/dashboard/payments' },
-        { label: '创建付款单' },
-      ]),
-      supported: true,
-    };
+  // 结算单详情地址带 direction 时归入对应菜单；从其他入口进入时只显示单据层级。
+  const settlement = pathname.match(/^\/dashboard\/settlements\/([^/]+)(?:\/(edit|print))?$/);
+  if (settlement) {
+    const [, id, action] = settlement;
+    const direction = params?.get('direction');
+    const section = direction === 'PAYABLE'
+      ? [PAYABLE, { label: '采购结算单', href: '/dashboard/payable-settlements' }]
+      : direction === 'RECEIVABLE' ? [RECEIVABLE, { label: '销售结算单', href: '/dashboard/receivables' }] : [];
+    const detailHref = `/dashboard/settlements/${id}${direction ? `?direction=${direction}` : ''}`;
+    if (action === 'print') return withHome([...section, { label: '结算单详情', href: detailHref }, { label: '打印存档' }]);
+    if (action === 'edit') return withHome([...section, { label: '结算单详情', href: detailHref }, { label: '编辑结算单' }]);
+    return withHome([...section, { label: '结算单详情' }]);
   }
 
   if (/^\/dashboard\/funds\/[^/]+$/.test(pathname)) {
     const direction = params?.get('direction');
-    const receipt = direction === 'RECEIPT';
-    const payment = direction === 'PAYMENT';
-    return {
-      items: withHome(receipt ? [
-        { label: '资金结算' },
-        { label: '应收管理' },
-        { label: '收款单', href: '/dashboard/receipts' },
-        { label: '收款单详情' },
-      ] : payment ? [
-        { label: '资金结算' },
-        { label: '付款单', href: '/dashboard/payments' },
-        { label: '付款单详情' },
-      ] : [
-        { label: '资金结算' },
-        { label: '资金单详情' },
-      ]),
-      supported: true,
-    };
+    if (direction === 'RECEIPT') return withHome([RECEIVABLE, { label: '收款单', href: '/dashboard/receipts' }, { label: '收款单详情' }]);
+    if (direction === 'PAYMENT') return withHome([PAYABLE, { label: '付款单', href: '/dashboard/payments' }, { label: '付款单详情' }]);
+    return withHome([{ label: '资金单详情' }]);
   }
+  return null;
+}
+
+function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): BreadcrumbResult {
+  if (pathname === '/dashboard') return { items: [{ label: '首页' }], supported: true };
+
+  const finance = resolveFinance(pathname, params);
+  if (finance) return { items: finance, supported: true };
 
   const masterData = resolveMasterData(pathname, params);
   if (masterData) return { items: masterData, supported: true };
@@ -345,13 +320,6 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
     '/dashboard/dispatch': [{ label: '物流管理' }, { label: '调度看板' }],
     '/dashboard/inventory': [{ label: '库存管理' }, { label: '在库总览' }],
     '/dashboard/monitor': [{ label: '影像监控' }],
-    '/dashboard/settlement': [{ label: '资金结算' }, { label: '应收管理' }],
-    '/dashboard/receivables': [{ label: '资金结算' }, { label: '应收管理' }, { label: '应收款计划' }],
-    '/dashboard/receipts': [{ label: '资金结算' }, { label: '应收管理' }, { label: '收款单' }],
-    '/dashboard/payables': [{ label: '资金结算' }, { label: '付款申请单' }],
-    '/dashboard/payment-requests': [{ label: '资金结算' }, { label: '付款申请单' }],
-    '/dashboard/payments': [{ label: '资金结算' }, { label: '付款单' }],
-    '/dashboard/settlement-ledger': [{ label: '资金结算' }, { label: '结算台账' }],
     '/dashboard/system/access-control': [{ label: '系统管理' }, { label: '用户与权限' }],
     '/dashboard/system/approvals': [{ label: '系统管理' }, { label: '审批流程' }],
     '/dashboard/content/articles': [{ label: '内容运营中心' }, { label: '资讯管理' }],

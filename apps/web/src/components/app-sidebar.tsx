@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { PAYABLE_NAV_ITEMS } from '@/lib/settlement-navigation';
+import { PAYABLE_NAV_ITEMS, RECEIVABLE_NAV_ITEMS, SETTLEMENT_NAV_HREFS } from '@/lib/settlement-navigation';
 import {
   Sidebar,
   SidebarContent,
@@ -22,6 +22,7 @@ import {
   Box,
   Settings2,
   CircleDollarSign,
+  HandCoins,
   Factory,
   Newspaper,
   Users,
@@ -85,13 +86,14 @@ const NAV_ITEMS: NavGroup[] = [
     ],
   },
   {
-    label: '资金结算',
+    label: '应付管理',
     icon: CircleDollarSign,
-    children: [
-      { href: '/dashboard/receivables', label: '应收管理' },
-      ...PAYABLE_NAV_ITEMS,
-      { href: '/dashboard/settlement-ledger', label: '结算台账' },
-    ],
+    children: [...PAYABLE_NAV_ITEMS],
+  },
+  {
+    label: '应收管理',
+    icon: HandCoins,
+    children: [...RECEIVABLE_NAV_ITEMS],
   },
 ];
 
@@ -193,7 +195,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href.startsWith('/dashboard/weighbridge') || href.startsWith('/dashboard/quality')) return 'quality.view';
     if (href.startsWith('/dashboard/inventory') || href.startsWith('/dashboard/inbound') || href.startsWith('/dashboard/outbound')) return 'inventory.view';
     if (href.startsWith('/dashboard/production')) return 'production.view';
-    if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/receivables') || href.startsWith('/dashboard/receipts') || href.startsWith('/dashboard/payables') || href.startsWith('/dashboard/payable-settlements') || href.startsWith('/dashboard/payment-requests') || href.startsWith('/dashboard/payments')) return 'settlement.view';
+    if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/payables') || SETTLEMENT_NAV_HREFS.some(item => href.startsWith(item))) return 'settlement.view';
     if (href.startsWith('/dashboard/industry-database')) return 'industry.database.view';
     if (href.startsWith('/dashboard/master-data') || href.startsWith('/dashboard/org')) return 'organization.view';
     return '';
@@ -227,14 +229,11 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
       return false;
     }
 
-    // 收款单仍归属应收管理；应付各功能均有自己的二级入口。
-    if (base === '/dashboard/receivables' && pathname === '/dashboard/receipts') return true;
-
     // 必须先确认当前路径属于该菜单；否则相同长度的其他路径可能被生产管理的特殊规则误判。
     if (pathname !== base && !pathname.startsWith(base + '/')) return false;
 
-    // 结算单有独立二级入口；新建页即使带有合同等参数，也归属于该菜单。
-    if (PAYABLE_NAV_ITEMS.some(item => item.href === base)) return true;
+    // 应收应付各单据有独立二级入口；新建页即使带有合同等参数，也归属于该菜单。
+    if (SETTLEMENT_NAV_HREFS.includes(base)) return true;
 
     if (base === '/dashboard/production' && !qs) {
       const child = pathname.slice(`${base}/`.length);
@@ -290,7 +289,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
           />
         ))}
 
-        {/* 影像监控是独立业务入口，位于资金结算之后；配置能力仍由 monitor.* 权限控制。 */}
+        {/* 影像监控是独立业务入口，位于应收管理之后；配置能力仍由 monitor.* 权限控制。 */}
         {canViewMonitor && (
           <SidebarIconItem
             icon={Video}

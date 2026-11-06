@@ -77,7 +77,7 @@ const fieldClass = 'h-10 w-full rounded-md border bg-background px-3 text-sm';
 export function SettlementWorkbench({ direction, standalone = false, showTitle = true }: { direction: Direction; standalone?: boolean; showTitle?: boolean }) {
   const receivable = direction === 'RECEIVABLE';
   const businessType: BusinessType = receivable ? 'SALES' : 'PURCHASE';
-  const title = receivable ? '应收款计划' : '采购结算单';
+  const title = receivable ? '销售结算单' : '采购结算单';
   const balanceLabel = receivable ? '应收' : '应付';
   const cashLabel = receivable ? '收款' : '付款';
   const dueDateLabel = receivable ? '约定收款到期日' : '约定付款到期日';

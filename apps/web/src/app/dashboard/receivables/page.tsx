@@ -2,5 +2,5 @@ import { SettlementWorkbench } from '@/components/settlement/settlement-workbenc
 import { SettlementSectionTabs } from '@/components/settlement/settlement-section-tabs';
 
 export default function ReceivablesPage() {
-  return <div className="space-y-5"><SettlementSectionTabs section="receivable"/><SettlementWorkbench direction="RECEIVABLE" standalone /></div>;
+  return <div className="space-y-5"><SettlementSectionTabs section="receivable" showPageTitle/><SettlementWorkbench direction="RECEIVABLE" standalone showTitle={false}/></div>;
 }

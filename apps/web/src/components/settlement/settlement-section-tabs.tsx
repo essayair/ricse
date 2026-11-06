@@ -3,20 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { PAYABLE_NAV_ITEMS } from '@/lib/settlement-navigation';
+import { PAYABLE_NAV_ITEMS, RECEIVABLE_NAV_ITEMS } from '@/lib/settlement-navigation';
 
 const SECTIONS = {
-  receivable: {
-    label: '应收管理',
-    items: [
-      { href: '/dashboard/receivables', label: '应收款计划' },
-      { href: '/dashboard/receipts', label: '收款单' },
-    ],
-  },
-  payable: {
-    label: '应付管理',
-    items: PAYABLE_NAV_ITEMS,
-  },
+  receivable: { label: '应收管理', items: RECEIVABLE_NAV_ITEMS },
+  payable: { label: '应付管理', items: PAYABLE_NAV_ITEMS },
 } as const;
 
 export function SettlementSectionTabs({ section, showPageTitle = false }: { section: keyof typeof SECTIONS; showPageTitle?: boolean }) {
