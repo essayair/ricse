@@ -9,14 +9,15 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LocalAttachmentThumbnail } from '@/components/attachment-thumbnail';
 import { GoodsSource, paymentMoney } from './purchase-payment-context';
-import { alertAction, promptAction } from '@/lib/system-dialog';
+import { alertAction, promptAction, confirmAction } from '@/lib/system-dialog';
 import { QuantityReviewSummary, quantityReviewPrintText, type SettlementQuantityReview } from './settlement-quantity-review';
 import { batchReportSelection, batchWeighSelection, selectedSettlementReportId } from '@/lib/settlement-basis-selection';
 import { settlementColumnTotal } from '@/lib/settlement-table-totals';
 
-type Line = { quantity: string; adjustmentAmount: string; remarks: string; negotiatedQuantity: boolean; qualityReportId: string; weighTicketId: string };
+
+type Line = { quantity: string; adjustmentAmount: string; remarks: string; negotiatedQuantity: boolean; priceAdjusted: boolean; adjustedUnitPrice: string; qualityReportId: string; weighTicketId: string };
 type ContractOption = { id: string; contractNo: string; title: string; pricingType?: string; signingPartnerId?: string; counterparty?: { name: string }; seller?: { id: string; name: string }; buyer?: { id: string; name: string } };
-type Saved = { id: string; contractId: string; direction: 'PAYABLE' | 'RECEIVABLE'; settlementScope: string; status: string; dueDate?: string | null; remarks?: string | null; lines: Array<{ waybillLineItemId?: string | null; quantity: string; adjustmentAmount: string; remarks?: string | null; sourceSnapshot?: { weighTicketId?: string; reportId?: string; negotiatedQuantity?: boolean; taxRatePct?: number; settlementQuantityReview?: SettlementQuantityReview } }> };
+type Saved = { id: string; contractId: string; direction: 'PAYABLE' | 'RECEIVABLE'; settlementScope: string; status: string; dueDate?: string | null; remarks?: string | null; lines: Array<{ waybillLineItemId?: string | null; quantity: string; adjustmentAmount: string; remarks?: string | null; sourceSnapshot?: GoodsSource & { negotiatedQuantity?: boolean; taxRatePct?: number } }> };
 type WeighTicket = NonNullable<GoodsSource['availableWeighTickets']>[number];
 type QualityReportOption = NonNullable<GoodsSource['availableQualityReports']>[number];
 const tons = (value: number | null | undefined) => value == null ? '—' : Number(value).toFixed(3);
@@ -59,7 +60,7 @@ const defaultLine = (source: GoodsSource, sales = false): Line => {
   const preferred = ticketForStage(source, sales ? 'RECEIVING' : 'SHIPPING');
   const ticket = preferred || ticketForStage(source, sales ? 'SHIPPING' : 'RECEIVING');
   const shippingSelected = ticket?.weighingStage === 'SHIPPING' && (sales || ticket.id !== source.weighTicketId);
-  return { quantity: String(ticket ? ticketQuantity(source, ticket) : source.remainingQuantity), adjustmentAmount: '0',
+  return { quantity: String(ticket ? ticketQuantity(source, ticket) : source.remainingQuantity), adjustmentAmount: '0', priceAdjusted: false, adjustedUnitPrice: '',
     remarks: shippingSelected ? SHIPPING_REASON : '', negotiatedQuantity: false,
     qualityReportId: source.defaultReportId || source.inventoryReportId || '', weighTicketId: ticket?.id || source.weighTicketId || '' };
 };
@@ -112,6 +113,10 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   const [quantityDialogError, setQuantityDialogError] = useState('');
   const [varianceFiles, setVarianceFiles] = useState<File[]>([]);
   const [reportModeHint, setReportModeHint] = useState('');
+  const [adjustmentMode, setAdjustmentMode] = useState<'NONE' | 'QUANTITY' | 'AMOUNT'>('NONE');
+  const [finalQuantity, setFinalQuantity] = useState('');
+  const [finalAmount, setFinalAmount] = useState('');
+  const [adjustmentReason, setAdjustmentReason] = useState('');
 
   useEffect(() => {
     if (previewOpen) previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -142,6 +147,11 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     setIsFinalSettlement(Boolean(review?.finalSettlement)); setQuantityReason(review?.reason || '');
     setQuantityDialogOpen(false); setVarianceFiles([]);
     setReportModeHint('');
+    const adjustment = saved?.lines.map(line => line.sourceSnapshot?.settlementAdjustment).find(Boolean);
+    setAdjustmentMode(adjustment?.mode || 'NONE');
+    setFinalQuantity(adjustment?.mode === 'QUANTITY' ? String(adjustment.final.quantity) : '');
+    setFinalAmount(adjustment?.mode === 'AMOUNT' ? String(adjustment.final.totalAmount) : '');
+    setAdjustmentReason(adjustment?.reason || '');
     if (contractId && (!editId || saved?.contractId === contractId)) void refresh().catch(e => setError(e.message));
   }, [contractId, editId, saved, refresh]);
 
@@ -163,7 +173,8 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
         if (!source) continue;
         existing[source.id] = { ...defaultLine(source, sales), quantity: line.quantity, adjustmentAmount: line.adjustmentAmount,
           remarks: line.remarks || '', weighTicketId: line.sourceSnapshot?.weighTicketId || source.weighTicketId || '',
-          qualityReportId: line.sourceSnapshot?.reportId || source.defaultReportId || '', negotiatedQuantity: Boolean(line.sourceSnapshot?.negotiatedQuantity) };
+          qualityReportId: line.sourceSnapshot?.reportId || source.defaultReportId || '', negotiatedQuantity: Boolean(line.sourceSnapshot?.negotiatedQuantity),
+          priceAdjusted: Boolean(line.sourceSnapshot?.lineAdjustment?.priceAdjusted), adjustedUnitPrice: line.sourceSnapshot?.lineAdjustment?.priceAdjusted ? String(line.sourceSnapshot.lineAdjustment.finalUnitPrice) : '' };
       }
       setSelected(existing);
     } else setSelected(Object.fromEntries(sources.filter(eligible).map(source => [source.id, defaultLine(source, sales)])));
@@ -286,10 +297,58 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     remarks, taxRatePct: gradeTier && taxRatePct !== '' ? Number(taxRatePct) : undefined,
     isFinalSettlement, quantityVarianceReason: quantityReason, quantityVarianceConfirmed: acceptVariance,
     quantityVarianceKey: acceptVariance ? quantityDialogReview?.key : undefined,
+    settlementAdjustment: { mode: adjustmentMode, reason: adjustmentReason,
+      ...(adjustmentMode === 'QUANTITY' ? { quantity: Number(finalQuantity) } : adjustmentMode === 'AMOUNT' ? { amount: Number(finalAmount) } : {}) },
     lines: selectedRows.map(source => { const line = selected[source.id]; return { orderId: source.orderId, waybillLineItemId: source.id,
       weighTicketId: line.weighTicketId || undefined, qualityReportId: line.qualityReportId || undefined,
       quantity: Number(line.quantity), adjustmentAmount: Number(line.adjustmentAmount || 0), remarks: line.remarks,
+      adjustedUnitPrice: line.priceAdjusted ? Number(line.adjustedUnitPrice) : undefined,
       negotiatedQuantity: line.negotiatedQuantity }; }) });
+
+  const resetOverall = () => { setAdjustmentMode('NONE'); setFinalQuantity(''); setFinalAmount(''); setAdjustmentReason(''); setPreview(null); };
+  const resetLine = (source: GoodsSource, line: Line): Line => {
+    const ticket = source.availableWeighTickets?.find(ticket => ticket.id === line.weighTicketId);
+    return { ...line, quantity: String(ticket ? ticketQuantity(source, ticket, line.qualityReportId) : source.remainingQuantity), negotiatedQuantity: false, priceAdjusted: false, adjustedUnitPrice: '', adjustmentAmount: '0' };
+  };
+  const changeOverallMode = async (mode: 'NONE' | 'QUANTITY' | 'AMOUNT') => {
+    if (mode === adjustmentMode || busy) return;
+    const hasLineChanges = selectedRows.some(source => { const line = selected[source.id]; return line.negotiatedQuantity || line.priceAdjusted || Number(line.adjustmentAmount) !== 0; });
+    if ((adjustmentMode !== 'NONE' || hasLineChanges) && !await confirmAction('已存在数量、单价或金额调整。切换将取消原整单调整，并恢复逐车系统计算，是否继续？', { title: '切换结算调整方式', confirmText: '恢复并切换' })) return;
+    if (mode === 'NONE' && !hasLineChanges) { resetOverall(); return; }
+    const next = Object.fromEntries(selectedRows.map(source => [source.id, resetLine(source, selected[source.id])]));
+    setBusy(true); setError('');
+    try {
+      const base = await api.post<any>(editId ? `/financial-settlements/${editId}/preview-goods` : '/financial-settlements/preview-goods', {
+        ...payload(), settlementAdjustment: { mode: 'NONE' }, lines: selectedRows.map(source => ({ orderId: source.orderId, waybillLineItemId: source.id,
+          weighTicketId: next[source.id].weighTicketId || undefined, qualityReportId: next[source.id].qualityReportId || undefined,
+          quantity: Number(next[source.id].quantity), negotiatedQuantity: false, adjustmentAmount: 0, remarks: next[source.id].remarks })) });
+      if (mode === 'QUANTITY') {
+        const rows = base.lines || [];
+        if (rows.some((line: any) => line.sourceSnapshot?.pricingQuantityBasis !== 'DRY_MATTER')
+          || new Set(rows.map((line: any) => line.sourceSnapshot?.contractLineItemId)).size !== 1
+          || new Set(rows.map((line: any) => line.sourceSnapshot?.lineAdjustment?.contractUnitPrice)).size !== 1
+          || new Set(rows.map((line: any) => line.sourceSnapshot?.lineAdjustment?.deductionPerTon)).size !== 1) {
+          throw new Error('所选车辆物料、合同单价或每吨扣款不一致，无法按统一单价调整总干基，请使用逐车调整');
+        }
+      }
+      setSelected(next); setAdjustmentMode(mode); setFinalQuantity(String(base.quantity)); setFinalAmount(String(base.totalAmount)); setAdjustmentReason(''); setPreview(null);
+    } catch (cause: any) { setError(cause.message); } finally { setBusy(false); }
+  };
+  const changeLineMode = async (source: GoodsSource, kind: 'QUANTITY' | 'PRICE', enabled: boolean) => {
+    if (busy) return;
+    const line = selected[source.id];
+    const other = kind === 'QUANTITY' ? line.priceAdjusted : line.negotiatedQuantity;
+    if (enabled && (adjustmentMode !== 'NONE' || other || Number(line.adjustmentAmount) !== 0)
+      && !await confirmAction(adjustmentMode !== 'NONE' ? '开启逐车调整将取消整单调整，是否继续？' : '本车数量与单价不可同时调整。切换将恢复另一项，并取消历史加减金额，是否继续？', { title: '切换本车结算调整', confirmText: '恢复并切换' })) return;
+    const result = preview?.lines?.find((item: any) => item.waybillLineItemId === source.id);
+    const reference = result?.sourceSnapshot?.lineAdjustment?.contractUnitPrice;
+    if (enabled && kind === 'PRICE' && reference == null) { setError('请先等待本车合同单价计算完成'); return; }
+    if (adjustmentMode !== 'NONE') resetOverall();
+    const reset = resetLine(source, line);
+    setField(source.id, kind === 'QUANTITY'
+      ? { negotiatedQuantity: enabled, quantity: enabled ? line.quantity : reset.quantity, ...(enabled ? { priceAdjusted: false, adjustedUnitPrice: '' } : {}), adjustmentAmount: enabled ? '0' : line.adjustmentAmount }
+      : { priceAdjusted: enabled, adjustedUnitPrice: enabled ? String(reference) : '', ...(enabled ? { negotiatedQuantity: false, quantity: reset.quantity } : {}), adjustmentAmount: enabled ? '0' : line.adjustmentAmount });
+  };
 
   useEffect(() => {
     const requestId = ++previewRequestId.current;
@@ -313,7 +372,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     return () => { cancelled = true; previewRequestId.current++; window.clearTimeout(timer); };
     // 仅数量、磅单、报告和税率变化触发试算；备注与日期在提交时一并保存。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractId, selected, sources, gradeTier, taxRatePct, editId, isFinalSettlement]);
+  }, [contractId, selected, sources, gradeTier, taxRatePct, editId, isFinalSettlement, adjustmentMode, finalQuantity, finalAmount, adjustmentReason]);
 
   const submit = async (save: boolean, acceptVariance = false) => {
     if (acceptVariance && !quantityReason.trim()) { setQuantityDialogError('请填写数量差异说明'); return; }
@@ -381,7 +440,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
         <BasisMetric label="收货净重合计" value={`${tons(selectedTotals.receivingWeight)} 吨`} />
         <BasisMetric label="选用净重合计" value={`${tons(selectedTotals.chosenWeight)} 吨`} />
         <BasisMetric label="折干重量合计" value={!selectedTotals.count ? '未选车辆' : selectedTotals.dryWeight == null ? '待补齐水分' : `${tons(selectedTotals.dryWeight)} 吨`} />
-        <BasisMetric label="本次结算数量" value={`${tons(selectedTotals.quantity)} 吨`} emphasis />
+        <BasisMetric label="最终结算数量" value={`${tons(preview?.quantity ?? (adjustmentMode === 'QUANTITY' ? Number(finalQuantity) : selectedTotals.quantity))} 吨`} emphasis />
         <div className="sm:col-span-2"><BasisMetric label="结算金额（含税）" value={preview ? paymentMoney(preview.totalAmount) : !selectedTotals.count ? '未选车辆' : gradeTier && !taxRatePct ? '待填写税率' : previewError ? '计算失败' : '计算中…'} emphasis /></div>
       </div>
       {preview?.quantityReview?.differences?.length > 0 && <div role="alert" className="space-y-2 rounded border border-warning-border bg-warning-bg p-3 text-warning"><div className="text-sm font-medium">存在溢短装数量差异，生成时须填写说明并确认，附件选填。</div><QuantityReviewSummary review={preview.quantityReview} /></div>}
@@ -452,32 +511,31 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
         </table>
       </div>
     </Card>}
-    {selectedRows.length > 0 && <Card className="space-y-3 p-5"><h2 className="font-semibold">逐车结算明细</h2><div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[1450px] table-fixed text-sm"><colgroup>{[180, 190, 150, 130, 160, 150, 300, 190].map((width, index) => <col key={index} style={{ width }} />)}</colgroup><thead className="bg-surface-2 text-left text-xs font-medium text-muted-foreground"><tr><th className="whitespace-nowrap px-4 py-3">运单／车牌</th><th className="whitespace-nowrap px-4 py-3">重量与水分</th><th className="whitespace-nowrap px-4 py-3">本次数量（吨）</th><th className="whitespace-nowrap px-4 py-3" title="仅双方确认的结算数量与选用磅单口径不一致时勾选，并填写依据">数量协商</th><th className="whitespace-nowrap px-4 py-3 text-right">含税单价（元/吨）</th><th className="whitespace-nowrap px-4 py-3">加减金额（元）</th><th className="whitespace-nowrap px-4 py-3">依据与调整说明</th><th className="whitespace-nowrap px-4 py-3 text-right">含税金额（元）</th></tr></thead><tbody>{selectedRows.map(source => {
-      const line = selected[source.id];
-      const result = preview?.lines?.find((item: any) => item.waybillLineItemId === source.id);
-      const ticket = source.availableWeighTickets?.find(candidate => candidate.id === line.weighTicketId);
-      const moisturePct = selectedMoisture(source, line.qualityReportId);
-      return <Fragment key={source.id}>
-        <tr className="border-t align-top"><td className="px-4 py-4"><div className="break-all font-mono text-xs leading-5">{source.waybillNo}</div><div className="mt-1 font-medium">{source.plateNo}</div></td>
-          <td className="space-y-1 px-4 py-4 text-xs tabular-nums"><div className="flex justify-between gap-3"><span className="text-muted-foreground">净重</span><span>{tons(ticket?.netWeight)} 吨</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">水分</span><span>{moisturePct == null ? '—' : `${Number(moisturePct).toFixed(2)}%`}</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">折干</span><span>{tons(dryWeight(ticket?.netWeight, moisturePct))} 吨</span></div></td>
-          <td className="px-4 py-4"><Input className="min-w-0 text-right tabular-nums" aria-label={`${source.waybillNo}本次数量`} type="number" min="0.001" step="0.001" value={line.quantity} onChange={e => setField(source.id, { quantity: e.target.value })} /></td>
-          <td className="px-4 py-4"><label className="inline-flex items-center gap-2 text-xs"><input aria-label={`${source.waybillNo}按协商数量结算`} type="checkbox" className="h-4 w-4" checked={line.negotiatedQuantity} onChange={e => setField(source.id, { negotiatedQuantity: e.target.checked })} /><span>协商</span></label>{line.negotiatedQuantity && <div className="mt-2 text-xs leading-5 text-warning">请填写双方确认依据</div>}</td>
-          <td className="whitespace-nowrap px-4 py-4 text-right align-middle tabular-nums">{result ? unitPriceText(result.unitPrice) : previewError ? '计算失败' : '待计算'}</td>
-          <td className="px-4 py-4"><Input className="min-w-0 text-right tabular-nums" aria-label={`${source.waybillNo}加减金额`} type="number" step="0.01" value={line.adjustmentAmount} onChange={e => setField(source.id, { adjustmentAmount: e.target.value })} /></td>
-          <td className="px-4 py-4"><textarea aria-label={`${source.waybillNo}依据与调整说明`} className="min-h-[76px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" rows={2} value={line.remarks} placeholder="改选依据、协商或调整时填写原因" onChange={e => setField(source.id, { remarks: e.target.value })} /></td>
-          <td className="whitespace-nowrap px-4 py-4 text-right align-middle font-medium tabular-nums">{result ? paymentMoney(result.totalAmount) : previewError ? '计算失败' : '待计算'}</td>
-        </tr>
-        <tr className="border-t bg-muted/10"><td colSpan={8}><SettlementLineFacts source={source} line={line} result={result} /></td></tr>
-      </Fragment>;
-    })}</tbody><tfoot className="border-t-2 bg-surface-2 text-sm font-medium tabular-nums"><tr>
-      <td colSpan={2} className="px-4 py-4">合计（{selectedRows.length} 车）<div className="mt-1 text-xs font-normal text-muted-foreground">净重 {tons(detailTotals.net)} 吨 · 折干 {tons(detailTotals.dry)} 吨</div></td>
-      <td className="px-4 py-4 text-right">{tons(detailTotals.quantity)}</td>
-      <td className="px-4 py-4 text-right text-muted-foreground">—</td>
-      <td className="px-4 py-4 text-right text-muted-foreground">—</td>
-      <td className="px-4 py-4 text-right">{paymentMoney(detailTotals.adjustment)}</td>
-      <td className="px-4 py-4 text-xs font-normal text-muted-foreground">包含所有已选批次</td>
-      <td className="whitespace-nowrap px-4 py-4 text-right">{preview ? paymentMoney(preview.totalAmount) : previewError ? '计算失败' : '待计算'}</td>
-    </tr></tfoot></table></div></Card>}
+    {selectedRows.length > 0 && <Card className="space-y-4 p-5"><h2 className="font-semibold">逐车结算明细</h2><div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[1430px] table-fixed text-sm">
+      <colgroup>{[180, 190, 200, 220, 300, 150, 190].map((width, index) => <col key={index} style={{ width }}/>)}</colgroup>
+      <thead className="bg-surface-2 text-left text-xs text-muted-foreground"><tr>{['运单／车牌', '重量与水分', '数量调整（吨）', '单价调整（含税元/吨）', '依据与调整说明', '质量扣款（元）', '本车含税金额（元）'].map(label => <th className="whitespace-nowrap px-4 py-3" key={label}>{label}</th>)}</tr></thead>
+      <tbody>{selectedRows.map(source => {
+        const line = selected[source.id], result = preview?.lines?.find((item: any) => item.waybillLineItemId === source.id);
+        const ticket = source.availableWeighTickets?.find(candidate => candidate.id === line.weighTicketId);
+        const moisturePct = selectedMoisture(source, line.qualityReportId);
+        const baseQuantity = ticket ? ticketQuantity(source, ticket, line.qualityReportId) : source.remainingQuantity;
+        const reference = result?.sourceSnapshot?.lineAdjustment?.contractUnitPrice;
+        return <Fragment key={source.id}><tr className="border-t align-top">
+          <td className="px-4 py-4"><div className="break-all font-mono text-xs leading-5">{source.waybillNo}</div><div className="mt-1 font-medium">{source.plateNo}</div></td>
+          <td className="space-y-1 px-4 py-4 text-xs tabular-nums"><div className="flex justify-between gap-3"><span className="text-muted-foreground">净重</span><span>{tons(ticket?.netWeight)} 吨</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">水分</span><span>{moisturePct == null ? '—' : Number(moisturePct).toFixed(2) + '%'}</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">折干</span><span>{tons(dryWeight(ticket?.netWeight, moisturePct))} 吨</span></div></td>
+          <td className="space-y-2 px-4 py-4"><label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" disabled={busy} aria-label={source.waybillNo + '数量调整'} checked={line.negotiatedQuantity} onChange={event => void changeLineMode(source, 'QUANTITY', event.target.checked)}/>调整{source.pricingQuantityBasis === 'DRY_MATTER' ? '干基' : '净重'}</label><Input aria-label={source.waybillNo + '调整后数量'} className="text-right tabular-nums" type="number" min="0.001" step="0.001" readOnly={!line.negotiatedQuantity} disabled={busy} value={line.quantity} onChange={event => setField(source.id, { quantity: event.target.value })}/><p className="text-xs text-muted-foreground">原值 {tons(baseQuantity)} 吨{line.negotiatedQuantity && ' → ' + tons(Number(line.quantity)) + ' 吨'}</p></td>
+          <td className="space-y-2 px-4 py-4"><label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" disabled={busy} aria-label={source.waybillNo + '单价调整'} checked={line.priceAdjusted} onChange={event => void changeLineMode(source, 'PRICE', event.target.checked)}/>调整单价</label><Input aria-label={source.waybillNo + '调整后含税单价'} className="text-right tabular-nums" type="number" min="0.0001" step="0.0001" readOnly={!line.priceAdjusted} disabled={busy} placeholder="待计算" value={line.priceAdjusted ? line.adjustedUnitPrice : result?.unitPrice ?? ''} onChange={event => setField(source.id, { adjustedUnitPrice: event.target.value })}/><p className="text-xs text-muted-foreground">合同 {reference == null ? '待计算' : unitPriceText(reference)}{line.priceAdjusted && ' → ' + unitPriceText(Number(line.adjustedUnitPrice))}</p></td>
+          <td className="space-y-2 px-4 py-4"><textarea aria-label={source.waybillNo + '依据与调整说明'} className="min-h-[90px] w-full resize-y rounded-md border bg-background px-3 py-2 text-sm" rows={3} value={line.remarks} placeholder={line.negotiatedQuantity || line.priceAdjusted ? '请填写本车调整说明' : '改选磅单或报告时填写依据'} onChange={event => setField(source.id, { remarks: event.target.value })}/>{Number(line.adjustmentAmount) !== 0 && <p className="text-xs text-warning">历史金额调整 {paymentMoney(line.adjustmentAmount)}<Button size="sm" variant="ghost" onClick={async () => { if (await confirmAction('取消本车历史加减金额，并重新计算货款？', { title: '取消历史金额调整' })) setField(source.id, { adjustmentAmount: '0' }); }}>取消此项</Button></p>}</td>
+          <td className="px-4 py-4 text-right align-middle tabular-nums">{result ? paymentMoney(result.qualityDeductionAmount) : '待计算'}</td><td className="px-4 py-4 text-right align-middle font-medium tabular-nums">{result ? paymentMoney(result.totalAmount) : previewError ? '计算失败' : '待计算'}</td>
+        </tr><tr className="border-t bg-muted/10"><td colSpan={7}><SettlementLineFacts source={source} line={line} result={result}/></td></tr></Fragment>;
+      })}</tbody>
+      <tfoot className="border-t-2 bg-surface-2 font-medium tabular-nums"><tr><td colSpan={2} className="px-4 py-4">明细合计（{selectedRows.length} 车）</td><td className="px-4 py-4 text-right">{tons(detailTotals.quantity)}</td><td className="px-4 py-4 text-right text-muted-foreground">—</td><td className="px-4 py-4 text-xs font-normal text-muted-foreground">整单调整不摊回车辆</td><td className="px-4 py-4 text-right">{preview ? paymentMoney(preview.settlementAdjustment?.base.qualityDeductionAmount ?? preview.qualityDeductionAmount) : '待计算'}</td><td className="px-4 py-4 text-right">{preview ? paymentMoney(preview.settlementAdjustment?.base.totalAmount ?? preview.totalAmount) : '待计算'}</td></tr></tfoot>
+    </table></div>
+    <section className="space-y-4 rounded-md border bg-surface-2 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">最终结算</h3><div className="flex flex-wrap gap-2">{([['NONE', '按明细合计'], ['QUANTITY', '调整总干基'], ['AMOUNT', '调整总金额']] as const).map(([mode, label]) => <Button key={mode} size="sm" variant={adjustmentMode === mode ? 'default' : 'outline'} aria-pressed={adjustmentMode === mode} disabled={busy || (mode === 'QUANTITY' && selectedRows.some(source => source.pricingQuantityBasis !== 'DRY_MATTER'))} onClick={() => void changeOverallMode(mode)}>{label}</Button>)}</div></div>
+      <div className="grid gap-4 md:grid-cols-3"><label className="space-y-1 text-sm"><span>最终结算数量（{selectedRows.every(source => source.pricingQuantityBasis === 'DRY_MATTER') ? '干基' : '计价'}吨）</span><Input aria-label="最终结算数量" type="number" min="0.001" step="0.001" disabled={busy} readOnly={adjustmentMode !== 'QUANTITY'} value={adjustmentMode === 'QUANTITY' ? finalQuantity : preview?.quantity ?? detailTotals.quantity ?? ''} onChange={event => { setFinalQuantity(event.target.value); setPreview(null); }}/></label>
+      <label className="space-y-1 text-sm"><span>最终结算金额（含税元）</span><Input aria-label="最终结算金额" type="number" min="0.01" step="0.01" placeholder="待计算" disabled={busy} readOnly={adjustmentMode !== 'AMOUNT'} value={adjustmentMode === 'AMOUNT' ? finalAmount : preview?.totalAmount ?? ''} onChange={event => { setFinalAmount(event.target.value); setPreview(null); }}/></label><div className="space-y-1 pt-1 text-xs text-muted-foreground"><p>数量、单价或整单金额调整不可重复叠加。</p>{adjustmentMode === 'QUANTITY' && <p>按合同单价同步重算金额，并计入适用质量扣款。</p>}{preview?.settlementAdjustment && adjustmentMode !== 'NONE' && <p>数量差额 {tons(preview.settlementAdjustment.quantityDifference)} 吨；金额差额 {paymentMoney(preview.settlementAdjustment.amountDifference)}</p>}</div></div>
+      {adjustmentMode !== 'NONE' && <label className="block space-y-1 text-sm"><span>整单调整说明 *</span><textarea aria-label="整单调整说明" rows={2} className="w-full rounded-md border bg-background p-2" value={adjustmentReason} onChange={event => setAdjustmentReason(event.target.value)} placeholder="请填写双方确认的调整依据"/></label>}
+    </section></Card>}
     {gradeTier && <Card className="p-5"><label className="block max-w-xs space-y-1 text-sm">{sources.some(source => source.contractTaxRatePct != null) ? '合同税率（%）' : '本次结算税率（%）*'}<Input type="number" min="0" max="100" step="0.01" value={taxRatePct} readOnly={sources.some(source => source.contractTaxRatePct != null)} onChange={e => setTaxRatePct(e.target.value)} /></label></Card>}
     <Card className="grid gap-4 p-5 md:grid-cols-2"><label className="space-y-1 text-sm">约定{sales ? '收款' : '付款'}到期日<Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></label><label className="space-y-1 text-sm">结算说明<Input value={remarks} onChange={e => setRemarks(e.target.value)} /></label><div className="md:col-span-2"><label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={isFinalSettlement} onChange={e => setIsFinalSettlement(e.target.checked)} />本次为最终结算</label><p className="mt-1 text-xs text-muted-foreground">勾选后核对合同短装下限；分批结算无需勾选。</p></div></Card>
     {previewOpen && preview && <Card ref={previewRef} className="space-y-4 p-5" id="goods-settlement-preview">
@@ -485,7 +543,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       {preview.quantityReview?.differences?.length > 0 && <p role="alert" className="rounded border border-warning-border bg-warning-bg p-3 text-sm text-warning">存在数量差异，生成时请填写双方确认说明，线下签字盖章。</p>}
       <GoodsSettlementDocumentPreview contract={contract} preview={preview} sources={sources} sales={sales} remarks={remarks} quantityReason={quantityReason} />
     </Card>}
-    <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4 shadow-lg"><div className="text-sm">已选 <b>{selectedTotals.count}</b> 车 · 本次数量 <b>{tons(selectedTotals.quantity)}</b> 吨 · {preview ? <>货物原金额 {paymentMoney(preview.grossAmount)} · 质量扣款 {paymentMoney(preview.qualityDeductionAmount)} · 其他加减 {paymentMoney(preview.adjustmentAmount)} · 结算金额 <b>{paymentMoney(preview.totalAmount)}</b></> : <span className="text-muted-foreground">{previewError ? '试算失败' : '金额待试算'}</span>}{error && <div role="alert" className="mt-1 font-medium text-warning">{previewError ? '无法生成结算单预览：' : '请先处理：'}{error}</div>}</div><div className="flex gap-2"><Button type="button" variant="outline" disabled={busy} onClick={() => void submit(false)}>{busy ? '生成预览中…' : '预览结算单'}</Button><Button type="button" disabled={busy} onClick={() => void submit(true)}>{busy ? '处理中…' : editId ? '保存草稿修改' : '保存结算草稿'}</Button></div></div>
+    <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4 shadow-lg"><div className="text-sm">已选 <b>{selectedTotals.count}</b> 车 · 最终结算数量 <b>{tons(preview?.quantity ?? (adjustmentMode === 'QUANTITY' ? Number(finalQuantity) : selectedTotals.quantity))}</b> 吨 · {preview ? <>货物原金额 {paymentMoney(preview.grossAmount)} · 质量扣款 {paymentMoney(preview.qualityDeductionAmount)} · 其他加减 {paymentMoney(preview.adjustmentAmount)} · 结算金额 <b>{paymentMoney(preview.totalAmount)}</b></> : <span className="text-muted-foreground">{previewError ? '试算失败' : '金额待试算'}</span>}{error && <div role="alert" className="mt-1 font-medium text-warning">{previewError ? '无法生成结算单预览：' : '请先处理：'}{error}</div>}</div><div className="flex gap-2"><Button type="button" variant="outline" disabled={busy} onClick={() => void submit(false)}>{busy ? '生成预览中…' : '预览结算单'}</Button><Button type="button" disabled={busy} onClick={() => void submit(true)}>{busy ? '处理中…' : editId ? '保存草稿修改' : '保存结算草稿'}</Button></div></div>
     <Dialog open={quantityDialogOpen} onOpenChange={open => { if (!busy) setQuantityDialogOpen(open); }}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>确认溢短装数量差异</DialogTitle><DialogDescription>按实际数量生成结算单，说明进入打印件，供双方线下签字盖章。</DialogDescription></DialogHeader>
       {quantityDialogReview && <QuantityReviewSummary review={quantityDialogReview} />}
       <label className="mt-4 block space-y-1 text-sm"><span>数量差异说明 *</span><textarea aria-label="数量差异说明" rows={3} className={`w-full rounded-md border bg-background p-2 ${quantityDialogError && !quantityReason.trim() ? 'border-destructive' : ''}`} value={quantityReason} onChange={e => { setQuantityReason(e.target.value); setQuantityDialogError(''); }} placeholder="请填写实际数量偏差及双方确认的处理依据" /></label>
@@ -524,10 +582,10 @@ function GoodsSettlementDocumentPreview({ contract, preview, sources, sales, rem
           const adjustment = Number(line.adjustmentAmount || 0) - Number(line.qualityDeductionAmount || 0);
           const values = [index + 1, date(sales ? source.salesCompletionConfirmedAt : source.inboundDate), source.plateNo || vehicle?.plateNo || '—', source.materialName || vehicle?.materialName || '—', number(source.measuredMoisturePct), number(source.grossWeight), number(source.tareWeight), number(source.netWeight), number(source.dryQuantity), number(line.quantity, 3), number(line.unitPrice, 4), adjustment ? number(adjustment) : '—', number(line.totalAmount)];
           return <tr key={line.waybillLineItemId || index}>{values.map((value, cellIndex) => <td key={cellIndex} className={`border border-black p-1 ${cellIndex === 3 ? '' : 'text-center tabular-nums'}`}>{value}</td>)}</tr>;
-        })}<tr className="font-semibold">{['合计', '', '', '', '', number(totalKnown('grossWeight')), number(totalKnown('tareWeight')), number(totalKnown('netWeight')), number(totalKnown('dryQuantity')), number(preview.quantity, 3), '见明细', number(Number(preview.adjustmentAmount || 0) - Number(preview.qualityDeductionAmount || 0)), number(preview.totalAmount)].map((value, index) => <td key={index} className="border border-black p-1 text-center tabular-nums">{value}</td>)}</tr></tbody>
+        })}<tr className="font-semibold">{['明细合计', '', '', '', '', number(totalKnown('grossWeight')), number(totalKnown('tareWeight')), number(totalKnown('netWeight')), number(totalKnown('dryQuantity')), number(preview.settlementAdjustment?.base.quantity ?? preview.quantity, 3), '见明细', number(Number(preview.settlementAdjustment?.base.adjustmentAmount ?? preview.adjustmentAmount ?? 0) - Number(preview.settlementAdjustment?.base.qualityDeductionAmount ?? preview.qualityDeductionAmount ?? 0)), number(preview.settlementAdjustment?.base.totalAmount ?? preview.totalAmount)].map((value, index) => <td key={index} className="border border-black p-1 text-center tabular-nums">{value}</td>)}</tr><tr className="font-semibold"><td colSpan={9} className="border border-black p-1">最终结算</td><td className="border border-black p-1 text-right">{number(preview.quantity, 3)}</td><td className="border border-black p-1 text-right">{preview.settlementAdjustment?.unitPrice == null ? '见明细' : number(preview.settlementAdjustment.unitPrice, 4)}</td><td className="border border-black p-1 text-right">{number(Number(preview.adjustmentAmount || 0) - Number(preview.qualityDeductionAmount || 0))}</td><td className="border border-black p-1 text-right">{number(preview.totalAmount)}</td></tr></tbody>
       </table>
       <div className="mt-3 flex justify-end gap-6 border-b border-black pb-2 text-xs"><span>质量扣款：{number(preview.qualityDeductionAmount)} 元</span><span>其他加减：{number(preview.adjustmentAmount)} 元</span><strong>本次结算金额：{number(preview.totalAmount)} 元</strong></div>
-      <div className="mt-3 min-h-12 border border-black p-2 text-xs"><strong>备注／双方确认事项：</strong>{remarks || '　'}{preview.quantityReview?.differences?.length > 0 && <p className="mt-1">{quantityReviewPrintText({ ...preview.quantityReview, reason: quantityReason || '生成时填写' })}</p>}</div>
+      <div className="mt-3 min-h-12 border border-black p-2 text-xs"><strong>备注／双方确认事项：</strong>{remarks || '　'}{preview.settlementAdjustment?.mode && preview.settlementAdjustment.mode !== 'NONE' && <p className="mt-1">整单调整：{preview.settlementAdjustment.reason}；数量差额 {number(preview.settlementAdjustment.quantityDifference, 3)} 吨，金额差额 {number(preview.settlementAdjustment.amountDifference)} 元。</p>}{preview.quantityReview?.differences?.length > 0 && <p className="mt-1">{quantityReviewPrintText({ ...preview.quantityReview, reason: quantityReason || '生成时填写' })}</p>}</div>
       {lines.some(line => line.remarks) && <div className="mt-2 text-[11px]">逐车说明：{lines.filter(line => line.remarks).map(line => `${line.sourceSnapshot?.plateNo || line.sourceSnapshot?.waybillNo || '车辆'}：${line.remarks}`).join('；')}</div>}
       <div className="mt-6 grid grid-cols-2 gap-12 text-xs"><div><strong>供方确认：{supplier}</strong><p className="mt-5">经办人签字：____________　盖章：____________</p><p className="mt-4">日期：______年____月____日</p></div><div><strong>需方确认：{purchaser}</strong><p className="mt-5">经办人签字：____________　盖章：____________</p><p className="mt-4">日期：______年____月____日</p></div></div>
     </article>

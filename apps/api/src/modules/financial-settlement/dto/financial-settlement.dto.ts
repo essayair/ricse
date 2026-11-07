@@ -27,6 +27,10 @@ export class CreateSettlementLineDto {
   @Min(0)
   unitPrice?: number;
 
+  /** 本车协商后的含税每吨单价，不修改合同价格。 */
+  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001)
+  adjustedUnitPrice?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -39,6 +43,20 @@ export class CreateSettlementLineDto {
   @IsOptional()
   @IsBoolean()
   negotiatedQuantity?: boolean;
+}
+
+export class GoodsSettlementAdjustmentDto {
+  @IsIn(['NONE', 'QUANTITY', 'AMOUNT'])
+  mode!: 'NONE' | 'QUANTITY' | 'AMOUNT';
+
+  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 3 }) @Min(0.001)
+  quantity?: number;
+
+  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01)
+  amount?: number;
+
+  @IsOptional() @IsString()
+  reason?: string;
 }
 
 export class CreateFinancialSettlementDto {
@@ -106,6 +124,9 @@ export class CreateFinancialSettlementDto {
 
   @IsOptional() @IsString()
   quantityVarianceKey?: string;
+
+  @IsOptional() @ValidateNested() @Type(() => GoodsSettlementAdjustmentDto)
+  settlementAdjustment?: GoodsSettlementAdjustmentDto;
 
   @IsOptional()
   @IsDateString()

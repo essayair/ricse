@@ -7,8 +7,13 @@ export function settlementQuantityReview(
   previousLines: Array<{ quantity?: Prisma.Decimal.Value | null; sourceSnapshot?: unknown }>,
   finalSettlement = false,
 ) {
-  const sum = (rows: typeof lines, id: string) => rows.filter(row => (row.sourceSnapshot as any)?.contractLineItemId === id)
-    .reduce((total, row) => total.plus(row.quantity || 0), new Prisma.Decimal(0));
+  const sum = (rows: typeof lines, id: string) => rows.reduce((total, row) => {
+    const source = row.sourceSnapshot as any;
+    const adjustment = source?.settlementAdjustment;
+    const quantity = source?.contractLineItemId === id ? row.quantity || 0 : 0;
+    const difference = adjustment?.version === 1 && adjustment.mode === 'QUANTITY' && adjustment.contractLineItemId === id ? adjustment.quantityDifference : 0;
+    return total.plus(quantity).plus(difference || 0);
+  }, new Prisma.Decimal(0));
   const differences = [...items].sort((a, b) => a.id.localeCompare(b.id)).flatMap(item => {
     const current = sum(lines, item.id), previous = sum(previousLines, item.id), total = current.plus(previous);
     const quantity = new Prisma.Decimal(item.quantity);

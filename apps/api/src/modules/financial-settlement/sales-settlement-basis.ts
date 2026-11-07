@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { evaluateGradePrice, readMeasuredPct } from '../contract/grade-price-rules';
 import { goodsAmounts } from './payment-balance';
+import { assertGoodsSettlementSummary } from './goods-settlement-adjustment';
 import { signature } from './purchase-settlement-basis';
 
 /** 销售货款以交付事实编制；我方出库过账量始终单独留存，不被客户计量覆盖。 */
@@ -170,6 +171,7 @@ export class SalesSettlementBasis {
   async assertCurrent(settlementId: string, userId: string, permission = 'settlement.confirm') {
     const settlement = await this.prisma.financialSettlement.findUnique({ where: { id: settlementId }, include: { lines: true } });
     if (!settlement) throw new NotFoundException('销售结算单不存在');
+    assertGoodsSettlementSummary(settlement);
     const tracked = settlement.lines.filter(line => line.waybillLineItemId);
     if (!tracked.length) return;
     const reportChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.reportId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).reportId)]));

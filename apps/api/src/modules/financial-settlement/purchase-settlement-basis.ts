@@ -6,6 +6,7 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { evaluateGradePrice, readMeasuredPct } from '../contract/grade-price-rules';
 import { evaluateContractQualityRules } from '../quality/contract-quality-rules';
 import { goodsAmounts } from './payment-balance';
+import { assertGoodsSettlementSummary } from './goods-settlement-adjustment';
 
 export const snapshotJson = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 export const signature = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -220,6 +221,7 @@ export class PurchaseSettlementBasis {
   async assertCurrent(settlementId: string, userId: string, permission = 'settlement.view') {
     const settlement = await this.prisma.financialSettlement.findUnique({ where: { id: settlementId }, include: { lines: true } });
     if (!settlement) throw new NotFoundException('采购结算单不存在');
+    assertGoodsSettlementSummary(settlement);
     const tracked = settlement.lines.filter(l => l.waybillLineItemId);
     if (!tracked.length) return; // 历史人工结算保持原快照，不按新模板自动重算。
     const reportChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.reportId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).reportId)]));

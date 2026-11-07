@@ -190,6 +190,36 @@ describe('FinancialSettlementService payment approvals', () => {
       sourceSnapshot: { settlementQuantityReview: { confirmed: true, reason: '线下盖章确认', differences: [{ type: 'OVER' }] } } }] })).toBe(false);
   });
 
+  it.each(['PAYABLE', 'RECEIVABLE'] as const)('%s 预览与创建采用最终干基重算值，原车明细不被改写', async direction => {
+    const prototype = direction === 'PAYABLE' ? PurchaseSettlementBasis.prototype : SalesSettlementBasis.prototype;
+    const spy = jest.spyOn(prototype, 'sources').mockResolvedValue([{
+      id: 'w', orderId: 'o', waybillNo: 'WB-1', orderNo: 'PC-1', unit: 'TON', available: true, remainingQuantity: 100, negotiableRemainingQuantity: 102,
+      unitPrice: 2000, deductionPerTon: 0, pricingQuantityBasis: 'DRY_MATTER', contractLineItemId: 'cl', signature: 'original',
+    }] as any);
+    try {
+      prisma.contractLineItem.findMany.mockResolvedValue([{ id: 'cl', quantity: 100 }] as any);
+      prisma.financialSettlementLine.findMany.mockResolvedValue([]);
+      prisma.financialSettlement.count.mockResolvedValue(0);
+      prisma.user.findUnique.mockResolvedValue({ name: '经办人' } as any);
+      const method = direction === 'PAYABLE' ? 'createGoodsSettlement' : 'createSalesGoodsSettlement';
+      const dto = { contractId: 'c', direction, settlementScope: 'GOODS', lines: [{ orderId: 'o', waybillLineItemId: 'w', quantity: 100 }],
+        settlementAdjustment: { mode: 'QUANTITY', quantity: 99, reason: '双方确认总干基99吨' } };
+      const contract = { id: 'c', signingPartnerId: 'owner', businessUnitId: 'unit', pricingType: 'FIXED', overfillPct: 10, shortfallPct: 10 };
+      const preview = await (service as any)[method](dto, contract, 'counterparty', 'u', true);
+      expect(preview).toMatchObject({ quantity: 99, totalAmount: 198000, settlementAdjustment: { mode: 'QUANTITY', base: { quantity: 100, totalAmount: 200000 } } });
+      expect(preview.lines[0]).toMatchObject({ quantity: 100, totalAmount: 200000 });
+      await (service as any)[method](dto, contract, 'counterparty', 'u', false);
+      const saved = (prisma.financialSettlement.create.mock.calls[0][0] as any).data;
+      expect(saved).toMatchObject({ quantity: 99, totalAmount: 198000 });
+      expect(saved.lines.create[0]).toMatchObject({ quantity: 100, totalAmount: 200000, sourceSnapshot: { settlementAdjustment: { mode: 'QUANTITY', final: { quantity: 99, totalAmount: 198000 } } } });
+    } finally { spy.mockRestore(); }
+  });
+
+  it('逐车单价或整单结算调整沿用签章与现有结算审批，不通过零加减金额绕过', () => {
+    expect((service as any).settlementRequiresApproval({ adjustmentAmount: 0, lines: [{ adjustmentAmount: 0, sourceSnapshot: { lineAdjustment: { priceAdjusted: true } } }] })).toBe(true);
+    expect((service as any).settlementRequiresApproval({ adjustmentAmount: 0, lines: [{ adjustmentAmount: 0, sourceSnapshot: { settlementAdjustment: { mode: 'QUANTITY' } } }] })).toBe(true);
+  });
+
   it('数量差异确认后合同允许范围发生变化，正式确认前要求重新核对', async () => {
     (service as any).transactional = true;
     prisma.financialSettlement.findFirst.mockResolvedValue({ id: 's', contractId: 'c', direction: 'PAYABLE', status: 'DRAFT', settlementScope: 'GOODS',
