@@ -11,7 +11,7 @@ import { PurchaseSettlementBasis, snapshotJson, signature } from './purchase-set
 import { SalesSettlementBasis } from './sales-settlement-basis';
 import { PurchasePaymentContext } from './purchase-payment-context';
 import { LogisticsPaymentContext } from './logistics-payment-context';
-import { goodsAmounts, requestCommitment, ACTIVE_PAYMENT_REQUEST_STATUSES } from './payment-balance';
+import { goodsAmounts, requestCommitment, ACTIVE_PAYMENT_REQUEST_STATUSES, confirmedFinalSettlementAmount } from './payment-balance';
 import { GRADE_TIER_FORMULA, gradeTierAmounts, settlementPricingFacts } from './settlement-pricing';
 import { settlementQuantityReview } from './settlement-quantity-review';
 
@@ -407,7 +407,7 @@ export class FinancialSettlementService {
         signingPartner: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
         businessUnit: { select: { id: true, code: true, name: true } },
         lineItems: { select: { quantity: true, unit: true, totalPrice: true, salesTotalPrice: true } },
-        financialSettlements: { where: { direction, status: { not: 'VOIDED' }, deletedAt: null }, select: { totalAmount: true } },
+        financialSettlements: { where: { direction, status: { not: 'VOIDED' }, deletedAt: null }, select: { totalAmount: true, status: true, settlementScope: true, lines: { select: { sourceSnapshot: true } } } },
         fundTransactions: {
           where: { businessType: direction === 'PAYABLE' ? 'PURCHASE' : 'SALES', status: { not: 'VOIDED' } },
           select: { paymentStage: true, direction: true, amount: true, allocatedAmount: true, refundedAmount: true },
@@ -431,6 +431,9 @@ export class FinancialSettlementService {
       const paid = contract.fundTransactions.filter(f => f.direction === (direction === 'PAYABLE' ? 'PAYMENT' : 'RECEIPT') && ALLOCATABLE_STAGES.includes(f.paymentStage))
         .reduce((sum, f) => sum + Number(f.amount) - Number(f.refundedAmount), 0);
       const plannedPaymentAmount = money(paid + contract.paymentRequests.reduce((sum, item) => sum + requestCommitment(item), 0));
+      const finalPaymentAmount = confirmedFinalSettlementAmount(contract.financialSettlements);
+      const formalAmount = money(contract.financialSettlements.filter(item => ['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(item.status)).reduce((sum, item) => sum + Number(item.totalAmount), 0));
+      const paymentLimit = finalPaymentAmount ?? Math.max(amount, formalAmount);
       return {
         id: contract.id, contractNo: contract.contractNo, title: contract.title, type: contract.type,
         pricingType: contract.pricingType, amountIsEstimate: contract.pricingType === 'GRADE_TIER',
@@ -438,7 +441,8 @@ export class FinancialSettlementService {
         quantity: contract.lineItems.reduce((sum, line) => sum + Number(line.quantity), 0),
         unit: units.length === 1 ? units[0] : undefined,
         plannedPaymentAmount,
-        remainingPaymentAmount: money(Math.max(0, amount - plannedPaymentAmount)),
+        paymentLimit, paymentLimitFinal: finalPaymentAmount != null,
+        remainingPaymentAmount: money(Math.max(0, paymentLimit - plannedPaymentAmount)),
         signingPartner: contract.signingPartner, counterparty, businessUnit: contract.businessUnit,
       };
     }).filter((item) => item.signingPartner && item.counterparty && item.businessUnit);

@@ -23,10 +23,23 @@ describe('逐车质量结算来源与版本', () => {
     source.waybill.inboundReceipts[0].businessInbound.pricingQuantity = new Prisma.Decimal(100);
     prisma.waybillLineItem.findMany.mockResolvedValue([source]);
   });
-  it('最终采购货款按入库过账数量而非磅单原始净重，减去已占用数量', async () => {
+  it('已有部分数量结算也占用整张运单，不能因余量或切换磅单重复创建', async () => {
     source.settlementLines.push({ quantity: new Prisma.Decimal(60) });
     const rows = await service.sources('c', 'u');
-    expect(rows[0]).toMatchObject({ available: true, totalQuantity: 100, remainingQuantity: 40, totalAmount: 78400, deductionPerTon: 40 });
+    expect(rows[0]).toMatchObject({ available: false, settlementOccupied: true, totalQuantity: 100, remainingQuantity: 40, totalAmount: 78400, deductionPerTon: 40 });
+    expect(rows[0].reasons.join('；')).toContain('不可重复选择');
+  });
+  it('同一运单其他物料行被结算草稿使用时，也不能重复选择', async () => {
+    source.waybill.lineItems.push({ id: 'sibling' });
+    prisma.financialSettlement.findMany.mockResolvedValue([{ id: 'draft', settlementNo: 'YF-1', status: 'DRAFT', lines: [{ waybillLineItemId: 'sibling' }] }] as any);
+    const [row] = await service.sources('c', 'u');
+    expect(row).toMatchObject({ available: false, settlementOccupied: true, occupiedSettlements: [{ id: 'draft', settlementNo: 'YF-1', status: 'DRAFT' }] });
+  });
+  it('查询排除作废、删除和正在编辑的原单，原草稿仍可继续编辑', async () => {
+    const [row] = await service.sources('c', 'u', 'settlement.view', 'editing-draft');
+    expect(row).toMatchObject({ available: true, settlementOccupied: false });
+    expect(prisma.financialSettlement.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ direction: 'PAYABLE', deletedAt: null, status: { not: 'VOIDED' }, id: { not: 'editing-draft' } }) }));
+    expect(prisma.waybillLineItem.findMany).toHaveBeenCalledWith(expect.objectContaining({ include: expect.objectContaining({ settlementLines: expect.objectContaining({ where: expect.objectContaining({ settlementId: { not: 'editing-draft' }, settlement: { deletedAt: null, status: { not: 'VOIDED' } } }) }) }) }));
   });
   it('新分档合同按所选磅单净重折干结算，库存过账数量保持不变', async () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', lineItems: [{

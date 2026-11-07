@@ -139,6 +139,8 @@ export class LogisticsSettlementService {
       originLocation: w.originLocation, destinationLocation: w.destinationLocation, carrierPartnerId: w.carrierPartnerId, carrierName: w.carrierName,
       freightMode: w.freightMode, carrierPending: !w.carrierPartnerId, payerPartner: w.dispatchNotice.order.contract.signingPartner,
       businessUnit: w.dispatchNotice.order.contract.businessUnit, businessType: w.dispatchNotice.order.type,
+      tradeContract: { id: w.dispatchNotice.order.contract.id, contractNo: w.dispatchNotice.order.contract.contractNo, title: w.dispatchNotice.order.contract.title },
+      order: { id: w.dispatchNotice.order.id, orderNo: w.dispatchNotice.order.orderNo, name: w.dispatchNotice.order.name },
       materialName: w.lineItems.map(l => l.materialName || l.materialId).join('、'),
       tickets: w.weighTickets.filter(t => Number(t.netWeight) > 0).map(t => ({ id: t.id, ticketNo: t.ticketNo, weighingStage: t.weighingStage, grossWeight: t.grossWeight, tareWeight: t.tareWeight, netWeight: t.netWeight, ticketDate: t.ticketDate })),
       defaultTicketId: this.defaultTicket(w)?.id || null,
@@ -234,7 +236,21 @@ export class LogisticsSettlementService {
   async findAll(query: { status?: string }, userId: string) {
     await this.accessControl.assertPermission(userId, 'logistics.settlement.view');
     const scope = await this.accessControl.getLogisticsSettlementScope(userId, 'logistics.settlement.view');
-    return this.prisma.logisticsSettlement.findMany({ where: { AND: [scope, { deletedAt: null }, query.status ? { status: query.status } : {}] }, include: this.include, orderBy: { createdAt: 'desc' } });
+    const rows = await this.prisma.logisticsSettlement.findMany({ where: { AND: [scope, { deletedAt: null }, query.status ? { status: query.status } : {}] }, include: this.include, orderBy: { createdAt: 'desc' } });
+    if (!rows.length) return [];
+    // 只补齐已授权结果涉及的名称，不向筛选控件暴露其他企业或事业部。
+    const partnerIds = [...new Set(rows.flatMap(row => [row.ownerPartnerId, row.carrierPartnerId]).filter((id): id is string => Boolean(id)))];
+    const unitIds = [...new Set(rows.map(row => row.businessUnitId).filter((id): id is string => Boolean(id)))];
+    const [partners, units] = await Promise.all([
+      this.prisma.partner.findMany({ where: { id: { in: partnerIds } }, select: { id: true, name: true, code: true } }),
+      this.prisma.businessUnit.findMany({ where: { id: { in: unitIds } }, select: { id: true, name: true } }),
+    ]);
+    const partnerMap = new Map(partners.map(partner => [partner.id, partner])), unitMap = new Map(units.map(unit => [unit.id, unit]));
+    return rows.map(row => ({ ...row,
+      ownerPartner: row.ownerPartnerId ? partnerMap.get(row.ownerPartnerId) || null : row.payerPartner,
+      carrierPartner: row.carrierPartnerId ? partnerMap.get(row.carrierPartnerId) || { id: row.carrierPartnerId, name: row.lines.find(line => line.waybill.carrierName)?.waybill.carrierName || '历史承运方' } : null,
+      businessUnit: row.businessUnitId ? unitMap.get(row.businessUnitId) || null : null,
+    }));
   }
 
   async findOne(id: string, userId: string, permission = 'logistics.settlement.view') {

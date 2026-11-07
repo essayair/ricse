@@ -45,6 +45,10 @@ export class SalesSettlementBasis {
     const materialBasis = new Map(materials.map(material => [material.id, material.pricingQuantityBasis]));
     return rows.map(row => {
       const w = row.waybill, order = w.dispatchNotice.order;
+      const waybillLineIds = new Set(w.lineItems.map(line => line.id));
+      const occupiedSettlements = legacy.filter(settlement => settlement.lines.some(line => line.waybillLineItemId && waybillLineIds.has(line.waybillLineItemId)))
+        .map(settlement => ({ id: settlement.id, settlementNo: settlement.settlementNo, status: settlement.status }));
+      const settlementOccupied = row.settlementLines.length > 0 || occupiedSettlements.length > 0;
       const item = contract.lineItems.find(line => line.id === row.dispatchNoticeLineItem.orderLineItem.contractLineItemId);
       const gradeTier = contract.pricingType === 'GRADE_TIER';
       const gradeRules = contract.type === 'BILATERAL' ? item?.salesPriceRulesSnapshot : item?.priceRulesSnapshot;
@@ -89,6 +93,7 @@ export class SalesSettlementBasis {
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const negotiableRemainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(negotiableQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const reasons: string[] = [];
+      if (settlementOccupied) reasons.push('该运单已创建结算单（含草稿），不可重复选择；如需重做，请先作废原结算单');
       if (w.lineItems.length !== 1) reasons.push('该车含多物料，请先明确各物料重量与质量依据');
       if (!w.salesCompletionConfirmedAt) reasons.push('请先确认客户签收、收货计量与销售交付完成');
       if (w.dispatchNotice.mode === 'STANDARD' && !outbound) reasons.push('请先完成我方出库过账');
@@ -152,7 +157,7 @@ export class SalesSettlementBasis {
           measuredGradePct: readMeasuredPct(candidate.indicators || [], 'GRADE'), measuredMoisturePct: readMeasuredPct(candidate.indicators || [], 'MOISTURE'), measuredRecoveryPct: readMeasuredPct(candidate.indicators || [], 'RECOVERY') })),
         netWeight, grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
         measuredMoisturePct, dryQuantity, pricingQuantityBasis, totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity,
-        negotiableQuantity, negotiableRemainingQuantity,
+        negotiableQuantity, negotiableRemainingQuantity, settlementOccupied, occupiedSettlements,
         unitPrice, contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct), pricingType: contract.pricingType || 'FIXED', gradePrice, deductionPerTon: 0, recoveryDeductionPerTon,
         qualityDisposition: task?.qualityDisposition && task.qualityDisposition !== 'PENDING'
           ? task.qualityDisposition : report?.conclusion === 'PASS' ? 'PASS' : report?.conclusion === 'FUSE' ? 'REJECT' : 'REVIEW_REQUIRED',

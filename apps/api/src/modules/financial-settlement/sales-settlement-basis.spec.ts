@@ -124,4 +124,16 @@ describe('销售交付后的逐车应收来源', () => {
     expect(source.available).toBe(false);
     expect(source.reasons.join('；')).toContain('销售交付完成');
   });
+  it('销售运单已创建结算草稿，即使仍有数量也不能重复结算', async () => {
+    row.settlementLines = [{ quantity: new Prisma.Decimal(20) }];
+    prisma.financialSettlement.findMany.mockResolvedValue([{ id: 'draft', settlementNo: 'YS-1', status: 'DRAFT', lines: [{ waybillLineItemId: 'line' }] }] as any);
+    const source = (await basis.sources('contract', 'user'))[0];
+    expect(source).toMatchObject({ available: false, settlementOccupied: true, remainingQuantity: 68.2, occupiedSettlements: [{ id: 'draft', settlementNo: 'YS-1', status: 'DRAFT' }] });
+    expect(source.reasons.join('；')).toContain('不可重复选择');
+  });
+  it('销售编辑原草稿不把自身算成占用，已作废或删除记录不占用', async () => {
+    const [source] = await basis.sources('contract', 'user', 'settlement.view', 'editing-draft');
+    expect(source).toMatchObject({ available: true, settlementOccupied: false });
+    expect(prisma.financialSettlement.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ direction: 'RECEIVABLE', deletedAt: null, status: { not: 'VOIDED' }, id: { not: 'editing-draft' } }) }));
+  });
 });

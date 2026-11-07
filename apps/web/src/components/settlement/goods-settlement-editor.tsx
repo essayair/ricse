@@ -12,6 +12,7 @@ import { GoodsSource, paymentMoney } from './purchase-payment-context';
 import { alertAction, promptAction } from '@/lib/system-dialog';
 import { QuantityReviewSummary, quantityReviewPrintText, type SettlementQuantityReview } from './settlement-quantity-review';
 import { batchReportSelection, batchWeighSelection, selectedSettlementReportId } from '@/lib/settlement-basis-selection';
+import { settlementColumnTotal } from '@/lib/settlement-table-totals';
 
 type Line = { quantity: string; adjustmentAmount: string; remarks: string; negotiatedQuantity: boolean; qualityReportId: string; weighTicketId: string };
 type ContractOption = { id: string; contractNo: string; title: string; pricingType?: string; signingPartnerId?: string; counterparty?: { name: string }; seller?: { id: string; name: string }; buyer?: { id: string; name: string } };
@@ -62,7 +63,24 @@ const defaultLine = (source: GoodsSource, sales = false): Line => {
     remarks: shippingSelected ? SHIPPING_REASON : '', negotiatedQuantity: false,
     qualityReportId: source.defaultReportId || source.inventoryReportId || '', weighTicketId: ticket?.id || source.weighTicketId || '' };
 };
-const eligible = (source: GoodsSource) => source.available && source.remainingQuantity > 0;
+const eligible = (source: GoodsSource) => !source.settlementOccupied && source.available && source.remainingQuantity > 0;
+const rowTotals = (rows: GoodsSource[], selected: Record<string, Line>) => ({
+  shipping: settlementColumnTotal(rows.map(source => ticketForStage(source, 'SHIPPING')?.netWeight)),
+  receiving: settlementColumnTotal(rows.map(source => ticketForStage(source, 'RECEIVING')?.netWeight)),
+  net: settlementColumnTotal(rows.map(source => source.availableWeighTickets?.find(ticket => ticket.id === selected[source.id].weighTicketId)?.netWeight)),
+  dry: settlementColumnTotal(rows.map(source => {
+    const line = selected[source.id];
+    const ticket = source.availableWeighTickets?.find(ticket => ticket.id === line.weighTicketId);
+    return dryWeight(ticket?.netWeight, selectedMoisture(source, line.qualityReportId));
+  })),
+  quantity: settlementColumnTotal(rows.map(source => selected[source.id].quantity)),
+  available: settlementColumnTotal(rows.map(source => {
+    const line = selected[source.id];
+    const ticket = source.availableWeighTickets?.find(ticket => ticket.id === line.weighTicketId);
+    return ticket ? ticketQuantity(source, ticket, line.qualityReportId) : source.remainingQuantity;
+  })),
+  adjustment: settlementColumnTotal(rows.map(source => selected[source.id].adjustmentAmount || 0), 2),
+});
 
 export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direction?: 'PAYABLE' | 'RECEIVABLE'; editId?: string }) {
   const router = useRouter();
@@ -158,6 +176,8 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   const filtered = sources.filter(source => !batchFilter || source.orderId === batchFilter);
   const selectedRows = sources.filter(source => selected[source.id]);
   const selectedInView = filtered.filter(source => selected[source.id]);
+  const viewTotals = rowTotals(selectedInView, selected);
+  const detailTotals = rowTotals(selectedRows, selected);
   const reportSelection = batchReportSelection(selectedInView, selected, reportModeHint);
   const weighSelection = batchWeighSelection(selectedInView, selected);
   const allSelectedInView = filtered.some(eligible) && filtered.filter(eligible).every(source => Boolean(selected[source.id]));
@@ -407,8 +427,8 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
             const selectedDryWeight = line ? dryWeight(selectedTicket?.netWeight, moisturePct) : null;
             const basisRemaining = selectedTicket ? ticketQuantity(source, selectedTicket, line?.qualityReportId) : source.remainingQuantity;
             const variance = weighVariance(source);
-            return <tr key={source.id} className={line ? 'border-t align-top bg-primary-bg/30' : 'border-t align-top'}>
-              <td className={`sticky left-0 z-10 border-r px-4 py-4 ${line ? 'bg-primary-bg' : 'bg-background'}`}><label className="flex cursor-pointer items-start gap-2 font-medium"><input className="mt-0.5 shrink-0" type="checkbox" aria-label={`选用运单 ${source.waybillNo}`} checked={Boolean(line)} disabled={!eligible(source) && !line} onChange={event => toggle([source], event.target.checked)} /><span className="break-all text-xs leading-5">{source.orderNo}</span></label><div className="mt-1 pl-5 text-xs leading-5 text-muted-foreground">{source.waybillNo}</div></td>
+            return <tr key={source.id} className={source.settlementOccupied ? 'border-t align-top bg-muted/40 text-muted-foreground' : line ? 'border-t align-top bg-primary-bg/30' : 'border-t align-top'}>
+              <td className={`sticky left-0 z-10 border-r px-4 py-4 ${source.settlementOccupied ? 'bg-muted' : line ? 'bg-primary-bg' : 'bg-background'}`}><label className={`flex items-start gap-2 font-medium ${source.settlementOccupied ? 'cursor-not-allowed' : 'cursor-pointer'}`}><input className="mt-0.5 shrink-0" type="checkbox" aria-label={`选用运单 ${source.waybillNo}`} checked={Boolean(line)} disabled={source.settlementOccupied || (!eligible(source) && !line)} onChange={event => toggle([source], event.target.checked)} /><span className="break-all text-xs leading-5">{source.orderNo}</span></label><div className="mt-1 pl-5 text-xs leading-5 text-muted-foreground">{source.waybillNo}</div>{source.settlementOccupied && <div className="mt-2 pl-5 text-xs">已创建结算单{source.occupiedSettlements?.map(settlement => <a key={settlement.id} className="mt-1 block text-primary hover:underline" href={`/dashboard/settlements/${settlement.id}`}>{settlement.settlementNo}</a>)}</div>}</td>
               <td className="space-y-1.5 px-4 py-4"><div className="font-medium">{source.plateNo || '未录车牌'}</div><div className="line-clamp-2 text-xs leading-5 text-muted-foreground" title={source.materialName}>{source.materialName || '—'}</div>{variance && <div className="text-xs text-warning">磅差 {tons(variance.amount)} 吨</div>}</td>
               <td className="px-4 py-4"><WeighSideChoice source={source} stage="SHIPPING" selectedId={line?.weighTicketId} lower={variance?.lowerStage === 'SHIPPING'} disabled={!line} onSelect={ticket => selectTicket(source, ticket)} /></td>
               <td className="px-4 py-4"><WeighSideChoice source={source} stage="RECEIVING" selectedId={line?.weighTicketId} lower={variance?.lowerStage === 'RECEIVING'} disabled={!line} onSelect={ticket => selectTicket(source, ticket)} /></td>
@@ -419,6 +439,16 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
               <td className="space-y-1 px-4 py-4 text-right align-middle tabular-nums"><div className="whitespace-nowrap font-medium">本次 {line ? tons(Number(line.quantity)) : '—'}</div><div className="whitespace-nowrap text-xs text-muted-foreground">可结算 {tons(basisRemaining)}</div>{line && <div className="text-xs text-muted-foreground">{source.pricingQuantityBasis === 'DRY_MATTER' ? '折干计价' : '净重计价'}</div>}{!source.available && <div className="mt-1 text-xs text-warning">{source.reasons.join('；')}</div>}{!sales && canAccept && source.qualityDisposition === 'DEDUCTION_PENDING' && <Button size="sm" variant="outline" className="mt-2" onClick={async () => { const reason = await promptAction('请填写按合同扣款接收的业务依据', '', { title: '确认扣款接收' }); if (!reason?.trim()) return; try { await api.post(`/quality-tasks/${source.qualityTaskId}/accept-contract-deduction`, { reason, decisionVersion: source.decisionVersion }); await refresh(); } catch (cause: any) { setError(cause.message); } }}>确认扣款接收</Button>}</td>
             </tr>;
           })}</tbody>
+          <tfoot className="border-t-2 bg-surface-2 text-xs font-medium tabular-nums"><tr>
+            <td colSpan={2} className="px-4 py-4">已选合计（{selectedInView.length} 车）<div className="mt-1 font-normal text-muted-foreground">当前筛选范围；缺失数据不按零计</div></td>
+            <td className="px-4 py-4 text-right">{tons(viewTotals.shipping)} 吨</td>
+            <td className="px-4 py-4 text-right">{tons(viewTotals.receiving)} 吨</td>
+            <td className="px-4 py-4 text-muted-foreground">仅统计已勾选车辆</td>
+            <td className="px-4 py-4 text-right">{tons(viewTotals.net)}</td>
+            <td className="px-4 py-4 text-right text-muted-foreground">—</td>
+            <td className="px-4 py-4 text-right">{tons(viewTotals.dry)}</td>
+            <td className="space-y-1 px-4 py-4 text-right"><div>本次 {tons(viewTotals.quantity)}</div><div className="font-normal text-muted-foreground">可结算 {tons(viewTotals.available)}</div></td>
+          </tr></tfoot>
         </table>
       </div>
     </Card>}
@@ -439,7 +469,15 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
         </tr>
         <tr className="border-t bg-muted/10"><td colSpan={8}><SettlementLineFacts source={source} line={line} result={result} /></td></tr>
       </Fragment>;
-    })}</tbody></table></div></Card>}
+    })}</tbody><tfoot className="border-t-2 bg-surface-2 text-sm font-medium tabular-nums"><tr>
+      <td colSpan={2} className="px-4 py-4">合计（{selectedRows.length} 车）<div className="mt-1 text-xs font-normal text-muted-foreground">净重 {tons(detailTotals.net)} 吨 · 折干 {tons(detailTotals.dry)} 吨</div></td>
+      <td className="px-4 py-4 text-right">{tons(detailTotals.quantity)}</td>
+      <td className="px-4 py-4 text-right text-muted-foreground">—</td>
+      <td className="px-4 py-4 text-right text-muted-foreground">—</td>
+      <td className="px-4 py-4 text-right">{paymentMoney(detailTotals.adjustment)}</td>
+      <td className="px-4 py-4 text-xs font-normal text-muted-foreground">包含所有已选批次</td>
+      <td className="whitespace-nowrap px-4 py-4 text-right">{preview ? paymentMoney(preview.totalAmount) : previewError ? '计算失败' : '待计算'}</td>
+    </tr></tfoot></table></div></Card>}
     {gradeTier && <Card className="p-5"><label className="block max-w-xs space-y-1 text-sm">{sources.some(source => source.contractTaxRatePct != null) ? '合同税率（%）' : '本次结算税率（%）*'}<Input type="number" min="0" max="100" step="0.01" value={taxRatePct} readOnly={sources.some(source => source.contractTaxRatePct != null)} onChange={e => setTaxRatePct(e.target.value)} /></label></Card>}
     <Card className="grid gap-4 p-5 md:grid-cols-2"><label className="space-y-1 text-sm">约定{sales ? '收款' : '付款'}到期日<Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></label><label className="space-y-1 text-sm">结算说明<Input value={remarks} onChange={e => setRemarks(e.target.value)} /></label><div className="md:col-span-2"><label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={isFinalSettlement} onChange={e => setIsFinalSettlement(e.target.checked)} />本次为最终结算</label><p className="mt-1 text-xs text-muted-foreground">勾选后核对合同短装下限；分批结算无需勾选。</p></div></Card>
     {previewOpen && preview && <Card ref={previewRef} className="space-y-4 p-5" id="goods-settlement-preview">

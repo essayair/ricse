@@ -52,4 +52,12 @@ describe('采购付款上下文与预付款抵扣', () => {
     await expect(service.validate(r, 'u', 'settlement.payment.apply')).resolves.toBeTruthy();
     await expect(service.validate({ ...r, amount: D(60001) }, 'u', 'settlement.payment.apply')).rejects.toThrow('预付款可申请余额');
   });
+  it('已确认最终质量结算扣价后的货款已全部付出，不留下合同预计金额差额供重复申请', async () => {
+    settlement.lines = [{ sourceSnapshot: { settlementQuantityReview: { finalSettlement: true } } }];
+    prisma.fundTransaction.findMany.mockResolvedValue([{ ...advance(), amount: D(196000), allocatedAmount: D(196000), paymentStage: 'SETTLEMENT' }] as any);
+    settlement.settledAmount = D(196000);
+    const context = await service.load('c', 'u');
+    expect(context.summary).toMatchObject({ nominalAmount: 200000, contractLimit: 196000, paidAmount: 196000, availableContract: 0 });
+    await expect(service.validate({ ...request(), amount: D(1) }, 'u', 'settlement.payment.submit')).rejects.toThrow('付款额度不足');
+  });
 });

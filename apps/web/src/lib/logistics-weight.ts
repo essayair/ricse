@@ -25,3 +25,34 @@ export function freightWeightChoices<T extends FreightWeightTicket>(tickets: T[]
     lowerStage: lowerFreightWeightStage(shipping?.netWeight, receiving?.netWeight),
   };
 }
+
+type FreightWeightRow = { id: string; tickets: FreightWeightTicket[] };
+type FreightWeightLine = { ticketId: string; weightBasis: 'TICKET' | 'CONFIRMED'; confirmedWeight: string; weightReason: string };
+
+/** 表头状态反映实际已选行；手工重量、混用两侧或失效磅单不误标为统一口径。 */
+export function freightWeightSelectionStage(rows: FreightWeightRow[], selected: Record<string, FreightWeightLine>) {
+  const stages = rows.filter(row => selected[row.id]).map(row => {
+    const line = selected[row.id];
+    if (line.weightBasis === 'CONFIRMED') return 'MIXED';
+    const ticket = row.tickets.find(ticket => ticket.id === line.ticketId && Number(ticket.netWeight) > 0 && Number.isFinite(Number(ticket.netWeight)));
+    return ticket?.weighingStage || 'MIXED';
+  });
+  if (!stages.length) return '';
+  const unique = new Set(stages);
+  return unique.size === 1 && ['SHIPPING', 'RECEIVING'].includes(stages[0]) ? stages[0] : 'MIXED';
+}
+
+/** 仅切换范围内的已选运单；目标侧缺失保留原选项，不伪造统一成功。 */
+export function switchFreightWeightStage<T extends FreightWeightLine>(rows: FreightWeightRow[], selected: Record<string, T>, stage: 'SHIPPING' | 'RECEIVING', reason = '') {
+  const lines = { ...selected }, switched: string[] = [], missing: string[] = [];
+  for (const row of rows) {
+    const line = selected[row.id];
+    if (!line) continue;
+    const choices = freightWeightChoices(row.tickets, line.ticketId);
+    const ticket = stage === 'SHIPPING' ? choices.shipping : choices.receiving;
+    if (!ticket) { missing.push(row.id); continue; }
+    lines[row.id] = { ...line, ticketId: ticket.id, weightBasis: 'TICKET', confirmedWeight: '', weightReason: line.weightBasis !== 'CONFIRMED' && line.weightReason.trim() ? line.weightReason : reason };
+    switched.push(row.id);
+  }
+  return { lines, switched, missing };
+}

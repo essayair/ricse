@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { settlementColumnTotal } from '@/lib/settlement-table-totals';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { promptAction } from '@/lib/system-dialog';
@@ -11,6 +12,8 @@ import type { SettlementQuantityReview } from './settlement-quantity-review';
 export const paymentMoney = (value: unknown) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const QUALITY_LABELS: Record<string, string> = { PENDING: '待检测', PASS: '合格接收', LEGACY: '历史验收', DEDUCTION_PENDING: '待确认扣款接收', ACCEPT_WITH_DEDUCTION: '已确认扣款接收', REJECT: '拒收', REVIEW_REQUIRED: '待人工判定' };
 export interface GoodsSource {
+  settlementOccupied?: boolean;
+  occupiedSettlements?: Array<{ id: string; settlementNo: string; status: string }>;
   settlementQuantityReview?: SettlementQuantityReview;
   id: string; orderId: string; orderNo: string; orderName: string; orderStatus: string; waybillId: string; waybillNo: string; plateNo?: string;
   materialName?: string; totalQuantity: number; usedQuantity?: number; remainingQuantity: number; negotiableQuantity?: number; negotiableRemainingQuantity?: number; negotiatedQuantity?: boolean; settlementQuantity?: number; unitPrice: number; deductionPerTon: number; qualityDisposition: string;
@@ -56,7 +59,7 @@ export function GoodsEvidence({ sources, selected, onSelect, reload, canAccept =
     <td className="p-3"><span className={['REJECT', 'REVIEW_REQUIRED'].includes(s.qualityDisposition) ? 'text-destructive' : ''}>{QUALITY_LABELS[s.qualityDisposition] || '待确认'}</span>{s.qualityAcceptance && <div className="mt-1 text-xs text-muted-foreground">商务确认：{s.qualityAcceptance.name}</div>}</td>
     <td className="p-3 text-right tabular-nums">{s.totalQuantity.toFixed(3)} / {(s.settlementQuantity ?? s.remainingQuantity).toFixed(3)}</td><td className="p-3 text-right">{s.pricingType === 'GRADE_TIER' && s.gradePrice?.status !== 'READY' ? '待人工确认' : paymentMoney(s.unitPrice)}{s.gradePrice?.status === 'READY' && <div className="mt-1 text-xs text-muted-foreground">CaF₂ {s.gradePrice.gradePct}% · {s.gradePrice.rate} 元/度</div>}</td><td className="p-3 text-right">{s.deductionPerTon.toFixed(4)}{s.gradePrice?.recovery && <div className="mt-1 text-xs text-muted-foreground">回收率 {s.gradePrice.recoveryPct}%（基准 {s.gradePrice.recovery.baselinePct}%，差 {s.gradePrice.recovery.shortfallPoints} 点）<br />回收率扣价 {s.gradePrice.recovery.deductionPerTon.toFixed(4)}（不含税）</div>}</td>
     <td className="max-w-xs p-3"><div className="flex flex-wrap gap-2 text-xs">{s.weighTicketId && <Link className="underline" href={`/dashboard/weighbridge/${s.weighTicketId}`}>{s.ticketNo}</Link>}{s.qualityTaskId && <Link className="underline" href={`/dashboard/quality/${s.qualityTaskId}`}>{s.reportNo || s.taskNo}</Link>}</div>{s.reasons?.length > 0 && <p className="mt-2 text-xs text-muted-foreground">{s.reasons.join('；')}</p>}{s.evaluation?.items?.length ? <details className="mt-2 text-xs"><summary className="cursor-pointer">查看合同质量计算</summary>{s.evaluation.items.map((i, index) => <p className="mt-1" key={index}>{i.name}：{i.reason}</p>)}</details> : null}{canAccept && s.qualityDisposition === 'DEDUCTION_PENDING' && <Button className="mt-2" size="sm" variant="outline" disabled={!!busy} onClick={() => void accept(s)}>{busy === s.id ? '确认中…' : '确认按合同扣款接收'}</Button>}</td>
-  </tr>)}</tbody></table></div>;
+  </tr>)}</tbody><tfoot className="border-t-2 bg-surface-2 font-medium tabular-nums"><tr><td colSpan={onSelect ? 4 : 3} className="p-3">合计（{sources.length} 车）</td><td className="p-3 text-right">{settlementColumnTotal(sources.map(source => source.totalQuantity))?.toFixed(3) ?? '—'} / {settlementColumnTotal(sources.map(source => source.settlementQuantity ?? source.remainingQuantity))?.toFixed(3) ?? '—'}</td><td colSpan={3} className="p-3 text-xs font-normal text-muted-foreground">单价及每吨扣款不合计</td></tr></tfoot></table></div>;
 }
 
 export function PaymentBalancePanel({ context, settlementId, canAllocate = false, reload }: { context: PaymentContext; settlementId?: string; canAllocate?: boolean; reload: () => Promise<void> }) {

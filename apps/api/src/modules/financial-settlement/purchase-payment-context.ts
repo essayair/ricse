@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
-import { decimalMoney, requestCommitment, TRADE_PAYMENT_STAGES } from './payment-balance';
+import { decimalMoney, requestCommitment, TRADE_PAYMENT_STAGES, confirmedFinalSettlementAmount } from './payment-balance';
 import { PurchaseSettlementBasis, signature } from './purchase-settlement-basis';
 
 export class PurchasePaymentContext {
@@ -26,8 +26,9 @@ export class PurchasePaymentContext {
     const paidAmount = decimalMoney(funds.reduce((sum, f) => sum.plus(f.amount).minus(f.refundedAmount), new Prisma.Decimal(0)));
     const unpaidCommitment = decimalMoney(pending.reduce((sum, r) => sum.plus(requestCommitment(r)), new Prisma.Decimal(0)));
     const formalAmount = decimalMoney(settlements.reduce((sum, s) => sum.plus(s.totalAmount), new Prisma.Decimal(0)));
-    const contractLimit = ['COMPLETED', 'CLOSED', 'TERMINATED'].includes(contract.status) && settlements.length && sources.every(s => s.available || s.remainingQuantity === 0)
-      ? formalAmount : Math.max(nominalAmount, formalAmount);
+    const contractLimit = confirmedFinalSettlementAmount(settlements) ?? (['COMPLETED', 'CLOSED', 'TERMINATED'].includes(contract.status) && settlements.length
+      && sources.every(source => source.occupiedSettlements.some(settlement => ['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(settlement.status)))
+      ? formalAmount : Math.max(nominalAmount, formalAmount));
     const availableContract = decimalMoney(Math.max(0, contractLimit - paidAmount - unpaidCommitment));
     const fundRows = funds.map(f => {
       const available = decimalMoney(Math.max(0, Number(f.amount) - Number(f.refundedAmount) - Number(f.allocatedAmount)));

@@ -55,6 +55,10 @@ export class PurchaseSettlementBasis {
     });
     return rows.map(row => {
       const w = row.waybill, order = w.dispatchNotice.order;
+      const waybillLineIds = new Set(w.lineItems.map(line => line.id));
+      const occupiedSettlements = legacy.filter(settlement => settlement.lines.some(line => line.waybillLineItemId && waybillLineIds.has(line.waybillLineItemId)))
+        .map(settlement => ({ id: settlement.id, settlementNo: settlement.settlementNo, status: settlement.status }));
+      const settlementOccupied = row.settlementLines.length > 0 || occupiedSettlements.length > 0;
       const item = contract.lineItems.find(l => l.id === row.dispatchNoticeLineItem.orderLineItem.contractLineItemId);
       const isGradeTier = contract.pricingType === 'GRADE_TIER';
       const gradeQuantityBasis = isGradeTier ? (item?.priceRulesSnapshot as { quantityBasis?: 'PHYSICAL' | 'DRY_MATTER' } | null)?.quantityBasis || 'PHYSICAL' : null;
@@ -114,6 +118,7 @@ export class PurchaseSettlementBasis {
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const negotiableRemainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(negotiableQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const reasons: string[] = [];
+      if (settlementOccupied) reasons.push('该运单已创建结算单（含草稿），不可重复选择；如需重做，请先作废原结算单');
       if (w.lineItems.length !== 1) reasons.push('该车含多物料，需先明确各物料重量及检测依据');
       for (const stage of ['SHIPPING', 'RECEIVING']) {
         if (w.weighTickets.filter(candidate => candidate.weighingStage === stage).length > 1 && !effectiveByStage.has(stage)) {
@@ -183,6 +188,7 @@ export class PurchaseSettlementBasis {
         orderId: order.id, orderNo: order.orderNo, orderName: order.name, orderStatus: order.status, waybillStatus: w.status,
         contractLineItemId: item?.id, materialName: row.materialName || item?.materialName, unit: row.unit,
         totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity, negotiableQuantity, negotiableRemainingQuantity,
+        settlementOccupied, occupiedSettlements,
         unitPrice: gradePrice?.status === 'READY' ? gradePrice.unitPrice : Number(item?.unitPrice || 0),
         contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct),
         pricingType: contract.pricingType || 'FIXED', gradePrice,

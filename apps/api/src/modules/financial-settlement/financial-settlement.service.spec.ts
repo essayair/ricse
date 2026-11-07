@@ -58,6 +58,39 @@ describe('FinancialSettlementService payment approvals', () => {
     expect(prisma.financialSettlement.findMany).not.toHaveBeenCalled();
   });
 
+  describe('付款申请关联合同的实时余额', () => {
+    const contract = () => ({ id: 'contract', type: 'PURCHASE', totalAmount: '100', sellerId: 'supplier', buyerId: 'our', signingPartnerId: 'our',
+      seller: { id: 'supplier', name: '供应商' }, buyer: { id: 'our', name: '我方' }, signingPartner: { id: 'our', name: '我方' }, businessUnit: { id: 'unit', name: '事业部' },
+      lineItems: [{ quantity: '1', unit: 'TON', totalPrice: '100' }], financialSettlements: [] as any[], fundTransactions: [] as any[], paymentRequests: [] as any[] });
+    const fund = (amount: string, refundedAmount = '0') => ({ amount, refundedAmount, allocatedAmount: '0', paymentStage: 'SETTLEMENT', direction: 'PAYMENT', status: 'CONFIRMED' });
+
+    it('全额付款后无可申请余额；有效退款后实时恢复余额', async () => {
+      const c = contract(); c.fundTransactions = [fund('100')];
+      prisma.contract.findMany.mockResolvedValue([c] as any);
+      expect((await service.contractOptions('PAYABLE', 'user'))[0].remainingPaymentAmount).toBe(0);
+      c.fundTransactions[0].refundedAmount = '20';
+      expect((await service.contractOptions('PAYABLE', 'user'))[0].remainingPaymentAmount).toBe(20);
+    });
+    it('全额申请占用后不允许重复申请，驳回、退回草稿或作废后恢复未付额度', async () => {
+      const c = contract(); c.fundTransactions = [fund('30')];
+      const request = { amount: '100', status: 'PARTIALLY_PAID', fundTransactions: [{ amount: '30', status: 'CONFIRMED' }] };
+      c.paymentRequests = [request]; prisma.contract.findMany.mockResolvedValue([c] as any);
+      expect((await service.contractOptions('PAYABLE', 'user'))[0].remainingPaymentAmount).toBe(0);
+      for (const status of ['REJECTED', 'DRAFT', 'VOIDED']) {
+        request.status = status;
+        expect((await service.contractOptions('PAYABLE', 'user'))[0].remainingPaymentAmount).toBe(70);
+      }
+    });
+    it('最终结算扣价后按确认货款判断付清，最终结算作废后不继续采用旧上限', async () => {
+      const c = contract(); c.fundTransactions = [fund('90')];
+      c.financialSettlements = [{ totalAmount: '90', status: 'SETTLED', settlementScope: 'GOODS', lines: [{ sourceSnapshot: { settlementQuantityReview: { finalSettlement: true } } }] }];
+      prisma.contract.findMany.mockResolvedValue([c] as any);
+      expect((await service.contractOptions('PAYABLE', 'user'))[0]).toMatchObject({ paymentLimit: 90, paymentLimitFinal: true, remainingPaymentAmount: 0 });
+      c.financialSettlements = [];
+      expect((await service.contractOptions('PAYABLE', 'user'))[0]).toMatchObject({ paymentLimit: 100, paymentLimitFinal: false, remainingPaymentAmount: 10 });
+    });
+  });
+
   it('结算审批中或驳回后不能打印正式结算单', async () => {
     prisma.financialSettlement.findFirst.mockResolvedValue({ id: 'settlement-1', status: 'PENDING_APPROVAL' } as any);
     await expect(service.recordPrint('settlement-1', 'user-1')).rejects.toThrow('只有已确认的有效结算单');
@@ -68,6 +101,22 @@ describe('FinancialSettlementService payment approvals', () => {
   it('新采购最终结算不能绕过入库过账改用计划批次数量，提前付款走申请', async () => {
     prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', status: 'EXECUTING', signingPartnerId: 'owner', businessUnitId: 'unit', sellerId: 'seller', buyerId: 'owner' } as any);
     await expect(service.create({ contractId: 'c', direction: 'PAYABLE', settlementScope: 'BATCH' }, 'u')).rejects.toThrow('按批次提前付款');
+  });
+
+  it.each(['PAYABLE', 'RECEIVABLE'] as const)('%s 绕过页面直接请求也不能重复创建已占用运单的结算单', async direction => {
+    const prototype = direction === 'PAYABLE' ? PurchaseSettlementBasis.prototype : SalesSettlementBasis.prototype;
+    const spy = jest.spyOn(prototype, 'sources').mockResolvedValue([{
+      id: 'line', orderId: 'order', waybillNo: 'WB-1', available: false, settlementOccupied: true,
+      remainingQuantity: 50, reasons: ['该运单已创建结算单（含草稿），不可重复选择'],
+    }] as any);
+    try {
+      const method = direction === 'PAYABLE' ? 'createGoodsSettlement' : 'createSalesGoodsSettlement';
+      const dto = { direction, contractId: 'contract', settlementScope: 'GOODS', lines: [{ orderId: 'order', waybillLineItemId: 'line', quantity: 50 }] };
+      for (const preview of [true, false]) {
+        await expect((service as any)[method](dto, { id: 'contract', pricingType: 'FIXED' }, 'counterparty', 'user', preview)).rejects.toThrow('不可重复选择');
+      }
+      expect(prisma.financialSettlement.create).not.toHaveBeenCalled();
+    } finally { spy.mockRestore(); }
   });
 
   it('品位分档采购结算要求明确填写税率，不使用合同预计单价', async () => {

@@ -4,6 +4,19 @@ export const ACTIVE_PAYMENT_REQUEST_STATUSES = ['BUSINESS_CONFIRMED', 'PENDING_A
 export const TRADE_PAYMENT_STAGES = ['ADVANCE', 'PROGRESS', 'SETTLEMENT', 'FINAL', 'OTHER'];
 export const decimalMoney = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value).toDecimalPlaces(2).toNumber();
 
+/** 最终结算经确认后，以累计正式货款为付款上限，不把质量扣款重新补回合同预计金额。 */
+export function confirmedFinalSettlementAmount(settlements: Array<{
+  status: string; totalAmount: Prisma.Decimal.Value; settlementScope?: string;
+  lines?: Array<{ sourceSnapshot?: unknown }>;
+}>) {
+  const formal = settlements.filter(settlement => ['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'].includes(settlement.status));
+  const finalized = formal.some(settlement => settlement.settlementScope === 'CONTRACT_FINAL' || settlement.lines?.some(line => {
+    const snapshot = line.sourceSnapshot as { settlementQuantityReview?: { finalSettlement?: boolean } } | null;
+    return snapshot?.settlementQuantityReview?.finalSettlement === true;
+  }));
+  return finalized ? decimalMoney(formal.reduce((sum, settlement) => sum.plus(settlement.totalAmount), new Prisma.Decimal(0))) : null;
+}
+
 type Payment = { amount: Prisma.Decimal.Value; status: string; refundedAmount?: Prisma.Decimal.Value };
 type Request = { amount: Prisma.Decimal.Value; status: string; fundTransactions: Payment[] };
 

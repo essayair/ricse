@@ -146,6 +146,32 @@ describe('物流结算独立计量、调价留痕与付款主体', () => {
     expect(query.where.AND[1]).toMatchObject({ deletedAt: null, status: 'SIGNED', logisticsSettlementLines: { none: { settlement: { status: { not: 'VOIDED' }, deletedAt: null } } } });
     expect(query.where.AND[1]).not.toHaveProperty('signedAt');
   });
+  it('可结算运单带出贸易合同和执行批次，便于分组筛选', async () => {
+    const w = waybill();
+    Object.assign(w.dispatchNotice.order, { id: 'order-1', orderNo: 'PC-001', name: '第一批' });
+    Object.assign(w.dispatchNotice.order.contract, { id: 'contract-1', contractNo: 'CG-001', title: '采购合同' });
+    prisma.waybill.findMany.mockResolvedValue([w] as any);
+    const [row] = await service.listCandidateWaybills({}, 'u');
+    expect(row).toMatchObject({ tradeContract: { id: 'contract-1', contractNo: 'CG-001', title: '采购合同' }, order: { id: 'order-1', orderNo: 'PC-001', name: '第一批' } });
+  });
+  it('列表仅补齐已授权结果涉及的货主、承运方和事业部，不扩大数据范围', async () => {
+    const scope = { businessUnitId: { in: ['unit'] } };
+    access.getLogisticsSettlementScope.mockResolvedValue(scope);
+    prisma.logisticsSettlement.findMany.mockResolvedValue([{ ...settlement(), ownerPartnerId: 'owner', carrierPartnerId: 'carrier', businessUnitId: 'unit' }] as any);
+    prisma.partner.findMany.mockResolvedValue([{ id: 'owner', name: '业务货主', code: '100001' }, { id: 'carrier', name: '承运方', code: '200001' }] as any);
+    prisma.businessUnit.findMany.mockResolvedValue([{ id: 'unit', name: '玉门事业部' }] as any);
+    const [row] = await service.findAll({}, 'u');
+    expect(row).toMatchObject({ ownerPartner: { id: 'owner', name: '业务货主' }, carrierPartner: { id: 'carrier', name: '承运方' }, businessUnit: { id: 'unit', name: '玉门事业部' } });
+    expect(prisma.logisticsSettlement.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { AND: [scope, { deletedAt: null }, {}] } }));
+    expect(prisma.partner.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['owner', 'carrier'] } } }));
+    expect(prisma.businessUnit.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['unit'] } } }));
+  });
+  it('没有可见结算单时不读取额外主数据', async () => {
+    prisma.logisticsSettlement.findMany.mockResolvedValue([]);
+    expect(await service.findAll({}, 'u')).toEqual([]);
+    expect(prisma.partner.findMany).not.toHaveBeenCalled();
+    expect(prisma.businessUnit.findMany).not.toHaveBeenCalled();
+  });
   it('支持只填写开始或结束日期，不要求先填写完整周期', async () => {
     prisma.waybill.findMany.mockResolvedValue([]);
     await service.listCandidateWaybills({ periodStart: '2026-10-01' }, 'u');
