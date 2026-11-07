@@ -12,7 +12,7 @@ import {
 import { FinancialSettlementService } from './financial-settlement.service';
 import { PaymentVoucherRecognitionService } from './payment-voucher-recognition.service';
 import { InvoiceRegisterService } from './invoice-register.service';
-import { CreateInvoiceRecordDto, VoidInvoiceRecordDto } from './dto/invoice-record.dto';
+import { CreateSettlementInvoiceDto } from './dto/invoice-record.dto';
 
 @ApiTags('采购销售资金结算')
 @ApiBearerAuth()
@@ -333,14 +333,10 @@ export class FinancialSettlementController {
     return this.invoices.list(id, userId);
   }
 
+  /** 在结算单上登记发票并分摊到本单；撤销分摊、作废发票见 /invoices。 */
   @Post(':id/invoices')
-  registerInvoice(@Param('id') id: string, @Body() dto: CreateInvoiceRecordDto, @CurrentUser('id') userId: string) {
+  registerInvoice(@Param('id') id: string, @Body() dto: CreateSettlementInvoiceDto, @CurrentUser('id') userId: string) {
     return this.invoices.create(id, dto, userId);
-  }
-
-  @Post(':id/invoices/:invoiceId/void')
-  voidInvoice(@Param('id') id: string, @Param('invoiceId') invoiceId: string, @Body() dto: VoidInvoiceRecordDto, @CurrentUser('id') userId: string) {
-    return this.invoices.void(id, invoiceId, dto.reason, userId);
   }
 
   @Post(':id/confirm')

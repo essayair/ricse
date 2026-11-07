@@ -954,10 +954,10 @@ export class FinancialSettlementService {
     if (!this.transactional) return this.withContractLock(this.paymentLockKey(item), service => service.voidSettlement(id, userId));
     if (item.status === 'VOIDED') throw new BadRequestException('结算单已作废');
     if (Number(item.settledAmount) > 0 || item.allocations.some((entry) => !entry.reversedAt)) throw new BadRequestException('已有有效核销记录，必须先撤销核销后才能作废');
-    const activeInvoices = await this.prisma.invoiceRecord.count({ where: { settlementId: id, status: 'ACTIVE' } });
-    if (activeInvoices) throw new BadRequestException('结算单已有有效发票，请先处理或作废发票记录');
     const linked = await this.prisma.paymentRequest.count({ where: { settlementId: id, status: { in: ACTIVE_PAYMENT_REQUEST_STATUSES } } });
     if (linked) throw new BadRequestException('结算单有关联有效付款申请，请先处理付款申请及付款记录');
+    // 发票本身仍然有效：结算单作废时撤销其收到的分摊，发票金额回到待分摊。
+    await this.prisma.invoiceAllocation.updateMany({ where: { settlementId: id, reversedAt: null }, data: { reversedAt: new Date(), reversedBy: userId, reversalReason: '结算单作废，自动撤销发票分摊' } });
     await this.prisma.financialSettlementApproval.updateMany({ where: { settlementId: id, status: { in: ['PENDING', 'WAITING'] } }, data: { status: 'CANCELLED' } });
     await this.prisma.fundEarmark.updateMany({ where: { settlementId: id, releasedAt: null }, data: { releasedAt: new Date() } });
     return this.prisma.financialSettlement.update({ where: { id }, data: { status: 'VOIDED' }, include: SETTLEMENT_INCLUDE });

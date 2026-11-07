@@ -78,6 +78,8 @@ model User {
   createdFinancialSettlements      FinancialSettlement[]        @relation("FinancialSettlementCreator")
   confirmedFinancialSettlements    FinancialSettlement[]        @relation("FinancialSettlementConfirmer")
   createdInvoiceRecords            InvoiceRecord[]             @relation("InvoiceRecordCreator")
+  createdInvoiceAllocations        InvoiceAllocation[]         @relation("InvoiceAllocationCreator")
+  reversedInvoiceAllocations       InvoiceAllocation[]         @relation("InvoiceAllocationReverser")
   settlementApprovalTasks           FinancialSettlementApproval[] @relation("FinancialSettlementApprovalAssignee")
   actedSettlementApprovals          FinancialSettlementApproval[] @relation("FinancialSettlementApprovalActor")
   createdFundTransactions          FundTransaction[]            @relation("FundTransactionCreator")
@@ -243,6 +245,7 @@ model BusinessUnit {
   fundClaims           FundClaim[]
   logisticsContractUnits LogisticsContractBusinessUnit[]
 
+  invoiceRecords InvoiceRecord[] @relation("InvoiceRecordBusinessUnit")
   @@index([companyId, status])
   @@index([parentId])
   @@map("business_units")
@@ -1082,7 +1085,7 @@ model FinancialSettlement {
   paymentRequests PaymentRequest[]
   attachments     Attachment[]
   fundEarmarks    FundEarmark[]
-  invoiceRecords  InvoiceRecord[]
+  invoiceAllocations InvoiceAllocation[]
   approvalTasks   FinancialSettlementApproval[]
 
   @@index([direction, status])
@@ -1119,14 +1122,14 @@ model FinancialSettlementApproval {
   @@map("financial_settlement_approvals")
 }
 
-/// 发票登记：货款发票挂采购/销售结算单，运费发票挂物流结算单（二者必居其一）；仅用于数量金额核对，不自动生成凭证。
+/// 发票登记：发票可先登记、暂不对应结算单，再按金额分摊到一张或多张结算单（InvoiceAllocation）。
+/// 货款发票归属合同（数据范围随合同），运费发票归属事业部与承运方；仅用于票、款、结算核对，不自动生成凭证。
 model InvoiceRecord {
-  id                    String    @id @default(cuid())
-  sourceType            String    @default("GOODS") // GOODS 货款 | FREIGHT 运费
-  settlementId          String?
-  logisticsSettlementId String?
-  contractId            String?
-  direction             String // INPUT 进项 | OUTPUT 销项；运费发票固定为 INPUT
+  id                 String    @id @default(cuid())
+  sourceType         String    @default("GOODS") // GOODS 货款 | FREIGHT 运费
+  contractId         String? // 货款发票必填：登记时归属的合同；分摊可跨同一交易双方的其他合同
+  businessUnitId     String? // 运费发票必填：数据范围；货款发票取自合同
+  direction          String // INPUT 进项 | OUTPUT 销项；运费发票固定为 INPUT
   invoiceNo          String
   invoiceCode        String?
   issuedAt           DateTime
@@ -1139,26 +1142,52 @@ model InvoiceRecord {
   taxAmount          Decimal?  @db.Decimal(15, 2)
   taxInclusiveAmount Decimal   @db.Decimal(15, 2)
   remarks            String?
-  status             String    @default("ACTIVE") // ACTIVE | VOIDED
+  status             String    @default("ACTIVE") // ACTIVE | VOIDED（作废前须撤销全部分摊）
   createdBy          String
   createdAt          DateTime  @default(now())
   voidedBy           String?
   voidedAt           DateTime?
   voidReason         String?
 
-  settlement          FinancialSettlement? @relation(fields: [settlementId], references: [id], onDelete: Restrict)
-  logisticsSettlement LogisticsSettlement? @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
-  contract            Contract?            @relation(fields: [contractId], references: [id], onDelete: Restrict)
-  seller     Partner             @relation("InvoiceRecordSeller", fields: [sellerPartnerId], references: [id], onDelete: Restrict)
-  buyer      Partner             @relation("InvoiceRecordBuyer", fields: [buyerPartnerId], references: [id], onDelete: Restrict)
-  creator    User                @relation("InvoiceRecordCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  contract     Contract?           @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  businessUnit BusinessUnit?       @relation("InvoiceRecordBusinessUnit", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  seller       Partner             @relation("InvoiceRecordSeller", fields: [sellerPartnerId], references: [id], onDelete: Restrict)
+  buyer        Partner             @relation("InvoiceRecordBuyer", fields: [buyerPartnerId], references: [id], onDelete: Restrict)
+  creator      User                @relation("InvoiceRecordCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  allocations  InvoiceAllocation[]
 
-  @@index([settlementId, status])
-  @@index([logisticsSettlementId, status])
   @@index([contractId])
+  @@index([businessUnitId])
   @@index([direction, issuedAt])
   @@unique([direction, sellerPartnerId, invoiceNo])
   @@map("invoice_records")
+}
+
+/// 发票金额分摊到结算依据：货款发票对应采购/销售结算单，运费发票对应物流结算单（二者必居其一）。
+/// 一张发票可分摊到多张结算单，一张结算单可收到多张发票的分摊；撤销保留记录。
+model InvoiceAllocation {
+  id                    String    @id @default(cuid())
+  invoiceId             String
+  settlementId          String?
+  logisticsSettlementId String?
+  amount                Decimal   @db.Decimal(15, 2) // 含税金额
+  quantity              Decimal?  @db.Decimal(15, 3) // 选填；填写后参与数量核对
+  createdBy             String
+  createdAt             DateTime  @default(now())
+  reversedAt            DateTime?
+  reversedBy            String?
+  reversalReason        String?
+
+  invoice             InvoiceRecord        @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  settlement          FinancialSettlement? @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  logisticsSettlement LogisticsSettlement? @relation(fields: [logisticsSettlementId], references: [id], onDelete: Restrict)
+  creator             User                 @relation("InvoiceAllocationCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  reverser            User?                @relation("InvoiceAllocationReverser", fields: [reversedBy], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId, reversedAt])
+  @@index([settlementId, reversedAt])
+  @@index([logisticsSettlementId, reversedAt])
+  @@map("invoice_allocations")
 }
 
 /// 结算单与执行批次的明细关系。快照字段保证批次名称或价格后续调整时历史口径不变。
@@ -1916,7 +1945,7 @@ model LogisticsSettlement {
   paymentAllocations LogisticsPaymentAllocation[]
   adjustments LogisticsSettlementAdjustment[]
   attachments Attachment[]
-  invoiceRecords InvoiceRecord[]
+  invoiceAllocations InvoiceAllocation[]
 
   @@index([payerCompanyId])
   @@index([payerPartnerId])

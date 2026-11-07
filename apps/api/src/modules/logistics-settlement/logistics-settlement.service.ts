@@ -394,8 +394,8 @@ export class LogisticsSettlementService {
     const requests = await this.prisma.paymentRequest.count({ where: { logisticsSettlementId: id, status: { notIn: ['DRAFT', 'REJECTED', 'VOIDED'] } } });
     const allocations = await this.prisma.logisticsPaymentAllocation.count({ where: { logisticsSettlementId: id, reversedAt: null } });
     if (requests || allocations) throw new BadRequestException('物流结算单已有有效付款申请或核销记录，请先处理付款申请及资金记录，不能直接作废');
-    const invoices = await this.prisma.invoiceRecord.count({ where: { logisticsSettlementId: id, status: 'ACTIVE' } });
-    if (invoices) throw new BadRequestException('物流结算单已有有效运费发票，请先作废发票记录');
+    // 运费发票本身仍然有效：物流结算单作废时撤销其收到的分摊，发票金额回到待分摊。
+    await this.prisma.invoiceAllocation.updateMany({ where: { logisticsSettlementId: id, reversedAt: null }, data: { reversedAt: new Date(), reversedBy: userId, reversalReason: '物流结算单作废，自动撤销发票分摊' } });
     return this.prisma.logisticsSettlement.update({ where: { id }, data: { status: 'VOIDED' }, include: this.include });
   }
 
