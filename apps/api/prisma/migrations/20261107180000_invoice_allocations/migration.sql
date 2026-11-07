@@ -1,6 +1,8 @@
 -- 发票改为可先登记、暂不对应结算单，再按金额分摊到一张或多张结算依据。
 -- 既有发票按原归属全额转为分摊记录；作废发票的分摊同时记为已撤销，保留历史。
 
+BEGIN;
+
 CREATE TABLE "invoice_allocations" (
   "id" TEXT NOT NULL,
   "invoiceId" TEXT NOT NULL,
@@ -60,3 +62,5 @@ ALTER TABLE "invoice_records" ADD CONSTRAINT "invoice_records_source_check" CHEC
   ("sourceType" = 'GOODS' AND "contractId" IS NOT NULL)
   OR ("sourceType" = 'FREIGHT' AND "direction" = 'INPUT')
 );
+
+COMMIT;

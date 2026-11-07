@@ -163,14 +163,18 @@ export class InvoiceRegisterService {
   async voidInvoice(invoiceId: string, reason: string, userId: string) {
     if (!reason.trim()) throw new BadRequestException('请填写发票作废原因');
     await this.findInvoice(invoiceId, userId, 'reverse');
-    const active = await this.prisma.invoiceAllocation.count({ where: { invoiceId, reversedAt: null } });
-    if (active) throw new BadRequestException('发票仍有有效分摊，请先撤销全部分摊再作废');
-    const updated = await this.prisma.invoiceRecord.updateMany({
-      where: { id: invoiceId, status: 'ACTIVE' },
-      data: { status: 'VOIDED', voidedBy: userId, voidedAt: new Date(), voidReason: reason.trim() },
+    return this.prisma.$transaction(async tx => {
+      // 与 allocateInTx 共享发票行锁：锁后核对，防止作废与新增分摊交错执行。
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "invoice_records" WHERE id = ${invoiceId} FOR UPDATE`);
+      const active = await tx.invoiceAllocation.count({ where: { invoiceId, reversedAt: null } });
+      if (active) throw new BadRequestException('发票仍有有效分摊，请先撤销全部分摊再作废');
+      const updated = await tx.invoiceRecord.updateMany({
+        where: { id: invoiceId, status: 'ACTIVE' },
+        data: { status: 'VOIDED', voidedBy: userId, voidedAt: new Date(), voidReason: reason.trim() },
+      });
+      if (!updated.count) throw new NotFoundException('有效发票记录不存在');
+      return tx.invoiceRecord.findUniqueOrThrow({ where: { id: invoiceId } });
     });
-    if (!updated.count) throw new NotFoundException('有效发票记录不存在');
-    return this.prisma.invoiceRecord.findUniqueOrThrow({ where: { id: invoiceId } });
   }
 
   async detail(invoiceId: string, userId: string) {

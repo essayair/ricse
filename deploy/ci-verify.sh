@@ -15,4 +15,5 @@ pnpm db:generate
 pnpm lint
 pnpm typecheck
 pnpm test
+bash deploy/tests/migrate-database.test.sh
 pnpm build

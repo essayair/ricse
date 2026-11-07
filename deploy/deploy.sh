@@ -56,9 +56,9 @@ fi
 docker compose "${COMPOSE_ARGS[@]}" config >/dev/null
 docker compose "${COMPOSE_ARGS[@]}" build
 docker compose "${COMPOSE_ARGS[@]}" up -d postgres redis minio
-docker compose "${COMPOSE_ARGS[@]}" run --rm api \
-  ./apps/api/node_modules/.bin/prisma migrate deploy \
-  --schema apps/api/prisma/schema.prisma
+# shellcheck source=migrate-database.sh
+source "${DEPLOY_DIR}/migrate-database.sh"
+run_database_migrations
 if [[ "${RUN_SEED}" == "true" ]]; then
   docker compose "${COMPOSE_ARGS[@]}" run --rm api \
     node apps/api/dist/prisma/seed.js

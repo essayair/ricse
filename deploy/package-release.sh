@@ -15,6 +15,7 @@ trap 'rm -rf "${package_root}"' EXIT
 
 install -d "${package_root}/deploy/nginx"
 install -m 755 "${PROJECT_DIR}/deploy/release.sh" "${package_root}/deploy/release.sh"
+install -m 644 "${PROJECT_DIR}/deploy/migrate-database.sh" "${package_root}/deploy/migrate-database.sh"
 install -m 644 "${PROJECT_DIR}/deploy/docker-compose.staging.yml" "${package_root}/deploy/docker-compose.staging.yml"
 install -m 644 "${PROJECT_DIR}/deploy/docker-compose.https.yml" "${package_root}/deploy/docker-compose.https.yml"
 install -m 644 "${PROJECT_DIR}/deploy/nginx/http.conf.template" "${package_root}/deploy/nginx/http.conf.template"

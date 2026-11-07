@@ -89,6 +89,10 @@ if [[ -f "${CURRENT_STATE}" ]]; then
 fi
 
 rollback_application() {
+  if [[ "${INVOICE_SCHEMA_CUTOVER:-false}" == "true" ]]; then
+    echo "发票结构已升级，禁止直接回退旧应用镜像。请修复新版本，或同时恢复发布前数据库与旧应用。" >&2
+    return 0
+  fi
   if [[ -z "${PREVIOUS_API_IMAGE}" || -z "${PREVIOUS_WEB_IMAGE}" || -z "${PREVIOUS_IMAGE_TAG}" ]]; then
     echo "没有可用的上一版本，无法自动回退应用镜像。" >&2
     return 0
@@ -113,9 +117,9 @@ if docker compose "${COMPOSE_ARGS[@]}" ps --status running --services | grep -qx
   chmod 600 "${backup_file}"
 fi
 
-docker compose "${COMPOSE_ARGS[@]}" run --rm api \
-  ./apps/api/node_modules/.bin/prisma migrate deploy \
-  --schema apps/api/prisma/schema.prisma
+# shellcheck source=migrate-database.sh
+source "${DEPLOY_DIR}/migrate-database.sh"
+run_database_migrations
 
 docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans
 

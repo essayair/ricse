@@ -157,6 +157,8 @@ describe('InvoiceRegisterService', () => {
       prisma.invoiceRecord.updateMany.mockResolvedValue({ count: 1 });
       prisma.invoiceRecord.findUniqueOrThrow.mockResolvedValue({ status: 'VOIDED' } as any);
       await service.voidInvoice('inv1', '录错', 'user1');
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.$queryRaw.mock.invocationCallOrder.at(-1)).toBeLessThan(prisma.invoiceAllocation.count.mock.invocationCallOrder.at(-1)!);
       expect(prisma.invoiceRecord.updateMany).toHaveBeenCalledWith({ where: { id: 'inv1', status: 'ACTIVE' }, data: expect.objectContaining({ status: 'VOIDED', voidReason: '录错' }) });
     });
   });
