@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { PanelLeft, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Tooltip,
   TooltipContent,
@@ -24,9 +26,14 @@ const SIDEBAR_COOKIE = 'sidebar:state';
 
 type SidebarContextValue = {
   state: 'expanded' | 'collapsed';
+  /** 菜单是否展示文字。手机端抽屉内始终展开。 */
   open: boolean;
   setOpen: (v: boolean) => void;
   toggleSidebar: () => void;
+  /** 视口窄于 768px 时侧边栏改为抽屉。 */
+  isMobile: boolean;
+  openMobile: boolean;
+  setOpenMobile: (v: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextValue | null>(null);
@@ -56,18 +63,26 @@ export function SidebarProvider({
     return defaultOpen;
   });
 
+  const isMobile = useIsMobile();
+  const [openMobile, setOpenMobile] = React.useState(false);
+  React.useEffect(() => { if (!isMobile) setOpenMobile(false); }, [isMobile]);
+
   const persistOpen = (v: boolean) => {
     setOpen(v);
     document.cookie = `${SIDEBAR_COOKIE}=${v};path=/;max-age=${7 * 24 * 60 * 60}`;
   };
 
+  const expanded = isMobile || open;
   return (
     <SidebarContext.Provider
       value={{
-        state: open ? 'expanded' : 'collapsed',
-        open,
+        state: expanded ? 'expanded' : 'collapsed',
+        open: expanded,
         setOpen: persistOpen,
-        toggleSidebar: () => persistOpen(!open),
+        toggleSidebar: () => (isMobile ? setOpenMobile(!openMobile) : persistOpen(!open)),
+        isMobile,
+        openMobile,
+        setOpenMobile,
       }}
     >
       {children}
@@ -75,7 +90,10 @@ export function SidebarProvider({
   );
 }
 
-/** Fixed sidebar panel — collapses to icon‑only (64px) or expands to 256px */
+/**
+ * 桌面端固定侧边栏，可收起为 64px 图标栏或展开为 256px；
+ * 手机端（<768px）为左侧抽屉，点击遮罩、按 Esc 或切换页面后自动关闭。
+ */
 export function Sidebar({
   className,
   children,
@@ -83,18 +101,36 @@ export function Sidebar({
   className?: string;
   children: React.ReactNode;
 }) {
-  const { open } = useSidebar();
+  const { open, isMobile, openMobile, setOpenMobile } = useSidebar();
+  const pathname = usePathname();
+  React.useEffect(() => { setOpenMobile(false); }, [pathname, setOpenMobile]);
+  React.useEffect(() => {
+    if (!openMobile) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpenMobile(false); };
+    document.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = overflow; };
+  }, [openMobile, setOpenMobile]);
   return (
-    <aside
-      data-app-sidebar
-      className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r bg-sidebar transition-all duration-200',
-        open ? 'w-64' : 'w-16',
-        className,
+    <>
+      {isMobile && openMobile && (
+        <div aria-hidden className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setOpenMobile(false)} />
       )}
-    >
-      {children}
-    </aside>
+      <aside
+        data-app-sidebar
+        aria-hidden={isMobile && !openMobile ? true : undefined}
+        className={cn(
+          'fixed left-0 top-0 z-50 flex h-[100dvh] w-64 flex-col border-r bg-sidebar transition-all duration-200 md:z-40',
+          openMobile ? 'translate-x-0 shadow-xl' : '-translate-x-full',
+          'md:translate-x-0 md:shadow-none',
+          open ? 'md:w-64' : 'md:w-16',
+          className,
+        )}
+      >
+        {children}
+      </aside>
+    </>
   );
 }
 
@@ -412,8 +448,8 @@ export function SidebarInset({
     <div
       data-dashboard-shell
       className={cn(
-        'flex min-h-screen flex-col transition-all duration-200',
-        open ? 'ml-64' : 'ml-16',
+        'flex min-h-screen min-w-0 flex-col transition-all duration-200',
+        open ? 'md:ml-64' : 'md:ml-16',
       )}
     >
       {children}
@@ -427,11 +463,12 @@ export function SidebarTrigger({
 }: {
   className?: string;
 }) {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, isMobile, openMobile, open } = useSidebar();
   return (
     <Button
       variant="ghost"
       size="icon"
+      aria-label={isMobile ? (openMobile ? '关闭菜单' : '打开菜单') : open ? '收起侧边栏' : '展开侧边栏'}
       onClick={toggleSidebar}
       className={cn('h-8 w-8', className)}
     >

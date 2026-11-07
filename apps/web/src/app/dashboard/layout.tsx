@@ -75,16 +75,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <SidebarProvider>
       <AppSidebar userRole={user.role} permissions={user.permissions || []} />
       <SidebarInset>
-        <header data-dashboard-header className="flex h-14 items-center gap-4 border-b bg-background px-6">
+        <header data-dashboard-header className="flex h-14 items-center gap-2 border-b bg-background px-4 sm:gap-4 md:px-6">
           <SidebarTrigger />
           <div className="min-w-0 flex-1">
             <Breadcrumbs />
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <Button variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label="通知">
               <Bell className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label="设置">
               <Settings className="h-4 w-4" />
             </Button>
             <DropdownMenu>
@@ -95,7 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       {user.name.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="text-sm">{user.name}</span>
+                  <span className="hidden text-sm sm:inline">{user.name}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -107,7 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </DropdownMenu>
           </div>
         </header>
-        <main data-dashboard-main className="flex-1 p-6">{children}</main>
+        <main data-dashboard-main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

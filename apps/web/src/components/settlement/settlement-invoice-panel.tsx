@@ -48,15 +48,20 @@ function InvoicePanel({ basePath, registrable, canCreate, canVoid, freight = fal
     ? '登记承运方开具的运费发票并核对含税金额；不自动生成会计凭证或税务申报数据。'
     : '仅登记进销项发票并核对数量、含税金额；不自动生成会计凭证或税务申报数据。';
   return <Card className="space-y-4 p-5">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold">{freight ? '运费发票登记与核对' : '发票登记与结算核对'}</h2><p className="mt-1 text-xs text-muted-foreground">{hint}</p></div>{canCreate && registrable && <Button onClick={() => setOpen(true)}>登记{kindLabel}发票</Button>}</div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><h2 className="font-semibold">{freight ? '运费发票登记与核对' : '发票登记与结算核对'}</h2><p className="mt-1 text-xs text-muted-foreground">{hint}</p></div>{canCreate && registrable && <Button className="w-full shrink-0 sm:w-auto" onClick={() => setOpen(true)}>登记{kindLabel}发票</Button>}</div>
     {data && <>
       <div className="grid gap-3 rounded-md bg-muted/40 p-3 text-sm sm:grid-cols-3">
         {freight ? <div>有效发票：{data.records.filter(record => record.status === 'ACTIVE').length} 张</div> : <div>结算数量 / 发票数量：{data.summary.settlementQuantity ?? '—'} / {data.summary.invoiceQuantity} 吨</div>}
         <div>结算金额 / 发票含税金额：{money(data.summary.settlementAmount)} / {money(data.summary.invoiceAmount)}</div>
         <div className={data.summary.matched ? 'text-success' : 'text-warning'}>{data.summary.matched ? (freight ? '金额已匹配' : '数量金额已匹配') : data.summary.warnings.join('；')}</div>
       </div>
-      <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[900px] text-sm">
-        <thead className="bg-muted/40 text-left"><tr><th className="p-3">发票号码 / 代码</th><th className="p-3">开票日期</th><th className="p-3">品名规格</th><th className="p-3 text-right">数量</th><th className="p-3 text-right">税率</th><th className="p-3 text-right">含税金额</th><th className="p-3">状态 / 经办人</th><th className="p-3">操作</th></tr></thead>
+      {/* 手机：卡片列表 */}
+      <div className="space-y-2 md:hidden">{data.records.length ? data.records.map(record => <div key={record.id} className={`rounded-md border p-3 text-sm ${record.status === 'VOIDED' ? 'text-muted-foreground' : ''}`}>
+        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className={`truncate font-mono font-medium ${record.status === 'VOIDED' ? 'line-through' : ''}`}>{record.invoiceNo}</div><div className="truncate text-xs text-muted-foreground">{record.issuedAt.slice(0, 10)} · {record.materialName}</div></div><div className="shrink-0 text-right font-semibold tabular-nums">{money(record.taxInclusiveAmount)}</div></div>
+        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="min-w-0 truncate">{record.quantity != null ? `${record.quantity} · ` : ''}{record.taxRate != null ? `税率 ${Number(record.taxRate)}% · ` : ''}{record.status === 'VOIDED' ? `已作废：${record.voidReason || ''}` : '有效'} · {record.creator.name}</span>{record.status === 'ACTIVE' && canVoid && <Button variant="outline" size="sm" className="h-7 shrink-0" disabled={busy} onClick={() => void voidRecord(record)}>作废</Button>}</div>
+      </div>) : <div className="rounded-md border p-6 text-center text-sm text-muted-foreground">暂无发票记录</div>}</div>
+      <div className="hidden overflow-x-auto rounded-md border md:block"><table className="w-full min-w-[820px] text-sm">
+        <thead className="bg-muted/40 text-left"><tr className="[&>th]:whitespace-nowrap"><th className="p-3">发票号码 / 代码</th><th className="p-3">开票日期</th><th className="p-3">品名规格</th><th className="p-3 text-right">数量</th><th className="p-3 text-right">税率</th><th className="p-3 text-right">含税金额</th><th className="p-3">状态 / 经办人</th><th className="p-3">操作</th></tr></thead>
         <tbody>{data.records.length ? data.records.map(record => <tr key={record.id} className="border-t">
           <td className="p-3">{record.invoiceNo}<div className="text-xs text-muted-foreground">{record.invoiceCode || '—'}</div></td>
           <td className="p-3">{record.issuedAt.slice(0, 10)}</td>

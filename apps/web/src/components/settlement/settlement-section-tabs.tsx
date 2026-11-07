@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -13,13 +14,15 @@ const SECTIONS = {
 export function SettlementSectionTabs({ section, showPageTitle = false }: { section: keyof typeof SECTIONS; showPageTitle?: boolean }) {
   const pathname = usePathname();
   const current = SECTIONS[section];
+  const activeRef = useRef<HTMLAnchorElement | null>(null);
+  useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [pathname]);
 
   return (
-    <div className="flex flex-col items-start gap-4 border-b">
-      {showPageTitle ? <h1 className="text-2xl font-bold">{current.label}</h1> : <div className="text-sm font-semibold text-foreground">{current.label}</div>}
+    <div className="flex min-w-0 flex-col items-stretch gap-3 border-b sm:gap-4">
+      {showPageTitle ? <h1 className="text-xl font-bold sm:text-2xl">{current.label}</h1> : <div className="text-sm font-semibold text-foreground">{current.label}</div>}
       <nav
         aria-label={`${current.label}功能切换`}
-        className="inline-flex self-start gap-6"
+        className="-mb-px flex gap-5 overflow-x-auto [scrollbar-width:none] sm:gap-6 [&::-webkit-scrollbar]:hidden"
       >
         {current.items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -27,9 +30,10 @@ export function SettlementSectionTabs({ section, showPageTitle = false }: { sect
             <Link
               key={item.href}
               href={item.href}
+              ref={active ? activeRef : undefined}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'relative border-b-2 px-1 pb-2.5 pt-1 text-sm font-medium transition-colors',
+                'relative shrink-0 whitespace-nowrap border-b-2 px-1 pb-2.5 pt-1 text-sm font-medium transition-colors',
                 active
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground',

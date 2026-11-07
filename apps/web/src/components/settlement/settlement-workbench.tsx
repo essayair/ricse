@@ -254,10 +254,10 @@ export function SettlementWorkbench({ direction, standalone = false, showTitle =
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>{showTitle && <h1 className="text-2xl font-bold">{title}</h1>}</div>
-      {can('settlement.create') && <div className="flex gap-2">{!standalone && <Button variant="outline" onClick={openFund}><WalletCards className="mr-1 h-4 w-4" />登记资金流水</Button>}<Button onClick={openSettlement}><Plus className="mr-1 h-4 w-4" />{receivable ? '新建应收结算' : '新建采购结算单'}</Button></div>}
+      {can('settlement.create') && <div className="flex gap-2">{!standalone && <Button variant="outline" onClick={openFund}><WalletCards className="mr-1 h-4 w-4" />登记资金流水</Button>}<Button onClick={openSettlement}><Plus className="mr-1 h-4 w-4" />{receivable ? '新建销售结算单' : '新建采购结算单'}</Button></div>}
     </div>
 
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       <Metric label={`${balanceLabel}总额`} value={money(summary.total)} icon={<CircleDollarSign className={accent} />} />
       <Metric label={`已${cashLabel}核销`} value={money(summary.settled)} icon={<CheckCircle2 className="text-success" />} />
       <Metric label={`未${cashLabel}金额`} value={money(summary.outstanding)} icon={<AccentIcon className={accent} />} />
@@ -311,7 +311,7 @@ export function SettlementWorkbench({ direction, standalone = false, showTitle =
 function fundStageOptions(receivable: boolean): Array<[string, string]> {
   return receivable ? [['ADVANCE', '收到预收款'], ['PROGRESS', '收到阶段款'], ['SETTLEMENT', '收到结算款'], ['FINAL', '收到尾款'], ['GUARANTEE', '收取保证金'], ['REFUND', '退还客户款项'], ['GUARANTEE_RETURN', '退还客户保证金'], ['OTHER', '其他销售收款']] : [['ADVANCE', '支付预付款'], ['PROGRESS', '支付阶段款'], ['SETTLEMENT', '支付结算款'], ['FINAL', '支付尾款'], ['GUARANTEE', '支付保证金'], ['REFUND', '收到供应商退款'], ['GUARANTEE_RETURN', '收回保证金'], ['OTHER', '其他采购付款']];
 }
-function Metric({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) { return <Card className="flex items-center justify-between p-4"><div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-xl font-semibold">{value}</div></div><div className="rounded-full bg-muted p-2 [&>svg]:h-5 [&>svg]:w-5">{icon}</div></Card>; }
+function Metric({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) { return <Card className="flex min-w-0 items-center justify-between gap-2 p-3 sm:p-4"><div className="min-w-0"><div className="truncate text-xs text-muted-foreground">{label}</div><div className="mt-1 truncate text-lg font-semibold tabular-nums sm:text-xl" title={value}>{value}</div></div><div className="hidden shrink-0 rounded-full bg-muted p-2 sm:block [&>svg]:h-5 [&>svg]:w-5">{icon}</div></Card>; }
 function Empty({ text }: { text: string }) { return <div className="p-12 text-center text-sm text-muted-foreground">{text}</div>; }
 function Info({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 font-medium">{value}</div></div>; }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block space-y-1.5 text-sm"><span className="font-medium">{label}</span>{children}</label>; }
