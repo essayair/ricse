@@ -1,7 +1,7 @@
 import { ArgumentMetadata, BadRequestException, ValidationPipe } from '@nestjs/common';
 import { UpdateDepartmentDto, CreateEmployeeDto } from '../org/dto/org.dto';
 import { CreatePartnerDto, UpdatePartnerDto } from '../master-data/dto/partner.dto';
-import { CreateMaterialCategoryDto, CreateWarehouseDto } from '../master-data/dto/master-data.dto';
+import { CreateMaterialCategoryDto, CreateMaterialDto, CreateWarehouseDto } from '../master-data/dto/master-data.dto';
 import { UpdateServiceOrganizationDto } from '../master-data/dto/service-organization.dto';
 import { CreateRoleDto, ReplaceUserAssignmentsDto } from '../access-control/dto/access-control.dto';
 import { UpdateContractDto } from '../contract/dto/update-contract.dto';
@@ -18,6 +18,14 @@ const messagesOf = async (promise: Promise<unknown>) => {
 };
 
 describe('原内联类型请求体改为 DTO 后的校验', () => {
+  it('创建物料须主动选择有效计价数量口径，不能静默默认实物口径', async () => {
+    for (const value of [undefined, null, '', 'UNKNOWN']) {
+      expect(await messagesOf(validate(CreateMaterialDto, { categoryId: 'c1', pricingQuantityBasis: value }))).toEqual(['请选择计价数量口径（按实测水分折干或按实物数量）']);
+    }
+    for (const pricingQuantityBasis of ['DRY_MATTER', 'PHYSICAL']) {
+      await expect(validate(CreateMaterialDto, { categoryId: 'c1', pricingQuantityBasis })).resolves.toMatchObject({ pricingQuantityBasis });
+    }
+  });
   it('部门更新不能修改所属企业或主键', async () => {
     const messages = await messagesOf(validate(UpdateDepartmentDto, { name: '研发部', companyId: 'other', id: 'hijacked' }));
     expect(messages).toEqual(expect.arrayContaining(['property companyId should not exist', 'property id should not exist']));

@@ -183,7 +183,8 @@ export class MasterDataService {
     if (!categoryId) throw new BadRequestException('请选择物料大类');
     const referenceType = (data.referenceType || 'TRADING_GOODS') as MaterialReferenceType;
     if (!MATERIAL_REFERENCE_TYPES[referenceType]) throw new BadRequestException('物料参考类型无效');
-    if (data.pricingQuantityBasis && !['PHYSICAL', 'DRY_MATTER'].includes(data.pricingQuantityBasis)) throw new BadRequestException('计价数量口径无效');
+    if (!data.pricingQuantityBasis) throw new BadRequestException('请选择计价数量口径');
+    if (!['PHYSICAL', 'DRY_MATTER'].includes(data.pricingQuantityBasis)) throw new BadRequestException('计价数量口径无效');
     const category = await this.prisma.materialCategory.findUnique({
       where: { id: categoryId },
       select: { id: true, name: true },
@@ -216,7 +217,7 @@ export class MasterDataService {
     const duplicate = await this.prisma.material.findFirst({
       where: {
         standardCommodityId: standardCommodity.id, referenceType,
-        pricingQuantityBasis: data.pricingQuantityBasis || 'PHYSICAL', deletedAt: null,
+        pricingQuantityBasis: data.pricingQuantityBasis, deletedAt: null,
       },
       select: { id: true, code: true, name: true },
     });
@@ -243,7 +244,7 @@ export class MasterDataService {
             hsCode: clean(data.hsCode), taxCode: clean(data.taxCode),
             internalCode: clean(data.internalCode), qcTemplate: clean(data.qcTemplate),
             qualityTemplateId: data.qualityTemplateId || null,
-            pricingQuantityBasis: data.pricingQuantityBasis || 'PHYSICAL',
+            pricingQuantityBasis: data.pricingQuantityBasis,
             status: data.status || 'ACTIVE', remark: clean(data.remark),
           },
           include: { category: true, standardCommodity: true, qualityTemplate: true },

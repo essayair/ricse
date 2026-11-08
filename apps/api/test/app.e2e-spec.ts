@@ -253,6 +253,7 @@ describe('RICSE API (e2e)', () => {
           coreSpecUnit: '%',
           packageType: 'BULK',
           unit: 'TON',
+          pricingQuantityBasis: 'PHYSICAL',
         })
         .expect(201);
 
@@ -312,6 +313,7 @@ describe('RICSE API (e2e)', () => {
             coreSpecUnit: '%',
             packageType: 'BULK',
             unit: 'TON',
+            pricingQuantityBasis: 'PHYSICAL',
           });
         materialId = material.body.id;
         createdMaterialIds.push(materialId);

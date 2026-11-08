@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateMaterialCategoryDto {
   @IsString() name: string;
@@ -35,7 +35,7 @@ export class CreateMaterialDto {
   @IsOptional() @IsString() internalCode?: string;
   @IsOptional() @IsString() qcTemplate?: string;
   @IsOptional() @IsString() qualityTemplateId?: string;
-  @IsOptional() @IsString() pricingQuantityBasis?: string;
+  @IsIn(['DRY_MATTER', 'PHYSICAL'], { message: '请选择计价数量口径（按实测水分折干或按实物数量）' }) pricingQuantityBasis: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() remark?: string;
 }

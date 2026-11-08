@@ -49,7 +49,8 @@ export default function MaterialNewPage() {
   const [packageType, setPackageType] = useState('散装');
   const [referenceType, setReferenceType] = useState('TRADING_GOODS');
   const [unit, setUnit] = useState('吨');
-  const [pricingQuantityBasis, setPricingQuantityBasis] = useState('PHYSICAL');
+  const [pricingQuantityBasis, setPricingQuantityBasis] = useState('');
+  const [pricingBasisError, setPricingBasisError] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [specs, setSpecs] = useState<SpecRow[]>([]);
   const [qualityTemplates, setQualityTemplates] = useState<QualityTemplateOption[]>([]);
@@ -80,7 +81,6 @@ export default function MaterialNewPage() {
       setCoreSpecUnit(standard?.coreSpecUnit || '%');
       setPackageType(standard?.packageType || material.packageType || '散装');
       setUnit(unitLabel(standard?.unit || material.unit || '吨'));
-      setPricingQuantityBasis(material.pricingQuantityBasis || 'PHYSICAL');
       setQualityTemplateId(material.qualityTemplateId || '');
       setHsCode(material.hsCode || '');
       setTaxCode(material.taxCode || '');
@@ -108,6 +108,12 @@ export default function MaterialNewPage() {
   };
 
   const handleSubmit = async () => {
+    if (!pricingQuantityBasis) {
+      setPricingBasisError(true);
+      setError('请选择计价数量口径');
+      document.getElementById('pricing-quantity-basis')?.focus();
+      return;
+    }
     if (!categoryId || !selectedCategoryName || !commodityForm.trim() || !coreSpecName.trim() || !coreSpecValue.trim() || !coreSpecUnit.trim() || !packageType || !referenceType || !unit) {
       setError('请完整填写商品分类、商品形态/规格、核心指标、包装、参考类型和计量单位');
       return;
@@ -159,7 +165,7 @@ export default function MaterialNewPage() {
           <Field label="包装方式" required><Select value={packageType} onChange={setPackageType} options={PACKAGE_TYPES.map(value => ({ value, label: value }))} /></Field>
           <Field label="参考类型" required><Select value={referenceType} onChange={setReferenceType} options={REFERENCE_TYPES.map(([value, label]) => ({ value, label }))} /></Field>
           <Field label="计量单位" required><Select value={unit} onChange={setUnit} options={UNITS.map(value => ({ value, label: value }))} /></Field>
-          <Field label="默认计价数量口径" required><Select value={pricingQuantityBasis} onChange={setPricingQuantityBasis} options={[{ value: 'PHYSICAL', label: '按实物数量' }, { value: 'DRY_MATTER', label: '按实测水分折干' }]} /></Field>
+          <Field label="计价数量口径" required><Select id="pricing-quantity-basis" ariaLabel="计价数量口径" invalid={pricingBasisError} value={pricingQuantityBasis} onChange={value => { setPricingQuantityBasis(value); setPricingBasisError(false); setError(current => current === '请选择计价数量口径' ? '' : current); }} placeholder="请选择计价数量口径" options={[{ value: 'DRY_MATTER', label: '按实测水分折干' }, { value: 'PHYSICAL', label: '按实物数量' }]} />{pricingBasisError && <p className="mt-1 text-xs text-destructive">请选择计价数量口径</p>}</Field>
           <Field label="物料编码"><Input value={nextCode || '加载中...'} readOnly className="bg-muted/50 font-mono text-muted-foreground" /></Field>
         </div>
         <p className="text-xs text-muted-foreground">商品名称按“所选分类名称 + 商品形态/规格”自动拼接；核心指标和包装方式不会自动进入名称。需要体现指标时，可自行写入商品形态/规格。</p>
@@ -216,6 +222,6 @@ function Field({ label, required, className, children }: { label: string; requir
   return <div className={className}><label className="mb-1.5 block text-sm font-medium">{label}{required && <span className="ml-0.5 text-destructive">*</span>}</label>{children}</div>;
 }
 
-function Select({ value, onChange, options, placeholder }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; placeholder?: string }) {
-  return <select value={value} onChange={event => onChange(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">{placeholder || '请选择'}</option>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
+function Select({ value, onChange, options, placeholder, id, ariaLabel, invalid }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; placeholder?: string; id?: string; ariaLabel?: string; invalid?: boolean }) {
+  return <select id={id} aria-label={ariaLabel} aria-invalid={invalid || undefined} value={value} onChange={event => onChange(event.target.value)} className={`h-10 w-full rounded-md border bg-background px-3 text-sm ${invalid ? 'border-destructive' : ''}`}><option value="">{placeholder || '请选择'}</option>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
 }

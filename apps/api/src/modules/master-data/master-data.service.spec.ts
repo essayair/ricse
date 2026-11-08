@@ -128,9 +128,15 @@ describe('MasterDataService', () => {
       prisma.materialCategory.findUnique.mockResolvedValue({ id: 'cat-1' } as any);
       prisma.material.create.mockResolvedValue({ ...mockMaterial, category: mockCategory } as any);
       const result = await service.createMaterial({
-        code: 'MT-000001', name: '萤石粉', categoryId: 'cat-1', grade: 'CaF₂≥97%',
+        code: 'MT-000001', name: '萤石粉', categoryId: 'cat-1', grade: 'CaF₂≥97%', pricingQuantityBasis: 'PHYSICAL',
       });
       expect(result.name).toBe('萤石粉');
+    });
+
+    it.each([undefined, '', 'UNKNOWN'])('未选择或无效计价口径 %s 时不创建物料', async pricingQuantityBasis => {
+      await expect(service.createMaterial({ name: '萤石粉', categoryId: 'cat-1', pricingQuantityBasis })).rejects.toThrow(pricingQuantityBasis ? '计价数量口径无效' : '请选择计价数量口径');
+      expect(prisma.standardCommodity.create).not.toHaveBeenCalled();
+      expect(prisma.material.create).not.toHaveBeenCalled();
     });
 
     it('同一标准商品可建立原重与折干两个不同业务物料', async () => {
@@ -157,7 +163,7 @@ describe('MasterDataService', () => {
         .mockResolvedValueOnce({ ...mockMaterial, code: 'TRD000002', category: mockCategory } as any);
 
       const result = await service.createMaterial({
-        code: 'TRD000001', name: '萤石粉', categoryId: 'cat-1',
+        code: 'TRD000001', name: '萤石粉', categoryId: 'cat-1', pricingQuantityBasis: 'PHYSICAL',
       });
 
       expect(result.code).toBe('TRD000002');
@@ -169,7 +175,7 @@ describe('MasterDataService', () => {
     it('物料大类不存在时返回明确业务错误', async () => {
       prisma.materialCategory.findUnique.mockResolvedValue(null);
       await expect(service.createMaterial({
-        code: 'MAT0001', name: '萤石粉', categoryId: 'missing-category',
+        code: 'MAT0001', name: '萤石粉', categoryId: 'missing-category', pricingQuantityBasis: 'PHYSICAL',
       })).rejects.toThrow('所选物料大类不存在或已被删除');
       expect(prisma.material.create).not.toHaveBeenCalled();
     });
@@ -193,7 +199,7 @@ describe('MasterDataService', () => {
       } as any);
 
       await service.createMaterial({
-        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉',
+        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉', pricingQuantityBasis: 'PHYSICAL',
         coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
         coreSpecUnit: '%', packageType: '散装', unit: '吨',
       });
@@ -212,7 +218,7 @@ describe('MasterDataService', () => {
       prisma.material.create.mockResolvedValue({ ...mockMaterial, name: '萤石精粉' } as any);
 
       await service.createMaterial({
-        categoryId: 'cat-1', baseName: '不应使用的手工名称', commodityForm: '精粉',
+        categoryId: 'cat-1', baseName: '不应使用的手工名称', commodityForm: '精粉', pricingQuantityBasis: 'PHYSICAL',
         coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
         coreSpecUnit: '%', packageType: '吨袋', unit: '吨',
       });
@@ -229,7 +235,7 @@ describe('MasterDataService', () => {
       } as any);
 
       await expect(service.createMaterial({
-        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉',
+        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉', pricingQuantityBasis: 'PHYSICAL',
         coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
         coreSpecUnit: '%', packageType: '散装',
       })).rejects.toThrow('该物料已存在：TRD000001');
@@ -242,7 +248,7 @@ describe('MasterDataService', () => {
       prisma.material.create.mockResolvedValue({ ...mockMaterial, code: 'FGD000001', referenceType: 'FINISHED_GOODS' } as any);
 
       const result = await service.createMaterial({
-        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉', referenceType: 'FINISHED_GOODS',
+        categoryId: 'cat-1', baseName: '萤石', commodityForm: '精粉', referenceType: 'FINISHED_GOODS', pricingQuantityBasis: 'PHYSICAL',
         coreSpecName: 'CaF₂', coreSpecOperator: '≥', coreSpecValue: '97',
         coreSpecUnit: '%', packageType: '散装',
       });
