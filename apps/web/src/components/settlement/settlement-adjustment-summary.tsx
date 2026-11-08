@@ -2,7 +2,7 @@ export type SettlementSummaryAdjustment = {
   version: number; mode: 'NONE' | 'QUANTITY' | 'AMOUNT'; reason: string;
   base: { quantity: number; grossAmount: number; qualityDeductionAmount: number; adjustmentAmount: number; totalAmount: number };
   final: { quantity: number; grossAmount: number; qualityDeductionAmount: number; adjustmentAmount: number; totalAmount: number };
-  quantityDifference: number; amountDifference: number; unitPrice?: number | null;
+  quantityDifference: number; amountDifference: number; unitPrice?: number | null; quantityCeiling?: number;
 };
 const number = (value: number, digits: number) => Number(value).toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 export function SettlementAdjustmentSummary({ summary }: { summary?: SettlementSummaryAdjustment | null }) {

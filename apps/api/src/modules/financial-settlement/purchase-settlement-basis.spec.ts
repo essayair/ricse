@@ -158,6 +158,23 @@ describe('逐车质量结算来源与版本', () => {
     source.waybill.weighTickets = [{ id: 'ours', ticketNo: '收货', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: new Prisma.Decimal(105) }];
     expect((await service.sources('c', 'u'))[0]).toMatchObject({ totalQuantity: 100, negotiableQuantity: 100 });
   });
+  it('采购双方水分不同的折干依据共同支持协商，不修改当前报告和入库量', async () => {
+    const receipt = source.waybill.inboundReceipts[0];
+    receipt.businessInbound.pricingQuantityBasis = 'DRY_MATTER';
+    receipt.businessInbound.pricingQuantity = new Prisma.Decimal(90);
+    receipt.businessInbound.measuredMoisturePct = new Prisma.Decimal(10);
+    receipt.weighTicket.id = 'ours'; receipt.weighTicket.netWeight = new Prisma.Decimal(100);
+    source.waybill.weighTickets = [
+      { id: 'ours', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: new Prisma.Decimal(100) },
+      { id: 'theirs', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: new Prisma.Decimal(100) },
+    ];
+    source.waybill.qualityTask.basisInspection = { ...source.waybill.qualityTask.basisInspection, evidenceStage: 'RECEIVING',
+      indicators: [{ code: 'MOISTURE', measuredValue: new Prisma.Decimal(10) }] };
+    source.waybill.qualityTask.reportLinks = [{ inspection: { id: 'supplier', status: 'CONFIRMED', evidenceStage: 'SHIPPING',
+      indicators: [{ code: 'MOISTURE', measuredValue: new Prisma.Decimal(5) }] } }];
+    expect((await service.sources('c', 'u'))[0]).toMatchObject({ totalQuantity: 90, measuredMoisturePct: 10, negotiableRemainingQuantity: 95 });
+    expect(receipt.businessInbound.pricingQuantity.toNumber()).toBe(90);
+  });
   it('新增未完成的同侧第二张磅单后，不再静默沿用唯一磅单作为结算侧依据', async () => {
     source.waybill.weighTickets = [
       { id: 'first', ticketNo: '发货一', weighingStage: 'SHIPPING', status: 'REVIEWED', netWeight: new Prisma.Decimal(105) },

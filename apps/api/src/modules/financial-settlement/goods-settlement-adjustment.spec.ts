@@ -1,4 +1,4 @@
-import { adjustedGoodsLine, goodsSettlementSummary, assertGoodsSettlementSummary } from './goods-settlement-adjustment';
+import { adjustedGoodsLine, goodsSettlementSummary, assertGoodsSettlementSummary, assertCurrentGoodsQuantityCeiling } from './goods-settlement-adjustment';
 import { settlementQuantityReview } from './settlement-quantity-review';
 
 const source = (quantity = 100) => ({ remainingQuantity: quantity, negotiableRemainingQuantity: quantity + 2, unitPrice: 2000, deductionPerTon: 40, pricingQuantityBasis: 'DRY_MATTER', contractLineItemId: 'material-line' });
@@ -62,9 +62,16 @@ describe('逐车与整单结算调整', () => {
     }
   });
   it('调整须填写原因，数量不超计量依据上限，金额大于零', () => {
-    expect(() => goodsSettlementSummary([line()], { mode: 'QUANTITY', quantity: 99 })).toThrow('调整说明');
-    expect(() => goodsSettlementSummary([line()], { mode: 'QUANTITY', quantity: 103, reason: '说明' })).toThrow('可结算数量');
-    expect(() => goodsSettlementSummary([line()], { mode: 'AMOUNT', amount: 0, reason: '说明' })).toThrow('大于零');
+    expect(() => goodsSettlementSummary([line()], { mode: 'QUANTITY', quantity: 99 })).toThrow('请填写双方协商调整的原因。');
+    expect(() => goodsSettlementSummary([line()], { mode: 'QUANTITY', quantity: 103, reason: '说明' })).toThrow('协商干基数量不能超过 102.000 吨');
+    expect(() => goodsSettlementSummary([line()], { mode: 'AMOUNT', amount: 0, reason: '说明' })).toThrow('大于 0');
+  });
+  it.each([0, -1, NaN, Infinity])('数量 %s 错误与超出上限分别提示', quantity => {
+    expect(() => goodsSettlementSummary([line()], { mode: 'QUANTITY', quantity, reason: '说明' })).toThrow('请填写大于 0 的协商干基数量。');
+  });
+  it('精度错误单独提示数量或金额的小数位要求', () => {
+    expect(() => goodsSettlementSummary([line()], { mode: 'QUANTITY', quantity: 1.2345, reason: '说明' })).toThrow('干基数量最多保留 3 位小数。');
+    expect(() => goodsSettlementSummary([line()], { mode: 'AMOUNT', amount: 1.234, reason: '说明' })).toThrow('结算金额最多保留 2 位小数。');
   });
   it('与明细一致不保存为额外人工调整', () => {
     expect(goodsSettlementSummary([line()], { mode: 'QUANTITY', quantity: 100 }).mode).toBe('NONE');
@@ -87,5 +94,11 @@ describe('逐车与整单结算调整', () => {
   });
   it('旧单据没有调整快照时保持原数据，不要求补写', () => {
     expect(() => assertGoodsSettlementSummary({ quantity: 1, grossAmount: 1, qualityDeductionAmount: 0, adjustmentAmount: 0, totalAmount: 1, lines: [] })).not.toThrow();
+  });
+  it('确认或审批前核对当前双方依据上限，报告撤销或更正不能继续使用旧上限', () => {
+    const item = { lines: [{ waybillLineItemId: 'w', sourceSnapshot: { settlementAdjustment: { version: 1, mode: 'QUANTITY', final: { quantity: 104.488 } } } }] };
+    expect(() => assertCurrentGoodsQuantityCeiling(item, [{ id: 'w', remainingQuantity: 104, negotiableRemainingQuantity: 105 }])).not.toThrow();
+    expect(() => assertCurrentGoodsQuantityCeiling(item, [{ id: 'w', remainingQuantity: 104, negotiableRemainingQuantity: 104.1 }])).toThrow('当前可协商数量为 104.100 吨');
+    expect(() => assertCurrentGoodsQuantityCeiling({ lines: [] }, [])).not.toThrow();
   });
 });

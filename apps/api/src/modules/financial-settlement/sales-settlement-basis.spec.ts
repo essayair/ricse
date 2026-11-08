@@ -49,6 +49,12 @@ describe('销售交付后的逐车应收来源', () => {
       inventoryNetWeight: 100, customerNetWeight: 98, weightVariance: -2, unitPrice: 2000, totalAmount: 176400 });
     expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
   });
+  it('销售协商范围也采用我方发货报告水分，不只套用客户水分', async () => {
+    row.waybill.qualityTask.reportLinks = [{ inspection: { id: 'our-report', status: 'CONFIRMED', evidenceStage: 'SHIPPING', conclusion: 'PASS',
+      indicators: [{ code: 'MOISTURE', measuredValue: new Prisma.Decimal(5) }] } }];
+    expect((await basis.sources('contract', 'user'))[0]).toMatchObject({ totalQuantity: 88.2, measuredMoisturePct: 10, negotiableRemainingQuantity: 95 });
+    expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
+  });
 
   it('销售分档合同以选定客户磅单净重折干，不沿用物料的实物计价配置', async () => {
     prisma.material.findMany.mockResolvedValue([{ id: 'material', pricingQuantityBasis: 'PHYSICAL' }] as any);

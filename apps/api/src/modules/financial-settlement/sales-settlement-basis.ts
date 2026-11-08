@@ -4,8 +4,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { evaluateGradePrice, readMeasuredPct } from '../contract/grade-price-rules';
 import { goodsAmounts } from './payment-balance';
-import { assertGoodsSettlementSummary } from './goods-settlement-adjustment';
+import { assertCurrentGoodsQuantityCeiling, assertGoodsSettlementSummary } from './goods-settlement-adjustment';
 import { signature } from './purchase-settlement-basis';
+import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
 
 /** 销售货款以交付事实编制；我方出库过账量始终单独留存，不被客户计量覆盖。 */
 export class SalesSettlementBasis {
@@ -83,13 +84,7 @@ export class SalesSettlementBasis {
           : candidates.length === 1 && candidates[0].status === 'REVIEWED' ? candidates[0] : undefined;
         if (effective) effectiveByStage.set(stage, effective);
       }
-      const quantityCandidates = [...effectiveByStage.values()].map(candidate => {
-        if (candidate.netWeight == null) return 0;
-        if (pricingQuantityBasis === 'PHYSICAL') return Number(candidate.netWeight);
-        return measuredMoisturePct == null ? 0 : new Prisma.Decimal(candidate.netWeight).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(measuredMoisturePct).div(100))).toDecimalPlaces(3).toNumber();
-      });
-      const negotiableQuantity = effectiveByStage.has('SHIPPING') && effectiveByStage.has('RECEIVING')
-        ? Math.max(totalQuantity, ...quantityCandidates) : totalQuantity;
+      const negotiableQuantity = negotiableGoodsQuantity(totalQuantity, pricingQuantityBasis, effectiveByStage, reports.values(), measuredMoisturePct);
       const usedQuantity = row.settlementLines.reduce((sum, line) => sum.plus(line.quantity || 0), new Prisma.Decimal(0));
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const negotiableRemainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(negotiableQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
@@ -177,6 +172,7 @@ export class SalesSettlementBasis {
     const reportChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.reportId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).reportId)]));
     const ticketChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.settlementTicketScoped && (line.sourceSnapshot as any)?.weighTicketId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).weighTicketId)]));
     const sources = await this.sources(settlement.contractId, userId, permission, settlementId, reportChoices, ticketChoices);
+    assertCurrentGoodsQuantityCeiling(settlement, sources);
     for (const line of tracked) {
       const source = sources.find(candidate => candidate.id === line.waybillLineItemId);
       if (!source?.available || source.signature !== (line.sourceSnapshot as any)?.signature) {

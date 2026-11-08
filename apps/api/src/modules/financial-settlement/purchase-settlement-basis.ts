@@ -6,7 +6,8 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { evaluateGradePrice, readMeasuredPct } from '../contract/grade-price-rules';
 import { evaluateContractQualityRules } from '../quality/contract-quality-rules';
 import { goodsAmounts } from './payment-balance';
-import { assertGoodsSettlementSummary } from './goods-settlement-adjustment';
+import { assertCurrentGoodsQuantityCeiling, assertGoodsSettlementSummary } from './goods-settlement-adjustment';
+import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
 
 export const snapshotJson = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 export const signature = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -106,15 +107,7 @@ export class PurchaseSettlementBasis {
           : candidates.length === 1 && candidates[0].status === 'REVIEWED' ? candidates[0] : undefined;
         if (effective) effectiveByStage.set(stage, effective);
       }
-      const candidateQuantities = [...effectiveByStage.values()].filter(candidate => candidate.netWeight != null && (settlementQuantityBasis !== 'DRY_MATTER' || measuredMoisturePct != null)).map(candidate => {
-        const physical = Number(candidate.netWeight);
-        return settlementQuantityBasis === 'DRY_MATTER' && measuredMoisturePct != null
-          ? new Prisma.Decimal(physical).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(measuredMoisturePct).div(100))).toDecimalPlaces(3).toNumber()
-          : physical;
-      });
-      // 只有发货、收货两侧均有已复核事实时，才开放双侧区间内的协商数量。
-      const negotiableQuantity = effectiveByStage.has('SHIPPING') && effectiveByStage.has('RECEIVING')
-        ? Math.max(totalQuantity, ...candidateQuantities) : totalQuantity;
+      const negotiableQuantity = negotiableGoodsQuantity(totalQuantity, settlementQuantityBasis, effectiveByStage, availableReports.values(), measuredMoisturePct);
       const usedQuantity = row.settlementLines.reduce((sum, l) => sum.plus(l.quantity || 0), new Prisma.Decimal(0));
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const negotiableRemainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(negotiableQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
@@ -227,6 +220,7 @@ export class PurchaseSettlementBasis {
     const reportChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.reportId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).reportId)]));
     const ticketChoices = new Map(tracked.filter(line => (line.sourceSnapshot as any)?.settlementTicketScoped && (line.sourceSnapshot as any)?.weighTicketId).map(line => [line.waybillLineItemId!, String((line.sourceSnapshot as any).weighTicketId)]));
     const sources = await this.sources(settlement.contractId, userId, permission, settlementId, reportChoices, ticketChoices);
+    assertCurrentGoodsQuantityCeiling(settlement, sources);
     for (const line of tracked) {
       const current = sources.find(s => s.id === line.waybillLineItemId);
       const old = line.sourceSnapshot as Record<string, any> | null;

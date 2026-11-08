@@ -42,6 +42,7 @@ export function goodsSettlementSummary(lines: Line[], input: SummaryAdjustmentIn
   const sum = (key: keyof Amounts) => lines.reduce((total, line) => total.plus(line[key]), D(0)).toDecimalPlaces(key === 'quantity' ? 3 : 2).toNumber();
   const base: Amounts = { quantity: sum('quantity'), grossAmount: sum('grossAmount'), qualityDeductionAmount: sum('qualityDeductionAmount'), adjustmentAmount: sum('adjustmentAmount'), totalAmount: sum('totalAmount') };
   let final = { ...base }, mode = input.mode;
+  const quantityCeiling = lines.reduce((total, line) => total.plus(line.sourceSnapshot?.lineAdjustment?.quantityCeiling ?? line.quantity), D(0)).toDecimalPlaces(3).toNumber();
   if (!['NONE', 'QUANTITY', 'AMOUNT'].includes(mode)) throw new BadRequestException('整单调整方式无效');
   if ((mode !== 'QUANTITY' && input.quantity != null) || (mode !== 'AMOUNT' && input.amount != null)) throw new BadRequestException('整单数量调整与金额调整只能选择一种，不能叠加');
   if (mode !== 'NONE' && lines.some(line => line.sourceSnapshot?.lineAdjustment?.quantityAdjusted || line.sourceSnapshot?.lineAdjustment?.priceAdjusted || Number(line.adjustmentAmount) !== 0)) {
@@ -58,21 +59,23 @@ export function goodsSettlementSummary(lines: Line[], input: SummaryAdjustmentIn
     }
     contractLineItemId = [...itemIds][0]; unitPrice = Number([...prices][0]);
     const quantity = Number(input.quantity);
-    const ceiling = lines.reduce((total, line) => total.plus(line.sourceSnapshot.lineAdjustment.quantityCeiling), D(0));
-    if (!Number.isFinite(quantity) || quantity <= 0 || D(quantity).decimalPlaces() > 3 || D(quantity).gt(ceiling)) throw new BadRequestException('调整后干基数量必须大于零，且不能超过所选磅单支持的可结算数量');
+    if (!Number.isFinite(quantity) || quantity <= 0) throw new BadRequestException('请填写大于 0 的协商干基数量。');
+    if (D(quantity).decimalPlaces() > 3) throw new BadRequestException('干基数量最多保留 3 位小数。');
+    if (D(quantity).gt(quantityCeiling)) throw new BadRequestException(`协商干基数量不能超过 ${quantityCeiling.toFixed(3)} 吨，请核对双方单据或修改数量。`);
     final = goodsAmounts(quantity, unitPrice, Number([...deductions][0]));
     if (D(quantity).eq(base.quantity)) { mode = 'NONE'; final = { ...base }; }
   }
   if (mode === 'AMOUNT') {
     const amount = Number(input.amount);
-    if (!Number.isFinite(amount) || amount <= 0 || D(amount).decimalPlaces() > 2) throw new BadRequestException('最终结算金额必须大于零，最多保留两位小数');
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('请填写大于 0 的结算金额。');
+    if (D(amount).decimalPlaces() > 2) throw new BadRequestException('结算金额最多保留 2 位小数。');
     final.totalAmount = decimalMoney(amount);
     final.adjustmentAmount = D(base.adjustmentAmount).plus(D(amount).minus(base.totalAmount)).toDecimalPlaces(2).toNumber();
     if (D(amount).eq(base.totalAmount)) mode = 'NONE';
   }
   if (final.totalAmount <= 0) throw new BadRequestException('最终结算金额必须大于零');
-  if (mode !== 'NONE' && !input.reason?.trim()) throw new BadRequestException('请填写整单结算调整说明');
-  return { version: 1, mode, base, final, contractLineItemId: contractLineItemId || null, unitPrice: unitPrice ?? null,
+  if (mode !== 'NONE' && !input.reason?.trim()) throw new BadRequestException('请填写双方协商调整的原因。');
+  return { version: 1, mode, base, final, quantityCeiling, contractLineItemId: contractLineItemId || null, unitPrice: unitPrice ?? null,
     quantityDifference: D(final.quantity).minus(base.quantity).toDecimalPlaces(3).toNumber(),
     amountDifference: D(final.totalAmount).minus(base.totalAmount).toDecimalPlaces(2).toNumber(), reason: mode === 'NONE' ? '' : input.reason!.trim() };
 }
@@ -86,5 +89,21 @@ export function assertGoodsSettlementSummary(item: { quantity?: any; grossAmount
     quantity: Number(line.quantity), grossAmount: Number(line.grossAmount), qualityDeductionAmount: Number(line.qualityDeductionAmount), adjustmentAmount: Number(line.adjustmentAmount), totalAmount: Number(line.totalAmount) })), input);
   for (const key of ['quantity', 'grossAmount', 'qualityDeductionAmount', 'adjustmentAmount', 'totalAmount'] as const) {
     if (!D(item[key] ?? 0).eq(current.final[key]) || !D(stored.final[key]).eq(current.final[key])) throw new BadRequestException('最终结算数量或金额与调整依据不一致，请重新编辑预览');
+  }
+}
+
+/** 确认、审批时重新读取双方依据；不能只信保存时的协商上限快照。 */
+export function assertCurrentGoodsQuantityCeiling(
+  item: { lines: Array<{ waybillLineItemId?: string | null; sourceSnapshot?: any }> },
+  sources: Array<{ id: string; remainingQuantity: number; negotiableRemainingQuantity?: number }>,
+) {
+  const summary = item.lines.map(line => line.sourceSnapshot?.settlementAdjustment).find(Boolean);
+  if (!summary || summary.version !== 1 || summary.mode !== 'QUANTITY') return;
+  const ceiling = item.lines.filter(line => line.waybillLineItemId).reduce((total, line) => {
+    const source = sources.find(candidate => candidate.id === line.waybillLineItemId);
+    return total.plus(source?.negotiableRemainingQuantity ?? source?.remainingQuantity ?? 0);
+  }, D(0));
+  if (D(summary.final.quantity).gt(ceiling)) {
+    throw new BadRequestException(`双方计量或质检依据已变更，当前可协商数量为 ${ceiling.toFixed(3)} 吨，请重新核对最终干基数量`);
   }
 }

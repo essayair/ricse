@@ -13,6 +13,8 @@ import { alertAction, promptAction, confirmAction } from '@/lib/system-dialog';
 import { QuantityReviewSummary, quantityReviewPrintText, type SettlementQuantityReview } from './settlement-quantity-review';
 import { batchReportSelection, batchWeighSelection, selectedSettlementReportId } from '@/lib/settlement-basis-selection';
 import { settlementColumnTotal } from '@/lib/settlement-table-totals';
+import { adjustmentIssuesFromServer, CHECK_ADJUSTMENT_FIELDS, settlementAdjustmentIssues, type AdjustmentIssues } from '@/lib/settlement-adjustment-validation';
+import { focusInvalidField } from '@/lib/form-validation';
 
 
 type Line = { quantity: string; adjustmentAmount: string; remarks: string; negotiatedQuantity: boolean; priceAdjusted: boolean; adjustedUnitPrice: string; qualityReportId: string; weighTicketId: string };
@@ -117,6 +119,8 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   const [finalQuantity, setFinalQuantity] = useState('');
   const [finalAmount, setFinalAmount] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
+  const [adjustmentBaseAmount, setAdjustmentBaseAmount] = useState<number | null>(null);
+  const [serverAdjustmentIssues, setServerAdjustmentIssues] = useState<AdjustmentIssues>({});
 
   useEffect(() => {
     if (previewOpen) previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -152,6 +156,8 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     setFinalQuantity(adjustment?.mode === 'QUANTITY' ? String(adjustment.final.quantity) : '');
     setFinalAmount(adjustment?.mode === 'AMOUNT' ? String(adjustment.final.totalAmount) : '');
     setAdjustmentReason(adjustment?.reason || '');
+    setAdjustmentBaseAmount(adjustment?.base.totalAmount ?? null);
+    setServerAdjustmentIssues({});
     if (contractId && (!editId || saved?.contractId === contractId)) void refresh().catch(e => setError(e.message));
   }, [contractId, editId, saved, refresh]);
 
@@ -189,6 +195,28 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   const selectedInView = filtered.filter(source => selected[source.id]);
   const viewTotals = rowTotals(selectedInView, selected);
   const detailTotals = rowTotals(selectedRows, selected);
+  const negotiationCeiling = preview?.settlementAdjustment?.quantityCeiling
+    ?? settlementColumnTotal(selectedRows.map(source => {
+      const line = selected[source.id], ticket = source.availableWeighTickets?.find(item => item.id === line.weighTicketId);
+      return Math.max(source.negotiableRemainingQuantity ?? source.remainingQuantity,
+        ticket ? ticketQuantity(source, ticket, line.qualityReportId) : source.remainingQuantity);
+    }));
+  const adjustmentIssues: AdjustmentIssues = { ...serverAdjustmentIssues, ...settlementAdjustmentIssues({
+    mode: adjustmentMode, quantity: finalQuantity, amount: finalAmount, reason: adjustmentReason,
+    quantityCeiling: negotiationCeiling, baseQuantity: detailTotals.quantity,
+    baseAmount: preview?.settlementAdjustment?.base.totalAmount ?? adjustmentBaseAmount,
+  }) };
+  const hasAdjustmentIssues = Object.keys(adjustmentIssues).length > 0;
+  const clearAdjustmentErrors = () => {
+    previewRequestId.current++;
+    setServerAdjustmentIssues({}); setError(''); setPreviewError(''); setPreview(null);
+  };
+  const showAdjustmentIssues = async (issues: AdjustmentIssues) => {
+    setBusy(false); setError(CHECK_ADJUSTMENT_FIELDS); setPreview(null); setPreviewOpen(false); setPreviewError('');
+    await alertAction(CHECK_ADJUSTMENT_FIELDS, { title: '结算信息待完善', destructive: false });
+    const key = (['quantity', 'amount', 'reason'] as const).find(field => issues[field]);
+    if (key) focusInvalidField(`settlement-adjustment-${key}`);
+  };
   const reportSelection = batchReportSelection(selectedInView, selected, reportModeHint);
   const weighSelection = batchWeighSelection(selectedInView, selected);
   const allSelectedInView = filtered.some(eligible) && filtered.filter(eligible).every(source => Boolean(selected[source.id]));
@@ -305,7 +333,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       adjustedUnitPrice: line.priceAdjusted ? Number(line.adjustedUnitPrice) : undefined,
       negotiatedQuantity: line.negotiatedQuantity }; }) });
 
-  const resetOverall = () => { setAdjustmentMode('NONE'); setFinalQuantity(''); setFinalAmount(''); setAdjustmentReason(''); setPreview(null); };
+  const resetOverall = () => { setAdjustmentMode('NONE'); setFinalQuantity(''); setFinalAmount(''); setAdjustmentReason(''); setAdjustmentBaseAmount(null); clearAdjustmentErrors(); };
   const resetLine = (source: GoodsSource, line: Line): Line => {
     const ticket = source.availableWeighTickets?.find(ticket => ticket.id === line.weighTicketId);
     return { ...line, quantity: String(ticket ? ticketQuantity(source, ticket, line.qualityReportId) : source.remainingQuantity), negotiatedQuantity: false, priceAdjusted: false, adjustedUnitPrice: '', adjustmentAmount: '0' };
@@ -331,7 +359,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
           throw new Error('所选车辆物料、合同单价或每吨扣款不一致，无法按统一单价调整总干基，请使用逐车调整');
         }
       }
-      setSelected(next); setAdjustmentMode(mode); setFinalQuantity(String(base.quantity)); setFinalAmount(String(base.totalAmount)); setAdjustmentReason(''); setPreview(null);
+      setSelected(next); setAdjustmentMode(mode); setFinalQuantity(String(base.quantity)); setFinalAmount(String(base.totalAmount)); setAdjustmentBaseAmount(base.totalAmount); setAdjustmentReason(''); clearAdjustmentErrors();
     } catch (cause: any) { setError(cause.message); } finally { setBusy(false); }
   };
   const changeLineMode = async (source: GoodsSource, kind: 'QUANTITY' | 'PRICE', enabled: boolean) => {
@@ -355,7 +383,11 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     setPreview(null);
     setPreviewOpen(false);
     setPreviewError('');
+    setServerAdjustmentIssues({});
     if (!contractId || !selectedRows.length || (gradeTier && taxRatePct === '')) return;
+    const issues = settlementAdjustmentIssues({ mode: adjustmentMode, quantity: finalQuantity, amount: finalAmount,
+      reason: adjustmentReason, quantityCeiling: negotiationCeiling, baseQuantity: detailTotals.quantity, baseAmount: adjustmentBaseAmount });
+    if (Object.keys(issues).length) return;
     const invalidRows = selectedRows.filter(source => !Number.isFinite(Number(selected[source.id].quantity)) || Number(selected[source.id].quantity) <= 0);
     if (invalidRows.length) {
       const message = `${invalidRows.slice(0, 3).map(source => source.waybillNo).join('、')}${invalidRows.length > 3 ? `等 ${invalidRows.length} 车` : ''}的本次数量为空或不大于零，请核对选用磅单、检测报告和已结数量`;
@@ -367,15 +399,22 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     const timer = window.setTimeout(() => {
       void api.post<any>(editId ? `/financial-settlements/${editId}/preview-goods` : '/financial-settlements/preview-goods', payload())
         .then(value => { if (!cancelled && requestId === previewRequestId.current) { setPreview(value); setPreviewError(''); setError(''); } })
-        .catch(cause => { if (!cancelled && requestId === previewRequestId.current) { const message = cause.message || '实时试算失败，请检查逐车依据'; setPreview(null); setPreviewError(message); setError(message); } });
+        .catch(cause => { if (!cancelled && requestId === previewRequestId.current) {
+          const message = String(cause.message || '实时试算失败，请检查逐车依据');
+          const issues = adjustmentIssuesFromServer(message, adjustmentMode);
+          setServerAdjustmentIssues(issues); setPreview(null);
+          setPreviewError(Object.keys(issues).length ? '' : message);
+          setError(Object.keys(issues).length ? CHECK_ADJUSTMENT_FIELDS : message);
+        } });
     }, 400);
     return () => { cancelled = true; previewRequestId.current++; window.clearTimeout(timer); };
     // 仅数量、磅单、报告和税率变化触发试算；备注与日期在提交时一并保存。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractId, selected, sources, gradeTier, taxRatePct, editId, isFinalSettlement, adjustmentMode, finalQuantity, finalAmount, adjustmentReason]);
+  }, [contractId, selected, sources, gradeTier, taxRatePct, editId, isFinalSettlement, adjustmentMode, finalQuantity, finalAmount, adjustmentReason, adjustmentBaseAmount]);
 
   const submit = async (save: boolean, acceptVariance = false) => {
     if (acceptVariance && !quantityReason.trim()) { setQuantityDialogError('请填写数量差异说明'); return; }
+    if (hasAdjustmentIssues) { await showAdjustmentIssues(adjustmentIssues); return; }
     if (!save && preview) {
       setPreviewOpen(true);
       return;
@@ -416,7 +455,13 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       }
     } catch (cause: any) {
       if (!save && requestId !== previewRequestId.current) return;
-      const message = cause.message || '结算单处理失败';
+      const message = String(cause.message || '结算单处理失败');
+      const issues = adjustmentIssuesFromServer(message, adjustmentMode);
+      if (Object.keys(issues).length) {
+        setServerAdjustmentIssues(issues);
+        await showAdjustmentIssues(issues);
+        return;
+      }
       setError(message);
       if (acceptVariance) setQuantityDialogError(message);
       if (!save) { setPreview(null); setPreviewOpen(false); setPreviewError(message); }
@@ -532,9 +577,35 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       <tfoot className="border-t-2 bg-surface-2 font-medium tabular-nums"><tr><td colSpan={2} className="px-4 py-4">明细合计（{selectedRows.length} 车）</td><td className="px-4 py-4 text-right">{tons(detailTotals.quantity)}</td><td className="px-4 py-4 text-right text-muted-foreground">—</td><td className="px-4 py-4 text-xs font-normal text-muted-foreground">整单调整不摊回车辆</td><td className="px-4 py-4 text-right">{preview ? paymentMoney(preview.settlementAdjustment?.base.qualityDeductionAmount ?? preview.qualityDeductionAmount) : '待计算'}</td><td className="px-4 py-4 text-right">{preview ? paymentMoney(preview.settlementAdjustment?.base.totalAmount ?? preview.totalAmount) : '待计算'}</td></tr></tfoot>
     </table></div>
     <section className="space-y-4 rounded-md border bg-surface-2 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">最终结算</h3><div className="flex flex-wrap gap-2">{([['NONE', '按明细合计'], ['QUANTITY', '调整总干基'], ['AMOUNT', '调整总金额']] as const).map(([mode, label]) => <Button key={mode} size="sm" variant={adjustmentMode === mode ? 'default' : 'outline'} aria-pressed={adjustmentMode === mode} disabled={busy || (mode === 'QUANTITY' && selectedRows.some(source => source.pricingQuantityBasis !== 'DRY_MATTER'))} onClick={() => void changeOverallMode(mode)}>{label}</Button>)}</div></div>
-      <div className="grid gap-4 md:grid-cols-3"><label className="space-y-1 text-sm"><span>最终结算数量（{selectedRows.every(source => source.pricingQuantityBasis === 'DRY_MATTER') ? '干基' : '计价'}吨）</span><Input aria-label="最终结算数量" type="number" min="0.001" step="0.001" disabled={busy} readOnly={adjustmentMode !== 'QUANTITY'} value={adjustmentMode === 'QUANTITY' ? finalQuantity : preview?.quantity ?? detailTotals.quantity ?? ''} onChange={event => { setFinalQuantity(event.target.value); setPreview(null); }}/></label>
-      <label className="space-y-1 text-sm"><span>最终结算金额（含税元）</span><Input aria-label="最终结算金额" type="number" min="0.01" step="0.01" placeholder="待计算" disabled={busy} readOnly={adjustmentMode !== 'AMOUNT'} value={adjustmentMode === 'AMOUNT' ? finalAmount : preview?.totalAmount ?? ''} onChange={event => { setFinalAmount(event.target.value); setPreview(null); }}/></label><div className="space-y-1 pt-1 text-xs text-muted-foreground"><p>数量、单价或整单金额调整不可重复叠加。</p>{adjustmentMode === 'QUANTITY' && <p>按合同单价同步重算金额，并计入适用质量扣款。</p>}{preview?.settlementAdjustment && adjustmentMode !== 'NONE' && <p>数量差额 {tons(preview.settlementAdjustment.quantityDifference)} 吨；金额差额 {paymentMoney(preview.settlementAdjustment.amountDifference)}</p>}</div></div>
-      {adjustmentMode !== 'NONE' && <label className="block space-y-1 text-sm"><span>整单调整说明 *</span><textarea aria-label="整单调整说明" rows={2} className="w-full rounded-md border bg-background p-2" value={adjustmentReason} onChange={event => setAdjustmentReason(event.target.value)} placeholder="请填写双方确认的调整依据"/></label>}
+      <div className="grid gap-4 md:grid-cols-3">
+        <label data-validation-field="settlement-adjustment-quantity" className="space-y-1 text-sm"><span>最终结算数量（{selectedRows.every(source => source.pricingQuantityBasis === 'DRY_MATTER') ? '干基' : '计价'}吨）</span>
+          <Input id="settlement-adjustment-quantity" aria-label="最终结算数量" aria-invalid={Boolean(adjustmentIssues.quantity) || undefined}
+            aria-describedby={adjustmentMode === 'QUANTITY' ? `settlement-adjustment-ceiling${adjustmentIssues.quantity ? ' settlement-adjustment-quantity-error' : ''}` : undefined}
+            className={adjustmentIssues.quantity ? 'border-destructive focus-visible:ring-destructive' : ''}
+            type="number" min="0.001" step="0.001" disabled={busy} readOnly={adjustmentMode !== 'QUANTITY'}
+            value={adjustmentMode === 'QUANTITY' ? finalQuantity : preview?.quantity ?? detailTotals.quantity ?? ''}
+            onChange={event => { setFinalQuantity(event.target.value); clearAdjustmentErrors(); }}/>
+          {adjustmentMode === 'QUANTITY' && <p id="settlement-adjustment-ceiling" className="text-xs text-muted-foreground">{negotiationCeiling == null ? '可协商上限待核对，请补齐双方单据。' : `可协商上限：${tons(negotiationCeiling)} 吨，按双方有效磅单及质检报告计算。`}</p>}
+          {adjustmentIssues.quantity && <p id="settlement-adjustment-quantity-error" role="alert" className="text-xs text-destructive">{adjustmentIssues.quantity}</p>}
+        </label>
+        <label data-validation-field="settlement-adjustment-amount" className="space-y-1 text-sm"><span>最终结算金额（含税元）</span>
+          <Input id="settlement-adjustment-amount" aria-label="最终结算金额" aria-invalid={Boolean(adjustmentIssues.amount) || undefined}
+            aria-describedby={adjustmentIssues.amount ? 'settlement-adjustment-amount-error' : undefined}
+            className={adjustmentIssues.amount ? 'border-destructive focus-visible:ring-destructive' : ''}
+            type="number" min="0.01" step="0.01" placeholder="待计算" disabled={busy} readOnly={adjustmentMode !== 'AMOUNT'}
+            value={adjustmentMode === 'AMOUNT' ? finalAmount : preview?.totalAmount ?? ''}
+            onChange={event => { setFinalAmount(event.target.value); clearAdjustmentErrors(); }}/>
+          {adjustmentIssues.amount && <p id="settlement-adjustment-amount-error" role="alert" className="text-xs text-destructive">{adjustmentIssues.amount}</p>}
+        </label>
+        <div className="space-y-1 pt-1 text-xs text-muted-foreground"><p>数量、单价或整单金额调整不可重复叠加。</p>{adjustmentMode === 'QUANTITY' && <p>按合同单价同步重算金额，并计入适用质量扣款。</p>}{preview?.settlementAdjustment && adjustmentMode !== 'NONE' && <p>数量差额 {tons(preview.settlementAdjustment.quantityDifference)} 吨；金额差额 {paymentMoney(preview.settlementAdjustment.amountDifference)}</p>}</div>
+      </div>
+      {adjustmentMode !== 'NONE' && <label data-validation-field="settlement-adjustment-reason" className="block space-y-1 text-sm"><span>整单调整说明 *</span>
+        <textarea id="settlement-adjustment-reason" aria-label="整单调整说明" aria-invalid={Boolean(adjustmentIssues.reason) || undefined}
+          aria-describedby={adjustmentIssues.reason ? 'settlement-adjustment-reason-error' : undefined} rows={2}
+          className={`w-full rounded-md border bg-background p-2 ${adjustmentIssues.reason ? 'border-destructive focus-visible:outline-destructive' : ''}`}
+          value={adjustmentReason} onChange={event => { setAdjustmentReason(event.target.value); clearAdjustmentErrors(); }} placeholder="请填写双方确认的调整依据"/>
+        {adjustmentIssues.reason && <p id="settlement-adjustment-reason-error" role="alert" className="text-xs text-destructive">{adjustmentIssues.reason}</p>}
+      </label>}
     </section></Card>}
     {gradeTier && <Card className="p-5"><label className="block max-w-xs space-y-1 text-sm">{sources.some(source => source.contractTaxRatePct != null) ? '合同税率（%）' : '本次结算税率（%）*'}<Input type="number" min="0" max="100" step="0.01" value={taxRatePct} readOnly={sources.some(source => source.contractTaxRatePct != null)} onChange={e => setTaxRatePct(e.target.value)} /></label></Card>}
     <Card className="grid gap-4 p-5 md:grid-cols-2"><label className="space-y-1 text-sm">约定{sales ? '收款' : '付款'}到期日<Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></label><label className="space-y-1 text-sm">结算说明<Input value={remarks} onChange={e => setRemarks(e.target.value)} /></label><div className="md:col-span-2"><label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={isFinalSettlement} onChange={e => setIsFinalSettlement(e.target.checked)} />本次为最终结算</label><p className="mt-1 text-xs text-muted-foreground">勾选后核对合同短装下限；分批结算无需勾选。</p></div></Card>
@@ -543,7 +614,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       {preview.quantityReview?.differences?.length > 0 && <p role="alert" className="rounded border border-warning-border bg-warning-bg p-3 text-sm text-warning">存在数量差异，生成时请填写双方确认说明，线下签字盖章。</p>}
       <GoodsSettlementDocumentPreview contract={contract} preview={preview} sources={sources} sales={sales} remarks={remarks} quantityReason={quantityReason} />
     </Card>}
-    <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4 shadow-lg"><div className="text-sm">已选 <b>{selectedTotals.count}</b> 车 · 最终结算数量 <b>{tons(preview?.quantity ?? (adjustmentMode === 'QUANTITY' ? Number(finalQuantity) : selectedTotals.quantity))}</b> 吨 · {preview ? <>货物原金额 {paymentMoney(preview.grossAmount)} · 质量扣款 {paymentMoney(preview.qualityDeductionAmount)} · 其他加减 {paymentMoney(preview.adjustmentAmount)} · 结算金额 <b>{paymentMoney(preview.totalAmount)}</b></> : <span className="text-muted-foreground">{previewError ? '试算失败' : '金额待试算'}</span>}{error && <div role="alert" className="mt-1 font-medium text-warning">{previewError ? '无法生成结算单预览：' : '请先处理：'}{error}</div>}</div><div className="flex gap-2"><Button type="button" variant="outline" disabled={busy} onClick={() => void submit(false)}>{busy ? '生成预览中…' : '预览结算单'}</Button><Button type="button" disabled={busy} onClick={() => void submit(true)}>{busy ? '处理中…' : editId ? '保存草稿修改' : '保存结算草稿'}</Button></div></div>
+    <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4 shadow-lg"><div className="text-sm">已选 <b>{selectedTotals.count}</b> 车 · 最终结算数量 <b>{tons(preview?.quantity ?? (adjustmentMode === 'QUANTITY' ? Number(finalQuantity) : selectedTotals.quantity))}</b> 吨 · {preview ? <>货物原金额 {paymentMoney(preview.grossAmount)} · 质量扣款 {paymentMoney(preview.qualityDeductionAmount)} · 其他加减 {paymentMoney(preview.adjustmentAmount)} · 结算金额 <b>{paymentMoney(preview.totalAmount)}</b></> : <span className="text-muted-foreground">{hasAdjustmentIssues ? '待完善调整信息' : previewError ? '试算失败' : '金额待试算'}</span>}{error && <div role="alert" className="mt-1 font-medium text-warning">{error === CHECK_ADJUSTMENT_FIELDS ? error : <>{previewError ? '无法生成结算单预览：' : '请先处理：'}{error}</>}</div>}</div><div className="flex gap-2"><Button type="button" variant="outline" disabled={busy} onClick={() => void submit(false)}>{busy ? '生成预览中…' : '预览结算单'}</Button><Button type="button" disabled={busy} onClick={() => void submit(true)}>{busy ? '处理中…' : editId ? '保存草稿修改' : '保存结算草稿'}</Button></div></div>
     <Dialog open={quantityDialogOpen} onOpenChange={open => { if (!busy) setQuantityDialogOpen(open); }}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>确认溢短装数量差异</DialogTitle><DialogDescription>按实际数量生成结算单，说明进入打印件，供双方线下签字盖章。</DialogDescription></DialogHeader>
       {quantityDialogReview && <QuantityReviewSummary review={quantityDialogReview} />}
       <label className="mt-4 block space-y-1 text-sm"><span>数量差异说明 *</span><textarea aria-label="数量差异说明" rows={3} className={`w-full rounded-md border bg-background p-2 ${quantityDialogError && !quantityReason.trim() ? 'border-destructive' : ''}`} value={quantityReason} onChange={e => { setQuantityReason(e.target.value); setQuantityDialogError(''); }} placeholder="请填写实际数量偏差及双方确认的处理依据" /></label>
