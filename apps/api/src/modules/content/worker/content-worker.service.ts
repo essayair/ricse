@@ -8,6 +8,7 @@ import { ContentDataImportService } from './data-import.service';
 import { BusinessAnalytiqCollectorService } from './business-analytiq-collector.service';
 import { FluorsparTrendCollectorService } from './fluorspar-trend-collector.service';
 import { NewsCollectorService } from './news-collector.service';
+import { EastmoneyStockCollectorService } from './eastmoney-stock-collector.service';
 
 @Injectable()
 export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown {
@@ -21,6 +22,7 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
     private readonly businessAnalytiq: BusinessAnalytiqCollectorService,
     private readonly fluorsparTrend: FluorsparTrendCollectorService,
     private readonly news: NewsCollectorService,
+    private readonly stocks: EastmoneyStockCollectorService,
     private readonly ai: ContentAiService,
     private readonly dataImport: ContentDataImportService,
   ) {}
@@ -74,13 +76,15 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
       else if (type === 'MARKET_SYNC') result = await this.baiinfo.sync();
       else if (type === 'HF_MARKET_SYNC') result = await this.businessAnalytiq.sync();
       else if (type === 'FLUORSPAR_TREND_SYNC') result = await this.fluorsparTrend.sync();
+      else if (type === 'STOCK_QUOTE_SYNC') result = await this.stocks.sync();
       else if (type === 'AI_CLEAN') result = await this.cleanOne((job.data.payload || {}).articleId);
       else if (type === 'DATA_IMPORT') result = await this.dataImport.importPriceFile((job.data.payload || {}).assetId);
       else throw new Error(`尚未实现的任务类型：${type}`);
-      const completedStatus = type === 'NEWS_SYNC'
-        && Number((result as { failedSources?: number })?.failedSources || 0) > 0
-        ? 'PARTIAL'
-        : 'SUCCEEDED';
+      const newsPartial = type === 'NEWS_SYNC'
+        && Number((result as { failedSources?: number })?.failedSources || 0) > 0;
+      const stockResult = result as { missing?: string[]; suspended?: string[] } | undefined;
+      const stockPartial = type === 'STOCK_QUOTE_SYNC' && Boolean(stockResult?.missing?.length);
+      const completedStatus = newsPartial || stockPartial ? 'PARTIAL' : 'SUCCEEDED';
       await this.prisma.contentJob.update({
         where: { id: record.id },
         data: { status: completedStatus, result: result as any, finishedAt: new Date(), nextRetryAt: null },
@@ -110,10 +114,12 @@ export class ContentWorkerService implements OnModuleInit, OnApplicationShutdown
   }
 
   private async scheduledRecord(type: string, job: Job) {
-    const bucket = new Date().toISOString().slice(0, type === 'NEWS_SYNC' ? 13 : 10);
+    // 资讯和成分股行情一天执行多次，按小时区分任务记录；其他行情按天
+    const bucket = new Date().toISOString().slice(0, ['NEWS_SYNC', 'STOCK_QUOTE_SYNC'].includes(type) ? 13 : 10);
     const sourceCode = type === 'MARKET_SYNC' ? 'BAIINFO_FLUORITE'
       : type === 'HF_MARKET_SYNC' ? 'BUSINESS_ANALYTIQ_HF'
       : type === 'FLUORSPAR_TREND_SYNC' ? 'FLUORSPAR_COM_TREND'
+      : type === 'STOCK_QUOTE_SYNC' ? 'EASTMONEY_STOCK_QUOTE'
       : undefined;
     const source = job.data.sourceId
       ? await this.prisma.contentDataSource.findUnique({ where: { id: String(job.data.sourceId) } })

@@ -10,11 +10,12 @@ import { WechatAuthService } from './wechat-auth.service';
 import { WechatController } from './wechat.controller';
 import { ContentHealthController } from './content-health.controller';
 import { PublicRateLimitService } from './public-rate-limit.service';
+import { PublicContactService } from './public-contact.service';
 
 @Module({
   imports: [CommonModule],
   controllers: [ContentController, PublicContentController, ContentAiController, WechatController, ContentHealthController],
-  providers: [ContentService, ContentAiService, ContentQueueService, WechatAuthService, PublicRateLimitService],
+  providers: [ContentService, ContentAiService, ContentQueueService, WechatAuthService, PublicRateLimitService, PublicContactService],
   exports: [ContentService, ContentAiService, ContentQueueService, WechatAuthService],
 })
 export class ContentModule {}

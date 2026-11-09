@@ -33,6 +33,7 @@ import {
   PriceQueryDto,
   ProductTypeDto,
   ReviewSupplyDemandDto,
+  StockSymbolDto,
   SupplyDemandQueryDto,
   UpdateArticleDto,
   UpdateArticleStatusDto,
@@ -165,6 +166,22 @@ export class ContentController {
   @Delete('prices/:id')
   @RequirePermission('content.price.manage')
   deletePrice(@Param('id') id: string) { return this.service.deletePrice(id); }
+
+  @Get('stocks')
+  @RequirePermission('content.price.view')
+  stockSymbols() { return this.service.listStockSymbols(); }
+
+  @Post('stocks')
+  @RequirePermission('content.price.manage')
+  createStockSymbol(@Body() dto: StockSymbolDto) { return this.service.createStockSymbol(dto); }
+
+  @Patch('stocks/:id')
+  @RequirePermission('content.price.manage')
+  updateStockSymbol(@Param('id') id: string, @Body() dto: StockSymbolDto) { return this.service.updateStockSymbol(id, dto); }
+
+  @Delete('stocks/:id')
+  @RequirePermission('content.price.manage')
+  deleteStockSymbol(@Param('id') id: string) { return this.service.deleteStockSymbol(id); }
 
   @Get('contacts')
   @RequirePermission('content.contact.view')

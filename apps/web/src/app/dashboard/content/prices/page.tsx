@@ -10,11 +10,25 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { promptAction } from '@/lib/system-dialog';
+import { StockPanel } from './stock-panel';
 
 const EMPTY = { productTypeId: '', businessDate: new Date().toISOString().slice(0, 10), region: '', marketName: '', spec: '', price: '', unit: '元/吨', changeAmount: '', source: 'MANUAL', remark: '' };
 const SOURCE_LABEL: Record<string, string> = { MANUAL: '手工', BAIINFO: '百川', BUSINESS_ANALYTIQ: 'Business Analytiq', FLUORSPAR_COM: 'fluorspar.com', IMPORT: '导入' };
 
 export default function PricesPage() {
+  const [tab, setTab] = useState<'prices' | 'stocks'>('prices');
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-center gap-4">
+      <h1 className="text-2xl font-bold">价格行情</h1>
+      <div className="inline-flex rounded-md border p-1 text-sm">
+        {([['prices', '价格记录'], ['stocks', '萤石成分股']] as const).map(([key, label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`rounded px-3 py-1 ${tab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}
+      </div>
+    </div>
+    {tab === 'prices' ? <PriceRecords /> : <StockPanel />}
+  </div>;
+}
+
+function PriceRecords() {
   const [data, setData] = useState<any>({ list: [], total: 0 });
   const [types, setTypes] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -47,8 +61,7 @@ export default function PricesPage() {
   };
 
   return <div className="space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">价格行情</h1></div>
+    <div className="flex flex-wrap items-center justify-end gap-3">
       <div className="flex gap-2"><Button variant="outline" onClick={createType}>新增产品类型</Button><Button onClick={() => setOpen(true)}><Plus className="mr-1 h-4 w-4" />新增价格</Button></div>
     </div>
     <div className="flex gap-3">

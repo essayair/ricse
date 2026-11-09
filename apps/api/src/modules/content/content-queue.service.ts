@@ -52,6 +52,22 @@ export class ContentQueueService implements OnModuleDestroy {
         opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
       },
     );
+    // 萤石成分股：交易日午间收盘后和收盘后各一次；节假日采到的是上一交易日数据，会写回同一条快照
+    const stockSchedules = [
+      { id: 'schedule-stock-quote-noon', pattern: process.env.STOCK_QUOTE_SYNC_NOON_CRON || '35 11 * * 1-5' },
+      { id: 'schedule-stock-quote-close', pattern: process.env.STOCK_QUOTE_SYNC_CLOSE_CRON || '10 15 * * 1-5' },
+    ];
+    for (const schedule of stockSchedules) {
+      await this.queue.upsertJobScheduler(
+        schedule.id,
+        { pattern: schedule.pattern, tz: process.env.CONTENT_TIMEZONE || 'Asia/Shanghai' },
+        {
+          name: 'STOCK_QUOTE_SYNC',
+          data: { type: 'STOCK_QUOTE_SYNC', scheduled: true },
+          opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 20, removeOnFail: 50 },
+        },
+      );
+    }
   }
 
   async registerNewsSchedules() {
@@ -108,6 +124,12 @@ export class ContentQueueService implements OnModuleDestroy {
     });
     await this.queue.add('FLUORSPAR_TREND_SYNC', {
       type: 'FLUORSPAR_TREND_SYNC', startup: true,
+    }, {
+      attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 20, removeOnFail: 50,
+    });
+    await this.queue.add('STOCK_QUOTE_SYNC', {
+      type: 'STOCK_QUOTE_SYNC', startup: true,
     }, {
       attempts: 3, backoff: { type: 'exponential', delay: 60_000 },
       removeOnComplete: 20, removeOnFail: 50,

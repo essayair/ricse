@@ -22,6 +22,7 @@ import {
   PriceQueryDto,
   ProductTypeDto,
   ReviewSupplyDemandDto,
+  StockSymbolDto,
   SupplyDemandQueryDto,
   UpdateArticleDto,
   UpdateArticleStatusDto,
@@ -542,6 +543,96 @@ export class ContentService {
     return { latestDate: latestDate || null, unit: product.unit, source: 'fluorspar.com', series };
   }
 
+  private stockSymbolData(dto: StockSymbolDto) {
+    const rules: Record<string, { pattern: RegExp; hint: string }> = {
+      SH: { pattern: /^6\d{5}$/, hint: '沪市代码应为 6 开头的 6 位数字' },
+      SZ: { pattern: /^[03]\d{5}$/, hint: '深市代码应为 0 或 3 开头的 6 位数字' },
+      HK: { pattern: /^\d{5}$/, hint: '港股代码应为 5 位数字' },
+    };
+    const rule = rules[dto.market];
+    if (!rule?.pattern.test(dto.code)) throw new BadRequestException(rule?.hint || '市场不支持');
+    return { market: dto.market, code: dto.code, name: dto.name, tag: dto.tag?.trim() || null, sort: dto.sort ?? 0, status: dto.status || 'ACTIVE' };
+  }
+
+  private stockQuoteView(quote?: {
+    name: string; price: Prisma.Decimal; changeAmount: Prisma.Decimal | null; changeRate: Prisma.Decimal;
+    floatMarketCap: Prisma.Decimal | null; currency: string; quoteTime: Date; tradeDate: Date; source: string;
+  }) {
+    if (!quote) return null;
+    return {
+      name: quote.name,
+      price: Number(quote.price),
+      changeAmount: quote.changeAmount === null ? null : Number(quote.changeAmount),
+      changeRate: Number(quote.changeRate),
+      floatMarketCap: quote.floatMarketCap === null ? null : Number(quote.floatMarketCap),
+      currency: quote.currency,
+      quoteTime: quote.quoteTime.toISOString(),
+      tradeDate: quote.tradeDate.toISOString().slice(0, 10),
+      source: quote.source,
+    };
+  }
+
+  async listStockSymbols() {
+    const symbols = await this.prisma.contentStockSymbol.findMany({
+      orderBy: [{ sort: 'asc' }, { code: 'asc' }],
+      include: { quotes: { orderBy: [{ tradeDate: 'desc' }, { quoteTime: 'desc' }], take: 1 } },
+    });
+    return symbols.map(({ quotes, ...symbol }) => ({ ...symbol, latestQuote: this.stockQuoteView(quotes[0]) }));
+  }
+
+  async createStockSymbol(dto: StockSymbolDto) {
+    try {
+      return await this.prisma.contentStockSymbol.create({ data: this.stockSymbolData(dto) });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('该股票已在成分股名单中');
+      throw error;
+    }
+  }
+
+  async updateStockSymbol(id: string, dto: StockSymbolDto) {
+    const exists = await this.prisma.contentStockSymbol.findUnique({ where: { id } });
+    if (!exists) throw new NotFoundException('成分股不存在');
+    try {
+      return await this.prisma.contentStockSymbol.update({ where: { id }, data: this.stockSymbolData(dto) });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('该股票已在成分股名单中');
+      throw error;
+    }
+  }
+
+  async deleteStockSymbol(id: string) {
+    const exists = await this.prisma.contentStockSymbol.findUnique({ where: { id } });
+    if (!exists) throw new NotFoundException('成分股不存在');
+    await this.prisma.contentStockSymbol.delete({ where: { id } });
+    return { id, deleted: true };
+  }
+
+  /** 公开端：返回启用中的成分股及各自最近一次成功采集的快照，采集失败时继续返回旧数据 */
+  async fluoriteStocks() {
+    const symbols = await this.prisma.contentStockSymbol.findMany({
+      where: { status: 'ACTIVE' },
+      orderBy: [{ sort: 'asc' }, { code: 'asc' }],
+      include: { quotes: { orderBy: [{ tradeDate: 'desc' }, { quoteTime: 'desc' }], take: 1 } },
+    });
+    const list = symbols.filter((item) => item.quotes.length).map((item) => {
+      const quote = this.stockQuoteView(item.quotes[0])!;
+      return { market: item.market, code: item.code, tag: item.tag, ...quote, name: quote.name || item.name };
+    });
+    const quoteTime = list.reduce<string | null>((latest, item) => !latest || item.quoteTime > latest ? item.quoteTime : latest, null);
+    const averageChangeRate = list.length
+      ? Number((list.reduce((total, item) => total + item.changeRate, 0) / list.length).toFixed(2))
+      : null;
+    return {
+      source: '东方财富',
+      sourceUrl: 'https://quote.eastmoney.com/',
+      note: '午间收盘与收盘后更新，非实时行情',
+      quoteTime,
+      tradeDate: list.reduce<string | null>((latest, item) => !latest || item.tradeDate > latest ? item.tradeDate : latest, null),
+      averageChangeRate,
+      list,
+    };
+  }
+
   async listContacts(query: ContactQueryDto) {
     const { pageNo, pageSize, skip } = this.page(query);
     const where: Prisma.WebsiteContactWhereInput = {
@@ -567,6 +658,14 @@ export class ContentService {
     return this.prisma.websiteContact.create({
       data: { ...dto, name: dto.name.trim(), phone: dto.phone.trim(), message: dto.message.trim(), sourceIp },
     });
+  }
+
+  async createContactOnce(dto: CreateContactDto, sourceIp?: string) {
+    const existing = await this.prisma.websiteContact.findFirst({ where: {
+      name: dto.name, phone: dto.phone, company: dto.company || null, email: dto.email || null, message: dto.message,
+      createdAt: { gte: new Date(Date.now() - 86400_000) },
+    }, select: { id: true } });
+    if (!existing) await this.createContact(dto, sourceIp);
   }
 
   async updateContact(id: string, dto: UpdateContactDto, userId: string) {

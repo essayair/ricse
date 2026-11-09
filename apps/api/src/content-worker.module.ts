@@ -10,9 +10,10 @@ import { FileService } from './modules/common/file.service';
 import { BusinessAnalytiqCollectorService } from './modules/content/worker/business-analytiq-collector.service';
 import { FluorsparTrendCollectorService } from './modules/content/worker/fluorspar-trend-collector.service';
 import { NewsCollectorService } from './modules/content/worker/news-collector.service';
+import { EastmoneyStockCollectorService } from './modules/content/worker/eastmoney-stock-collector.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule],
-  providers: [ContentQueueService, ContentAiService, BaiinfoCollectorService, BusinessAnalytiqCollectorService, FluorsparTrendCollectorService, NewsCollectorService, ContentDataImportService, FileService, ContentWorkerService],
+  providers: [ContentQueueService, ContentAiService, BaiinfoCollectorService, BusinessAnalytiqCollectorService, FluorsparTrendCollectorService, NewsCollectorService, EastmoneyStockCollectorService, ContentDataImportService, FileService, ContentWorkerService],
 })
 export class ContentWorkerModule {}

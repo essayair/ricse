@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   Equals,
   IsArray,
@@ -12,6 +12,8 @@ import {
   IsOptional,
   IsPhoneNumber,
   IsString,
+  Matches,
+  MinLength,
   Max,
   MaxLength,
   Min,
@@ -117,6 +119,28 @@ export class CreateContactDto {
   @IsOptional() @IsString() @MaxLength(500) sourcePage?: string;
 }
 
+const trimText = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
+export class PublicCreateContactDto {
+  @Transform(trimText) @IsString() @MinLength(1, { message: '请填写姓名' }) @MaxLength(50)
+  name: string;
+  @Transform(trimText) @IsString() @MinLength(1, { message: '请填写公司或机构' }) @MaxLength(200)
+  company: string;
+  @Transform(trimText) @IsString() @MaxLength(30)
+  @Matches(/^(?:[A-Za-z][A-Za-z0-9_-]{5,29}|\+?\d[\d ()-]{5,28}\d)$/, { message: '请填写有效的手机号、联系电话或微信号' })
+  phone: string;
+  @Transform(trimText) @IsString() @MinLength(1, { message: '请填写合作方向或咨询内容' }) @MaxLength(5000)
+  message: string;
+  @Transform(trimText) @IsOptional() @IsEmail() @MaxLength(200)
+  email?: string;
+  @Transform(trimText) @IsOptional() @IsString() @MaxLength(500)
+  @Matches(/^\/[^\r\n<>]*$/, { message: '来源页面格式无效' })
+  sourcePage?: string;
+  @IsString() @MinLength(1, { message: '请刷新表单后重试' }) @MaxLength(1024)
+  submissionToken: string;
+  @IsOptional() @IsString() @MaxLength(200)
+  website?: string;
+}
+
 export class UpdateContactDto {
   @IsIn(['NEW', 'FOLLOWING', 'COMPLETED', 'INVALID']) status: string;
   @IsOptional() @IsString() assigneeId?: string;
@@ -149,10 +173,21 @@ export class ReviewSupplyDemandDto {
 }
 
 export class CreateContentJobDto {
-  @IsIn(['NEWS_SYNC', 'AI_CLEAN', 'MARKET_SYNC', 'HF_MARKET_SYNC', 'FLUORSPAR_TREND_SYNC', 'DATA_IMPORT']) type: string;
+  @IsIn(['NEWS_SYNC', 'AI_CLEAN', 'MARKET_SYNC', 'HF_MARKET_SYNC', 'FLUORSPAR_TREND_SYNC', 'STOCK_QUOTE_SYNC', 'DATA_IMPORT']) type: string;
   @IsOptional() @IsString() sourceId?: string;
   @IsOptional() @IsObject() payload?: Record<string, unknown>;
   @IsOptional() @IsDateString() scheduledAt?: string;
+}
+
+export class StockSymbolDto {
+  @IsIn(['SH', 'SZ', 'HK'], { message: '市场只能是沪市、深市或港股' }) market: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @Matches(/^\d{5,6}$/, { message: '证券代码应为 5 位（港股）或 6 位（A 股）数字' }) code: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString() @MinLength(1) @MaxLength(30) name: string;
+  @IsOptional() @IsString() @MaxLength(20) tag?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) sort?: number;
+  @IsOptional() @IsIn(['ACTIVE', 'INACTIVE']) status?: string;
 }
 
 export class CreateDataSourceDto {

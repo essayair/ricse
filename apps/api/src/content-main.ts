@@ -2,11 +2,12 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ContentApiModule } from './content-api.module';
+import { configureContentHttp } from './content-http';
 
 async function bootstrap() {
   const app = await NestFactory.create(ContentApiModule);
   const logger = new Logger('ContentApi');
-  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  configureContentHttp(app);
   app.setGlobalPrefix('api/v1');
   const configuredOrigins = (process.env.CONTENT_CORS_ORIGIN || process.env.CORS_ORIGIN || 'http://localhost:3001')
     .split(',').map((item) => item.trim()).filter(Boolean);

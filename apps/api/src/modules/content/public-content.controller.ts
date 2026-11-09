@@ -5,9 +5,10 @@ import { ContentService } from './content.service';
 import { WechatAuthService } from './wechat-auth.service';
 import { PublicRateLimitService } from './public-rate-limit.service';
 import { FileService } from '../common/file.service';
+import { PublicContactService } from './public-contact.service';
 import {
   ArticleQueryDto,
-  CreateContactDto,
+  PublicCreateContactDto,
   CreateSupplyDemandDto,
   PriceQueryDto,
   SupplyDemandQueryDto,
@@ -21,6 +22,7 @@ export class PublicContentController {
     private readonly wechatAuth: WechatAuthService,
     private readonly rate: PublicRateLimitService,
     private readonly files: FileService,
+    private readonly contacts: PublicContactService,
   ) {}
 
   @Get('categories')
@@ -69,10 +71,18 @@ export class PublicContentController {
   @Get('market/fluorite/price-trend')
   fluorsparPriceTrend() { return this.service.fluorsparPriceTrend(); }
 
+  @Get('market/fluorite/stocks')
+  fluoriteStocks() { return this.service.fluoriteStocks(); }
+
+  @Get('contacts/submission-token')
+  async contactToken(@Ip() sourceIp: string, @Headers('user-agent') userAgent = '', @Res({ passthrough: true }) res: Response) {
+    res.setHeader('Cache-Control', 'no-store');
+    return this.contacts.issue(sourceIp, userAgent);
+  }
+
   @Post('contacts')
-  async createContact(@Body() dto: CreateContactDto, @Ip() sourceIp: string) {
-    await this.rate.assert('contact', sourceIp, 5, 3600);
-    return this.service.createContact(dto, sourceIp);
+  async createContact(@Body() dto: PublicCreateContactDto, @Ip() sourceIp: string, @Headers('user-agent') userAgent = '') {
+    return this.contacts.submit(dto, sourceIp, userAgent);
   }
 
   @Get('supply-demand')
@@ -86,7 +96,7 @@ export class PublicContentController {
   @Post('supply-demand')
   async submitSupplyDemand(@Body() dto: CreateSupplyDemandDto, @Headers('authorization') authorization?: string) {
     const openId = this.wechatAuth.verifyBearer(authorization);
-    await this.rate.assert('supply-submit', openId, 10, 86400);
+    await this.rate.assert('supply-submit', openId, 10, 86400, true);
     return this.service.createSupplyDemand({ ...dto, status: 'PENDING' }, { openId });
   }
 

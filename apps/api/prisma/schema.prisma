@@ -3396,6 +3396,50 @@ model ContentJob {
   @@map("content_jobs")
 }
 
+/// 萤石成分股名单：大屏与官网共用，由内容运营在“价格行情”中维护
+model ContentStockSymbol {
+  id        String   @id @default(cuid())
+  market    String // SH | SZ | HK
+  code      String
+  name      String
+  tag       String?
+  sort      Int      @default(0)
+  status    String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotes ContentStockQuote[]
+
+  @@unique([market, code])
+  @@index([status, sort])
+  @@map("content_stock_symbols")
+}
+
+/// 成分股行情快照：同一股票、同一交易日、同一来源只保留一条，午间和收盘采集依次覆盖
+model ContentStockQuote {
+  id             String   @id @default(cuid())
+  symbolId       String
+  tradeDate      DateTime @db.Date
+  quoteTime      DateTime
+  name           String // 来源返回的最新证券简称
+  price          Decimal  @db.Decimal(15, 4)
+  prevClose      Decimal? @db.Decimal(15, 4)
+  changeAmount   Decimal? @db.Decimal(15, 4)
+  changeRate     Decimal  @db.Decimal(9, 4)
+  floatMarketCap Decimal? @db.Decimal(20, 2)
+  currency       String   @default("CNY") // CNY | HKD
+  source         String   @default("EASTMONEY")
+  rawData        Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  symbol ContentStockSymbol @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+
+  @@unique([symbolId, tradeDate, source])
+  @@index([tradeDate])
+  @@map("content_stock_quotes")
+}
+
 model WechatIdentity {
   id                      String    @id @default(cuid())
   openId                  String    @unique
