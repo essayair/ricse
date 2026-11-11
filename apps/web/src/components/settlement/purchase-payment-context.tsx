@@ -13,6 +13,9 @@ import type { SettlementSummaryAdjustment } from './settlement-adjustment-summar
 export const paymentMoney = (value: unknown) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const QUALITY_LABELS: Record<string, string> = { PENDING: '待检测', PASS: '合格接收', LEGACY: '历史验收', DEDUCTION_PENDING: '待确认扣款接收', ACCEPT_WITH_DEDUCTION: '已确认扣款接收', REJECT: '拒收', REVIEW_REQUIRED: '待人工判定' };
 export interface GoodsSource {
+  /** 直拨采购：磅单、报告、数量跟随同车已审批的销售结算；previewOnly 表示销售结算尚未审批，只能预览。 */
+  followSales?: boolean; followSalesSettlementId?: string | null; followSalesSettlementNo?: string | null; followSalesStatus?: string | null; previewOnly?: boolean;
+  followAdjustment?: { settlementId: string; settlementNo: string; finalQuantity: number; waybillLineItemIds: string[] } | null;
   settlementAdjustment?: SettlementSummaryAdjustment;
   lineAdjustment?: { version: number; quantityAdjusted: boolean; priceAdjusted: boolean; baseQuantity: number; contractUnitPrice: number; finalUnitPrice: number; deductionPerTon: number; reason: string };
   settlementOccupied?: boolean;

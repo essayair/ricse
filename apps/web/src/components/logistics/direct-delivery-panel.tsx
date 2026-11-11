@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
 
-type Snapshot = { quantity: string; pricingQuantity: string; pricingQuantityBasis: string; ticketNo: string; reportNo: string; measuredMoisturePct?: number };
+type Snapshot = { quantity: string; pricingQuantity: string; pricingQuantityBasis: string; ticketNo: string; reportNo: string; measuredMoisturePct?: number; crossSide?: boolean; crossSideReason?: string | null };
+const CROSS_SIDE_REASONS: Record<string, string> = { NEGOTIATED_TICKET: '磅单协商', SINGLE_SIDE_REPORT: '只有一方出质检单' };
 type Delivery = { id: string; version: number; status: string; snapshot: Snapshot; remarks: string; documents: Array<{ documentNo: string; direction: string; quantity: string; pricingQuantity: string; status: string }> };
 type Detail = { status: string; directOutcome?: string; replacementWaybillId?: string; plannedQuantity: string; originLocation?: string; destinationLocation?: string; deliveries: Delivery[]; weighTickets: Array<{ id: string; ticketNo: string; weighingStage: string; netWeight: string; weightSelections: Array<{ purpose: string; weighTicketId: string }> }>; reports: Array<{ id: string; reportNo: string; inspectionNo: string; evidenceStage: string; indicators: Array<{ name: string; measuredValue: string | null; unit: string }> }>; qualityTask: { id: string; basisInspectionId: string | null; status: string } | null };
 const fieldClass = 'h-10 w-full rounded-md border border-input bg-background px-3 text-sm';
@@ -23,6 +24,7 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
   const [reportId, setReportId] = useState('');
   const [remarks, setRemarks] = useState('');
   const [exception, setException] = useState(false);
+  const [crossSideReason, setCrossSideReason] = useState('');
   const [preview, setPreview] = useState<Snapshot>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,7 +38,10 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
   const load = useCallback(async () => {
     const d = await api.get<Detail>(`/bilateral-direct/waybills/${waybillId}`); setDetail(d);
     const adopted = d.weighTickets.filter(t => isAdopted(t, d.weighTickets));
-    setTicketId(old => old || (adopted.length === 1 ? adopted[0].id : ''));
+    // 默认与最终采用报告同侧的采信磅单；无同侧磅单时才回退到唯一采信磅单。
+    const basisReport = d.reports.find(r => r.id === d.qualityTask?.basisInspectionId);
+    const sameSide = basisReport ? adopted.find(t => t.weighingStage === basisReport.evidenceStage) : undefined;
+    setTicketId(old => old || sameSide?.id || (adopted.length === 1 ? adopted[0].id : ''));
     setReportId(old => old || d.qualityTask?.basisInspectionId || (d.reports.length === 1 ? d.reports[0].id : ''));
   }, [waybillId]);
   useEffect(() => {
@@ -46,7 +51,10 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
       setPermissions({ manage: admin || u.permissions?.includes('inventory.manage'), logistics: admin || u.permissions?.includes('logistics.manage'), review: admin || u.roleCodes?.includes('BUSINESS_MANAGER') || u.role === 'BUSINESS_MANAGER' });
     } catch { /* default deny */ }
   }, [load]);
-  const body = { weighTicketId: ticketId, qualityReportId: reportId, remarks, acceptQualityException: exception };
+  const selectedTicketStage = detail?.weighTickets.find(t => t.id === ticketId)?.weighingStage;
+  const selectedReportStage = detail?.reports.find(r => r.id === reportId)?.evidenceStage;
+  const crossSide = Boolean(selectedTicketStage && selectedReportStage && selectedTicketStage !== selectedReportStage);
+  const body = { weighTicketId: ticketId, qualityReportId: reportId, remarks, acceptQualityException: exception, ...(crossSide && crossSideReason ? { crossSideReason } : {}) };
   const active = detail?.deliveries.find(d => ['CONFIRMED', 'PENDING_REVIEW'].includes(d.status));
   const act = async (action: string, payload: unknown) => {
     setBusy(true); setError('');
@@ -94,10 +102,11 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
       </div>
       {detail.qualityTask && <Link className="inline-block text-sm text-primary underline" href={`/dashboard/quality/${detail.qualityTask.id}`}>查看质检任务及最终采用报告</Link>}
       <label className="block space-y-2 text-sm"><span>采用依据及差异处理说明 *</span><textarea className="min-h-20 w-full rounded-md border border-input bg-background p-3" value={remarks} onChange={e => { setRemarks(e.target.value); setPreview(undefined); }} /></label>
+      {crossSide && <label className="block space-y-2 text-sm"><span className="text-warning">交付磅单与水分报告来自不同环节，请选择原因 *</span><select className={fieldClass} value={crossSideReason} onChange={e => { setCrossSideReason(e.target.value); setPreview(undefined); }}><option value="">请选择原因</option>{Object.entries(CROSS_SIDE_REASONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={exception} onChange={e => { setException(e.target.checked); setPreview(undefined); }} />已核对质量异常，确认按说明接收</label>
       {preview && <Summary snapshot={preview} />}
       <div className="flex flex-wrap gap-2">
-        {permissions.manage && <><Button variant="outline" disabled={busy || detail.status !== 'SIGNED'} onClick={() => void calculate()}>预览交付数量</Button><Button disabled={busy || !preview} onClick={async () => { if (await confirmAction('将以同一组依据生成采购业务入库和销售出库，完成两向交付。', { title: '确认直拨交付' })) await act('confirm', body); }}>确认销售交付并同步采购</Button><Button variant="outline" disabled={busy || !preview} onClick={() => void act('confirm', { ...body, requestReview: true })}>提交运营经理复核</Button></>}
+        {permissions.manage && <><Button variant="outline" disabled={busy || detail.status !== 'SIGNED'} onClick={() => void calculate()}>预览交付数量</Button><Button disabled={busy || !preview || (crossSide && !crossSideReason)} onClick={async () => { if (await confirmAction('将以同一组依据生成采购业务入库和销售出库，完成两向交付。', { title: '确认直拨交付' })) await act('confirm', body); }}>确认销售交付并同步采购</Button><Button variant="outline" disabled={busy || !preview || (crossSide && !crossSideReason)} onClick={() => void act('confirm', { ...body, requestReview: true })}>提交运营经理复核</Button></>}
         {permissions.logistics && detail.status !== 'CANCELLED' && <Button variant="outline" disabled={busy} onClick={() => void reasonAction('cancel')}>取消运单</Button>}
         {permissions.manage && detail.status !== 'CANCELLED' && <>{['ARRIVED', 'SIGNED'].includes(detail.status) && <Button variant="outline" disabled={busy} onClick={() => void reasonAction('reject-return')}>整车拒收退回</Button>}<Button variant="outline" disabled={busy} onClick={async () => { try { setWarehouses(await api.get('/bilateral-direct/warehouses')); setConversionOrigin((detail.status === 'PENDING' ? detail.originLocation : detail.destinationLocation) || ''); setConversionQuantity(detail.plannedQuantity || ''); setConversionOpen(true); } catch (e: any) { setError(e.message); } }}>转我方仓库</Button></>}
       </div>
@@ -107,4 +116,4 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
   </Card>;
 }
 
-function Summary({ snapshot: s }: { snapshot: Snapshot }) { return <div className="grid gap-3 rounded-md border bg-muted/30 p-4 text-sm sm:grid-cols-2"><p>实物数量：{s.quantity} 吨</p><p>{s.pricingQuantityBasis === 'DRY_MATTER' ? '折干' : '计价'}数量：{s.pricingQuantity} 吨</p><p>磅单：{s.ticketNo}</p><p>报告：{s.reportNo}</p><p className="sm:col-span-2">采购业务入库数量＝销售出库数量</p></div>; }
+function Summary({ snapshot: s }: { snapshot: Snapshot }) { return <div className="grid gap-3 rounded-md border bg-muted/30 p-4 text-sm sm:grid-cols-2"><p>实物数量：{s.quantity} 吨</p><p>{s.pricingQuantityBasis === 'DRY_MATTER' ? '折干' : '计价'}数量：{s.pricingQuantity} 吨</p><p>磅单：{s.ticketNo}</p><p>报告：{s.reportNo}</p>{s.crossSide && <p className="text-warning sm:col-span-2">磅单与水分来自不同环节{s.crossSideReason ? `：${CROSS_SIDE_REASONS[s.crossSideReason] || s.crossSideReason}` : ''}</p>}<p className="sm:col-span-2">采购业务入库数量＝销售出库数量</p></div>; }

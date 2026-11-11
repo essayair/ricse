@@ -6,7 +6,15 @@ import { evaluateContractQualityRules } from '../quality/contract-quality-rules'
 import { goodsAmounts } from './payment-balance';
 import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
 
-/** 将非库存直拨交付适配到既有逐车结算协议；价税、调整仍由原结算服务统一处理。 */
+const APPROVED_SETTLEMENT = ['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'];
+const SETTLEMENT_STATUS_LABEL: Record<string, string> = { DRAFT: '草稿', PENDING_APPROVAL: '审批中', REJECTED: '已驳回' };
+export const FOLLOW_SALES_PENDING = '请先完成销售结算审批';
+
+/**
+ * 将非库存直拨交付适配到既有逐车结算协议；价税、调整仍由原结算服务统一处理。
+ * 直拨进出必须平：销售结算默认采用交付确认的磅单与报告；采购结算的磅单、报告、数量（含协商）
+ * 全部跟随同车已审批的销售结算，金额按采购方向价格另行计算。
+ */
 export async function directSettlementSources(prisma: PrismaService, contract: any, direction: 'PAYABLE' | 'RECEIVABLE', excludeSettlementId?: string, reportChoices = new Map<string, string>(), ticketChoices = new Map<string, string>()): Promise<any[]> {
   if (contract.type !== 'BILATERAL') return [];
   if (typeof (prisma as any).$transaction !== 'function') {
@@ -26,9 +34,18 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
       } },
     }, orderBy: { createdAt: 'asc' },
   });
+  const purchase = direction === 'PAYABLE';
+  // 采购跟随：读取同车有效销售结算行（每车每方向只允许一张有效结算单）。
+  const salesLines = purchase && rows.length ? await prisma.financialSettlementLine.findMany({
+    where: { waybillLineItemId: { in: rows.map(row => row.id) }, settlement: { direction: 'RECEIVABLE', deletedAt: null, status: { not: 'VOIDED' } } },
+    include: { settlement: { select: { id: true, settlementNo: true, status: true, lines: { select: { waybillLineItemId: true, sourceSnapshot: true } } } } },
+  }) : [];
+  const salesByLine = new Map(salesLines.map(line => [line.waybillLineItemId!, line]));
   return rows.filter(row => row.waybill.dispatchNotice.directSalesExecution).map(row => {
     const w = row.waybill, d = w.directDeliveries[0], task = w.qualityTask;
-    const purchase = direction === 'PAYABLE';
+    const sale = purchase ? salesByLine.get(row.id) : undefined;
+    const saleSnapshot = sale?.sourceSnapshot as Record<string, any> | null | undefined;
+    const salesApproved = Boolean(sale && APPROVED_SETTLEMENT.includes(sale.settlement.status));
     const order = purchase ? w.dispatchNotice.directSalesExecution!.purchaseNotice.order : w.dispatchNotice.order;
     const item = contract.lineItems.find((l: any) => l.id === row.dispatchNoticeLineItem.orderLineItem.contractLineItemId);
     const effective = new Map<string, typeof w.weighTickets[number]>();
@@ -38,23 +55,39 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
       const selected = selection ? candidates.find(t => t.id === selection.weighTicketId) : candidates.length === 1 ? candidates[0] : undefined;
       if (selected) effective.set(stage, selected);
     }
-    const preferred = purchase ? 'SHIPPING' : 'RECEIVING';
-    const ticketId = ticketChoices.get(row.id);
-    const ticket = ticketId ? w.weighTickets.find(t => t.id === ticketId) : effective.get(preferred) || w.weighTickets.find(t => t.id === d?.weighTicketId);
     const reports = [...new Map([...(task?.reports || []), ...(task?.reportLinks.map(l => l.inspection) || []), ...(task?.basisInspection ? [task.basisInspection] : [])].filter(r => !r.deletedAt && r.status === 'CONFIRMED').map(r => [r.id, r])).values()];
-    const preferredReports = reports.filter(r => r.evidenceStage === preferred);
-    const defaultReport = preferredReports.find(r => r.id === task?.basisInspectionId) || (preferredReports.length === 1 ? preferredReports[0] : undefined) || reports.find(r => r.id === d?.qualityInspectionId);
-    const report = reportChoices.has(row.id) ? reports.find(r => r.id === reportChoices.get(row.id)) : defaultReport;
+    // 销售默认采用交付确认时的磅单与报告（销售磅单），可改选并走既有审批；采购不能改选，固定跟随销售结算。
+    const deliveryTicket = w.weighTickets.find(t => t.id === d?.weighTicketId);
+    const deliveryReport = reports.find(r => r.id === d?.qualityInspectionId);
+    let ticket: typeof w.weighTickets[number] | undefined, report: typeof reports[number] | undefined, defaultReport: typeof reports[number] | undefined;
+    if (purchase) {
+      ticket = w.weighTickets.find(t => t.id === (saleSnapshot?.weighTicketId || d?.weighTicketId));
+      report = reports.find(r => r.id === (saleSnapshot?.reportId || d?.qualityInspectionId));
+      defaultReport = report;
+    } else {
+      const ticketId = ticketChoices.get(row.id);
+      ticket = ticketId ? w.weighTickets.find(t => t.id === ticketId) : deliveryTicket || effective.get('RECEIVING');
+      defaultReport = deliveryReport || reports.find(r => r.id === task?.basisInspectionId);
+      report = reportChoices.has(row.id) ? reports.find(r => r.id === reportChoices.get(row.id)) : defaultReport;
+    }
     const gradeTier = contract.pricingType === 'GRADE_TIER';
     const gradeRules = purchase ? item?.priceRulesSnapshot : item?.salesPriceRulesSnapshot;
     const basis = gradeTier ? gradeRules?.quantityBasis || item?.pricingQuantityBasis || d?.pricingQuantityBasis : item?.pricingQuantityBasis || d?.pricingQuantityBasis;
     const moisture = readMeasuredPct(report?.indicators || [], 'MOISTURE');
     const net = ticket?.netWeight == null ? null : Number(ticket.netWeight);
     const dry = net == null || moisture == null || moisture < 0 || moisture >= 100 ? null : new Prisma.Decimal(net).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(moisture).div(100))).toDecimalPlaces(3).toNumber();
-    const total = basis === 'DRY_MATTER' ? dry || 0 : net || 0;
+    // 采购数量取同车销售结算行数量（已含销售逐车协商或调整）；尚无销售结算时仅按销售默认依据试算。
+    const salesAdjustment = sale?.settlement.lines.map(line => (line.sourceSnapshot as any)?.settlementAdjustment).find(Boolean);
+    const followAdjustment = sale && salesAdjustment?.mode === 'QUANTITY' ? {
+      settlementId: sale.settlement.id, settlementNo: sale.settlement.settlementNo, finalQuantity: Number(salesAdjustment.final.quantity),
+      waybillLineItemIds: sale.settlement.lines.map(line => line.waybillLineItemId).filter(Boolean) as string[],
+    } : null;
+    const total = sale ? Number(sale.quantity) : basis === 'DRY_MATTER' ? dry || 0 : net || 0;
     const used = row.settlementLines.reduce((a, l) => a.plus(l.quantity || 0), new Prisma.Decimal(0)).toNumber();
     const remaining = Math.max(0, new Prisma.Decimal(total).minus(used).toDecimalPlaces(3).toNumber());
-    const negotiable = negotiableGoodsQuantity(total, basis, effective, reports, moisture);
+    const negotiable = purchase
+      ? (followAdjustment ? Number(saleSnapshot?.lineAdjustment?.quantityCeiling ?? total) : total)
+      : negotiableGoodsQuantity(total, basis, effective, reports, moisture);
     const grade = gradeTier && gradeRules ? evaluateGradePrice(gradeRules, gradeRules.selectedSpec, remaining, report?.indicators || []) : null;
     const evaluation = report && item?.qualityRulesSnapshot ? evaluateContractQualityRules(item.qualityRulesSnapshot, report.indicators) : null;
     const defaultAccepted = task?.basisInspectionId === report?.id && ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(task?.qualityDisposition || '');
@@ -74,12 +107,18 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
     if (!item) reasons.push('无法匹配合同物料行');
     if (row.settlementLines.length) reasons.push('该运单本方向已创建结算单（含草稿），请先作废原结算单再重做');
     if (remaining <= 0) reasons.push('没有剩余可结算数量');
+    if (purchase && sale && saleSnapshot?.pricingQuantityBasis && basis !== saleSnapshot.pricingQuantityBasis) reasons.push('采购与销售价格条款的计价重量口径不一致，无法保证进出数量一致，请先核对合同');
+    // 跟随原因单列：仅缺销售审批时允许预览，不允许保存。
+    const followReasons: string[] = [];
+    if (purchase && !sale) followReasons.push(`${FOLLOW_SALES_PENDING}（本车尚未编制销售结算，以下数量仅按销售默认依据试算）`);
+    else if (purchase && !salesApproved) followReasons.push(`${FOLLOW_SALES_PENDING}（销售结算 ${sale!.settlement.settlementNo} 当前${SETTLEMENT_STATUS_LABEL[sale!.settlement.status] || sale!.settlement.status}）`);
     const snapshot = { directDeliveryId: d?.id, directVersion: d?.version, direction, contractLineItemId: item?.id, contractRules: item?.qualityRulesSnapshot,
       gradeRules, weighTicketId: ticket?.id, ticketUpdatedAt: ticket?.updatedAt, reportId: report?.id, reportUpdatedAt: report?.updatedAt,
-      decisionVersion: task?.decisionVersion, quantityBasis: basis, totalQuantity: total, unitPrice, taxRatePct: item?.taxRatePct?.toString(), deduction, recovery, disposition };
+      decisionVersion: task?.decisionVersion, quantityBasis: basis, totalQuantity: total, unitPrice, taxRatePct: item?.taxRatePct?.toString(), deduction, recovery, disposition,
+      ...(purchase ? { followSalesLineId: sale?.id || null, followSalesQuantity: sale ? String(sale.quantity) : null, salesApproved, followAdjustment } : {}) };
     const signature = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
-    const deliveryTicket = w.weighTickets.find(t => t.id === d?.weighTicketId);
-    const inventoryReport = reports.find(r => r.id === d?.qualityInspectionId);
+    const inventoryReport = purchase ? report : deliveryReport;
+    const allReasons = [...reasons, ...followReasons];
     return {
       id: row.id, waybillLineItemId: row.id, directDeliveryId: d?.id, directVersion: d?.version, direct: true,
       waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo, waybillStatus: w.status,
@@ -89,19 +128,22 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
       settlementOccupied: row.settlementLines.length > 0, occupiedSettlements: row.settlementLines.map(l => l.settlement),
       unitPrice, contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct), pricingType: contract.pricingType, gradePrice: grade,
       weighTicketId: ticket?.id, ticketNo: ticket?.ticketNo, settlementTicketNo: ticket?.ticketNo, weightSelectionId: w.weightSelections.find(s => s.purpose === ticket?.weighingStage && s.weighTicketId === ticket?.id)?.id,
-      settlementTicketScoped: Boolean(ticketId), settlementWeightSource: 'DIRECT_SELECTED', settlementSelectionId: null,
+      settlementTicketScoped: !purchase && ticketChoices.has(row.id), settlementWeightSource: purchase ? 'FOLLOW_SALES' : 'DIRECT_SELECTED', settlementSelectionId: null,
+      followSales: purchase, followSalesSettlementId: sale?.settlement.id || null, followSalesSettlementNo: sale?.settlement.settlementNo || null,
+      followSalesStatus: sale?.settlement.status || null, followAdjustment, previewOnly: purchase && followReasons.length > 0 && reasons.length === 0,
       inventoryTicketNo: deliveryTicket?.ticketNo, inventoryNetWeight: deliveryTicket?.netWeight == null ? null : Number(deliveryTicket.netWeight),
-      customerTicketNo: deliveryTicket?.ticketNo, customerNetWeight: d ? Number(d.quantity) : null, shippingNetWeight: effective.get('SHIPPING')?.netWeight == null ? null : Number(effective.get('SHIPPING')!.netWeight),
+      customerTicketNo: purchase ? ticket?.ticketNo : deliveryTicket?.ticketNo, customerNetWeight: d ? Number(d.quantity) : null, shippingNetWeight: effective.get('SHIPPING')?.netWeight == null ? null : Number(effective.get('SHIPPING')!.netWeight),
       grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight), netWeight: net, measuredMoisturePct: moisture, dryQuantity: dry,
       pricingQuantityBasis: basis, salesCompletionConfirmedAt: d?.confirmedAt, inboundDate: d?.confirmedAt, inboundPostedAt: d?.confirmedAt,
       inboundNo: d?.documents.find(doc => doc.direction === 'PURCHASE')?.documentNo, outboundNo: d?.documents.find(doc => doc.direction === 'SALES')?.documentNo,
       qualityTaskId: task?.id, taskNo: task?.taskNo, reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo,
       inventoryReportId: inventoryReport?.id, inventoryReportNo: inventoryReport?.reportNo || inventoryReport?.inspectionNo, defaultReportId: defaultReport?.id,
-      availableWeighTickets: w.weighTickets.map(t => ({ id: t.id, ticketNo: t.ticketNo, weighingStage: t.weighingStage, netWeight: Number(t.netWeight), isSelectable: effective.get(t.weighingStage)?.id === t.id })),
-      availableQualityReports: reports.map(r => ({ id: r.id, reportNo: r.reportNo || r.inspectionNo, evidenceStage: r.evidenceStage, institutionName: r.institutionName, conclusion: r.conclusion, measuredGradePct: readMeasuredPct(r.indicators, 'GRADE'), measuredMoisturePct: readMeasuredPct(r.indicators, 'MOISTURE'), measuredRecoveryPct: readMeasuredPct(r.indicators, 'RECOVERY') })),
+      // 采购跟随销售：候选只保留销售采用的磅单和报告，页面无法改选。
+      availableWeighTickets: w.weighTickets.filter(t => !purchase || t.id === ticket?.id).map(t => ({ id: t.id, ticketNo: t.ticketNo, weighingStage: t.weighingStage, netWeight: Number(t.netWeight), isSelectable: effective.get(t.weighingStage)?.id === t.id })),
+      availableQualityReports: reports.filter(r => !purchase || r.id === report?.id).map(r => ({ id: r.id, reportNo: r.reportNo || r.inspectionNo, evidenceStage: r.evidenceStage, institutionName: r.institutionName, conclusion: r.conclusion, measuredGradePct: readMeasuredPct(r.indicators, 'GRADE'), measuredMoisturePct: readMeasuredPct(r.indicators, 'MOISTURE'), measuredRecoveryPct: readMeasuredPct(r.indicators, 'RECOVERY') })),
       qualityDisposition: disposition, qualityReady: !reasons.some(r => /质|报告|水分/.test(r)), qualityAcceptance: task?.qualityAcceptanceSnapshot, evaluation, decisionVersion: task?.decisionVersion,
       deductionPerTon: deduction, recoveryDeductionPerTon: recovery, inboundStatuses: d ? ['POSTED'] : [], signature, priorSignature: signature, legacySignature: signature, basis: snapshot,
-      available: reasons.length === 0, reasons, ...goodsAmounts(remaining, unitPrice, deduction + recovery),
+      available: allReasons.length === 0, reasons: allReasons, ...goodsAmounts(remaining, unitPrice, deduction + recovery),
     };
   });
 }

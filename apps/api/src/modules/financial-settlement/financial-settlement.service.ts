@@ -9,6 +9,7 @@ import {
 } from './dto/financial-settlement.dto';
 import { PurchaseSettlementBasis, snapshotJson, signature } from './purchase-settlement-basis';
 import { SalesSettlementBasis } from './sales-settlement-basis';
+import { FOLLOW_SALES_PENDING } from './direct-settlement-sources';
 import { PurchasePaymentContext } from './purchase-payment-context';
 import { LogisticsPaymentContext } from './logistics-payment-context';
 import { goodsAmounts, requestCommitment, ACTIVE_PAYMENT_REQUEST_STATUSES, confirmedFinalSettlementAmount } from './payment-balance';
@@ -386,7 +387,7 @@ export class FinancialSettlementService {
         buyer: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
         signingPartner: { select: { id: true, code: true, name: true, bankAccounts: { where: { status: 'ACTIVE' }, orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }], select: BANK_ACCOUNT_SELECT } } },
         businessUnit: { select: { id: true, code: true, name: true } },
-        lineItems: { select: { quantity: true, unit: true, totalPrice: true, salesTotalPrice: true } },
+        lineItems: { select: { quantity: true, unit: true, totalPrice: true, salesTotalPrice: true, taxRatePct: true } },
       },
     });
     if (!contract) throw new NotFoundException('合同不存在或不在当前数据权限范围内');
@@ -649,9 +650,21 @@ export class FinancialSettlementService {
     const reportChoices = new Map(dto.lines.filter(line => line.qualityReportId).map(line => [line.waybillLineItemId!, line.qualityReportId!]));
     const ticketChoices = new Map(dto.lines.filter(line => line.weighTicketId).map(line => [line.waybillLineItemId!, line.weighTicketId!]));
     const sources = await new PurchaseSettlementBasis(this.prisma, this.accessControl).sources(contract.id, userId, 'settlement.create', existingId, reportChoices, ticketChoices);
+    const followed: any[] = [];
     const lines = dto.lines.map(input => {
       const source = sources.find(s => s.id === input.waybillLineItemId && s.orderId === input.orderId);
-      if (!source || !source.available) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于该批次'}`);
+      // 直拨采购跟随销售：销售结算未审批时只允许预览试算，不能保存。
+      if (!source || (!source.available && !(preview && (source as any).previewOnly))) throw new BadRequestException(`${source?.waybillNo || '货物'}不可结算：${source?.reasons.join('；') || '来源不存在或不属于该批次'}`);
+      if ((source as any).followSales) {
+        followed.push(source);
+        if (input.weighTicketId && input.weighTicketId !== source.weighTicketId) throw new BadRequestException(`${source.waybillNo}直拨采购结算须跟随销售结算采用的磅单，不能改选`);
+        if (input.qualityReportId && input.qualityReportId !== source.reportId) throw new BadRequestException(`${source.waybillNo}直拨采购结算须跟随销售结算采用的检测报告，不能改选`);
+        if (input.negotiatedQuantity) throw new BadRequestException(`${source.waybillNo}直拨采购结算数量跟随销售结算，不能单独协商数量`);
+        if (input.quantity != null && !new Prisma.Decimal(input.quantity).eq(source.remainingQuantity)) {
+          throw new BadRequestException(`${source.waybillNo}直拨采购结算数量须与销售结算一致（${source.remainingQuantity} 吨），金额按采购价格另行计算`);
+        }
+        input = { ...input, quantity: source.remainingQuantity };
+      }
       const taxRatePct = gradeTier ? source.contractTaxRatePct ?? dto.taxRatePct : null;
       if (gradeTier && taxRatePct == null) throw new BadRequestException('存量品位分档合同未记录税率，请填写并确认本次结算适用税率');
       if (gradeTier && source.contractTaxRatePct != null && dto.taxRatePct != null && Number(dto.taxRatePct) !== Number(source.contractTaxRatePct)) {
@@ -681,16 +694,38 @@ export class FinancialSettlementService {
         quantity: amounts.quantity, grossAmount: amounts.grossAmount, qualityDeductionAmount: amounts.qualityDeductionAmount,
         adjustmentAmount: amounts.adjustmentAmount, totalAmount: amounts.totalAmount, remarks: input.remarks?.trim() };
     });
+    if (followed.length) this.assertDirectPurchaseFollowsSales(dto, followed);
     const settlementAdjustment = goodsSettlementSummary(lines, dto.settlementAdjustment);
     if (lines[0]) lines[0].sourceSnapshot = snapshotJson({ ...(lines[0].sourceSnapshot as object), settlementAdjustment });
     const quantityReview = await this.prepareQuantityReview(dto, contract, lines, userId, preview, existingId);
+    const followPending = followed.filter(source => source.previewOnly).map(source => source.waybillNo);
+    const saveBlock = followPending.length ? { saveBlocked: true, saveBlockedReason: `${FOLLOW_SALES_PENDING}：${followPending.join('、')}。当前仅为预览，数量以销售结算审批结果为准。` } : {};
     const data = { direction: 'PAYABLE', sourceType: 'CONTRACT', contractId: contract.id, businessUnitId: contract.businessUnitId,
       legalEntityPartnerId: contract.signingPartnerId, counterpartyId, settlementScope: dto.settlementScope,
       sourceNo: [...new Set(lines.map(l => l.orderNo))].join('、'), ...settlementAdjustment.final, unit: 'TON',
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null, remarks: dto.remarks?.trim(), createdBy: userId };
-    if (preview) return { ...data, lines, quantityReview, settlementAdjustment };
+    if (preview) return { ...data, lines, quantityReview, settlementAdjustment, ...saveBlock };
     if (existingId) return this.prisma.financialSettlement.update({ where: { id: existingId }, data: { ...data, createdBy: undefined, lines: { deleteMany: {}, create: lines } }, include: SETTLEMENT_INCLUDE });
     return this.prisma.financialSettlement.create({ data: { ...data, settlementNo: await this.nextNo('YF', 'settlement'), lines: { create: lines } }, include: SETTLEMENT_INCLUDE });
+  }
+
+  /** 直拨采购跟随销售：不能单独调整数量；销售做过整单数量调整的，采购须包含相同车辆并按相同最终数量调整，金额调整各自处理。 */
+  private assertDirectPurchaseFollowsSales(dto: CreateFinancialSettlementDto, followed: any[]) {
+    const mode = dto.settlementAdjustment?.mode || 'NONE';
+    const adjustments = [...new Map(followed.filter(source => source.followAdjustment).map(source => [source.followAdjustment.settlementId, source.followAdjustment])).values()];
+    if (adjustments.length > 1) throw new BadRequestException('所选车辆分属多张做过整单数量调整的销售结算，请按销售结算分别编制采购结算');
+    if (!adjustments.length) {
+      if (mode === 'QUANTITY') throw new BadRequestException('直拨采购结算数量跟随销售结算，不能单独调整总干基');
+      return;
+    }
+    const adjustment = adjustments[0];
+    const chosen = new Set(dto.lines!.map(line => line.waybillLineItemId));
+    if (adjustment.waybillLineItemIds.length !== chosen.size || adjustment.waybillLineItemIds.some((id: string) => !chosen.has(id))) {
+      throw new BadRequestException(`销售结算 ${adjustment.settlementNo} 做过整单数量调整，采购结算须选择与其完全相同的车辆`);
+    }
+    if (mode !== 'QUANTITY' || !new Prisma.Decimal(dto.settlementAdjustment?.quantity ?? 0).eq(adjustment.finalQuantity)) {
+      throw new BadRequestException(`销售结算 ${adjustment.settlementNo} 整单数量调整为 ${adjustment.finalQuantity} 吨，采购结算须按相同数量调整（金额按采购价格计算）`);
+    }
   }
 
   private async createSalesGoodsSettlement(dto: CreateFinancialSettlementDto, contract: any, counterpartyId: string, userId: string, preview = false, existingId?: string): Promise<any> {
@@ -968,6 +1003,13 @@ export class FinancialSettlementService {
     if (Number(item.settledAmount) > 0 || item.allocations.some((entry) => !entry.reversedAt)) throw new BadRequestException('已有有效核销记录，必须先撤销核销后才能作废');
     const linked = await this.prisma.paymentRequest.count({ where: { settlementId: id, status: { in: ACTIVE_PAYMENT_REQUEST_STATUSES } } });
     if (linked) throw new BadRequestException('结算单有关联有效付款申请，请先处理付款申请及付款记录');
+    if (item.direction === 'RECEIVABLE') {
+      // 直拨采购结算跟随本销售结算：先作废采购结算，避免采购失去数量依据。
+      const waybillLineIds = item.lines.map(line => line.waybillLineItemId).filter(Boolean) as string[];
+      const follower = waybillLineIds.length ? await this.prisma.financialSettlementLine.findFirst({ where: { waybillLineItemId: { in: waybillLineIds }, directDeliveryId: { not: null },
+        settlement: { direction: 'PAYABLE', deletedAt: null, status: { not: 'VOIDED' } } }, select: { settlement: { select: { settlementNo: true } } } }) : null;
+      if (follower) throw new BadRequestException(`直拨采购结算 ${follower.settlement.settlementNo} 跟随本销售结算，请先作废该采购结算`);
+    }
     // 发票本身仍然有效：结算单作废时撤销其收到的分摊，发票金额回到待分摊。
     await this.prisma.invoiceAllocation.updateMany({ where: { settlementId: id, reversedAt: null }, data: { reversedAt: new Date(), reversedBy: userId, reversalReason: '结算单作废，自动撤销发票分摊' } });
     await this.prisma.financialSettlementApproval.updateMany({ where: { settlementId: id, status: { in: ['PENDING', 'WAITING'] } }, data: { status: 'CANCELLED' } });

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
-import { CreateDirectExecutionDto, ConfirmDirectDeliveryDto, ConvertDirectDeliveryDto } from './bilateral-direct.dto';
+import { CreateDirectExecutionDto, ConfirmDirectDeliveryDto, ConvertDirectDeliveryDto, CROSS_SIDE_REASONS } from './bilateral-direct.dto';
 import { directQuantity } from './direct-quantity';
 
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
@@ -239,7 +239,7 @@ export class BilateralDirectService {
     });
   }
 
-  private async prepare(tx: Prisma.TransactionClient, waybillId: string, dto: ConfirmDirectDeliveryDto) {
+  private async prepare(tx: Prisma.TransactionClient, waybillId: string, dto: ConfirmDirectDeliveryDto, requireCrossSideReason = true) {
     const w = await this.load(tx, waybillId);
     if (w.status !== 'SIGNED') throw new BadRequestException('请先完成客户签收');
     if (!['APPROVED', 'EXECUTING'].includes(w.dispatchNotice.order.contract.status)) throw new BadRequestException('合同已结束或终止，不能确认交付');
@@ -253,6 +253,10 @@ export class BilateralDirectService {
     const task = w.qualityTask;
     if (!task || task.deletedAt || task.status !== 'COMPLETED' || task.basisInspectionId !== dto.qualityReportId || task.basisInspection?.status !== 'CONFIRMED' || task.basisInspection.deletedAt) throw new BadRequestException('请在质检任务中采用一份有效报告并完成最终判定，发货侧或收货侧均可');
     if (!['SHIPPING', 'RECEIVING'].includes(task.basisInspection.evidenceStage)) throw new BadRequestException('请标明采用报告的发货/收货环节');
+    // 默认同侧；跨侧（磅单协商、只有一方出质检单）允许，但须选择原因并留痕。
+    const crossSide = ticket.weighingStage !== task.basisInspection.evidenceStage;
+    const crossSideReason = crossSide && dto.crossSideReason && dto.crossSideReason in CROSS_SIDE_REASONS ? dto.crossSideReason : null;
+    if (crossSide && requireCrossSideReason && !crossSideReason) throw new BadRequestException('交付磅单与水分报告来自不同环节，请选择原因：磅单协商或只有一方出质检单');
     if (!dto.remarks.trim()) throw new BadRequestException('请填写交付依据及差异处理说明');
     if (task.finalConclusion !== 'PASS' && !dto.acceptQualityException) throw new BadRequestException('质量结果存在异常，请核对后勾选确认异常接收，并填写处理说明');
     const source = w.dispatchNotice.order.contract.lineItems.find(l => l.id === w.lineItems[0].dispatchNoticeLineItem.orderLineItem.contractLineItemId);
@@ -265,12 +269,14 @@ export class BilateralDirectService {
       reportId: task.basisInspection.id, reportNo: task.basisInspection.reportNo || task.basisInspection.inspectionNo, reportUpdatedAt: task.basisInspection.updatedAt, evidenceStage: task.basisInspection.evidenceStage,
       indicators: task.basisInspection.indicators, decisionVersion: task.decisionVersion, finalConclusion: task.finalConclusion, acceptQualityException: Boolean(dto.acceptQualityException),
       quantity: qty.quantity.toString(), pricingQuantity: qty.pricingQuantity.toString(), pricingQuantityBasis: basis, measuredMoisturePct: qty.measuredMoisturePct,
+      // 仅跨侧时写入，保持同侧快照与历史版本一致。
+      ...(crossSide ? { crossSide: true, crossSideReason } : {}),
     }) };
   }
 
   async preview(waybillId: string, dto: ConfirmDirectDeliveryDto, userId: string) {
     await this.scope(userId, waybillId, 'inventory.manage');
-    const { w, snapshot } = await this.prepare(this.prisma, waybillId, dto);
+    const { w, snapshot } = await this.prepare(this.prisma, waybillId, dto, false);
     return { snapshot, procurementQuantityEqualsSales: true, createsInventory: false, activeDelivery: w.directDeliveries.find(d => active.includes(d.status)) || null };
   }
 
@@ -315,7 +321,7 @@ export class BilateralDirectService {
       const d = w.directDeliveries.find(d => d.status === 'PENDING_REVIEW');
       if (!d) throw new BadRequestException('没有待复核的直拨交付');
       if (approved) {
-        const result = await this.prepare(tx, waybillId, { weighTicketId: d.weighTicketId, qualityReportId: d.qualityInspectionId, remarks: d.remarks, acceptQualityException: Boolean((d.snapshot as any).acceptQualityException) });
+        const result = await this.prepare(tx, waybillId, { weighTicketId: d.weighTicketId, qualityReportId: d.qualityInspectionId, remarks: d.remarks, acceptQualityException: Boolean((d.snapshot as any).acceptQualityException), crossSideReason: (d.snapshot as any).crossSideReason || undefined }, false);
         if (stable(result.snapshot) !== stable(d.snapshot)) throw new BadRequestException('采用依据已变化，请退回修改并重新提交复核');
         await this.post(tx, d, w, userId);
       }
