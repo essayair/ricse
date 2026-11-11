@@ -567,7 +567,7 @@ export default function ContractDetailPage() {
   const bilateralProfit = bilateralSalesAmount - Number(c.totalAmount || 0);
   const cfg = STATUS_MAP[c.status] || { label: c.status };
   const actions: ContractAction[] = [
-    ...(availableActions?.canSubmit ? [{ next: 'PENDING_APPROVAL', label: '提交审批', variant: 'default' as const }] : []),
+    ...(availableActions?.canSubmit ? [{ next: 'PENDING_APPROVAL', label: c.status === 'REJECTED' ? '重新提交审批' : '提交审批', variant: 'default' as const }] : []),
     ...(availableActions?.canApprove ? [
       { next: 'APPROVED', label: '审核通过', variant: 'default' as const, needsComment: true },
       { next: 'REJECTED', label: '驳回', variant: 'destructive' as const, needsComment: true },

@@ -1589,7 +1589,7 @@ export class ContractService {
       PENDING_APPROVAL: ['APPROVED', 'REJECTED', 'DRAFT', 'VOIDED'],
       APPROVED:         ['EXECUTING', 'TERMINATED'],
       EXECUTING:        ['COMPLETED', 'TERMINATED'],
-      REJECTED:         ['DRAFT', 'VOIDED'],
+      REJECTED:         ['DRAFT', 'PENDING_APPROVAL', 'VOIDED'],
       COMPLETED:        ['CLOSED', 'TERMINATED'],
       TERMINATED:       ['VOIDED'],
       CLOSED:           [],

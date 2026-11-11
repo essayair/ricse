@@ -339,6 +339,18 @@ describe('ContractService', () => {
   });
 
   describe('update', () => {
+    it('已驳回合同可在原单据编辑保存，不另建合同、不抹去驳回状态和审批记录', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'REJECTED' } as any);
+      prisma.contract.update.mockResolvedValue({ ...mockContract, title: '驳回后修订', status: 'REJECTED' } as any);
+      accessControl.getBusinessUnitOptions.mockResolvedValue([{ id: 'bu-1', isDefault: true }] as any);
+      const result = await service.update('test-id', { title: '驳回后修订' }, 'user-1');
+      expect(result).toMatchObject({ id: 'test-id', status: 'REJECTED', title: '驳回后修订' });
+      expect(prisma.contract.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'test-id' }, data: expect.objectContaining({ title: '驳回后修订' }) }));
+      expect(prisma.contract.update.mock.calls[0][0]?.data).not.toHaveProperty('status');
+      expect(prisma.contract.create).not.toHaveBeenCalled();
+      expect(prisma.approval.deleteMany).not.toHaveBeenCalled();
+    });
+
     it('编辑草稿时通过关联字段保存合同主体和交易对手方', async () => {
       prisma.contract.findFirst.mockResolvedValue(mockContract as any);
       prisma.contract.update.mockResolvedValue(mockContract as any);
@@ -925,10 +937,11 @@ describe('ContractService', () => {
     };
 
     // 合法路径
-    it.each(['PURCHASE', 'SALES', 'BILATERAL'])('%s 合同已有附件时提交审批必须实际查询附件，不能把已上传文件误判为缺失', async (type) => {
-      await setupContract('DRAFT');
+    it.each(['PURCHASE', 'SALES', 'BILATERAL'].flatMap(type => ['DRAFT', 'REJECTED'].map(status => [type, status])))('%s 合同从 %s 提交审批正确读取附件并进入审批', async (type, status) => {
+      await setupContract(status);
       const stored = {
         ...mockContract,
+        status,
         departmentId: 'dept-business',
         type,
         buyerId: type === 'BILATERAL' ? 'customer-1' : null,
@@ -949,9 +962,9 @@ describe('ContractService', () => {
       expect(prisma.approval.createMany).toHaveBeenCalled();
     });
 
-    it('直接提交无附件合同仍应拦截，不创建审批任务或变更合同状态', async () => {
-      await setupContract('DRAFT');
-      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, attachments: [] } as any);
+    it.each(['DRAFT', 'REJECTED'])('%s 无附件仍应拦截，不创建审批任务或变更合同状态', async (status) => {
+      await setupContract(status);
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status, attachments: [] } as any);
       await expect(service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, adminUser))
         .rejects.toThrow('请至少上传一份合同附件后再提交审批');
       expect(prisma.approval.createMany).not.toHaveBeenCalled();
@@ -1208,6 +1221,20 @@ describe('ContractService', () => {
       await setupContract('REJECTED');
       prisma.contract.update.mockResolvedValue({ ...mockContract, status: 'DRAFT' } as any);
       await expect(service.updateStatus('test-id', { status: 'DRAFT' }, adminUser)).resolves.toBeDefined();
+    });
+
+    it('REJECTED → PENDING_APPROVAL 保留旧轮记录，新轮从首节点开始', async () => {
+      await setupContract('REJECTED');
+      prisma.approval.aggregate.mockResolvedValue({ _max: { round: 2 } } as any);
+      await service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, adminUser);
+      const tasks = prisma.approval.createMany.mock.calls[0][0]?.data as Array<{ round: number; step: number; status: string }>;
+      expect(tasks.length).toBeGreaterThan(1);
+      expect(tasks.every(task => task.round === 3)).toBe(true);
+      expect(tasks.filter(task => task.step === 1).every(task => task.status === 'PENDING')).toBe(true);
+      expect(tasks.filter(task => task.step > 1).every(task => task.status === 'WAITING')).toBe(true);
+      expect(prisma.approval.updateMany).toHaveBeenCalledWith({ where: { contractId: 'test-id', status: { in: ['PENDING', 'WAITING'] } }, data: { status: 'CANCELLED' } });
+      expect(prisma.approval.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.contract.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'test-id', status: 'REJECTED', deletedAt: null }, data: expect.objectContaining({ status: 'PENDING_APPROVAL' }) }));
     });
 
     it('APPROVED → EXECUTING', async () => {
