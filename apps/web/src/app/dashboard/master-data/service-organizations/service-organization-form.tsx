@@ -18,6 +18,7 @@ export const ORGANIZATION_TYPES = {
 interface Partner { id: string; code: string; name: string }
 interface Organization {
   id: string; partnerId: string; organizationType: keyof typeof ORGANIZATION_TYPES;
+  name?: string;
   partner?: Partner;
   licenseNo?: string | null; licenseExpiry?: string | null; qualificationNo?: string | null;
   cmaNo?: string | null; cnasNo?: string | null; serviceScope?: string | null; serviceRegions?: string | null;
@@ -29,6 +30,7 @@ interface Organization {
 }
 
 const empty = {
+  name: '',
   partnerId: '', licenseNo: '', licenseExpiry: '', qualificationNo: '', cmaNo: '', cnasNo: '',
   serviceScope: '', serviceRegions: '', cargoTypes: '', supportedMaterials: '', supportedItems: '',
   operationType: 'WAREHOUSE_PORT', storageCapacity: '', dispatcherName: '', dispatcherPhone: '',
@@ -62,6 +64,7 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
         // 只回填表单自身字段；接口返回的 id、时间戳、关联对象等不能随保存请求回传。
         const loaded: Record<string, unknown> = {
           ...item,
+          name: item.name || item.partner?.name || '',
           licenseExpiry: item.licenseExpiry?.slice(0, 10) || '',
           storageCapacity: item.storageCapacity || '',
           reportCycleDays: item.reportCycleDays?.toString() || '',
@@ -80,10 +83,12 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
   const back = () => router.push(`/dashboard/master-data?tab=service-organizations&type=${organizationType}`);
 
   const submit = async () => {
+    if (!form.name.trim()) return alert('请填写服务商名称');
     if (!form.partnerId) return alert('请选择关联合作伙伴');
     setLoading(true);
     const payload = {
       ...form,
+      name: form.name.trim(),
       partnerId: form.partnerId,
       organizationType,
       transportModes,
@@ -107,15 +112,19 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
   return <div className="mx-auto max-w-5xl space-y-6">
     <div>
       <h1 className="text-2xl font-bold">{id ? `编辑${title}` : `新建${title}`}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">专业档案关联统一合作伙伴，业务单据使用合作伙伴 ID 并保留名称快照。</p>
+      <p className="mt-1 text-sm text-muted-foreground">服务商名称用于业务识别，关联合作伙伴用于主体、开票及收付款。</p>
     </div>
 
     <Card className="space-y-5 p-6">
       <h2 className="font-semibold">主体与状态</h2>
       <div className="grid gap-4 md:grid-cols-2">
+        <Field label="服务商名称 *"><Input value={form.name} maxLength={200} required onChange={e => set('name', e.target.value)} placeholder="请输入具体服务商名称，可与合作伙伴同名" /></Field>
         <Field label="关联合作伙伴（供应商）*">
           {!id && <Input aria-label="搜索关联合作伙伴" value={partnerSearch} onChange={event => setPartnerSearch(event.target.value)} placeholder="按合作伙伴名称或编码搜索" disabled={partnersLoading} />}
-          <select aria-label="关联合作伙伴（供应商）" disabled={Boolean(id) || partnersLoading || Boolean(partnersError)} value={form.partnerId} onChange={e => set('partnerId', e.target.value)} className={selectClass}>
+          <select aria-label="关联合作伙伴（供应商）" disabled={Boolean(id) || partnersLoading || Boolean(partnersError)} value={form.partnerId} onChange={e => {
+            const partnerId = e.target.value;
+            setForm(current => ({ ...current, partnerId, name: !current.name.trim() || current.name === partners.find(p => p.id === current.partnerId)?.name ? partners.find(p => p.id === partnerId)?.name || '' : current.name }));
+          }} className={selectClass}>
             <option value="">{partnersLoading ? '正在加载合作伙伴…' : '请选择'}</option>
             {visiblePartners.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
           </select>

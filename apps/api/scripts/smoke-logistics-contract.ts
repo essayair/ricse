@@ -30,7 +30,7 @@ async function main() {
       const owner = await tx.partner.create({ data: { code: tag + '_OWNER', name: tag + '货主A', isInternal: true, roles: ['SUPPLIER', 'CUSTOMER'] } });
       const payer = await tx.partner.create({ data: { code: tag + '_PAYER', name: tag + '代付B', isInternal: true, roles: ['SUPPLIER', 'CUSTOMER'] } });
       const carrier = await tx.partner.create({ data: { code: tag + '_CARRIER', name: tag + '物流公司', roles: ['SUPPLIER'] } });
-      await tx.serviceOrganization.create({ data: { code: tag + '_SO', partnerId: carrier.id, organizationType: 'LOGISTICS_CARRIER', transportModes: ['ROAD'] } });
+      await tx.serviceOrganization.create({ data: { code: tag + '_SO', name: carrier.name, partnerId: carrier.id, organizationType: 'LOGISTICS_CARRIER', transportModes: ['ROAD'] } });
       const lc = await contracts.create({ title: tag + '物流合同', externalContractNo: '纸质合同001', signingPartnerId: owner.id, carrierPartnerId: carrier.id,
         signedAt: '2026-10-01', allBusinessUnits: true, settlementBasis: 'NET_WEIGHT', priceTerms: [{ unitPrice: 100, effectiveAt: '2026-10-01' }] }, user.id);
       await assert.rejects(() => contracts.updateStatus(lc.id, { status: 'ACTIVE' }, user.id), /合同附件/);

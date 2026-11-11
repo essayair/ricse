@@ -48,11 +48,51 @@ describe('ServiceOrganizationService', () => {
     expect(result.code).toBe('CY000001');
     expect(prisma.serviceOrganization.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
+        name: '物流公司',
         partnerId: 'partner-1',
         organizationType: 'LOGISTICS_CARRIER',
         transportModes: ['ROAD'],
       }),
     }));
+  });
+
+  it('服务商可独立命名，同合作伙伴名称也合法', async () => {
+    prisma.partner.findFirst.mockResolvedValue({ id: 'partner-1', name: '法定公司', roles: ['SUPPLIER'], status: 'ACTIVE' } as any);
+    prisma.serviceOrganization.findFirst.mockResolvedValue(null);
+    prisma.serviceOrganization.count.mockResolvedValue(0);
+    for (const name of ['  龙游检测中心  ', '法定公司']) {
+      await service.create({ name, partnerId: 'partner-1', organizationType: 'QUALITY_INSTITUTION' });
+      expect(prisma.serviceOrganization.create).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ name: name.trim(), partnerId: 'partner-1' }) }));
+    }
+    expect(prisma.partner.update).not.toHaveBeenCalled();
+  });
+
+  it('显式空白、空值及超长名称不能保存', async () => {
+    prisma.partner.findFirst.mockResolvedValue({ id: 'partner-1', name: '法定公司', roles: ['SUPPLIER'], status: 'ACTIVE' } as any);
+    prisma.serviceOrganization.findFirst.mockResolvedValue(null);
+    for (const name of ['', '  ', null, '名'.repeat(201)]) {
+      await expect(service.create({ name, partnerId: 'partner-1', organizationType: 'QUALITY_INSTITUTION' } as any)).rejects.toThrow(/服务商名称/);
+    }
+    expect(prisma.serviceOrganization.create).not.toHaveBeenCalled();
+  });
+
+  it('修改名称不修改合作伙伴；省略名称的状态更新保留原名称', async () => {
+    const existing = { id: 'service-1', name: '检测中心', code: 'ZJ000001', partnerId: 'partner-1', organizationType: 'QUALITY_INSTITUTION', partner: { name: '法定公司' } };
+    prisma.serviceOrganization.findFirst.mockResolvedValue(existing as any);
+    await service.update('service-1', { name: '新检测中心' });
+    expect(prisma.serviceOrganization.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ name: '新检测中心' }) }));
+    await service.update('service-1', { status: 'INACTIVE' });
+    expect(prisma.serviceOrganization.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ name: '检测中心', status: 'INACTIVE' }) }));
+    expect(prisma.partner.update).not.toHaveBeenCalled();
+  });
+
+  it('搜索同时支持服务商名称和关联合作伙伴名称', async () => {
+    prisma.serviceOrganization.findMany.mockResolvedValue([]); prisma.serviceOrganization.count.mockResolvedValue(0);
+    await service.findAll({ search: '检测中心' });
+    expect(prisma.serviceOrganization.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ OR: expect.arrayContaining([
+      { name: { contains: '检测中心', mode: 'insensitive' } },
+      { partner: { name: { contains: '检测中心', mode: 'insensitive' } } },
+    ]) }) }));
   });
 
   it('加工服务商使用 JG 前缀并保留统一供应商合作伙伴', async () => {

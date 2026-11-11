@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, FileText, FlaskConical, Plus, Scale, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { serviceOrganizationName, serviceOrganizationLabel } from '@/lib/service-organization';
 import { loadAllOptions } from '@/lib/option-loader';
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { StatusText } from '@/components/status-text';
@@ -272,7 +273,7 @@ export default function CreateQualityInspectionPage() {
       {ticket && <p className="text-sm text-muted-foreground">本报告取样环节：{ticket.weighingStage === 'SHIPPING' ? '发货侧' : '收货侧'}。由所关联磅单确定；检测机构类型另行填写，两者不是同一个概念。</p>}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Field label="机构类型 *"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionType} onChange={event => { setInstitutionType(event.target.value); setInstitutionPartnerId(''); setInstitutionName(''); }}>{Object.entries(INSTITUTION_TYPE).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-        <Field label="检测机构 *">{['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionPartnerId} onChange={event => { const id = event.target.value; const item = institutions.find(value => value.partnerId === id); setInstitutionPartnerId(id); setInstitutionName(item?.partner.name || ''); }}><option value="">请选择已维护的质检机构</option>{institutions.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {item.partner.name}</option>)}</select> : <Input value={institutionName} onChange={event => setInstitutionName(event.target.value)} placeholder="填写实际出具报告的机构" />}</Field>
+        <Field label="检测机构 *">{['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionPartnerId} onChange={event => { const id = event.target.value; const item = institutions.find(value => value.partnerId === id); setInstitutionPartnerId(id); setInstitutionName(item ? serviceOrganizationName(item) : ''); }}><option value="">请选择已维护的质检机构</option>{institutions.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {serviceOrganizationLabel(item)}</option>)}</select> : <Input value={institutionName} onChange={event => setInstitutionName(event.target.value)} placeholder="填写实际出具报告的机构" />}</Field>
         <Field label="报告编号 *"><Input value={reportNo} onChange={event => setReportNo(event.target.value)} /></Field>
         <Field label="检测时间 *"><Input type="datetime-local" step="1" value={testedAt} onChange={event => setTestedAt(event.target.value)} /></Field>
       </div>

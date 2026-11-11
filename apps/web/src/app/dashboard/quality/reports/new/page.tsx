@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { serviceOrganizationName, serviceOrganizationLabel } from '@/lib/service-organization';
 import { loadAllOptions } from '@/lib/option-loader';
 import { openLocalAttachment } from '@/lib/attachment-preview';
 import { toLocalDateTimeInput } from '@/lib/date-time';
@@ -91,7 +92,7 @@ export default function NewStandaloneQualityReportPage() {
     if (result.institutionName) {
       setInstitutionName(result.institutionName);
       if (['PARTNER', 'THIRD_PARTY'].includes(institutionType)) {
-        const matched = institutions.find(item => item.partner.name.trim() === result.institutionName?.trim());
+        const matched = institutions.find(item => (serviceOrganizationName(item) === result.institutionName?.trim() || item.partner.name.trim() === result.institutionName?.trim()));
         setInstitutionPartnerId(matched?.partnerId || '');
         if (!matched) alert('检测机构名称未匹配已维护机构，请核对并手动选择');
       }
@@ -145,7 +146,7 @@ export default function NewStandaloneQualityReportPage() {
       <label className="text-sm">取样人 *<Input className="mt-1" value={samplerName} onChange={event => setSamplerName(event.target.value)} /></label>
       <label className="text-sm">取样方法<Input className="mt-1" value={samplingMethod} onChange={event => setSamplingMethod(event.target.value)} /></label>
       <label className="text-sm">检测机构类型<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionType} onChange={event => { setInstitutionType(event.target.value); setInstitutionPartnerId(''); }}><option value="OUR">我方</option><option value="PARTNER">合作方</option><option value="THIRD_PARTY">第三方</option><option value="OTHER">其他</option></select></label>
-      {['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <label className="text-sm">检测机构 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionPartnerId} onChange={event => setInstitutionPartnerId(event.target.value)}><option value="">请选择已维护机构</option>{institutions.map(item => <option key={item.partnerId} value={item.partnerId}>{item.partner.name}</option>)}</select></label> : <label className="text-sm">检测机构名称 *<Input className="mt-1" value={institutionName} onChange={event => setInstitutionName(event.target.value)} /></label>}
+      {['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <label className="text-sm">检测机构 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionPartnerId} onChange={event => setInstitutionPartnerId(event.target.value)}><option value="">请选择已维护机构</option>{institutions.map(item => <option key={item.partnerId} value={item.partnerId}>{serviceOrganizationLabel(item)}</option>)}</select></label> : <label className="text-sm">检测机构名称 *<Input className="mt-1" value={institutionName} onChange={event => setInstitutionName(event.target.value)} /></label>}
     </Card>
     {materialId && (standardsLoading ? <Card className="p-5 text-sm text-muted-foreground">正在加载物料质检指标…</Card> : <QualityReportTextRecognition indicators={indicators.map(item => ({ code: item.code, name: item.name }))} onApply={applyRecognition} />)}
     <Card className="space-y-3 p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">检测指标</h2><Button variant="outline" size="sm" onClick={() => setIndicators(rows => [...rows, { code: '', name: '', operator: 'GTE', standardValue: '', measuredValue: '', unit: '%' }])}>添加指标</Button></div>

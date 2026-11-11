@@ -311,6 +311,7 @@ export class ProductionService {
         { businessUnit: { name: { contains: search, mode: 'insensitive' } } },
         { sourceOrderNo: { contains: search, mode: 'insensitive' } },
         { outputMaterial: { name: { contains: search, mode: 'insensitive' } } },
+        { processorOrganization: { name: { contains: search, mode: 'insensitive' } } },
         { processorOrganization: { partner: { name: { contains: search, mode: 'insensitive' } } } },
       ];
     }

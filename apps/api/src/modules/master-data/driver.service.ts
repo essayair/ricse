@@ -15,6 +15,7 @@ export class DriverService {
       select: {
         id: true,
         code: true,
+        name: true,
         organizationType: true,
         status: true,
         partnerId: true,
@@ -130,6 +131,7 @@ export class DriverService {
         { phone: { contains: params.search, mode: 'insensitive' } },
         { idCardNo: { contains: params.search, mode: 'insensitive' } },
         { licenseNo: { contains: params.search, mode: 'insensitive' } },
+        { serviceOrganization: { name: { contains: params.search, mode: 'insensitive' } } },
         { serviceOrganization: { partner: { name: { contains: params.search, mode: 'insensitive' } } } },
         { serviceOrganization: { partner: { code: { contains: params.search, mode: 'insensitive' } } } },
       ];

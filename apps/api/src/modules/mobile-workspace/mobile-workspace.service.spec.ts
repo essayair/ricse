@@ -201,13 +201,15 @@ describe('MobileWorkspaceService', () => {
     const fleetLinks = [{ fleet: { id: 'fleet', name: '合作车队', carrierPartnerId: 'carrier' } }];
     prisma.vehicle.findMany.mockResolvedValue([{ id: 'vehicle', plateNo: '浙A00001', fleetLinks, drivers: [{ role: 'PRIMARY', driverId: 'driver' }], waybills: [] }] as any);
     prisma.driver.findMany.mockResolvedValue([{ id: 'driver', name: '测试司机', phone: '13800000001', serviceOrganization: null, fleetLinks, waybills: [] }] as any);
-    prisma.serviceOrganization.findMany.mockResolvedValue([{ id: 'org', partner: { id: 'carrier', code: '200001', name: '承运商', isInternal: true } }] as any);
+    prisma.serviceOrganization.findMany.mockResolvedValue([{ id: 'org', name: '运营车队', partner: { id: 'carrier', code: '200001', name: '承运商', isInternal: true } }] as any);
     const result = await service.logisticsOptions('user-1');
     expect(result.vehicles[0].fleetLinks).toEqual(fleetLinks);
     expect(result.vehicles[0].drivers).toEqual([{ role: 'PRIMARY', driverId: 'driver' }]);
     expect(result.drivers[0].fleetLinks).toEqual(fleetLinks);
     expect(result.drivers[0].carrierPartnerId).toBeNull();
     expect(result.carriers[0].isInternal).toBe(true);
+    expect(result.carriers[0].name).toBe('运营车队');
+    expect(result.carriers[0].partnerName).toBe('承运商');
     expect(prisma.serviceOrganization.findMany.mock.calls[0][0]).not.toHaveProperty('take');
     for (const resource of [prisma.vehicle.findMany, prisma.driver.findMany]) {
       expect(resource).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({

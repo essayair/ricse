@@ -316,6 +316,14 @@ describe('QualityInspectionService', () => {
     }));
   });
 
+  it('检测报告采用独立质检机构名称，合作伙伴ID仍指向法定主体', async () => {
+    mockStandalonePreparation();
+    prisma.qualityInspection.count.mockResolvedValue(0);
+    prisma.serviceOrganization.findFirst.mockResolvedValue({ id: 'service-1', name: '龙游检测中心', partner: { id: 'partner-1', name: '法定检测公司' } } as any);
+    await service.createStandalone({ ...reportDto, institutionType: 'THIRD_PARTY', institutionPartnerId: 'partner-1' }, 'user-1');
+    expect(prisma.qualityInspection.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ institutionName: '龙游检测中心', institutionPartnerId: 'partner-1' }) }));
+  });
+
   it('已作废且未关联的报告可以编辑恢复草稿，之后可以重新提交', async () => {
     mockStandalonePreparation();
     jest.spyOn(service, 'findOne').mockResolvedValue({ ...editableReport, status: 'VOIDED' } as any);

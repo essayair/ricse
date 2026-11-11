@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { serviceOrganizationName, serviceOrganizationLabel } from '@/lib/service-organization';
 import { loadAllOptions } from '@/lib/option-loader';
 import { unitLabel } from '@/lib/unit';
 import { StatusText } from '@/components/status-text';
@@ -765,7 +766,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
               <option value="MAINTENANCE">维修停用</option>
               <option value="RETIRED">已退役</option>
             </select>
-            <select className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm" value={vehicleOwnerIdFilter} onChange={(event) => setVehicleOwnerIdFilter(event.target.value)}><option value="">全部承运商</option>{vehicleOwners.map(item => <option key={item.id} value={item.partnerId}>{item.partner.name}</option>)}</select>
+            <select className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm" value={vehicleOwnerIdFilter} onChange={(event) => setVehicleOwnerIdFilter(event.target.value)}><option value="">全部承运商</option>{vehicleOwners.map(item => <option key={item.id} value={item.partnerId}>{serviceOrganizationLabel(item)}</option>)}</select>
             <select className="h-9 rounded-md border bg-background px-3 text-sm" value={vehicleTypeFilter} onChange={(event) => setVehicleTypeFilter(event.target.value)}><option value="">全部车型</option><option value="SEMI_TRAILER">半挂车（标准型）</option><option value="HEAVY_SEMI_TRAILER">半挂车（超重型）</option><option value="BOX_TRUCK">厢式货车</option><option value="DUMP_TRUCK">自卸车</option><option value="TANK_TRUCK">槽罐车</option></select>
             {canManageTransport && <Link href="/dashboard/master-data/transport-resources/new" className="ml-auto">
               <Button>
@@ -780,7 +781,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
             <select className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm" value={driverOrgFilter} onChange={(event) => setDriverOrgFilter(event.target.value)}>
               <option value="">全部承运商</option>
               <option value="NONE">无承运商（社会运力）</option>
-              {vehicleOwners.map((item) => <option key={item.id} value={item.id}>{item.partner.name}</option>)}
+              {vehicleOwners.map((item) => <option key={item.id} value={item.id}>{serviceOrganizationLabel(item)}</option>)}
             </select>
             <select className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm" value={driverFleetFilter} onChange={(event) => setDriverFleetFilter(event.target.value)}>
               <option value="">全部车队</option>
@@ -823,7 +824,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
             <Field label="所属承运商（可不选）">
               <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={driverForm.serviceOrganizationId} onChange={(e) => setDriverField('serviceOrganizationId', e.target.value)}>
                 <option value="">无承运商（社会运力专用）</option>
-                {vehicleOwners.map((item) => <option key={item.id} value={item.id}>{item.partner.name}</option>)}
+                {vehicleOwners.map((item) => <option key={item.id} value={item.id}>{serviceOrganizationLabel(item)}</option>)}
               </select>
             </Field>
             <Field label="身份证号"><Input maxLength={18} value={driverForm.idCardNo} onChange={(e) => setDriverField('idCardNo', e.target.value.toUpperCase())} /><p className="mt-1 text-xs text-muted-foreground">填写后全平台唯一。</p></Field>
@@ -858,7 +859,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
             <Field label="挂靠开票承运商（可不选）">
               <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={fleetForm.carrierPartnerId} onChange={(e) => setFleetField('carrierPartnerId', e.target.value)}>
                 <option value="">暂未挂靠</option>
-                {vehicleOwners.map((item) => <option key={item.id} value={item.partnerId}>{item.partner.name}</option>)}
+                {vehicleOwners.map((item) => <option key={item.id} value={item.partnerId}>{serviceOrganizationLabel(item)}</option>)}
               </select>
             </Field>
             <Field label="状态">
@@ -927,10 +928,10 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
         {/* 服务生态 */}
         {tab === 'service-organizations' && (
           <DataTable
-            headers={['档案编码', '合作伙伴', '资质信息', '状态', '服务范围 / 区域', '联系人', '操作']}
+            headers={['档案编码', '服务商名称 / 关联合作伙伴', '资质信息', '状态', '服务范围 / 区域', '联系人', '操作']}
             rows={serviceOrgs.map((item) => [
               <span key="c" className="font-mono">{item.code}</span>,
-              <div key="p"><div className="font-medium">{item.partner.name}</div><div className="mt-1 text-xs text-muted-foreground">{item.partner.code} · 供应商</div></div>,
+              <div key="p"><div className="font-medium">{serviceOrganizationName(item)}</div><div className="mt-1 text-xs text-muted-foreground">{item.partner.code} · {serviceOrganizationLabel(item)}</div></div>,
               <div key="q"><div>{item.licenseNo || item.qualificationNo || item.cmaNo || '—'}</div><div className="mt-1 text-xs text-muted-foreground">{item.licenseExpiry ? `有效期至 ${item.licenseExpiry.slice(0, 10)}` : item.cnasNo ? `CNAS ${item.cnasNo}` : '未设置有效期'}</div></div>,
               <StatusText key="s" status={item.status}>{serviceOrgStatusLabel(item.status)}</StatusText>,
               <div key="scope" className="max-w-80"><div className="truncate">{item.serviceScope || serviceOrgOperationLabel(item.operationType) || '—'}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.serviceRegions || '未设置服务区域'}</div></div>,
@@ -1071,7 +1072,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
             rows={drivers.map((d) => [
               <div key="n"><Link href={`/dashboard/master-data/drivers/${d.id}`} className="font-medium text-primary hover:underline">{d.name}</Link><div className="mt-1 text-xs text-muted-foreground">{d.phone}</div></div>,
               d.serviceOrganization
-                ? <span key="org" className="text-sm">{d.serviceOrganization.partner.name}</span>
+                ? <span key="org" className="text-sm">{serviceOrganizationName(d.serviceOrganization)}</span>
                 : <Badge key="org2" variant="outline" className="text-xs">无承运商 · 社会运力</Badge>,
               d.fleetLinks.length
                 ? <div key="fl">{d.fleetLinks.map((link) => <Badge key={link.fleet.id} variant="secondary" className="mr-1 text-xs">{link.fleet.name}</Badge>)}</div>

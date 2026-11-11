@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
+import { serviceOrganizationLabel } from '@/lib/service-organization';
 import { StatusText } from '@/components/status-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -85,7 +86,7 @@ export default function CarrierDriversPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/master-data?tab=service-organizations&type=LOGISTICS_CARRIER')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">司机管理</h1><p className="mt-1 text-sm text-muted-foreground">{organization ? `${organization.code} · ${organization.partner.name}` : '加载中...'}</p></div></div>
+      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/master-data?tab=service-organizations&type=LOGISTICS_CARRIER')}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">司机管理</h1><p className="mt-1 text-sm text-muted-foreground">{organization ? `${organization.code} · ${serviceOrganizationLabel(organization)}` : '加载中...'}</p></div></div>
       <Button onClick={() => { router.push(`/dashboard/master-data/transport-resources/new?serviceOrganizationId=${id}`); }}><Plus className="mr-1 h-4 w-4" />新增司机</Button>
     </div>
 

@@ -79,7 +79,7 @@ export class FleetService {
             driver: {
               select: {
                 id: true, name: true, phone: true, status: true, serviceOrganizationId: true,
-                serviceOrganization: { select: { partner: { select: { id: true, name: true } } } },
+                serviceOrganization: { select: { name: true, partner: { select: { id: true, name: true } } } },
               },
             },
           },

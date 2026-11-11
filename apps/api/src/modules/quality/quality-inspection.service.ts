@@ -714,7 +714,7 @@ export class QualityInspectionService {
         include: { partner: { select: { id: true, name: true } } },
       });
       if (!profile) throw new BadRequestException('所选质检机构不存在、已停用或合作伙伴不具备供应商角色');
-      institutionPartner = profile.partner;
+      institutionPartner = { id: profile.partner.id, name: profile.name || profile.partner.name };
     } else if (!dto.institutionName?.trim()) {
       throw new BadRequestException('检测机构名称不能为空');
     }
@@ -866,7 +866,7 @@ export class QualityInspectionService {
         partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } },
       }, include: { partner: { select: { id: true, name: true } } } });
       if (!profile) throw new BadRequestException('请选择已维护且启用的质检机构');
-      institutionName = profile.partner.name;
+      institutionName = profile.name || profile.partner.name;
       institutionPartnerId = profile.partner.id;
     }
     if (!institutionName) throw new BadRequestException('请填写检测机构名称');

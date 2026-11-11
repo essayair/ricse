@@ -22,7 +22,7 @@ export class TransportResourceService {
     const [items, internalPartners] = await Promise.all([
       this.prisma.serviceOrganization.findMany({
         where: { organizationType: 'LOGISTICS_CARRIER', status: 'ACTIVE', deletedAt: null, partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } } },
-        select: { id: true, partnerId: true, partner: { select: { id: true, code: true, name: true, isInternal: true, status: true } } },
+        select: { id: true, name: true, partnerId: true, partner: { select: { id: true, code: true, name: true, isInternal: true, status: true } } },
         orderBy: { partner: { name: 'asc' } },
       }),
       this.prisma.partner.findMany({

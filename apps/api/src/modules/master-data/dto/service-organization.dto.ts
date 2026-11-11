@@ -1,8 +1,9 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsArray, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsNumber, IsOptional, IsString, IsNotEmpty, MaxLength, Min } from 'class-validator';
 import type { ServiceOrganizationInput } from '../service-organization.service';
 
 export class CreateServiceOrganizationDto implements ServiceOrganizationInput {
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(200) name?: string;
   @IsString() partnerId: string;
   @IsString() organizationType: string;
   @IsOptional() @IsString() licenseNo?: string;

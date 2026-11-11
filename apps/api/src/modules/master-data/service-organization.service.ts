@@ -12,6 +12,7 @@ export const SERVICE_ORGANIZATION_TYPES = [
 type OrganizationType = typeof SERVICE_ORGANIZATION_TYPES[number];
 
 export interface ServiceOrganizationInput {
+  name?: string;
   partnerId: string;
   organizationType: string;
   licenseNo?: string;
@@ -66,6 +67,13 @@ export class ServiceOrganizationService {
     return text || null;
   }
 
+  private serviceName(value: string | undefined, fallback: string) {
+    const name = value === undefined ? fallback?.trim() : typeof value === 'string' ? value.trim() : '';
+    if (!name) throw new BadRequestException('请填写服务商名称');
+    if (name.length > 200) throw new BadRequestException('服务商名称不能超过200个字符');
+    return name;
+  }
+
   private data(input: ServiceOrganizationInput) {
     return {
       licenseNo: this.clean(input.licenseNo),
@@ -110,7 +118,7 @@ export class ServiceOrganizationService {
 
   async create(input: ServiceOrganizationInput) {
     this.validateType(input.organizationType);
-    await this.requireSupplierPartner(input.partnerId);
+    const partner = await this.requireSupplierPartner(input.partnerId);
     const existing = await this.prisma.serviceOrganization.findFirst({
       where: {
         partnerId: input.partnerId,
@@ -122,6 +130,7 @@ export class ServiceOrganizationService {
     return this.prisma.serviceOrganization.create({
       data: {
         code: await this.generateCode(input.organizationType),
+        name: this.serviceName(input.name, partner.name),
         partnerId: input.partnerId,
         organizationType: input.organizationType,
         ...this.data(input),
@@ -144,6 +153,7 @@ export class ServiceOrganizationService {
     if (params.status) where.status = params.status;
     if (params.search) {
       where.OR = [
+        { name: { contains: params.search, mode: 'insensitive' } },
         { code: { contains: params.search, mode: 'insensitive' } },
         { partner: { name: { contains: params.search, mode: 'insensitive' } } },
         { partner: { code: { contains: params.search, mode: 'insensitive' } } },
@@ -186,7 +196,10 @@ export class ServiceOrganizationService {
     }
     return this.prisma.serviceOrganization.update({
       where: { id },
-      data: this.data({ ...current, ...input } as ServiceOrganizationInput),
+      data: {
+        ...this.data({ ...current, ...input } as ServiceOrganizationInput),
+        name: this.serviceName(input.name, current.name || current.partner.name),
+      },
       include: { partner: true },
     });
   }

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { serviceOrganizationName, serviceOrganizationLabel } from '@/lib/service-organization';
 
 export interface VehicleDriverValue { driverId: string; role: 'PRIMARY' | 'SECONDARY' }
 export interface VehicleFormValue {
@@ -80,7 +81,7 @@ export function VehicleForm({ initialValue, value, onValueChange, submitLabel, o
 
   const ownerOptions = useMemo(() => form.ownerType === 'SELF'
     ? internalPartners
-    : carriers.map(item => item.partner), [carriers, form.ownerType, internalPartners]);
+    : carriers.map(item => ({ ...item.partner, name: serviceOrganizationLabel(item) })), [carriers, form.ownerType, internalPartners]);
   const eligibleDrivers = useMemo(() => {
     const keyword = driverSearch.trim().toLowerCase();
     return drivers.filter(driver => {
@@ -92,7 +93,7 @@ export function VehicleForm({ initialValue, value, onValueChange, submitLabel, o
           ? !driver.serviceOrganization || driver.serviceOrganization.partnerId === form.ownerId
           : !driver.serviceOrganization;
       if (!ownerMatched) return false;
-      return !keyword || selected || [driver.name, driver.phone, driver.licenseClass || '', driver.serviceOrganization?.partner.name || '社会运力']
+      return !keyword || selected || [driver.name, driver.phone, driver.licenseClass || '', driver.serviceOrganization ? serviceOrganizationName(driver.serviceOrganization) : '社会运力']
         .some(value => value.toLowerCase().includes(keyword));
     });
   }, [driverSearch, drivers, form.ownerId, form.ownerType, form.drivers]);
@@ -164,7 +165,7 @@ export function VehicleForm({ initialValue, value, onValueChange, submitLabel, o
       <div className="relative max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={driverSearch} onChange={e => setDriverSearch(e.target.value)} placeholder="搜索司机姓名、手机号、准驾车型" /></div>
       {!eligibleDrivers.length ? <div className="rounded-md bg-muted p-5 text-sm text-muted-foreground">当前没有可关联司机，可先到运力管理维护司机档案；车辆也可以暂不关联司机。</div> : <div className="grid gap-3 md:grid-cols-2">{eligibleDrivers.map(driver => {
         const link = form.drivers.find(item => item.driverId === driver.id);
-        return <div key={driver.id} className={`flex items-center gap-3 rounded-lg border p-3 ${link ? 'border-primary bg-primary/5' : ''}`}><input type="checkbox" checked={Boolean(link)} onChange={() => toggleDriver(driver.id)} /><UserRound className="h-5 w-5 text-muted-foreground" /><div className="min-w-0 flex-1"><div className="font-medium">{driver.name}{driver.status !== 'ACTIVE' && <span className="ml-2 text-xs text-warning">已停用，请解除关联</span>}</div><div className="truncate text-xs text-muted-foreground">{driver.phone} · {driver.licenseClass || '未填写准驾车型'} · {driver.serviceOrganization?.partner.name || '无承运商（社会运力）'}</div></div>{link && <select className="h-8 rounded-md border bg-background px-2 text-xs" value={link.role} onChange={e => setDriverRole(driver.id, e.target.value as 'PRIMARY' | 'SECONDARY')}><option value="PRIMARY">主驾</option><option value="SECONDARY">副驾</option></select>}</div>;
+        return <div key={driver.id} className={`flex items-center gap-3 rounded-lg border p-3 ${link ? 'border-primary bg-primary/5' : ''}`}><input type="checkbox" checked={Boolean(link)} onChange={() => toggleDriver(driver.id)} /><UserRound className="h-5 w-5 text-muted-foreground" /><div className="min-w-0 flex-1"><div className="font-medium">{driver.name}{driver.status !== 'ACTIVE' && <span className="ml-2 text-xs text-warning">已停用，请解除关联</span>}</div><div className="truncate text-xs text-muted-foreground">{driver.phone} · {driver.licenseClass || '未填写准驾车型'} · {driver.serviceOrganization ? serviceOrganizationName(driver.serviceOrganization) : '无承运商（社会运力）'}</div></div>{link && <select className="h-8 rounded-md border bg-background px-2 text-xs" value={link.role} onChange={e => setDriverRole(driver.id, e.target.value as 'PRIMARY' | 'SECONDARY')}><option value="PRIMARY">主驾</option><option value="SECONDARY">副驾</option></select>}</div>;
       })}</div>}
     </Card>}
 

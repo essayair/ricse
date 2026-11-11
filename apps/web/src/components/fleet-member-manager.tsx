@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
+import { serviceOrganizationName } from '@/lib/service-organization';
 import { confirmAction } from '@/lib/system-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -128,7 +129,7 @@ export function FleetMemberManager({ fleetId, onClose, onChanged }: {
               <div className="flex min-w-0 gap-2">
                 <select aria-label="选择要加入的司机" className="h-10 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" value={driverId} disabled={busy || drivers.loading} onChange={event => setDriverId(event.target.value)}>
                   <option value="">{drivers.loading ? '搜索中…' : driverCandidates.length ? '选择要加入的司机' : '暂无可加入司机，请更换关键词'}</option>
-                  {driverCandidates.map(item => <option key={item.id} value={item.id}>{item.name} · {item.phone} · {item.serviceOrganization?.partner?.name || '社会运力'}</option>)}
+                  {driverCandidates.map(item => <option key={item.id} value={item.id}>{item.name} · {item.phone} · {item.serviceOrganization ? serviceOrganizationName(item.serviceOrganization) : '社会运力'}</option>)}
                 </select>
                 <Button disabled={busy || drivers.loading || !driverCandidates.some(item => item.id === driverId)} onClick={() => void updateMember('drivers', driverId)}>加入司机</Button>
               </div>
@@ -136,7 +137,7 @@ export function FleetMemberManager({ fleetId, onClose, onChanged }: {
             </>}
             <div className="max-h-72 divide-y overflow-y-auto rounded-md border">
               {!detail.driverLinks.length ? <p className="p-5 text-center text-sm text-muted-foreground">暂无司机</p> : detail.driverLinks.map(({ driver }) => <div key={driver.id} className="flex items-center justify-between gap-3 p-3 text-sm">
-                <div className="min-w-0"><Link className="font-medium hover:text-primary" href={`/dashboard/master-data/drivers/${driver.id}`}>{driver.name}</Link><div className="mt-1 truncate text-xs text-muted-foreground" title={driver.serviceOrganization?.partner?.name}>{driver.phone} · {driver.serviceOrganization?.partner?.name || '社会运力'}</div><StatusText status={driver.status}>{driver.status === 'ACTIVE' ? '启用' : '停用'}</StatusText></div>
+                <div className="min-w-0"><Link className="font-medium hover:text-primary" href={`/dashboard/master-data/drivers/${driver.id}`}>{driver.name}</Link><div className="mt-1 truncate text-xs text-muted-foreground" title={driver.serviceOrganization ? serviceOrganizationName(driver.serviceOrganization) : undefined}>{driver.phone} · {driver.serviceOrganization ? serviceOrganizationName(driver.serviceOrganization) : '社会运力'}</div><StatusText status={driver.status}>{driver.status === 'ACTIVE' ? '启用' : '停用'}</StatusText></div>
                 {canManage && <Button variant="ghost" size="sm" className="shrink-0 text-destructive" disabled={busy} onClick={() => void updateMember('drivers', driver.id, true)}>移出司机</Button>}
               </div>)}
             </div>

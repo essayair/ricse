@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save } from 'lucide-react';
 import { api } from '@/lib/api';
+import { serviceOrganizationLabel } from '@/lib/service-organization';
 import { loadAllOptions } from '@/lib/option-loader';
 
 const WAREHOUSE_TYPES = [
@@ -154,7 +155,7 @@ export default function WarehouseEditPage() {
             <FormField label={type === 'RENT' ? '仓储与港口服务商' : '运营服务商（可选）'} required={type === 'RENT'}>
               <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                 <option value="">请选择</option>
-                {operators.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {item.partner.name}</option>)}
+                {operators.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {serviceOrganizationLabel(item)}</option>)}
               </select>
             </FormField>
             <FormField label="仓管员">

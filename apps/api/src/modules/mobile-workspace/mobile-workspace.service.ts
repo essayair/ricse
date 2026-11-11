@@ -342,13 +342,14 @@ export class MobileWorkspaceService {
             OR: [
               { name: { contains: keyword, mode: 'insensitive' as const } },
               { phone: { contains: keyword, mode: 'insensitive' as const } },
+              { serviceOrganization: { name: { contains: keyword, mode: 'insensitive' as const } } },
               { serviceOrganization: { partner: { name: { contains: keyword, mode: 'insensitive' as const } } } },
             ],
           } : {}),
         },
         select: {
           id: true, name: true, phone: true, serviceOrganizationId: true,
-          serviceOrganization: { select: { partnerId: true, partner: { select: { id: true, name: true } } } },
+          serviceOrganization: { select: { name: true, partnerId: true, partner: { select: { id: true, name: true } } } },
           fleetLinks: { where: { fleet: { status: 'ACTIVE', deletedAt: null } }, select: { fleet: { select: { id: true, name: true, carrierPartnerId: true } } } },
           waybills: {
             where: { deletedAt: null, status: 'IN_TRANSIT' },
@@ -370,7 +371,7 @@ export class MobileWorkspaceService {
             roles: { has: 'SUPPLIER' },
           },
         },
-        select: { id: true, partnerId: true, partner: { select: { id: true, code: true, name: true, isInternal: true } } },
+        select: { id: true, name: true, partnerId: true, partner: { select: { id: true, code: true, name: true, isInternal: true } } },
         orderBy: { partner: { name: 'asc' } },
       }),
     ]);
@@ -384,7 +385,7 @@ export class MobileWorkspaceService {
         ...item,
         // 无承运商司机（社会运力专用）这两个字段为空，由调用方按 freightMode 决定是否需要承运商。
         carrierPartnerId: item.serviceOrganization?.partnerId ?? null,
-        carrierName: item.serviceOrganization?.partner.name ?? null,
+        carrierName: item.serviceOrganization?.name || item.serviceOrganization?.partner.name || null,
         available: item.waybills.length === 0,
         activeWaybill: item.waybills[0] || null,
       })),
@@ -392,7 +393,8 @@ export class MobileWorkspaceService {
         id: item.partner.id,
         serviceOrganizationId: item.id,
         code: item.partner.code,
-        name: item.partner.name,
+        name: item.name || item.partner.name,
+        partnerName: item.partner.name,
         isInternal: item.partner.isInternal,
       })),
       canMaintainMasterData: context.isAdmin || context.permissions.includes('master_data.manage'),
@@ -416,10 +418,10 @@ export class MobileWorkspaceService {
         organizationType: 'QUALITY_INSTITUTION', status: 'ACTIVE', deletedAt: null,
         partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } },
       },
-      select: { partner: { select: { id: true, code: true, name: true } } },
+      select: { name: true, partner: { select: { id: true, code: true, name: true } } },
       orderBy: { partner: { name: 'asc' } },
     });
-    return rows.map(item => item.partner);
+    return rows.map(item => ({ ...item.partner, name: item.name || item.partner.name, partnerName: item.partner.name }));
   }
 
   async approvalCenter(userId: string, status: 'PENDING' | 'DONE' = 'PENDING', type = 'ALL') {

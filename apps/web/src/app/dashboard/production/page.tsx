@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Factory, Plus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
+import { serviceOrganizationName } from '@/lib/service-organization';
 import { formatDateTimeToSecond } from '@/lib/date-time';
 import { percent, PRODUCTION_STATUS, quantity } from '@/lib/production';
 import { Badge } from '@/components/ui/badge';
@@ -54,7 +55,7 @@ export default function ProductionPage() {
           <td className="p-3"><div>{item.businessUnit?.name || '未归属'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.businessUnit?.code || '-'}</div></td>
           <td className="p-3"><StatusText status={item.status}>{PRODUCTION_STATUS[item.status] || item.status}</StatusText></td>
           <td className="p-3">{item.ownerPartner.name}</td><td className="p-3"><div>{item.outputMaterial.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.outputMaterial.code}</div></td>
-          <td className="p-3">{item.sourceWarehouse.name} → {item.targetWarehouse.name}</td><td className="p-3">{item.processorOrganization?.partner?.name || '-'}</td>
+          <td className="p-3">{item.sourceWarehouse.name} → {item.targetWarehouse.name}</td><td className="p-3">{item.processorOrganization ? serviceOrganizationName(item.processorOrganization) : '-'}</td>
           <td className="p-3 text-right">{quantity(item.plannedOutputQuantity)}</td><td className="p-3 text-right font-medium text-primary">{quantity(item.qualifiedQuantity)}</td><td className="p-3 text-right">{percent(item.actualYieldRate)}</td>
           <td className="p-3"><div>{item.sourceType === 'SALES_ORDER' ? '销售需求' : '手工创建'}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.sourceOrderNo || '-'}</div></td>
           <td className="p-3 text-xs text-muted-foreground">{formatDateTimeToSecond(item.createdAt)}</td>

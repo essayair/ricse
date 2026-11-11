@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
+import { serviceOrganizationLabel } from '@/lib/service-organization';
 import { loadAllOptions } from '@/lib/option-loader';
 import { MATERIAL_ROLE, quantity } from '@/lib/production';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,7 @@ export default function NewProductionTaskPage() {
       <Field label="任务名称 *"><Input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} /></Field>
       <Field label="生产方式 *"><select className="h-10 w-full rounded-md border bg-background px-3" value={form.mode} onChange={event => setForm({ ...form, mode: event.target.value })}><option value="INTERNAL">自营生产</option><option value="OUTSOURCED">委外加工</option></select></Field>
       <Field label="库存主体"><Input value={recipe?.ownerPartner?.name || ''} disabled placeholder="由生产方案确定" /></Field>
-      {form.mode === 'OUTSOURCED' && <Field label="加工服务商 *"><Select value={form.processorOrganizationId} onChange={value => setForm({ ...form, processorOrganizationId: value })} options={processors.map(item => ({ value: item.id, label: `${item.code} · ${item.partner.name}` }))} /></Field>}
+      {form.mode === 'OUTSOURCED' && <Field label="加工服务商 *"><Select value={form.processorOrganizationId} onChange={value => setForm({ ...form, processorOrganizationId: value })} options={processors.map(item => ({ value: item.id, label: `${item.code} · ${serviceOrganizationLabel(item)}` }))} /></Field>}
       {form.mode === 'OUTSOURCED' && <Field label="加工费单价"><Input type="number" min="0" step="0.01" value={form.processingFeeRate} onChange={event => setForm({ ...form, processingFeeRate: event.target.value })} placeholder="元/吨，可选" /></Field>}
       <Field label="原料仓库 *"><Select value={form.sourceWarehouseId} onChange={value => setForm({ ...form, sourceWarehouseId: value })} options={warehouses.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Field>
       <Field label="成品仓库 *"><Select value={form.targetWarehouseId} onChange={value => setForm({ ...form, targetWarehouseId: value })} options={warehouses.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Field>

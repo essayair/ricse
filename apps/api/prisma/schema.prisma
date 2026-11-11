@@ -483,6 +483,7 @@ model PartnerAddress {
 model ServiceOrganization {
   id                 String    @id @default(cuid())
   code               String    @unique
+  name               String // 服务商名称；独立于关联合作伙伴的法定名称
   partnerId          String
   organizationType   String // LOGISTICS_CARRIER | QUALITY_INSTITUTION | WAREHOUSE_PORT | PROCESSING_PROVIDER
   licenseNo          String?
