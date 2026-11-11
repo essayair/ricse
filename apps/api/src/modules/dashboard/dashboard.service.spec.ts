@@ -80,6 +80,19 @@ describe('DashboardService', () => {
     })]);
   });
 
+  it('计划数量偏差只作警告提示，质检拒收仍是错误提示', async () => {
+    const ticket = { id: 'weigh-1', ticketNo: 'WG-001', plateNo: '甘A12345', abnormal: true, status: 'COMPLETED', varianceRate: 20, updatedAt: new Date() };
+    prisma.weighTicket.findMany.mockResolvedValueOnce([ticket]).mockResolvedValueOnce([ticket]);
+    prisma.qualityTask.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{
+      id: 'quality-1', taskNo: 'Q-001', decisionReason: '指标不合格', updatedAt: new Date(),
+      waybill: { plateNo: '甘A12345', lineItems: [] },
+    }]);
+    const result = await service.overview('user-1');
+    expect(result.activities).toContainEqual(expect.objectContaining({ title: '磅单 WG-001 计划数量偏差提示', type: 'warning' }));
+    expect(result.alerts).toContainEqual(expect.objectContaining({ title: '磅单 WG-001 计划数量偏差', type: 'warning' }));
+    expect(result.alerts).toContainEqual(expect.objectContaining({ id: 'quality-fuse:quality-1', type: 'error' }));
+  });
+
   it('无模块权限时不查询业务数据', async () => {
     accessControl.getContext.mockResolvedValue({ isAdmin: false, permissions: [] });
 

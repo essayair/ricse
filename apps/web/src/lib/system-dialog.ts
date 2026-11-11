@@ -15,7 +15,19 @@ export type SystemDialogRequest = SystemDialogOptions & {
 
 export const SYSTEM_DIALOG_EVENT = 'ricse:system-dialog';
 
+/** 先识别失败和前置条件，不能因“必须先完成”包含“完成”而误报成功。 */
+export function alertPresentation(message: string, title?: string) {
+  const failed = /失败|错误|异常|无权|不能|无法|未完成|未成功|不允许|尚未|还未|未通过/.test(`${title || ''}\n${message}`);
+  const incomplete = /请选择|请填写|请输入|请先|必须|至少|请.*(?:完成|上传|选择|填写)/.test(message);
+  const succeeded = /成功|已完成|已保存|已提交|已发布|已取消|已删除|已更新|已确认|完成[。！!]?\s*$/.test(message);
+  return {
+    title: title || (failed ? '操作未完成' : incomplete ? '请完善信息' : succeeded ? '操作成功' : '系统提示'),
+    destructive: failed || incomplete,
+  };
+}
+
 function inferTitle(message: string, kind: 'alert' | 'confirm' | 'prompt') {
+  if (kind === 'alert') return alertPresentation(message).title;
   if (/驳回/.test(message)) return '填写驳回原因';
   if (/审批意见/.test(message)) return '填写审批意见';
   if (/撤销.*原因|更换.*原因|追加原因|解除原因/.test(message)) return '填写操作原因';
@@ -35,10 +47,6 @@ function inferTitle(message: string, kind: 'alert' | 'confirm' | 'prompt') {
   if (/领料/.test(message)) return '领料确认';
   if (/付款|到账/.test(message)) return '资金操作确认';
   if (/创建/.test(message)) return '创建确认';
-  if (kind === 'alert' && /成功|完成|已保存|已提交|已发布/.test(message)) return '操作成功';
-  if (kind === 'alert' && /失败|错误|异常|无权|不能|无法/.test(message)) return '操作未完成';
-  if (kind === 'alert' && /请选择|请填写|请输入|请先|必须|至少/.test(message)) return '请完善信息';
-  if (kind === 'alert') return '系统提示';
   return kind === 'prompt' ? '填写处理信息' : '操作确认';
 }
 
@@ -75,12 +83,13 @@ export function promptAction(message: string, defaultValue = '', options: System
 }
 
 export function alertAction(message: string, options: SystemDialogOptions = {}) {
+  const presentation = alertPresentation(message, options.title);
   return dispatch<boolean>({
     kind: 'alert',
     message,
-    title: options.title || inferTitle(message, 'alert'),
+    title: presentation.title,
     confirmText: options.confirmText || '知道了',
-    destructive: options.destructive ?? /失败|错误|异常|无权|不能|无法/.test(message),
+    destructive: options.destructive ?? presentation.destructive,
   });
 }
 

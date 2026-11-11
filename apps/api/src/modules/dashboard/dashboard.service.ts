@@ -164,10 +164,10 @@ export class DashboardService {
       activities.push(...recentTickets.map((item): Activity => ({
         id: `weigh:${item.id}`,
         occurredAt: item.updatedAt,
-        title: `磅单 ${item.ticketNo} ${item.abnormal ? '发现偏差' : this.weighStatus(item.status)}`,
+        title: `磅单 ${item.ticketNo} ${item.abnormal ? '计划数量偏差提示' : this.weighStatus(item.status)}`,
         subtitle: item.plateNo || '未绑定车辆',
         href: `/dashboard/weighbridge/${item.id}`,
-        type: item.abnormal ? 'error' : ['COMPLETED', 'REVIEWED'].includes(item.status) ? 'success' : 'info',
+        type: item.abnormal ? 'warning' : ['COMPLETED', 'REVIEWED'].includes(item.status) ? 'success' : 'info',
       })));
       activities.push(...recentQuality.map((item): Activity => ({
         id: `quality:${item.id}`,
@@ -180,10 +180,10 @@ export class DashboardService {
       alerts.push(...abnormalItems.map((item): Activity => ({
         id: `weigh-abnormal:${item.id}`,
         occurredAt: item.updatedAt,
-        title: `磅单 ${item.ticketNo} 偏差异常`,
+        title: `磅单 ${item.ticketNo} 计划数量偏差`,
         subtitle: `${item.plateNo || '未绑定车辆'}${item.varianceRate === null ? '' : ` · 偏差率 ${Number(item.varianceRate)}%`}`,
         href: `/dashboard/weighbridge/${item.id}`,
-        type: 'error',
+        type: 'warning',
       })));
       alerts.push(...fuseItems.map((item): Activity => ({
         id: `quality-fuse:${item.id}`,

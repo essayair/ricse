@@ -208,7 +208,6 @@ export class WeighTicketService {
     if (!waybill) return null;
     let status = 'PENDING_WEIGHING';
     if (waybill.status === 'CANCELLED') status = 'VOIDED';
-    else if (waybill.weighTickets.some(item => item.status === 'COMPLETED' && item.abnormal)) status = 'EXCEPTION';
     else if (waybill.weightSelections.some(item => item.purpose === 'INVENTORY')) status = 'COMPLETED';
     else if (waybill.weighTickets.some(item => ['COMPLETED', 'REVIEWED'].includes(item.status))) status = 'PENDING_CONFIRMATION';
     else if (waybill.weighTickets.some(item => item.status !== 'PENDING')) status = 'IN_PROGRESS';
@@ -522,7 +521,7 @@ export class WeighTicketService {
       take: 100,
       orderBy: { createdAt: 'desc' },
     });
-    return { items, total: items.length };
+    return { items: items.map(item => this.managementView(item)), total: items.length };
   }
 
   async findManagementFile(waybillId: string, userId: string) {
@@ -538,7 +537,15 @@ export class WeighTicketService {
       include: this.managementInclude,
     });
     if (!item) throw new NotFoundException('磅单信息不存在');
-    return item;
+    return this.managementView(item);
+  }
+
+  /** 历史EXCEPTION仅由计划数量偏差产生，按正常确认进度展示，不改写原始磅单。 */
+  private managementView<T extends { status: string; weighTask: { status: string } | null; weightSelections: Array<{ purpose: string }> }>(item: T): T {
+    if (item.weighTask?.status !== 'EXCEPTION') return item;
+    const status = item.status === 'CANCELLED' ? 'VOIDED'
+      : item.weightSelections.some(selection => selection.purpose === 'INVENTORY') ? 'COMPLETED' : 'PENDING_CONFIRMATION';
+    return { ...item, weighTask: { ...item.weighTask, status } };
   }
 
   async findOne(id: string, userId: string, permission = 'quality.view') {

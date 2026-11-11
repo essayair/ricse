@@ -69,14 +69,14 @@ export default function WeighbridgePage() {
       <Summary label="过磅任务" value={items.length} />
       <Summary label="称重磅单" value={summary.tickets} />
       <Summary label="待确定库存磅单" value={summary.pending} warn />
-      <Summary label="存在磅差异常" value={summary.abnormal} danger />
+      <Summary label="计划数量偏差" value={summary.abnormal} warn />
     </div>
     <div className="flex flex-wrap gap-3">
       <div className="relative max-w-xl flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="搜索运单、磅单、执行通知、批次、车牌或货物" value={search} onChange={event => setQuery({ search: event.target.value })} /></div>
       <select className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={event => setQuery({ status: event.target.value })}>
         <option value="">全部子磅单状态</option>{Object.entries(TICKET_STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
-      <Button variant={abnormal ? 'default' : 'outline'} onClick={() => setQuery({ abnormal: abnormal ? '' : '1' })}><AlertTriangle className="mr-1 h-4 w-4" />只看异常</Button>
+      <Button variant="outline" aria-pressed={abnormal} className={abnormal ? 'border-warning-border bg-warning-bg text-warning' : ''} onClick={() => setQuery({ abnormal: abnormal ? '' : '1' })}><AlertTriangle className="mr-1 h-4 w-4" />只看计划偏差</Button>
     </div>
     {!items.length ? <Card><div className="p-12 text-center text-muted-foreground"><Scale className="mx-auto mb-2 h-8 w-8 opacity-40" />暂无磅单信息</div></Card> : <Card className="overflow-hidden">
       <div className="overflow-x-auto"><table className="min-w-[1500px] w-full text-sm">
@@ -92,7 +92,7 @@ export default function WeighbridgePage() {
             <td className="px-4 py-4 text-center">{index + 1}</td>
             <td className="px-4 py-4"><Link href={`/dashboard/weighbridge/management/${item.id}`} className="font-mono font-medium text-primary hover:underline">{item.weighTask.taskNo}</Link><div className="mt-1 font-mono text-xs">{item.waybillNo}</div><div className="mt-1 text-xs text-muted-foreground">{item.originLocation || '-'} → {item.destinationLocation || '-'}</div></td>
             <td className="px-4 py-4"><BusinessDirectionBadge type={item.dispatchNotice.type} /></td>
-            <td className="px-4 py-4"><StatusText status={item.weighTask.status}>{state.label}</StatusText>{item.weighTickets.some(ticket => ticket.abnormal) && <Badge className="ml-2" variant="destructive">异常</Badge>}</td>
+            <td className="px-4 py-4"><StatusText status={item.weighTask.status === 'EXCEPTION' ? 'PENDING_CONFIRMATION' : item.weighTask.status}>{state.label}</StatusText>{item.weighTickets.some(ticket => ticket.abnormal) && <Badge className="ml-2 border-warning-border bg-warning-bg text-warning" variant="outline">计划数量偏差</Badge>}</td>
             <td className="px-4 py-4"><div className="font-medium">{item.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.noticeNo}</div></td>
             <td className="px-4 py-4"><div>{item.plateNo || '-'}</div><div className="mt-1 text-xs text-muted-foreground">{item.driverName || '待补录司机'}</div></td>
             <td className="max-w-56 px-4 py-4"><div className="truncate" title={materialNames(item)}>{materialNames(item)}</div></td>

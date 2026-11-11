@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { SYSTEM_DIALOG_EVENT, type SystemDialogRequest } from '@/lib/system-dialog';
+import { alertPresentation, SYSTEM_DIALOG_EVENT, type SystemDialogRequest } from '@/lib/system-dialog';
 
 export function SystemDialogProvider({ children }: { children: React.ReactNode }) {
   const [request, setRequest] = useState<SystemDialogRequest | null>(null);
@@ -30,15 +30,14 @@ export function SystemDialogProvider({ children }: { children: React.ReactNode }
     const nativeAlert = window.alert;
     window.alert = (message?: unknown) => {
       const text = String(message ?? '');
+      const presentation = alertPresentation(text);
       window.dispatchEvent(new CustomEvent<SystemDialogRequest>(SYSTEM_DIALOG_EVENT, {
         detail: {
           kind: 'alert',
           message: text,
-          title: /成功|完成|已保存|已提交|已发布/.test(text) ? '操作成功'
-            : /失败|错误|异常|无权|不能|无法/.test(text) ? '操作未完成'
-              : /请选择|请填写|请输入|请先|必须|至少/.test(text) ? '请完善信息' : '系统提示',
+          title: presentation.title,
           confirmText: '知道了',
-          destructive: /失败|错误|异常|无权|不能|无法/.test(text),
+          destructive: presentation.destructive,
           resolve: () => undefined,
         },
       }));
@@ -57,13 +56,13 @@ export function SystemDialogProvider({ children }: { children: React.ReactNode }
   return <>
     {children}
     <Dialog open={!!request} onOpenChange={(open) => !open && finish(request?.kind === 'confirm' ? false : null)}>
-      <DialogContent className="max-w-md" onPointerDownOutside={(event) => event.preventDefault()} onEscapeKeyDown={(event) => event.preventDefault()}>
+      <DialogContent className={`max-w-md ${request?.destructive ? 'border-destructive-border' : ''}`} onPointerDownOutside={(event) => event.preventDefault()} onEscapeKeyDown={(event) => event.preventDefault()}>
         {request && <>
           <DialogHeader>
-            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <div className={`mb-2 flex h-10 w-10 items-center justify-center rounded-full ${request.destructive ? 'bg-destructive-bg text-destructive' : 'bg-primary/10 text-primary'}`}>
               {request.destructive ? <AlertTriangle className="h-5 w-5 text-destructive" /> : <MessageSquareText className="h-5 w-5" />}
             </div>
-            <DialogTitle>{request.title}</DialogTitle>
+            <DialogTitle className={request.destructive ? 'text-destructive' : undefined}>{request.title}</DialogTitle>
             <DialogDescription className="whitespace-pre-line leading-6 text-foreground/75">{request.message}</DialogDescription>
           </DialogHeader>
           {request.validationItems && <div className="max-h-64 space-y-1 overflow-y-auto" role="list" aria-label="需要完善的字段">

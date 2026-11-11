@@ -261,7 +261,7 @@ describe('WeighTicketService', () => {
     });
   });
 
-  it('磅差异常经确认后不再把过磅任务保持在异常状态', async () => {
+  it('计划数量偏差经确认后正常完成过磅任务', async () => {
     prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, status: 'ARRIVED', plateNo: '甘A12345', totalQuantity: 100 } as any);
     prisma.weighTask.findUnique.mockResolvedValueOnce({ id: 'task-1', plannedQuantity: 100, status: 'IN_PROGRESS' } as any);
     prisma.waybill.findUnique.mockResolvedValueOnce({ status: 'ARRIVED', weighTickets: [{ status: 'REVIEWED', abnormal: true }], weightSelections: [{ id: 'selection-1', purpose: 'INVENTORY' }] } as any);
@@ -269,12 +269,28 @@ describe('WeighTicketService', () => {
     expect(prisma.weighTask.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'COMPLETED' } });
   });
 
-  it('待确认的异常磅单仍在任务中提示异常', async () => {
+  it('计划数量偏差不使过磅任务进入异常状态', async () => {
     prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, status: 'ARRIVED', plateNo: '甘A12345', totalQuantity: 100 } as any);
     prisma.weighTask.findUnique.mockResolvedValueOnce({ id: 'task-1', plannedQuantity: 100, status: 'IN_PROGRESS' } as any);
     prisma.waybill.findUnique.mockResolvedValueOnce({ status: 'ARRIVED', weighTickets: [{ status: 'COMPLETED', abnormal: true }], weightSelections: [] } as any);
     await service.syncTaskForWaybill(waybill.id, 'user-1');
-    expect(prisma.weighTask.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'EXCEPTION' } });
+    expect(prisma.weighTask.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'PENDING_CONFIRMATION' } });
+  });
+
+  it('历史计划偏差任务按正常进度展示且不改写原始数据', async () => {
+    const item = { status: 'ARRIVED', weighTask: { status: 'EXCEPTION' }, weightSelections: [], weighTickets: [{ abnormal: true }] };
+    prisma.waybill.findMany.mockResolvedValueOnce([item] as any);
+    const result = await service.findManagementFiles({}, 'user-1');
+    expect(result.items[0]).toMatchObject({ weighTask: { status: 'PENDING_CONFIRMATION' }, weighTickets: [{ abnormal: true }] });
+    expect(item.weighTask.status).toBe('EXCEPTION');
+    expect(prisma.weighTask.update).not.toHaveBeenCalled();
+  });
+
+  it('历史计划偏差已有库存采信时展示为已完成', async () => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ status: 'ARRIVED', weighTask: { status: 'EXCEPTION' }, weightSelections: [{ purpose: 'INVENTORY' }] } as any);
+    const result = await service.findManagementFile(waybill.id, 'user-1');
+    expect(result.weighTask?.status).toBe('COMPLETED');
+    expect(prisma.weighTask.update).not.toHaveBeenCalled();
   });
 
   it('销售运单允许在发运前创建出库磅单', async () => {

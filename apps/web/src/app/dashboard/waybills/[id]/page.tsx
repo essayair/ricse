@@ -15,7 +15,7 @@ import { BusinessOperationHistory } from '@/components/business-operation-histor
 import { BusinessDirectionBadge, waybillStatusLabel, waybillTransitionLabel } from '@/components/business-direction';
 import { StatusText } from '@/components/status-text';
 import { DirectDeliveryPanel } from '@/components/logistics/direct-delivery-panel';
-import { confirmAction, promptAction } from '@/lib/system-dialog';
+import { alertAction, confirmAction, promptAction } from '@/lib/system-dialog';
 import { driverMatchesTransport, FleetCarrierLink, vehicleMatchesTransport } from '@/lib/logistics-resources';
 
 interface Vehicle { id: string; plateNo: string; vehicleType: string; brand?: string; loadCapacity: string; driverName?: string; driverPhone?: string; ownerType: string; owner: { id: string; name: string } | null; fleetLinks?: FleetCarrierLink[]; drivers: Array<{ role: string; driver: { id: string; name: string; phone: string } }> }
@@ -81,7 +81,15 @@ export default function WaybillDetailPage() {
   const changeFreightMode = (value: string) => { setFreightMode(value); setVehicleId(''); setPlateNo(''); setDriverId(''); setDriverSearch(''); setDriverName(''); setDriverPhone(''); if (value !== 'THIRD_PARTY') setCarrierPartnerId(''); };
   const saveAssignment = async () => { if (!plateNo.trim() || !driverName.trim() || !driverPhone.trim()) return alert('请填写车牌号、司机姓名和联系电话'); if (freightMode === 'THIRD_PARTY' && !carrierPartnerId) return alert('请选择已维护的物流承运商'); try { setWaybill(await api.patch(`/waybills/${id}/assignment`, { vehicleId: vehicleId || null, driverId: driverId || null, plateNo, driverName, driverPhone, carrierPartnerId: carrierPartnerId || null, freightMode, plannedDepartureAt: plannedDepartureAt || undefined, plannedArrivalAt: plannedArrivalAt || undefined })); } catch (error: any) { alert(error.message); } };
   const saveCarrier = async () => { try { setWaybill(await api.patch(`/waybills/${id}/carrier`, { carrierPartnerId: bindCarrierId || null })); setEditingCarrier(false); } catch (error: any) { alert(error.message); } };
-  const transition = async (status: string, label: string) => { if (!await confirmAction(`确定${label}？`, { title: `${label}确认` })) return; try { setWaybill(await api.patch(`/waybills/${id}/status`, { status })); } catch (error: any) { alert(error.message); } };
+  const transition = async (status: string, label: string) => {
+    if (!await confirmAction(`确定${label}？`, { title: `${label}确认` })) return;
+    try { setWaybill(await api.patch(`/waybills/${id}/status`, { status })); }
+    catch (error: any) {
+      const title = status === 'IN_TRANSIT' ? '发运失败'
+        : status === 'ARRIVED' ? (waybill?.dispatchNotice.type === 'SALES' ? '送达确认失败' : '到达确认失败') : '取消运单失败';
+      await alertAction(error.message || '操作未完成，请稍后重试', { title, destructive: true });
+    }
+  };
   const confirmSalesCompletion = async () => {
     const report = waybill?.qualityTask?.basisInspection;
     if (!report) return alert('请先在交付质检任务中采用一份有效报告并形成最终结论');
