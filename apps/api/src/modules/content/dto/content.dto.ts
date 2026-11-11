@@ -206,8 +206,15 @@ export class UpdateDataSourceDto {
   @IsOptional() @IsObject() config?: Record<string, unknown>;
 }
 
+// 授权码是微信签发的不透明凭证，不按旧的短码长度假设校验，也不能截断。
+// 4096 是本服务的防御性输入上限，并非微信协议规定的固定长度。
+const WECHAT_AUTH_CODE_MAX_LENGTH = 4096;
+
 export class WechatLoginDto {
-  @IsString() @MaxLength(200) code: string;
+  @IsString({ message: '登录凭证格式不正确，请重新发起登录' })
+  @Matches(/\S/, { message: '登录凭证不能为空，请重新发起登录' })
+  @MaxLength(WECHAT_AUTH_CODE_MAX_LENGTH, { message: '登录凭证长度异常，请重新发起登录' })
+  code: string;
   @IsOptional() @IsString() @MaxLength(100) nickName?: string;
   @IsOptional() @IsString() @MaxLength(1000) avatarUrl?: string;
 }
@@ -218,7 +225,10 @@ export class UpdateWechatProfileDto {
 }
 
 export class WechatPhoneDto {
-  @IsString() @MaxLength(200) code: string;
+  @IsString({ message: '手机号授权凭证格式不正确，请重新授权' })
+  @Matches(/\S/, { message: '手机号授权凭证不能为空，请重新授权' })
+  @MaxLength(WECHAT_AUTH_CODE_MAX_LENGTH, { message: '手机号授权凭证长度异常，请重新授权' })
+  code: string;
   @IsBoolean() @Equals(true, { message: '获取手机号前必须同意用户服务协议和隐私政策' }) accepted: boolean;
   @IsString() @MaxLength(30) serviceAgreementVersion: string;
   @IsString() @MaxLength(30) privacyPolicyVersion: string;
