@@ -7,6 +7,7 @@ import { parseGradePriceRules } from './grade-price-rules';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { AccessControlService } from '../access-control/access-control.service';
 import { resolvePagination } from '../common/pagination';
+import { bilateralContractView } from './bilateral-visibility';
 
 type QuantityValue = { quantity: unknown; unit: string };
 type ApprovalContractContext = {
@@ -278,17 +279,17 @@ export class ContractService {
   private async normalizeMaterialNames<T extends { materialId: string; materialName?: string }>(
     lineItems: T[],
     client: Prisma.TransactionClient | PrismaService = this.prisma,
-  ): Promise<Array<T & { materialName: string }>> {
+  ): Promise<Array<T & { materialName: string; pricingQuantityBasis: string | null }>> {
     if (!lineItems.length) return [];
     const materialIds = [...new Set(lineItems.map((item) => item.materialId))];
     const materials = await client.material.findMany({
       where: { id: { in: materialIds }, deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, pricingQuantityBasis: true },
     }) || [];
     const names = new Map(materials.map((material) => [material.id, material.name]));
     const missingId = materialIds.find((materialId) => !names.has(materialId));
     if (missingId) throw new BadRequestException('所选物料不存在或已被删除');
-    return lineItems.map((item) => ({ ...item, materialName: names.get(item.materialId)! }));
+    return lineItems.map((item) => ({ ...item, materialName: names.get(item.materialId)!, pricingQuantityBasis: materials.find(m => m.id === item.materialId)?.pricingQuantityBasis || null }));
   }
 
   private async validateContractForSubmission(
@@ -297,6 +298,9 @@ export class ContractService {
       type: string;
       title?: string;
       externalNo?: string | null;
+      salesExternalNo?: string | null;
+      salesSignedAt?: Date | null;
+      salesPaymentMethod?: string | null;
       departmentId?: string | null;
       pricingType?: string | null;
       signedAt?: Date | null;
@@ -317,7 +321,7 @@ export class ContractService {
       signingPartnerId: string | null;
       sellerId: string | null;
       buyerId: string | null;
-      attachments: Array<{ id: string }>;
+      attachments: Array<{ id: string; category?: string }>;
       lineItems: Array<{
         materialId: string;
         quantity: unknown;
@@ -360,6 +364,14 @@ export class ContractService {
     const validDate = (value: Date | null | undefined) => value instanceof Date && !Number.isNaN(value.getTime());
     if (!validDate(contract.signedAt)) throw new BadRequestException('请填写纸质合同签订日期');
     if (!contract.attachments?.length) throw new BadRequestException('请至少上传一份合同附件后再提交审批');
+    if (contract.type === 'BILATERAL') {
+      if (!contract.salesExternalNo?.trim()) throw new BadRequestException('请填写销售方向外部合同号（无编号请填写“无”）');
+      if (!validDate(contract.salesSignedAt)) throw new BadRequestException('请填写销售方向合同签订日期');
+      if (!contract.salesPaymentMethod?.trim()) throw new BadRequestException('请填写销售方向收款约定');
+      for (const [category, label] of [['PURCHASE_CONTRACT', '采购合同'], ['SALES_CONTRACT', '销售合同']]) {
+        if (!contract.attachments.some(a => a.category === category)) throw new BadRequestException(`请至少上传并分类一份${label}附件后再提交审批`);
+      }
+    }
     if (validDate(contract.effectiveAt) && validDate(contract.expireAt) && contract.expireAt! < contract.effectiveAt!) {
       throw new BadRequestException('到期日期不能早于生效日期');
     }
@@ -410,9 +422,16 @@ export class ContractService {
       if (contract.type === 'BILATERAL') checkPrice(line.salesUnitPrice, line.salesUnitPriceExTax, '销售单价');
     }
     if (contract.pricingType === 'GRADE_TIER') {
-      for (const line of contract.lineItems) {
-        parseGradePriceRules(line.priceRulesSnapshot);
-        if (contract.type === 'BILATERAL') parseGradePriceRules(line.salesPriceRulesSnapshot);
+      for (const [index, line] of contract.lineItems.entries()) {
+        const validatePrice = (snapshot: unknown, direction: string) => {
+          try { parseGradePriceRules(snapshot, { requireQuantityBasis: true }); }
+          catch (error) {
+            if (error instanceof BadRequestException) throw new BadRequestException(`第${index + 1}项货物${direction}品位价格：${error.message}`);
+            throw error;
+          }
+        };
+        validatePrice(line.priceRulesSnapshot, contract.type === 'SALES' ? '销售方向' : '采购方向');
+        if (contract.type === 'BILATERAL') validatePrice(line.salesPriceRulesSnapshot, '销售方向');
       }
     }
     const materials = await client.material.findMany({
@@ -460,6 +479,9 @@ export class ContractService {
 
   async create(dto: CreateContractDto, userId: string) {
     const access = await this.accessControl.assertPermission(userId, 'contract.create');
+    if (access.isExternal && dto.type === 'BILATERAL') {
+      throw new ForbiddenException('双边合同由内部运营人员维护；外部企业仅可查看本方方向资料');
+    }
     const selectedParties = [dto.sellerId, dto.buyerId, dto.signingPartnerId].filter(Boolean);
     if (
       access.isExternal
@@ -521,6 +543,9 @@ export class ContractService {
           departmentId,
           businessUnitId: businessUnit?.id || dto.businessUnitId || null,
           externalNo: dto.externalNo,
+          salesExternalNo: dto.type === 'BILATERAL' ? dto.salesExternalNo : null,
+          salesSignedAt: dto.type === 'BILATERAL' && dto.salesSignedAt ? new Date(dto.salesSignedAt) : null,
+          salesPaymentMethod: dto.type === 'BILATERAL' ? dto.salesPaymentMethod : null,
           contactPerson: dto.contactPerson,
           contactPhone: dto.contactPhone,
           pricingType: dto.pricingType,
@@ -545,6 +570,7 @@ export class ContractService {
             create: normalizedLineItems.map((item) => ({
               materialId: item.materialId,
               materialName: item.materialName,
+              pricingQuantityBasis: item.pricingQuantityBasis,
               quantity: item.quantity,
               unit: item.unit || 'TON',
               unitPrice: item.unitPrice,
@@ -647,9 +673,10 @@ export class ContractService {
     const permissionMap = userId
       ? await this.getScopedPermissionMap(userId, items.map((item) => item.id))
       : new Map<string, string[]>();
+    const context = userId ? await this.accessControl.getContext(userId) : null;
     return {
       items: items.map((contract) => ({
-        ...this.withFulfillment(contract),
+        ...bilateralContractView(this.withFulfillment(contract), context?.isExternal ? context.externalPartnerId : null),
         allowedPermissions: permissionMap.get(contract.id) || [],
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
@@ -668,7 +695,10 @@ export class ContractService {
       if (!context.isAdmin && !context.permissions.includes(permissionCode)) continue;
       const scope = await this.accessControl.getContractScope(userId, permissionCode);
       const matches = await this.prisma.contract.findMany({
-        where: { id: { in: contractIds }, deletedAt: null, AND: [scope] },
+        where: {
+          id: { in: contractIds }, deletedAt: null, AND: [scope],
+          ...(context.isExternal ? { type: { not: 'BILATERAL' } } : {}),
+        },
         select: { id: true },
       });
       for (const match of matches) result.get(match.id)?.push(permissionCode);
@@ -723,14 +753,18 @@ export class ContractService {
         select: { id: true, name: true },
       })
       : null;
-    return this.withFulfillment({
+    const context = userId ? await this.accessControl.getContext(userId) : null;
+    if (context?.isExternal && contract.type === 'BILATERAL' && permissionCode !== 'contract.view') {
+      throw new ForbiddenException('双边合同由内部运营人员维护；外部企业仅可查看本方方向资料');
+    }
+    return bilateralContractView(this.withFulfillment({
       ...contract,
       department,
       attachments: (contract.attachments || []).map((attachment) => ({
         ...attachment,
         originalName: normalizeUploadFilename(attachment.originalName),
       })),
-    });
+    }), context?.isExternal ? context.externalPartnerId : null);
   }
 
   async updateStatus(id: string, dto: UpdateContractStatusDto, user: { id: string; role: string }) {
@@ -762,6 +796,7 @@ export class ContractService {
           type: true,
           title: true,
           externalNo: true,
+          salesExternalNo: true, salesSignedAt: true, salesPaymentMethod: true,
           pricingType: true,
           totalAmount: true,
           signedAt: true,
@@ -785,7 +820,7 @@ export class ContractService {
           departmentId: true,
           businessUnitId: true,
           createdBy: true,
-          attachments: { select: { id: true } },
+          attachments: { select: { id: true, category: true } },
           lineItems: {
             select: {
               materialId: true,
@@ -801,6 +836,10 @@ export class ContractService {
         },
       });
       if (!contract) throw new NotFoundException('合同不存在');
+
+      if (access.isExternal && contract.type === 'BILATERAL') {
+        throw new ForbiddenException('双边合同由内部运营人员维护；外部企业仅可查看本方方向资料');
+      }
 
       this.validateTransition(contract.status, status);
 
@@ -978,6 +1017,7 @@ export class ContractService {
         type: true,
         title: true,
         externalNo: true,
+        salesExternalNo: true, salesSignedAt: true, salesPaymentMethod: true,
         pricingType: true,
         totalAmount: true,
         signedAt: true,
@@ -1002,7 +1042,7 @@ export class ContractService {
         departmentId: true,
         businessUnitId: true,
         createdBy: true,
-        attachments: { select: { id: true } },
+        attachments: { select: { id: true, category: true } },
         lineItems: {
           select: {
             materialId: true,
@@ -1355,6 +1395,7 @@ export class ContractService {
     dto: {
       title?: string; type?: string; totalAmount?: number; sellerId?: string | null; buyerId?: string | null;
       signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; businessUnitId?: string | null; externalNo?: string;
+      salesExternalNo?: string; salesSignedAt?: string | null; salesPaymentMethod?: string;
       contactPerson?: string; contactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;
@@ -1376,6 +1417,9 @@ export class ContractService {
     userId?: string,
   ) {
     const contract = await this.findOne(id, userId, 'contract.edit');
+    if (dto.type === 'BILATERAL' && userId && (await this.accessControl.getContext(userId)).isExternal) {
+      throw new ForbiddenException('双边合同由内部运营人员维护；外部企业仅可查看本方方向资料');
+    }
     if (contract.status !== 'DRAFT' && contract.status !== 'REJECTED') {
       throw new BadRequestException('仅草稿或已驳回状态的合同可以编辑');
     }
@@ -1434,6 +1478,7 @@ export class ContractService {
               contractId: id,
               materialId: item.materialId,
               materialName: item.materialName,
+              pricingQuantityBasis: item.pricingQuantityBasis,
               quantity: item.quantity,
               unit: item.unit || 'TON',
               unitPrice: item.unitPrice,
@@ -1463,6 +1508,9 @@ export class ContractService {
           totalAmount: dto.totalAmount,
           departmentId: dto.departmentId,
           externalNo: dto.externalNo,
+          salesExternalNo: dto.salesExternalNo,
+          salesSignedAt: dto.salesSignedAt === undefined ? undefined : dto.salesSignedAt ? new Date(dto.salesSignedAt) : null,
+          salesPaymentMethod: dto.salesPaymentMethod,
           contactPerson: dto.contactPerson,
           contactPhone: dto.contactPhone,
           pricingType: dto.pricingType,
@@ -1520,6 +1568,9 @@ export class ContractService {
       throw new BadRequestException('合同已进入审批或业务流程，不能删除；请按流程终止或作废并保留记录');
     }
     const editAccess = await this.accessControl.assertPermission(user.id, 'contract.edit');
+    if (editAccess.isExternal && contract.type === 'BILATERAL') {
+      throw new ForbiddenException('双边合同由内部运营人员维护；外部企业仅可查看本方方向资料');
+    }
     if (!editAccess.isAdmin && contract.createdBy !== user.id) {
       throw new ForbiddenException('仅合同创建人或系统管理员可以删除未进入流程的草稿');
     }
@@ -1639,8 +1690,27 @@ export class ContractService {
     }
   }
 
-  createAttachment(data: { contractId: string; fileName: string; originalName: string; mimeType: string; size: number; category: string }) {
-    return this.prisma.attachment.create({ data });
+  async createAttachment(data: { contractId: string; fileName: string; originalName: string; mimeType: string; size: number; category: string }) {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM contracts WHERE id=${data.contractId} FOR UPDATE`;
+      const contract = await tx.contract.findUnique({ where: { id: data.contractId }, select: { type: true, status: true } });
+      this.assertAttachmentsEditable(contract?.status);
+      const category = contract?.type === 'BILATERAL' ? data.category : contract?.type === 'SALES' ? 'SALES_CONTRACT' : 'PURCHASE_CONTRACT';
+      if (!['PURCHASE_CONTRACT', 'SALES_CONTRACT', 'OTHER'].includes(category)) throw new BadRequestException('请选择采购合同、销售合同或其他附件类别');
+      return tx.attachment.create({ data: { ...data, category } });
+    });
+  }
+
+  async classifyAttachment(id: string, category: string, userId: string) {
+    const attachment = await this.findAttachmentById(id, userId, 'contract.edit');
+    if (!attachment?.contractId) throw new NotFoundException('合同附件不存在');
+    if (!['PURCHASE_CONTRACT', 'SALES_CONTRACT', 'OTHER'].includes(category)) throw new BadRequestException('请选择有效合同附件类别');
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM contracts WHERE id=${attachment.contractId} FOR UPDATE`;
+      const contract = await tx.contract.findUnique({ where: { id: attachment.contractId! }, select: { status: true } });
+      this.assertAttachmentsEditable(contract?.status);
+      return tx.attachment.update({ where: { id }, data: { category } });
+    });
   }
 
   async findAttachmentById(id: string, userId?: string, permissionCode = 'contract.view') {
@@ -1649,24 +1719,42 @@ export class ContractService {
       await this.accessControl.assertPermission(userId, permissionCode);
       contractScope = await this.accessControl.getContractScope(userId, permissionCode);
     }
+    const context = userId ? await this.accessControl.getContext(userId) : null;
+    const directionFilter: Prisma.AttachmentWhereInput = context?.isExternal ? { OR: [
+      { contract: { type: { not: 'BILATERAL' } } },
+      { category: 'PURCHASE_CONTRACT', contract: { sellerId: context.externalPartnerId } },
+      { category: 'SALES_CONTRACT', contract: { buyerId: context.externalPartnerId } },
+    ] } : {};
+    if (context?.isExternal && permissionCode !== 'contract.view') {
+      directionFilter.contract = { type: { not: 'BILATERAL' } };
+    }
     return this.prisma.attachment.findFirst({
       where: {
         id,
         contractId: { not: null },
         contract: contractScope,
+        AND: [directionFilter],
       },
       include: { contract: { select: { status: true } } },
     });
   }
 
-  deleteAttachment(id: string) {
-    return this.prisma.attachment.delete({ where: { id } });
+  async deleteAttachment(id: string) {
+    return this.mutateDraftAttachment(id, tx => tx.attachment.delete({ where: { id } }));
   }
 
-  renameAttachment(id: string, originalName: string) {
-    return this.prisma.attachment.update({
-      where: { id },
-      data: { originalName },
+  async renameAttachment(id: string, originalName: string) {
+    return this.mutateDraftAttachment(id, tx => tx.attachment.update({ where: { id }, data: { originalName } }));
+  }
+
+  private async mutateDraftAttachment<T>(id: string, mutate: (tx: Prisma.TransactionClient) => Promise<T>) {
+    return this.prisma.$transaction(async tx => {
+      const attachment = await tx.attachment.findUnique({ where: { id }, select: { contractId: true } });
+      if (!attachment?.contractId) throw new NotFoundException('合同附件不存在');
+      await tx.$queryRaw`SELECT id FROM contracts WHERE id=${attachment.contractId} FOR UPDATE`;
+      const contract = await tx.contract.findUnique({ where: { id: attachment.contractId }, select: { status: true } });
+      this.assertAttachmentsEditable(contract?.status);
+      return mutate(tx);
     });
   }
 }

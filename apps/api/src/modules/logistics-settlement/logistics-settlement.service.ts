@@ -133,7 +133,7 @@ export class LogisticsSettlementService {
     const scope = await this.accessControl.getWaybillScope(userId, 'logistics.settlement.manage');
     const { start, end } = this.period(query.periodStart, query.periodEnd);
     const signedAt = start || end ? { gte: start, lt: end } : undefined;
-    const rows = await this.prisma.waybill.findMany({ where: { AND: [scope, { deletedAt: null, status: 'SIGNED', ...(signedAt && { signedAt }), logisticsSettlementLines: { none: { settlement: { status: { not: 'VOIDED' }, deletedAt: null } } } }] }, include: waybillInclude, orderBy: { signedAt: 'asc' } });
+    const rows = await this.prisma.waybill.findMany({ where: { AND: [scope, { deletedAt: null, status: 'SIGNED', freightMode: { notIn: ['SUPPLIER', 'CUSTOMER'] }, ...(signedAt && { signedAt }), logisticsSettlementLines: { none: { settlement: { status: { not: 'VOIDED' }, deletedAt: null } } } }] }, include: waybillInclude, orderBy: { signedAt: 'asc' } });
     return Promise.all(rows.map(async w => ({
       id: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo, signedAt: w.signedAt, departedAt: w.departedAt,
       originLocation: w.originLocation, destinationLocation: w.destinationLocation, carrierPartnerId: w.carrierPartnerId, carrierName: w.carrierName,
@@ -173,6 +173,7 @@ export class LogisticsSettlementService {
     const scope = await this.accessControl.getWaybillScope(userId, 'logistics.settlement.manage');
     const waybills = await this.prisma.waybill.findMany({ where: { AND: [{ id: { in: ids }, deletedAt: null }, scope] }, include: waybillInclude });
     if (waybills.length !== ids.length) throw new BadRequestException('存在不在当前数据范围内或不存在的运单');
+    if (waybills.some(w => ['SUPPLIER', 'CUSTOMER'].includes(w.freightMode))) throw new BadRequestException('供应商承运、客户自提不产生我方运费，不能创建物流结算');
     if (waybills.some(w => w.status !== 'SIGNED')) throw new BadRequestException('所选运单尚未签收，不能加入结算单');
     if (waybills.some(w => !w.signedAt)) throw new BadRequestException('所选运单缺少签收日期，请先补齐签收信息');
     const signedTimes = waybills.map(w => w.signedAt!.getTime());

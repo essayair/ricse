@@ -89,6 +89,49 @@ describe('ContractService', () => {
     service = module.get<ContractService>(ContractService);
   });
 
+  describe('双边合同外部写入保护', () => {
+    beforeEach(() => {
+      const context = { isAdmin: false, isExternal: true, externalPartnerId: 'sup-1', permissions: ['contract.edit', 'contract.submit'], roleCodes: [], assignments: [], user: {} } as any;
+      accessControl.assertPermission.mockResolvedValue(context);
+      accessControl.getContext.mockResolvedValue(context);
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, type: 'BILATERAL', buyerId: 'customer-1' } as any);
+    });
+
+    it('不能创建双边合同，即使误配创建权限', async () => {
+      await expect(service.create({ type: 'BILATERAL' } as any, 'external')).rejects.toThrow(ForbiddenException);
+      expect(prisma.contract.create).not.toHaveBeenCalled();
+    });
+
+    it('不能修改双边合同，即使误配编辑权限', async () => {
+      await expect(service.update('test-id', { title: '修改' }, 'external')).rejects.toThrow(ForbiddenException);
+      expect(prisma.contract.update).not.toHaveBeenCalled();
+    });
+
+    it('不能将普通合同变更为双边合同', async () => {
+      prisma.contract.findFirst.mockResolvedValue(mockContract as any);
+      await expect(service.update('test-id', { type: 'BILATERAL' }, 'external')).rejects.toThrow(ForbiddenException);
+      expect(prisma.contract.update).not.toHaveBeenCalled();
+    });
+
+    it('不能提交或变更双边合同状态', async () => {
+      await expect(service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, { id: 'external', role: 'USER' })).rejects.toThrow(ForbiddenException);
+      expect(prisma.contract.update).not.toHaveBeenCalled();
+    });
+
+    it('双边合同查看仍只返回本方方向', async () => {
+      const result = await service.findOne('test-id', 'external');
+      expect(result).toHaveProperty('visibleDirection', 'PURCHASE');
+      expect(result.lineItems[0]).not.toHaveProperty('salesUnitPrice');
+    });
+
+    it('附件写接口额外排除双边合同', async () => {
+      await service.findAttachmentById('attachment-1', 'external', 'contract.edit');
+      expect(prisma.attachment.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ AND: [expect.objectContaining({ contract: { type: { not: 'BILATERAL' } } })] }),
+      }));
+    });
+  });
+
   describe('getFormOptions', () => {
     it('应返回当前员工所属部门作为默认值，并仅加载所属企业的部门', async () => {
       accessControl.assertPermission.mockResolvedValue({
@@ -413,6 +456,23 @@ describe('ContractService', () => {
   });
 
   describe('getApprovalReadiness', () => {
+    const gradeRules = { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX', quantityBasis: 'DRY_MATTER', selectedSpec: 'FRAGMENT', moistureMaxPct: 5, formulaConfirmed: true, exceptionHandling: 'MANUAL_REVIEW', bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: 14.8, RUN_OF_MINE: null } }] };
+
+    it('销售品位价格缺规格时准确提示货物行及销售方向', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, type: 'SALES', pricingType: 'GRADE_TIER', lineItems: [{ ...mockContract.lineItems[0], priceRulesSnapshot: { ...gradeRules, selectedSpec: '' } }] } as any);
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('第1项货物销售方向品位价格：请选择本行货物规格');
+    });
+
+    it('双边合同分别检查两向，不把销售方向缺水分误报为采购价格问题', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, type: 'BILATERAL', pricingType: 'GRADE_TIER', buyerId: 'customer-1', salesExternalNo: 'SALE-1', salesSignedAt: mockContract.signedAt, salesPaymentMethod: '现款', attachments: [{ id: 'purchase-file', category: 'PURCHASE_CONTRACT' }, { id: 'sales-file', category: 'SALES_CONTRACT' }], lineItems: [{ ...mockContract.lineItems[0], salesUnitPrice: '1200', priceRulesSnapshot: gradeRules, salesPriceRulesSnapshot: { ...gradeRules, moistureMaxPct: null } }] } as any);
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('第1项货物销售方向品位价格：请填写水分上限');
+    });
+
+    it('新提交的品位合同缺计价重量时拒绝提交', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, pricingType: 'GRADE_TIER', lineItems: [{ ...mockContract.lineItems[0], priceRulesSnapshot: { ...gradeRules, quantityBasis: undefined } }] } as any);
+      await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('第1项货物采购方向品位价格：请选择计价重量');
+    });
+
     it('停用物料可以保留草稿，但不能提交审批', async () => {
       prisma.contract.findFirst.mockResolvedValue(mockContract as any);
       prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '测试物料', status: 'INACTIVE' }] as any);
@@ -497,7 +557,7 @@ describe('ContractService', () => {
           lineItems: {
             select: expect.objectContaining({ qualityRulesSnapshot: true }),
           },
-          attachments: { select: { id: true } },
+          attachments: { select: { id: true, category: true } },
         }),
       }));
     });
@@ -872,6 +932,10 @@ describe('ContractService', () => {
         departmentId: 'dept-business',
         type,
         buyerId: type === 'BILATERAL' ? 'customer-1' : null,
+        salesExternalNo: type === 'BILATERAL' ? 'SALE-001' : null,
+        salesSignedAt: type === 'BILATERAL' ? new Date('2026-11-11') : null,
+        salesPaymentMethod: type === 'BILATERAL' ? '到货结算' : null,
+        attachments: type === 'BILATERAL' ? [{ id: 'buy-file', category: 'PURCHASE_CONTRACT' }, { id: 'sale-file', category: 'SALES_CONTRACT' }] : mockContract.attachments,
         lineItems: mockContract.lineItems.map(item => ({ ...item, salesUnitPrice: type === 'BILATERAL' ? '1200' : null })),
       };
       // 模拟 Prisma select：没有显式查询的关联不会出现在返回值中。
@@ -880,7 +944,7 @@ describe('ContractService', () => {
       ) as any);
       await expect(service.updateStatus('test-id', { status: 'PENDING_APPROVAL' }, adminUser)).resolves.toBeDefined();
       expect(prisma.contract.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-        select: expect.objectContaining({ attachments: { select: { id: true } } }),
+        select: expect.objectContaining({ attachments: { select: { id: true, category: true } } }),
       }));
       expect(prisma.approval.createMany).toHaveBeenCalled();
     });

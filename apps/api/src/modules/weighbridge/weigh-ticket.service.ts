@@ -1011,6 +1011,9 @@ export class WeighTicketService {
   ) {
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'weigh-selection:' + waybillId}, 0))::text`;
+      await tx.$queryRaw`SELECT id FROM waybills WHERE id=${waybillId} FOR UPDATE`;
+      const direct = await tx.waybill.findFirst({ where: { id: waybillId, dispatchNotice: { directSalesExecution: { isNot: null } } }, select: { directDeliveries: { where: { status: { in: ['CONFIRMED', 'PENDING_REVIEW'] } }, select: { id: true }, take: 1 } } });
+      if (direct?.directDeliveries?.length) throw new BadRequestException('该运单已确认直拨交付或正在复核，请先撤销交付后再更换采信磅单');
       const stage = ticket.weighingStage;
       const current = await tx.waybillWeightSelection.findFirst({ where: { waybillId, purpose: stage, isCurrent: true } });
       const normalizedReason = reason?.trim();

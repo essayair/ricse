@@ -85,10 +85,11 @@ describe('MobileWorkspaceService', () => {
     expect(result.summary).toEqual({
       pendingApprovals: 2, pendingContractApprovals: 2, pendingPaymentApprovals: 0, pendingSettlementApprovals: 0, contracts: 9, executingContracts: 3,
       pendingDispatch: 6, pendingAssignment: 0, pendingDeparture: 6, inTransit: 6,
-      pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8,
+      pendingWeighing: 4, pendingQuality: 5, pendingReceipt: 6, pendingInbound: 7, pendingOutbound: 8, pendingDirectDelivery: 6,
     });
     expect(result.account.roleNames).toEqual(['系统管理员']);
-    expect(prisma.waybill.count).toHaveBeenCalledTimes(3);
+    expect(prisma.waybill.count).toHaveBeenCalledTimes(4);
+    expect(prisma.waybill.count).toHaveBeenCalledWith(expect.objectContaining({ where: { deletedAt: null, status: 'SIGNED', salesCompletionConfirmedAt: null, dispatchNotice: { directSalesExecution: { isNot: null } }, AND: [{}] } }));
     expect(prisma.waybill.count).toHaveBeenCalledWith(expect.objectContaining({
       where: { deletedAt: null, status: 'PENDING', AND: [{}] },
     }));

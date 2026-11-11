@@ -489,17 +489,17 @@ describe('WaybillService', () => {
     expect(prisma.salesOutbound.update).not.toHaveBeenCalled();
   });
 
-  it('没有客户收货磅单不得确认销售交付完成', async () => {
+  it('没有任何有效磅单不得确认销售交付完成', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1', status: 'SIGNED', salesCompletionConfirmedAt: null,
       dispatchNotice: { type: 'SALES', mode: 'STANDARD' }, outboundReceipts: [{ status: 'POSTED' }],
       weighTickets: [], qualityTask: { status: 'COMPLETED', basisInspection: { id: 'report-1', status: 'CONFIRMED' } },
     } as any);
     await expect(service.confirmSalesCompletion('waybill-1', 'customer-ticket', 'report-1', '客户报告已核对', 'user-1'))
-      .rejects.toThrow('客户收货磅单');
+      .rejects.toThrow('至少一张有效交付磅单');
   });
 
-  it('我方发货检测报告不能冒充客户收货报告确认销售交付', async () => {
+  it('已采用发货侧有效报告也可以确认销售交付，不强制补收货报告', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       id: 'waybill-1', status: 'SIGNED', salesCompletionConfirmedAt: null,
       dispatchNotice: { type: 'SALES', mode: 'STANDARD' }, outboundReceipts: [{ status: 'POSTED' }],
@@ -511,8 +511,8 @@ describe('WaybillService', () => {
       qualityTask: { status: 'COMPLETED', basisInspection: { id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS', evidenceStage: 'SHIPPING' } },
     } as any);
     await expect(service.confirmSalesCompletion('waybill-1', 'customer-ticket', 'report-1', '确认交付', 'user-1'))
-      .rejects.toThrow('我方发货检测报告不能作为客户收货质检依据');
-    expect(prisma.waybill.updateMany).not.toHaveBeenCalled();
+      .resolves.toBeDefined();
+    expect(prisma.waybill.updateMany).toHaveBeenCalled();
   });
 
   it('多张客户磅单时必须明确选择有效的收货磅单', async () => {
@@ -527,8 +527,8 @@ describe('WaybillService', () => {
       weightSelections: [{ purpose: 'INVENTORY', weighTicketId: 'shipping-ticket' }],
       qualityTask: { status: 'COMPLETED', basisInspection: { id: 'report-1', status: 'CONFIRMED', conclusion: 'PASS', evidenceStage: 'RECEIVING' } },
     } as any);
-    await expect(service.confirmSalesCompletion('waybill-1', 'shipping-ticket', 'report-1', '确认交付', 'user-1'))
-      .rejects.toThrow('请选择该运单已复核的客户收货磅单');
+    await expect(service.confirmSalesCompletion('waybill-1', 'customer-a', 'report-1', '确认交付', 'user-1'))
+      .rejects.toThrow('所选侧有多张磅单');
     expect(prisma.waybill.updateMany).not.toHaveBeenCalled();
   });
 

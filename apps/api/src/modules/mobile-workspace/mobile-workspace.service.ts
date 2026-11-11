@@ -111,7 +111,7 @@ export class MobileWorkspaceService {
         result = await this.dispatchNotices.findAll({ search: query.search, status }, userId);
         break;
       case 'waybills':
-        result = await this.waybills.findAll({ search: query.search, status }, userId);
+        result = await this.waybills.findAll({ search: query.search, status, ...(todo === 'DIRECT_DELIVERY' ? { directPending: true } : {}) }, userId);
         break;
       case 'weigh-tickets':
         result = await this.weighTickets.findManagementFiles({ search: query.search, status }, userId);
@@ -149,6 +149,7 @@ export class MobileWorkspaceService {
 
   private isMobileTodo(module: MobileBusinessModule, item: any, todo: string) {
     if (module === 'waybills') {
+      if (todo === 'DIRECT_DELIVERY') return item.status === 'SIGNED' && item.dispatchNotice?.directSalesExecution && !item.salesCompletionConfirmedAt;
       if (todo === 'ACTIVE') return ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(item.status);
       // 历史待办链接统一归入待发运，不再把缺资料运单分成另一个业务阶段。
       if (['PENDING', 'PENDING_UNASSIGNED', 'PENDING_READY'].includes(todo)) return item.status === 'PENDING';
@@ -232,7 +233,7 @@ export class MobileWorkspaceService {
     const canViewQuality = context.isAdmin || context.permissions.includes('quality.view');
     const canViewInventory = context.isAdmin || context.permissions.includes('inventory.view');
     const canViewLogistics = context.isAdmin || context.permissions.includes('logistics.view');
-    const [pendingRows, contractCount, executingCount, pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound] = await Promise.all([
+    const [pendingRows, contractCount, executingCount, pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound, pendingDirectDelivery] = await Promise.all([
       canApprove ? this.prisma.approval.findMany({
         where: { status: 'PENDING', ...pendingWhere, contract: { deletedAt: null, status: 'PENDING_APPROVAL', AND: contractApprovalScope ? [contractApprovalScope] : [] } },
         select: { contractId: true, round: true, step: true },
@@ -261,6 +262,7 @@ export class MobileWorkspaceService {
       canViewInventory ? this.access.getOutboundReceiptScope(userId).then(scope => this.prisma.outboundReceipt.count({
         where: { deletedAt: null, status: { in: ['PENDING', 'READY', 'VARIANCE_PENDING'] }, AND: [scope] },
       })) : Promise.resolve(0),
+      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({ where: { deletedAt: null, status: 'SIGNED', salesCompletionConfirmedAt: null, dispatchNotice: { directSalesExecution: { isNot: null } }, AND: [scope] } })) : Promise.resolve(0),
     ]);
     const pendingContractApprovals = new Set(pendingRows.map((item) => `${item.contractId}:${item.round}:${item.step}`)).size;
     const pendingPaymentApprovals = this.finance && (context.isAdmin || context.permissions.includes('settlement.payment.approve'))
@@ -283,7 +285,7 @@ export class MobileWorkspaceService {
       summary: {
         pendingApprovals: pendingCount, pendingContractApprovals, pendingPaymentApprovals, pendingSettlementApprovals, contracts: contractCount, executingContracts: executingCount,
         // 旧客户端字段保留兼容；新客户端仅使用统一待发运数量。
-        pendingDispatch, pendingAssignment: 0, pendingDeparture: pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound,
+        pendingDispatch, pendingAssignment: 0, pendingDeparture: pendingDispatch, inTransit, pendingReceipt, pendingWeighing, pendingQuality, pendingInbound, pendingOutbound, pendingDirectDelivery,
       },
     };
   }

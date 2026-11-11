@@ -8,6 +8,7 @@ import { evaluateContractQualityRules } from '../quality/contract-quality-rules'
 import { goodsAmounts } from './payment-balance';
 import { assertCurrentGoodsQuantityCeiling, assertGoodsSettlementSummary } from './goods-settlement-adjustment';
 import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
+import { directSettlementSources } from './direct-settlement-sources';
 
 export const snapshotJson = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 export const signature = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -55,7 +56,7 @@ export class PurchaseSettlementBasis {
         } },
       }, orderBy: { createdAt: 'asc' },
     });
-    return rows.map(row => {
+    const regularSources = rows.map(row => {
       const w = row.waybill, order = w.dispatchNotice.order;
       const waybillLineIds = new Set(w.lineItems.map(line => line.id));
       const occupiedSettlements = legacy.filter(settlement => settlement.lines.some(line => line.waybillLineItemId && waybillLineIds.has(line.waybillLineItemId)))
@@ -209,6 +210,7 @@ export class PurchaseSettlementBasis {
         ...goodsAmounts(remainingQuantity, gradePrice?.status === 'READY' ? gradePrice.unitPrice : item?.unitPrice || 0, deductionPerTon + recoveryDeductionPerTon),
       };
     });
+    return regularSources.concat(await directSettlementSources(this.prisma, contract, 'PAYABLE', excludeSettlementId, reportChoices, ticketChoices));
   }
 
   async assertCurrent(settlementId: string, userId: string, permission = 'settlement.view') {

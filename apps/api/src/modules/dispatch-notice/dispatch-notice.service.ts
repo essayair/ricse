@@ -33,10 +33,12 @@ export class DispatchNoticeService {
     originPartnerAddress: true,
     destinationPartnerAddress: true,
     creator: { select: { id: true, name: true } },
+    directSalesExecution: true,
+    directPurchaseExecution: { include: { salesNotice: { select: { id: true, noticeNo: true, waybills: { where: { deletedAt: null }, select: { id: true, waybillNo: true, status: true, totalQuantity: true, plateNo: true, driverName: true, salesCompletionConfirmedAt: true } } } } } },
     lineItems: { orderBy: { createdAt: 'asc' as const } },
     waybills: {
       where: { deletedAt: null },
-      select: { id: true, waybillNo: true, status: true, totalQuantity: true, plateNo: true, driverName: true },
+      select: { id: true, waybillNo: true, status: true, totalQuantity: true, plateNo: true, driverName: true, salesCompletionConfirmedAt: true },
       orderBy: { createdAt: 'desc' as const },
     },
   };
@@ -114,6 +116,7 @@ export class DispatchNoticeService {
     const availability = await this.getOrderAvailability(dto.orderId, userId, 'execution.manage');
     const order = availability.order;
     const mode = dto.mode || 'STANDARD';
+    if (mode === 'DIRECT') throw new BadRequestException('新直拨须从双边合同“新建直拨执行”配对创建，不能单独建立直拨通知');
     const originLocation = dto.originLocation?.trim();
     const destinationLocation = dto.destinationLocation?.trim();
     if (!originLocation) throw new BadRequestException('起运地点不能为空');
@@ -180,7 +183,7 @@ export class DispatchNoticeService {
         orderId: order.id,
         type: order.type,
         mode,
-        qualityRequired: dto.qualityRequired ?? order.type === 'PURCHASE',
+        qualityRequired: dto.qualityRequired ?? true,
         warehouseId: inventoryWarehouseId || dto.warehouseId || null,
         plannedDate: dto.plannedDate ? new Date(dto.plannedDate) : null,
         originLocation,
@@ -278,7 +281,7 @@ export class DispatchNoticeService {
     const items = await this.prisma.dispatchNotice.findMany({
       where, include: this.include, take: 100, orderBy: { createdAt: 'desc' },
     });
-    return { items, total: items.length };
+    return { items: items.map(item => ({ ...item, waybills: item.directPurchaseExecution?.salesNotice.waybills || item.waybills })), total: items.length };
   }
 
   async findOne(id: string, userId: string, permission = 'execution.view') {
@@ -288,11 +291,12 @@ export class DispatchNoticeService {
       where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });
     if (!notice) throw new NotFoundException('执行通知不存在');
-    return notice;
+    return { ...notice, waybills: notice.directPurchaseExecution?.salesNotice.waybills || notice.waybills };
   }
 
   async updateStatus(id: string, status: string, userId: string) {
     const notice = await this.findOne(id, userId, 'execution.manage');
+    const pair = notice.directSalesExecution || notice.directPurchaseExecution;
     const allowed: Record<string, string[]> = {
       DRAFT: ['ISSUED', 'CANCELLED'],
       ISSUED: ['CANCELLED', 'COMPLETED'],
@@ -311,6 +315,7 @@ export class DispatchNoticeService {
           ? '所有有效物流运单完成客户签收后才能完成执行通知'
           : '所有有效物流运单完成收货后才能完成执行通知');
       }
+      if (pair && active.some(item => !item.salesCompletionConfirmedAt)) throw new BadRequestException('请先完成全部有效车次的销售交付及采购联动确认');
     }
     return this.prisma.$transaction(async tx => {
       const updated = await tx.dispatchNotice.update({
@@ -322,6 +327,21 @@ export class DispatchNoticeService {
         },
         include: this.include,
       });
+      if (pair) {
+        await tx.dispatchNotice.updateMany({ where: { id: { in: [pair.purchaseNoticeId, pair.salesNoticeId] } }, data: { status, completedAt: status === 'COMPLETED' ? new Date() : null } });
+        if (status === 'COMPLETED') {
+          const pairedNotices = await tx.dispatchNotice.findMany({ where: { id: { in: [pair.purchaseNoticeId, pair.salesNoticeId] } }, select: { orderId: true } });
+          for (const orderId of [...new Set(pairedNotices.map(n => n.orderId))]) {
+            const [pending, lines, sums] = await Promise.all([
+              tx.dispatchNotice.count({ where: { orderId, deletedAt: null, status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
+              tx.orderLineItem.findMany({ where: { orderId }, select: { id: true, quantity: true } }),
+              tx.dispatchNoticeLineItem.groupBy({ by: ['orderLineItemId'], where: { dispatchNotice: { orderId, deletedAt: null, status: { not: 'CANCELLED' } } }, _sum: { quantity: true } }),
+            ]);
+            if (!pending && lines.every(l => new Prisma.Decimal(sums.find(s => s.orderLineItemId === l.id)?._sum.quantity || 0).gte(l.quantity))) await tx.order.update({ where: { id: orderId }, data: { status: 'COMPLETED', completedAt: new Date() } });
+          }
+        }
+        return updated;
+      }
       if (status === 'ISSUED' && notice.order.status === 'CONFIRMED') {
         await tx.order.update({
           where: { id: notice.orderId },

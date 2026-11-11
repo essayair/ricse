@@ -144,6 +144,11 @@ export class ContractController {
     return { url: await this.fileService.getUrl(attachment.fileName) };
   }
 
+  @Patch('attachments/:id/category')
+  classifyAttachment(@Param('id') id: string, @Body('category') category: string, @CurrentUser('id') userId: string) {
+    return this.contractService.classifyAttachment(id, category, userId);
+  }
+
   @Delete('attachments/:id')
   @HttpCode(204)
   @ApiOperation({ summary: '删除合同附件' })
@@ -151,12 +156,12 @@ export class ContractController {
     const attachment = await this.contractService.findAttachmentById(id, userId, 'contract.edit');
     if (!attachment) return;
     this.contractService.assertAttachmentsEditable(attachment.contract?.status);
+    await this.contractService.deleteAttachment(id);
     try {
       await this.fileService.delete(attachment.fileName);
     } catch {
       // 存储对象已丢失时仍清理数据库记录，保证删除操作可恢复。
     }
-    await this.contractService.deleteAttachment(id);
   }
 
   @Patch('attachments/:id/name')

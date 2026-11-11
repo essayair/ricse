@@ -81,6 +81,9 @@ export class CreateContractLineItemDto {
 }
 
 export class CreateContractDto {
+  @IsOptional() @IsString() @MaxLength(100) salesExternalNo?: string;
+  @IsOptional() @IsDateString() salesSignedAt?: string;
+  @IsOptional() @IsString() @MaxLength(200) salesPaymentMethod?: string;
   @ApiPropertyOptional({ description: '客户端请求标识，用于防止重复创建草稿' })
   @IsOptional()
   @IsString()

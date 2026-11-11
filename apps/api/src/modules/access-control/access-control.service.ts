@@ -439,7 +439,7 @@ export class AccessControlService {
     return units;
   }
 
-  async getContractScope(userId: string, permissionCode = 'contract.view'): Promise<Prisma.ContractWhereInput> {
+  async getContractScope(userId: string, permissionCode = 'contract.view', requiredRoleCode?: string): Promise<Prisma.ContractWhereInput> {
     const context = await this.getContext(userId);
     if (context.isAdmin) return {};
 
@@ -461,7 +461,7 @@ export class AccessControlService {
     }
 
     const permissionAssignments = context.assignments.filter((assignment) =>
-      assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
+      (!requiredRoleCode || assignment.role.code === requiredRoleCode) && assignment.role.permissions.some((entry) => entry.permission.code === permissionCode),
     );
     const membershipIds = this.getEffectiveBusinessUnitIds(context);
     if (membershipIds.length === 0) return this.noAccess();
@@ -525,7 +525,14 @@ export class AccessControlService {
   }
 
   async getOrderScope(userId: string, permissionCode = 'execution.view'): Promise<Prisma.OrderWhereInput> {
-    return { contract: await this.getContractScope(userId, permissionCode) };
+    const contract = await this.getContractScope(userId, permissionCode);
+    const context = await this.getContext(userId);
+    if (!context.isExternal) return { contract };
+    return { AND: [{ contract }, { OR: [
+      { contract: { type: { not: 'BILATERAL' } } },
+      { type: 'PURCHASE', contract: { sellerId: context.externalPartnerId } },
+      { type: 'SALES', contract: { buyerId: context.externalPartnerId } },
+    ] }] };
   }
 
   async getDispatchNoticeScope(userId: string, permissionCode = 'execution.view'): Promise<Prisma.DispatchNoticeWhereInput> {
@@ -533,7 +540,10 @@ export class AccessControlService {
   }
 
   async getWaybillScope(userId: string, permissionCode = 'logistics.view'): Promise<Prisma.WaybillWhereInput> {
-    return { dispatchNotice: await this.getDispatchNoticeScope(userId, permissionCode) };
+    const ordinary = { dispatchNotice: await this.getDispatchNoticeScope(userId, permissionCode) };
+    const context = await this.getContext(userId);
+    if (!context.isExternal || !context.externalPartnerId) return ordinary;
+    return { OR: [ordinary, { dispatchNotice: { directSalesExecution: { is: { contract: { sellerId: context.externalPartnerId, deletedAt: null } } } } }] };
   }
 
   async getWeighTicketScope(userId: string, permissionCode = 'quality.view'): Promise<Prisma.WeighTicketWhereInput> {

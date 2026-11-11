@@ -33,29 +33,50 @@ export const DEFAULT_FLUORITE_ORE_BANDS: GradePriceBand[] = [
   [30, 35, 22.7], [35, 40, 23.2], [40, 45, 23.5], [45, 50, 23.8],
 ].map(([lower, upper, rate]) => ({ lower, upper, rates: { FRAGMENT: rate, RUN_OF_MINE: rate } }));
 
-export function parseGradePriceRules(value: unknown): GradePriceRules {
+export function parseGradePriceRules(value: unknown, options: { requireQuantityBasis?: boolean } = {}): GradePriceRules {
   const rules = value as Partial<GradePriceRules> | null;
-  if (!rules || rules.version !== 1 || rules.method !== 'CAF2_GRADE_TIER'
-    || rules.gradeUnit !== 'PERCENT_POINTS' || rules.rateUnit !== 'CNY_PER_DEGREE_EX_TAX'
-    || rules.exceptionHandling !== 'MANUAL_REVIEW' || !['FRAGMENT', 'RUN_OF_MINE'].includes(rules.selectedSpec || '')
-    || rules.formulaConfirmed !== true || !Array.isArray(rules.bands) || !rules.bands.length) {
-    throw new BadRequestException('请确认品位分档价格规则、元/度口径与人工例外处理');
+  if (!rules || rules.version !== 1 || rules.method !== 'CAF2_GRADE_TIER') {
+    throw new BadRequestException('请填写并保存品位分档价格规则');
+  }
+  if (!['FRAGMENT', 'RUN_OF_MINE'].includes(rules.selectedSpec || '')) {
+    throw new BadRequestException('请选择本行货物规格（碎屑或统矿）');
+  }
+  if ((options.requireQuantityBasis || rules.quantityBasis != null) && !['PHYSICAL', 'DRY_MATTER'].includes(rules.quantityBasis || '')) {
+    throw new BadRequestException('请选择计价重量：所选磅单净重折干或所选磅单净重');
+  }
+  if (rules.moistureMaxPct == null) {
+    throw new BadRequestException('请填写水分上限（%）');
   }
   if (!Number.isFinite(rules.moistureMaxPct) || Number(rules.moistureMaxPct) < 0 || Number(rules.moistureMaxPct) > 100) {
     throw new BadRequestException('水分上限必须为0至100之间的百分比');
   }
-  if (rules.quantityBasis && !['PHYSICAL', 'DRY_MATTER'].includes(rules.quantityBasis)) {
-    throw new BadRequestException('品位结算重量仅支持所选磅单净重或净重折干');
+  if (!Array.isArray(rules.bands) || !rules.bands.length) {
+    throw new BadRequestException('请至少填写一个品位区间及对应的元/度单价');
+  }
+  if (rules.gradeUnit !== 'PERCENT_POINTS' || rules.rateUnit !== 'CNY_PER_DEGREE_EX_TAX') {
+    throw new BadRequestException('品位计价单位不正确，请重新保存价格条款：品位按百分点、单价按不含税元/度');
+  }
+  if (rules.exceptionHandling !== 'MANUAL_REVIEW') {
+    throw new BadRequestException('人工例外处理规则缺失，请重新保存品位价格条款');
+  }
+  if (rules.formulaConfirmed !== true) {
+    throw new BadRequestException('请勾选确认品位分档规则、元/度口径及人工例外处理');
   }
   let previousUpper: number | null = null;
-  for (const band of rules.bands) {
-    const selectedRate = band.rates?.[rules.selectedSpec as 'FRAGMENT' | 'RUN_OF_MINE'];
-    const otherRate = band.rates?.[rules.selectedSpec === 'FRAGMENT' ? 'RUN_OF_MINE' : 'FRAGMENT'];
-    if (!Number.isFinite(band.lower) || !Number.isFinite(band.upper) || band.lower >= band.upper
-      || (previousUpper !== null && band.lower !== previousUpper)
-      || !Number.isFinite(selectedRate) || Number(selectedRate) <= 0
-      || (otherRate != null && (!Number.isFinite(otherRate) || otherRate <= 0))) {
-      throw new BadRequestException('品位区间必须连续、不重叠，且所选规格每档均有正数报价');
+  for (const [index, band] of rules.bands.entries()) {
+    const selectedRate = band?.rates?.[rules.selectedSpec as 'FRAGMENT' | 'RUN_OF_MINE'];
+    const otherRate = band?.rates?.[rules.selectedSpec === 'FRAGMENT' ? 'RUN_OF_MINE' : 'FRAGMENT'];
+    if (!Number.isFinite(band?.lower) || !Number.isFinite(band?.upper) || band.lower < 0 || band.upper > 100 || band.lower >= band.upper) {
+      throw new BadRequestException(`第${index + 1}档品位上下限须在0至100%内，且下限小于上限`);
+    }
+    if (previousUpper !== null && band.lower !== previousUpper) {
+      throw new BadRequestException(`第${index + 1}档品位下限须等于上一档上限，区间必须连续、不重叠`);
+    }
+    if (!Number.isFinite(selectedRate) || Number(selectedRate) <= 0) {
+      throw new BadRequestException(`请填写第${index + 1}档${rules.selectedSpec === 'FRAGMENT' ? '碎屑' : '统矿'}单价（元/度，须大于0）`);
+    }
+    if (otherRate != null && (!Number.isFinite(otherRate) || otherRate <= 0)) {
+      throw new BadRequestException(`第${index + 1}档另一规格的单价须大于0，不适用时请留空`);
     }
     previousUpper = band.upper;
   }

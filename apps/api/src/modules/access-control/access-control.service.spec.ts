@@ -147,7 +147,14 @@ describe('AccessControlService', () => {
     ] };
     await expect(service.getQualityInspectionScope('external-user')).resolves.toEqual({
       OR: [
-        { weighTicket: { waybill: { dispatchNotice: { order: { contract: contractScope } } } } },
+        { weighTicket: { waybill: { OR: [
+          { dispatchNotice: { order: { AND: [{ contract: contractScope }, { OR: [
+            { contract: { type: { not: 'BILATERAL' } } },
+            { type: 'PURCHASE', contract: { sellerId: 'partner-1' } },
+            { type: 'SALES', contract: { buyerId: 'partner-1' } },
+          ] }] } } },
+          { dispatchNotice: { directSalesExecution: { is: { contract: { sellerId: 'partner-1', deletedAt: null } } } } },
+        ] } } },
         { contract: contractScope },
         { contractId: null, createdBy: 'external-user' },
       ],

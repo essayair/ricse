@@ -4,6 +4,9 @@ import { CreateContractLineItemDto } from './create-contract.dto';
 
 /** 编辑草稿或已驳回合同：字段均可选，草稿允许暂存不完整内容，业务完整性在提交审批时校验。 */
 export class UpdateContractDto {
+  @IsOptional() @IsString() @MaxLength(100) salesExternalNo?: string;
+  @IsOptional() @IsDateString() salesSignedAt?: string | null;
+  @IsOptional() @IsString() @MaxLength(200) salesPaymentMethod?: string;
   @IsOptional() @IsString() title?: string;
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsNumber() @Min(0) totalAmount?: number;

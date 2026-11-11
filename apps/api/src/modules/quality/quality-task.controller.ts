@@ -51,6 +51,10 @@ export class QualityTaskController {
     }, userId);
   }
 
+  @Post('waybills/:id')
+  @ApiOperation({ summary: '补建质检归集任务，可关联已有有效报告，不强制重新检测' })
+  createForWaybill(@Param('id') id: string, @CurrentUser('id') uid: string) { return this.service.createTaskForWaybill(id, uid); }
+
   @Get(':id')
   @ApiOperation({ summary: '质检任务详情及机构检测报告' })
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {

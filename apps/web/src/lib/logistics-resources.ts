@@ -14,7 +14,7 @@ export function linkedToCarrier(links: FleetCarrierLink[] | undefined, carrierId
 }
 
 export function vehicleMatchesTransport(vehicle: VehicleResource, choice: TransportChoice) {
-  if (choice.freightMode === 'SOCIAL') return true;
+  if (['SOCIAL', 'SUPPLIER', 'CUSTOMER'].includes(choice.freightMode)) return true;
   if (choice.freightMode === 'SELF') return vehicle.ownerType === 'SELF';
   return Boolean(choice.carrierPartnerId) && ((vehicle.ownerType === 'OUTSOURCED' && vehicle.owner?.id === choice.carrierPartnerId)
     || linkedToCarrier(vehicle.fleetLinks, choice.carrierPartnerId));
@@ -23,7 +23,7 @@ export function vehicleMatchesTransport(vehicle: VehicleResource, choice: Transp
 export function driverMatchesTransport(driver: DriverResource, choice: TransportChoice) {
   const org = driver.serviceOrganization;
   if (org && ((org.status && org.status !== 'ACTIVE') || (org.partner.status && org.partner.status !== 'ACTIVE'))) return false;
-  if (choice.freightMode === 'SOCIAL') return true;
+  if (['SOCIAL', 'SUPPLIER', 'CUSTOMER'].includes(choice.freightMode)) return true;
   if (choice.freightMode === 'SELF') return Boolean(org?.partner.isInternal);
   return Boolean(choice.carrierPartnerId) && (org?.partnerId === choice.carrierPartnerId
     || linkedToCarrier(driver.fleetLinks, choice.carrierPartnerId));

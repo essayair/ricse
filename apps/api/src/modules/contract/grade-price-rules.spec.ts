@@ -26,7 +26,25 @@ describe('萤石矿品位分档计价', () => {
     expect(() => parseGradePriceRules({ ...rules, bands: [rules.bands[0], { ...rules.bands[1], lower: 14 }] })).toThrow('连续、不重叠');
   });
   it('新合同未填价格表时不能提交，草稿可保留空白', () => {
-    expect(() => parseGradePriceRules({ ...rules, bands: [], moistureMaxPct: null })).toThrow('请确认品位分档价格规则');
+    expect(() => parseGradePriceRules({ ...rules, bands: [] })).toThrow('请至少填写一个品位区间');
+  });
+  it.each([
+    ['selectedSpec', '', '请选择本行货物规格'],
+    ['moistureMaxPct', null, '请填写水分上限'],
+    ['moistureMaxPct', -1, '水分上限必须'],
+    ['formulaConfirmed', false, '请勾选确认品位分档规则、元/度口径及人工例外处理'],
+    ['exceptionHandling', undefined, '人工例外处理规则缺失'],
+  ])('缺失或错误字段 %s 返回准确提示', (key, value, message) => {
+    expect(() => parseGradePriceRules({ ...rules, [key]: value })).toThrow(message as string);
+  });
+  it('新提交必须明确计价重量，存量规则计算保持兼容', () => {
+    expect(() => parseGradePriceRules(rules, { requireQuantityBasis: true })).toThrow('请选择计价重量');
+    expect(() => parseGradePriceRules(rules)).not.toThrow();
+    expect(() => parseGradePriceRules({ ...rules, quantityBasis: 'PHYSICAL' }, { requireQuantityBasis: true })).not.toThrow();
+    expect(() => parseGradePriceRules({ ...rules, quantityBasis: 'DRY_MATTER' }, { requireQuantityBasis: true })).not.toThrow();
+  });
+  it('缺价提示准确指向第几档及规格', () => {
+    expect(() => parseGradePriceRules({ ...rules, bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: null, RUN_OF_MINE: null } }] })).toThrow('第1档碎屑单价');
   });
   it('只填写本行货物规格的价格也可以提交，另一规格不被自动套价', () => {
     const oneSpec = { ...rules, bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: 14.8, RUN_OF_MINE: null } }] };

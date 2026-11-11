@@ -687,6 +687,7 @@ describe('WeighTicketService', () => {
   it('销售交付已确认但未正式结算时，可带原因改选客户收货复磅并更新差异快照', async () => {
     jest.spyOn(service, 'syncTaskForWaybill').mockResolvedValue(null);
     prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, dispatchNotice: { type: 'SALES' } } as any)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ salesCompletionCustomerTicketId: 'receiving-1', salesCompletionShippingWeight: 100, salesCompletionRemarks: '原客户签收' } as any);
     prisma.weighTicket.findFirst.mockResolvedValue({ id: 'receiving-2', ticketNo: '客户收货复磅', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: 97 } as any);
     prisma.waybillWeightSelection.findFirst.mockResolvedValue({ id: 'old-selection', weighTicketId: 'receiving-1', purpose: 'RECEIVING' } as any);
@@ -699,5 +700,13 @@ describe('WeighTicketService', () => {
       data: expect.objectContaining({ salesCompletionCustomerTicketId: 'receiving-2', salesCompletionCustomerWeight: 97,
         salesCompletionWeightVariance: expect.objectContaining({}) }),
     }));
+  });
+
+  it('配对直拨已确认或待复核时，必须先撤销才能更换采信磅单', async () => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, dispatchNotice: { type: 'SALES' } } as any)
+      .mockResolvedValueOnce({ directDeliveries: [{ id: 'active-direct-delivery' }] } as any);
+    prisma.weighTicket.findFirst.mockResolvedValue({ id: 'receiving-2', weighingStage: 'RECEIVING', status: 'REVIEWED', netWeight: 97 } as any);
+    await expect(service.selectForPurpose(waybill.id, 'RECEIVING', 'receiving-2', '重新采信', 'user-1')).rejects.toThrow('请先撤销交付');
+    expect(prisma.waybillWeightSelection.updateMany).not.toHaveBeenCalled();
   });
 });

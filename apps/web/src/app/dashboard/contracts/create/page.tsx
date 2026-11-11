@@ -1,4 +1,6 @@
 'use client';
+import { BilateralContractFields, ContractAttachmentCategory } from '@/components/contracts/bilateral-contract-fields';
+import { BilateralPriceTools } from '@/components/contracts/bilateral-price-tools';
 
 import { useState, useEffect, useContext, createContext, Children, cloneElement, isValidElement } from 'react';
 import { Card } from '@/components/ui/card';
@@ -15,6 +17,7 @@ import { GradePriceRulesEditor, GradePriceSnapshot, defaultGradePriceSnapshot } 
 import { TaxPriceFields, pairFromInclusive } from '@/components/contracts/tax-price-fields';
 import { alertValidationErrors, confirmAction } from '@/lib/system-dialog';
 import { focusInvalidField, type FieldErrors } from '@/lib/form-validation';
+import { gradePriceRuleErrors } from '@/lib/grade-price-validation';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -82,8 +85,8 @@ export default function ContractCreatePage() {
   const [businessUnits, setBusinessUnits] = useState<ContractFormOptions['businessUnits']>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState('');
-  const [files, setFiles] = useState<Array<{ file: File; name: string }>>([]);
-  const [uploadedAttachments, setUploadedAttachments] = useState<Array<{ id: string; originalName: string }>>([]);
+  const [files, setFiles] = useState<Array<{ file: File; name: string; category?: string }>>([]);
+  const [uploadedAttachments, setUploadedAttachments] = useState<Array<{ id: string; originalName: string; category?: string }>>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [formErrors, setFormErrors] = useState<FieldErrors>({});
@@ -91,6 +94,7 @@ export default function ContractCreatePage() {
   const [form, setForm] = useState({
     type: 'PURCHASE' as string, title: '',
     signingPartnerId: '', departmentId: '', businessUnitId: '', externalNo: '',
+    salesExternalNo: '', salesSignedAt: '', salesPaymentMethod: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
     pricingType: 'FIXED', unitPrice: '', unitPriceExTax: '', saleUnitPrice: '', saleUnitPriceExTax: '', taxRatePct: '13', overfillPct: '10', shortfallPct: '10',
@@ -179,6 +183,9 @@ export default function ContractCreatePage() {
     departmentId: form.departmentId || undefined,
     businessUnitId: form.businessUnitId || undefined,
     externalNo: form.externalNo || undefined,
+    salesExternalNo: form.type === 'BILATERAL' ? form.salesExternalNo || undefined : undefined,
+    salesSignedAt: form.type === 'BILATERAL' ? form.salesSignedAt || undefined : undefined,
+    salesPaymentMethod: form.type === 'BILATERAL' ? form.salesPaymentMethod || undefined : undefined,
     contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
     pricingType: form.pricingType,
     overfillPct: form.overfillPct === '' ? undefined : Number(form.overfillPct),
@@ -225,7 +232,7 @@ export default function ContractCreatePage() {
     for (const item of pendingFiles) {
       const fd = new FormData();
       fd.append('file', item.file);
-      fd.append('category', 'OTHER');
+      fd.append('category', item.category || (form.type === 'BILATERAL' ? 'OTHER' : form.type === 'SALES' ? 'SALES_CONTRACT' : 'PURCHASE_CONTRACT'));
       fd.append('originalName', item.name.trim() || item.file.name);
       const response = await fetch(`${API_BASE_URL}/contracts/${contractId}/attachments`, {
         method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: fd,
@@ -317,6 +324,17 @@ export default function ContractCreatePage() {
     if (!errors.paymentDays && Number(form.paymentDays) < 0) errors.paymentDays = '尾款账期不能小于0';
     if (form.expireAt && form.effectiveAt && form.expireAt < form.effectiveAt) errors.expireAt = '到期日期不能早于生效日期';
     if (files.length + uploadedAttachments.length === 0) errors.attachments = '请至少上传一份合同附件';
+    if (form.type === 'BILATERAL') {
+      if (!form.salesExternalNo.trim() || !form.salesSignedAt || !form.salesPaymentMethod.trim()) errors.attachments = '请补齐销售方向合同号、签订日期和收款约定';
+      for (const category of ['PURCHASE_CONTRACT', 'SALES_CONTRACT']) if (![...files, ...uploadedAttachments].some(f => f.category === category)) errors.attachments = '双边合同须分别上传并分类采购合同、销售合同附件';
+    }
+    if (form.pricingType === 'GRADE_TIER') {
+      const addGradeErrors = (snapshot: GradePriceSnapshot | null, prefix: string, direction: string) => {
+        for (const [key, message] of Object.entries(gradePriceRuleErrors(snapshot))) errors[`${prefix}.${key}`] = `${direction}品位价格：${message}`;
+      };
+      addGradeErrors(gradePriceSnapshot, 'gradePrice', form.type === 'SALES' ? '销售方向' : '采购方向');
+      if (form.type === 'BILATERAL') addGradeErrors(gradeSalesPriceSnapshot, 'gradeSalesPrice', '销售方向');
+    }
     setFormErrors(errors);
     const entries = Object.entries(errors);
     if (entries.length > 0) {
@@ -324,8 +342,6 @@ export default function ContractCreatePage() {
       focusInvalidField(typeof selected === 'string' ? selected : entries[0][0]);
       return;
     }
-    if (form.pricingType === 'GRADE_TIER' && !gradePriceSnapshot?.formulaConfirmed) { alert('请核对纸质合同并确认元/度计算口径'); return; }
-    if (form.pricingType === 'GRADE_TIER' && form.type === 'BILATERAL' && !gradeSalesPriceSnapshot?.formulaConfirmed) { alert('请确认下游销售方向的元/度计算口径'); return; }
     setSubmitting(true);
     let contractId = draftId;
     try {
@@ -491,7 +507,7 @@ export default function ContractCreatePage() {
             <TaxPriceFields label={form.type === 'SALES' ? '销售' : '采购'} estimated={form.pricingType === 'GRADE_TIER'} rate={form.taxRatePct} inclusive={form.unitPrice} exclusive={form.unitPriceExTax} fieldKey="unitPrice" error={formErrors.unitPrice} onChange={pair => { set('unitPrice', pair.inclusive); set('unitPriceExTax', pair.exclusive); }} />
             {form.type === 'BILATERAL' && <TaxPriceFields label="销售" estimated={form.pricingType === 'GRADE_TIER'} rate={form.taxRatePct} inclusive={form.saleUnitPrice} exclusive={form.saleUnitPriceExTax} fieldKey="saleUnitPrice" error={formErrors.saleUnitPrice} onChange={pair => { set('saleUnitPrice', pair.inclusive); set('saleUnitPriceExTax', pair.exclusive); }} />}
           </div>
-          {form.pricingType === 'GRADE_TIER' && <><div className="mt-4 text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={gradePriceSnapshot} taxRate={form.taxRatePct} onChange={snapshot => { setIsDirty(true); setGradePriceSnapshot(snapshot); }} />{form.type === 'BILATERAL' && <><div className="mt-5 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={gradeSalesPriceSnapshot} taxRate={form.taxRatePct} onChange={snapshot => { setIsDirty(true); setGradeSalesPriceSnapshot(snapshot); }} /></>}</>}
+          {form.pricingType === 'GRADE_TIER' && <><div className="mt-4 text-sm font-semibold">{form.type === 'BILATERAL' ? '采购方向价格条款' : '合同价格条款'}</div><GradePriceRulesEditor value={gradePriceSnapshot} taxRate={form.taxRatePct} validationPrefix="gradePrice" errors={formErrors} onChange={snapshot => { setIsDirty(true); setGradePriceSnapshot(snapshot); }} />{form.type === 'BILATERAL' && <><div className="mt-5 text-sm font-semibold">销售方向价格条款</div><GradePriceRulesEditor value={gradeSalesPriceSnapshot} taxRate={form.taxRatePct} validationPrefix="gradeSalesPrice" errors={formErrors} onChange={snapshot => { setIsDirty(true); setGradeSalesPriceSnapshot(snapshot); }} /></>}</>}
           <QualityRulesEditor
             materialId={form.materialId}
             scene={form.type === 'SALES' ? 'SALES' : 'PURCHASE'}
@@ -553,10 +569,12 @@ export default function ContractCreatePage() {
         </Card>
 
         {/* Attachments */}
+        {form.type === 'BILATERAL' && <BilateralContractFields form={form} set={set} />}
+        {form.type === 'BILATERAL' && form.pricingType === 'GRADE_TIER' && <BilateralPriceTools purchase={gradePriceSnapshot} sales={gradeSalesPriceSnapshot} onCopy={snapshot => { setIsDirty(true); setGradeSalesPriceSnapshot(snapshot); }} />}
         <Card data-validation-field="attachments" className={`p-6 mt-4 scroll-mt-28 ${formErrors.attachments ? 'border-destructive bg-destructive/5' : ''}`}>
           <SectionTitle>合同附件（必填）</SectionTitle>
           {formErrors.attachments && <p role="alert" className="mb-2 text-sm text-destructive">{formErrors.attachments}</p>}
-          <p className="text-xs text-muted-foreground mb-3">提交审批前至少上传一份纸质合同扫描件或签章文件。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB；草稿可暂不上传。</p>
+          <p className="text-xs text-muted-foreground mb-3">{form.type === 'BILATERAL' ? '采购合同、销售合同附件各至少一份，须分别选择类别。' : '提交审批前至少上传一份纸质合同扫描件或签章文件。'}支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB；草稿可暂不上传。</p>
           <label className="block border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
             <input aria-label="选择合同附件" type="file" multiple disabled={submitting} accept=".jpg,.jpeg,.png,.webp,.pdf,application/pdf" onChange={(e) => {
               const selectedFiles = selectValidAttachmentFiles(Array.from(e.currentTarget.files || []));
@@ -567,12 +585,13 @@ export default function ContractCreatePage() {
             <div className="text-2xl mb-2">📎</div>
             <div className="text-sm font-semibold">选择合同附件</div>
           </label>
-          {uploadedAttachments.length > 0 && <div className="mt-3 grid min-w-0 grid-cols-1 gap-4">{uploadedAttachments.map(item => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><StoredAttachmentThumbnail large fitPanel name={item.originalName} viewUrlPath={`/contracts/attachments/${item.id}/view-url`} /><div className="truncate font-medium" title={item.originalName}>{item.originalName}</div><div className="text-xs text-muted-foreground">已上传</div><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>放大查看</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div></div>)}</div>}
+          {uploadedAttachments.length > 0 && <div className="mt-3 grid min-w-0 grid-cols-1 gap-4">{uploadedAttachments.map(item => <div key={item.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm"><StoredAttachmentThumbnail large fitPanel name={item.originalName} viewUrlPath={`/contracts/attachments/${item.id}/view-url`} /><div className="truncate font-medium" title={item.originalName}>{item.originalName}</div>{form.type === 'BILATERAL' && <ContractAttachmentCategory value={item.category} disabled={submitting} onChange={async category => { try { await api.patch(`/contracts/attachments/${item.id}/category`, { category }); setUploadedAttachments(current => current.map(a => a.id === item.id ? { ...a, category } : a)); } catch (e: any) { alert(e.message || '修改分类失败'); } }} />}<div className="text-xs text-muted-foreground">已上传</div><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void openStoredAttachment(`/contracts/attachments/${item.id}/view-url`).catch(e => alert(e.message || '附件打开失败'))}>放大查看</Button><Button type="button" variant="ghost" size="sm" disabled={submitting} className="text-destructive" onClick={async () => { if (!await confirmAction('确定删除这份已上传的合同附件吗？')) return; try { await api.delete(`/contracts/attachments/${item.id}`); setUploadedAttachments(current => current.filter(entry => entry.id !== item.id)); } catch (e: any) { alert(e.message || '删除附件失败'); } }}>删除附件</Button></div></div>)}</div>}
           {files.length > 0 && (
             <div className="mt-3 grid min-w-0 grid-cols-1 gap-4">
               {files.map((item, i) => (
                 <div key={i} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
                   <LocalAttachmentThumbnail large fitPanel file={item.file} />
+                  {form.type === 'BILATERAL' && <ContractAttachmentCategory value={item.category} disabled={submitting} onChange={category => { setIsDirty(true); setFiles(current => current.map((entry, index) => index === i ? { ...entry, category } : entry)); }} />}
                   <Input value={item.name} disabled={submitting} onChange={e => {
                     setIsDirty(true);
                     setFiles(current => current.map((entry, index) => index === i ? { ...entry, name: e.target.value } : entry));

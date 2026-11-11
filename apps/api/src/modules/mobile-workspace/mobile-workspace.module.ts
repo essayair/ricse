@@ -14,6 +14,8 @@ import { MobileUserGuard } from './mobile-user.guard';
 import { MobileWorkspaceController } from './mobile-workspace.controller';
 import { MobileNotificationController } from './mobile-notification.controller';
 import { MobileWorkspaceService } from './mobile-workspace.service';
+import { BilateralDirectModule } from '../bilateral-direct/bilateral-direct.module';
+import { MobileDirectController } from './mobile-direct.controller';
 
 @Module({
   imports: [
@@ -28,8 +30,9 @@ import { MobileWorkspaceService } from './mobile-workspace.service';
     InventoryModule,
     MasterDataModule,
     FinancialSettlementModule,
+    BilateralDirectModule,
   ],
-  controllers: [MobileWorkspaceController, MobileNotificationController],
+  controllers: [MobileWorkspaceController, MobileNotificationController, MobileDirectController],
   providers: [MobileUserGuard, MobileWorkspaceService],
 })
 export class MobileWorkspaceModule {}

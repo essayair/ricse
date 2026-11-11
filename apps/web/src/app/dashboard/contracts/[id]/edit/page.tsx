@@ -1,4 +1,6 @@
 'use client';
+import { BilateralContractFields, ContractAttachmentCategory } from '@/components/contracts/bilateral-contract-fields';
+import { BilateralPriceTools } from '@/components/contracts/bilateral-price-tools';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -95,13 +97,14 @@ export default function ContractEditPage() {
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [businessUnits, setBusinessUnits] = useState<ContractFormOptions['businessUnits']>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
-  const [pendingAttachments, setPendingAttachments] = useState<Array<{ file: File; name: string }>>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<Array<{ file: File; name: string; category?: string }>>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
   const [form, setForm] = useState({
     type: 'PURCHASE', title: '',
     signingPartnerId: '', departmentId: '', businessUnitId: '', externalNo: '',
+    salesExternalNo: '', salesSignedAt: '', salesPaymentMethod: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
     pricingType: 'FIXED', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
@@ -147,6 +150,7 @@ export default function ContractEditPage() {
         departmentId: contract.departmentId || profile.employee?.departmentId || '',
         businessUnitId: contract.businessUnitId || formOptions.defaultBusinessUnitId || '',
         externalNo: contract.externalNo || '',
+        salesExternalNo: contract.salesExternalNo || '', salesSignedAt: contract.salesSignedAt?.split('T')[0] || '', salesPaymentMethod: contract.salesPaymentMethod || '',
         sellerId: contract.sellerId || '',
         buyerId: contract.buyerId || '',
         contactPerson: contract.contactPerson || '',
@@ -261,6 +265,7 @@ export default function ContractEditPage() {
         prepayPct: form.prepayPct === '' ? undefined : Number(form.prepayPct),
         paymentDays: form.paymentDays === '' ? undefined : Number(form.paymentDays),
         signedAt: form.signedAt || undefined,
+        salesSignedAt: form.salesSignedAt || null,
         effectiveAt: form.effectiveAt || null,
         expireAt: form.expireAt || null,
         buyerId: form.buyerId || null,
@@ -314,7 +319,7 @@ export default function ContractEditPage() {
       for (const item of pendingAttachments) {
         const body = new FormData();
         body.append('file', item.file);
-        body.append('category', 'OTHER');
+        body.append('category', item.category || (form.type === 'BILATERAL' ? 'OTHER' : form.type === 'SALES' ? 'SALES_CONTRACT' : 'PURCHASE_CONTRACT'));
         body.append('originalName', item.name.trim() || item.file.name);
         const response = await fetch(`${API_BASE_URL}/contracts/${contractId}/attachments`, {
           method: 'POST',
@@ -662,6 +667,8 @@ export default function ContractEditPage() {
 
         <Card className="p-6">
           <SectionTitle>合同附件（提交审批必需）</SectionTitle>
+          {form.type === 'BILATERAL' && form.pricingType === 'GRADE_TIER' && lineItems.map((line, index) => <BilateralPriceTools key={index} purchase={line.priceRulesSnapshot} sales={line.salesPriceRulesSnapshot} onCopy={snapshot => { setIsDirty(true); setLineItems(current => current.map((l, i) => i === index ? { ...l, salesPriceRulesSnapshot: snapshot } : l)); }} />)}
+          {form.type === 'BILATERAL' && <div className="mb-4"><BilateralContractFields form={form} set={set} /><p className="mt-3 text-sm text-muted-foreground">采购合同、销售合同附件各至少一份，历史草稿附件可在下方分类。</p></div>}
           <p className="mb-3 text-xs text-muted-foreground">提交审批前至少保留或上传一份纸质合同扫描件或签章文件。支持 JPG/PNG/WEBP/PDF，单个文件不超过 20 MB。</p>
           <div className="space-y-2">
             <div className="grid min-w-0 grid-cols-1 gap-4">
@@ -669,6 +676,7 @@ export default function ContractEditPage() {
               <div key={att.id} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
                 <StoredAttachmentThumbnail large fitPanel name={att.originalName} mimeType={att.mimeType} viewUrlPath={`/contracts/attachments/${att.id}/view-url`} />
                 <div className="truncate font-medium" title={att.originalName}>{att.originalName}</div>
+                {form.type === 'BILATERAL' && <ContractAttachmentCategory value={att.category} onChange={async category => { try { await api.patch(`/contracts/attachments/${att.id}/category`, { category }); setAttachments(current => current.map(a => a.id === att.id ? { ...a, category } : a)); } catch (e: any) { alert(e.message || '修改分类失败'); } }} />}
                 <div className="text-xs text-muted-foreground">{(att.size / 1024).toFixed(0)} KB</div>
                 <div className="flex flex-wrap gap-1">
                 <Button type="button" variant="outline" size="sm" onClick={() => viewStoredAttachment(att.id)}>放大查看</Button>
@@ -684,6 +692,7 @@ export default function ContractEditPage() {
             {pendingAttachments.map((item, index) => (
               <div key={`${item.file.name}-${index}`} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
                 <LocalAttachmentThumbnail large fitPanel file={item.file} />
+                {form.type === 'BILATERAL' && <ContractAttachmentCategory value={item.category} onChange={category => { setIsDirty(true); setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, category } : entry)); }} />}
                 <Input value={item.name} onChange={e => {
                   setIsDirty(true);
                   setPendingAttachments(current => current.map((entry, i) => i === index ? { ...entry, name: e.target.value } : entry));

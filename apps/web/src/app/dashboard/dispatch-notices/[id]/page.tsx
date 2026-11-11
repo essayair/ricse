@@ -14,6 +14,7 @@ import { confirmAction } from '@/lib/system-dialog';
 
 interface Notice {
   id: string; noticeNo: string; type: string; mode: string; status: string; qualityRequired: boolean; totalQuantity: string;
+  directPurchaseExecution?: { salesNoticeId: string } | null;
   plannedDate: string | null; originLocation: string | null; destinationLocation: string | null;
   originContactPerson: string | null; originContactPhone: string | null; destinationContactPerson: string | null; destinationContactPhone: string | null;
   remarks: string | null; issuedAt: string | null; completedAt: string | null;
@@ -41,8 +42,8 @@ export default function DispatchNoticeDetailPage() {
       <div className="flex gap-2">
         {['DRAFT', 'ISSUED'].includes(notice.status) && notice.waybills.length === 0 && <Button variant="outline" onClick={() => router.push(`/dashboard/dispatch-notices/${notice.id}/edit`)}><Pencil className="mr-1 h-4 w-4" />修改地址</Button>}
         {notice.status === 'DRAFT' && <><Button onClick={() => void transition('ISSUED', '下达通知')}>下达通知</Button><Button variant="destructive" onClick={() => void transition('CANCELLED', '取消通知')}>取消</Button></>}
-        {notice.status === 'ISSUED' && <><Button onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.id}`)}><ListPlus className="mr-1 h-4 w-4" />新建物流运单</Button><Button variant="outline" onClick={() => void transition('CANCELLED', '取消通知')}>取消</Button></>}
-        {notice.status === 'IN_PROGRESS' && <><Button onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.id}`)}><ListPlus className="mr-1 h-4 w-4" />新建物流运单</Button><Button variant="outline" onClick={() => void transition('COMPLETED', '完成通知')}>完成通知</Button></>}
+        {notice.status === 'ISSUED' && <><Button onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.directPurchaseExecution?.salesNoticeId || notice.id}`)}><ListPlus className="mr-1 h-4 w-4" />新建物流运单</Button><Button variant="outline" onClick={() => void transition('CANCELLED', '取消通知')}>取消</Button></>}
+        {notice.status === 'IN_PROGRESS' && <><Button onClick={() => router.push(`/dashboard/waybills/create?dispatchNoticeId=${notice.directPurchaseExecution?.salesNoticeId || notice.id}`)}><ListPlus className="mr-1 h-4 w-4" />新建物流运单</Button><Button variant="outline" onClick={() => void transition('COMPLETED', '完成通知')}>完成通知</Button></>}
         {notice.status === 'ISSUED' && notice.waybills.length > 0 && <Button variant="outline" onClick={() => void transition('COMPLETED', '完成通知')}>完成通知</Button>}
       </div>
     </div>

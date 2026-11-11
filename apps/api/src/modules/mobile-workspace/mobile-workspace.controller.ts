@@ -53,6 +53,9 @@ export class MobileWorkspaceController {
   @ApiOperation({ summary: '企业工作台概览' })
   overview(@CurrentUser('id') userId: string) { return this.service.overview(userId); }
 
+  @Post('quality-tasks/waybills/:id')
+  createQualityTask(@Param('id') id: string, @CurrentUser('id') uid: string) { return this.qualityService.createTaskForWaybill(id, uid); }
+
   @Get('business-modules')
   @ApiOperation({ summary: '查询当前用户可使用的移动业务模块' })
   businessModules(@CurrentUser('id') userId: string) { return this.service.businessModules(userId); }

@@ -181,18 +181,26 @@ export class QualityInspectionService {
     return `QT-${date}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async ensureTaskForWaybill(waybillId: string, userId: string) {
+  async createTaskForWaybill(waybillId: string, userId: string) {
+    await this.accessControl.assertPermission(userId, 'quality.manage');
+    const scope = await this.accessControl.getWaybillScope(userId, 'quality.manage');
+    const waybill = await this.prisma.waybill.findFirst({ where: { id: waybillId, deletedAt: null, status: { in: ['ARRIVED', 'SIGNED'] }, AND: [scope] }, select: { id: true } });
+    if (!waybill) throw new BadRequestException('请先确认车辆到达，且须有本车质检管理权限');
+    return this.ensureTaskForWaybill(waybillId, userId, true);
+  }
+
+  async ensureTaskForWaybill(waybillId: string, userId: string, force = false) {
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null },
       select: {
         id: true,
         status: true,
-        dispatchNotice: { select: { type: true, qualityRequired: true, order: { select: { contractId: true } } } },
+        dispatchNotice: { select: { type: true, qualityRequired: true, directSalesExecution: { select: { id: true } }, order: { select: { contractId: true } } } },
         lineItems: { select: { materialId: true }, orderBy: { createdAt: 'asc' }, take: 1 },
       },
     });
     if (!waybill || !['ARRIVED', 'SIGNED'].includes(waybill.status)) return null;
-    if (!waybill.dispatchNotice.qualityRequired) return null;
+    if (!force && !waybill.dispatchNotice.qualityRequired && !waybill.dispatchNotice.directSalesExecution) return null;
     const existing = await this.prisma.qualityTask.findUnique({
       where: { waybillId }, include: this.taskInclude,
     });

@@ -15,7 +15,7 @@ export class CreateWaybillLineDto {
 
 export class WaybillCreateFieldsDto {
   @IsOptional()
-  @IsIn(['SELF', 'THIRD_PARTY', 'SOCIAL'])
+  @IsIn(['SELF', 'THIRD_PARTY', 'SOCIAL', 'SUPPLIER', 'CUSTOMER'])
   freightMode?: string;
 
   @IsOptional() @IsString() vehicleId?: string;

@@ -673,7 +673,7 @@ export class FinancialSettlementService {
       const amounts = priced.amounts;
       if (amounts.totalAmount <= 0) throw new BadRequestException('扣款后货物结算金额须大于零，超额扣款请先复核合同规则和处置');
       return { orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
-        waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
+        waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId, directDeliveryId: (source as any).directDeliveryId,
         sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity || priced.adjustment.quantityAdjusted), lineAdjustment: priced.adjustment, ...amounts,
           ...(gradeTier ? { taxRatePct, pricingFormula: GRADE_TIER_FORMULA } : {}) }),
         ...settlementPricingFacts(source, amounts, gradeTier, taxRatePct),
@@ -725,7 +725,7 @@ export class FinancialSettlementService {
       if (amounts.totalAmount <= 0) throw new BadRequestException('销售结算金额须大于零');
       return {
         orderId: source.orderId, orderNo: source.orderNo, orderName: source.orderName,
-        waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId,
+        waybillLineItemId: source.id, weightSelectionId: source.weightSelectionId, qualityTaskId: source.qualityTaskId, directDeliveryId: (source as any).directDeliveryId,
         sourceSnapshot: snapshotJson({ ...source, settlementQuantity: amounts.quantity, negotiatedQuantity: Boolean(input.negotiatedQuantity || priced.adjustment.quantityAdjusted), lineAdjustment: priced.adjustment, ...amounts,
           ...(gradeTier ? { taxRatePct, pricingFormula: GRADE_TIER_FORMULA } : {}) }),
         ...settlementPricingFacts(source, amounts, gradeTier, taxRatePct),
@@ -947,6 +947,18 @@ export class FinancialSettlementService {
       throw new BadRequestException('只有已确认的有效结算单才能作为正式单据打印存档');
     }
     return item;
+  }
+
+  private async assertBilateralFundParty(contract: { id: string; type: string }, direction: 'PAYABLE' | 'RECEIVABLE', actualName?: string | null, accountNo?: string | null) {
+    if (contract.type !== 'BILATERAL' || (!actualName?.trim() && !accountNo?.trim())) return;
+    const current = await this.prisma.contract.findUnique({ where: { id: contract.id }, select: { sellerId: true, buyerId: true } });
+    const forbiddenId = direction === 'PAYABLE' ? current?.buyerId : current?.sellerId;
+    if (!forbiddenId) throw new BadRequestException('双边合同缺少上下游信息，请先核对合同主体');
+    const partner = await this.prisma.partner.findUnique({ where: { id: forbiddenId }, select: { name: true, bankAccounts: { select: { accountNo: true, accountName: true } } } });
+    if (!partner) throw new BadRequestException('无法核对双边合同交易对手方');
+    const named = actualName?.trim() && [partner.name, ...partner.bankAccounts.map(a => a.accountName)].some(n => normalizedPartyName(n) === normalizedPartyName(actualName));
+    const bank = accountNo?.trim() && partner.bankAccounts.some(a => normalizedBankAccount(a.accountNo) === normalizedBankAccount(accountNo));
+    if (named || bank) throw new BadRequestException(direction === 'PAYABLE' ? '双边采购货款不能支付给同一合同的下游客户，请核对实际收款方' : '双边销售货款不能由同一合同的上游供应商代付，请核对实际付款方');
   }
 
   async voidSettlement(id: string, userId: string): Promise<SettlementResult> {
@@ -1246,6 +1258,7 @@ export class FinancialSettlementService {
     if (dto.isThirdParty && !dto.thirdPartyReason?.trim()) throw new BadRequestException('第三方收款必须填写原因');
     const settlementDirection = this.directionForBusinessType(dto.businessType);
     const contract = await this.accessibleContract(dto.contractId, settlementDirection, userId, 'settlement.payment.apply');
+    if (!reverse) await this.assertBilateralFundParty(contract, 'PAYABLE', dto.actualPayeeName || dto.counterpartyBankAccountName, dto.counterpartyBankAccount);
     if (!contract.signingPartnerId || !contract.businessUnitId) throw new BadRequestException('合同缺少我方签约主体或业务单元');
     const counterpartyId = this.counterpartyId(contract, settlementDirection);
     if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方');
@@ -1331,6 +1344,7 @@ export class FinancialSettlementService {
     if (dto.isThirdParty && !dto.thirdPartyReason?.trim()) throw new BadRequestException('第三方收款必须填写原因');
     const direction = this.directionForBusinessType(dto.businessType);
     const contract = await this.accessibleContract(dto.contractId, direction, userId, 'settlement.payment.apply');
+    if (!reverse) await this.assertBilateralFundParty(contract, 'PAYABLE', dto.actualPayeeName || dto.counterpartyBankAccountName, dto.counterpartyBankAccount);
     if (!contract.signingPartnerId || !contract.businessUnitId) throw new BadRequestException('合同缺少我方签约主体或业务单元');
     const counterpartyId = this.counterpartyId(contract, direction);
     if (!counterpartyId) throw new BadRequestException('合同缺少交易对手方');
@@ -1748,6 +1762,7 @@ export class FinancialSettlementService {
     if (!dto.ourBankName?.trim() || !dto.counterpartyBankName?.trim()) throw new BadRequestException('请填写付款开户行和收款开户行');
     if (!dto.purpose?.trim()) throw new BadRequestException('请填写付款用途');
     if (dto.isThirdParty !== undefined && dto.isThirdParty !== request.isThirdParty) throw new BadRequestException('实际收款方性质与审批内容不一致，请重新发起付款申请');
+    if (request.contract && !REVERSE_STAGES.includes(request.paymentStage)) await this.assertBilateralFundParty(request.contract, 'PAYABLE', dto.actualPayeeName || dto.counterpartyBankAccountName, dto.counterpartyBankAccount);
     const payerAccount = normalizedBankAccount(dto.ourBankAccount);
     const payeeAccount = normalizedBankAccount(dto.counterpartyBankAccount);
     const plannedPayerAccount = normalizedBankAccount(request.ourBankAccount);
@@ -1850,6 +1865,7 @@ export class FinancialSettlementService {
     if (!legalEntity) throw new BadRequestException('我方收款主体不存在或已停用');
     const counterpartyId = contract ? this.counterpartyId(contract, settlementDirection) : null;
     if (contract && !counterpartyId) throw new BadRequestException('合同缺少交易对手方，不能登记资金');
+    if (contract && !reverse) await this.assertBilateralFundParty(contract, 'RECEIVABLE', dto.actualPayerName || dto.counterpartyBankAccountName, dto.counterpartyBankAccount);
     if (dto.isThirdParty && !dto.thirdPartyReason?.trim()) throw new BadRequestException('第三方收付款必须填写原因');
     if (!contract && !dto.actualPayerName?.trim()) throw new BadRequestException('未关联合同时必须填写银行流水中的实际付款方');
     if (dto.bankReference?.trim()) {
@@ -1913,6 +1929,7 @@ export class FinancialSettlementService {
     if (contract.signingPartnerId !== fund.legalEntityPartnerId) throw new BadRequestException('合同的我方签约主体与实际收款账户主体不一致');
     const counterpartyId = this.counterpartyId(contract, 'RECEIVABLE');
     if (!counterpartyId) throw new BadRequestException('合同缺少客户信息');
+    await this.assertBilateralFundParty(contract, 'RECEIVABLE', fund.actualPayerName || fund.counterpartyBankAccountName, fund.counterpartyBankAccount);
     if (dto.orderId) {
       const order = await this.prisma.order.findFirst({ where: { id: dto.orderId, contractId: contract.id, type: 'SALES', status: { not: 'CANCELLED' }, deletedAt: null } });
       if (!order) throw new BadRequestException('执行批次不存在、已取消或不属于当前合同');

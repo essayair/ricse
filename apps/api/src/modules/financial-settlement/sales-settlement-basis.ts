@@ -7,6 +7,7 @@ import { goodsAmounts } from './payment-balance';
 import { assertCurrentGoodsQuantityCeiling, assertGoodsSettlementSummary } from './goods-settlement-adjustment';
 import { signature } from './purchase-settlement-basis';
 import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
+import { directSettlementSources } from './direct-settlement-sources';
 
 /** 销售货款以交付事实编制；我方出库过账量始终单独留存，不被客户计量覆盖。 */
 export class SalesSettlementBasis {
@@ -25,7 +26,7 @@ export class SalesSettlementBasis {
     const legacyContract = legacy.some(s => s.settlementScope !== 'ADJUSTMENT' && !s.lines.length);
     const legacyOrders = new Set(legacy.flatMap(s => s.lines.filter(l => !l.waybillLineItemId).map(l => l.orderId)));
     const rows = await this.prisma.waybillLineItem.findMany({
-      where: { waybill: { deletedAt: null, status: { not: 'CANCELLED' }, dispatchNotice: { deletedAt: null, status: { not: 'CANCELLED' }, order: { contractId, type: 'SALES', deletedAt: null, status: { not: 'CANCELLED' } } } } },
+      where: { waybill: { deletedAt: null, status: { not: 'CANCELLED' }, dispatchNotice: { directSalesExecution: { is: null }, deletedAt: null, status: { not: 'CANCELLED' }, order: { contractId, type: 'SALES', deletedAt: null, status: { not: 'CANCELLED' } } } } },
       include: {
         dispatchNoticeLineItem: { include: { orderLineItem: true } },
         settlementLines: { where: { settlementId: excludeSettlementId ? { not: excludeSettlementId } : undefined, settlement: { deletedAt: null, status: { not: 'VOIDED' } } } },
@@ -45,7 +46,7 @@ export class SalesSettlementBasis {
     const materialIds = [...new Set(rows.map(row => row.materialId))];
     const materials = await this.prisma.material.findMany({ where: { id: { in: materialIds } }, select: { id: true, pricingQuantityBasis: true } });
     const materialBasis = new Map(materials.map(material => [material.id, material.pricingQuantityBasis]));
-    return rows.map(row => {
+    const regularSources = rows.map(row => {
       const w = row.waybill, order = w.dispatchNotice.order;
       const waybillLineIds = new Set(w.lineItems.map(line => line.id));
       const occupiedSettlements = legacy.filter(settlement => settlement.lines.some(line => line.waybillLineItemId && waybillLineIds.has(line.waybillLineItemId)))
@@ -161,6 +162,7 @@ export class SalesSettlementBasis {
         ...goodsAmounts(remainingQuantity, unitPrice, recoveryDeductionPerTon),
       };
     });
+    return regularSources.concat(await directSettlementSources(this.prisma, contract, 'RECEIVABLE', excludeSettlementId, reportChoices, ticketChoices));
   }
 
   async assertCurrent(settlementId: string, userId: string, permission = 'settlement.confirm') {

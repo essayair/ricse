@@ -961,6 +961,9 @@ model Contract {
   departmentId     String? // 业务部门
   businessUnitId   String? // 主业务单元（经营与利润中心归属）
   externalNo       String? // 外部合同号：纸质合同或其他系统合同编号
+  salesExternalNo  String? // 双边合同销售方向外部合同号
+  salesSignedAt    DateTime?
+  salesPaymentMethod String?
   // 对手方
   contactPerson    String? // 对手方联系人
   contactPhone     String? // 对手方电话
@@ -1005,6 +1008,7 @@ model Contract {
   fundTransactions     FundTransaction[]
   paymentRequests      PaymentRequest[]
   fundClaims           FundClaim[]
+  directExecutions     DirectExecution[]
 
   @@unique([createdBy, clientRequestId])
   @@index([contractNo])
@@ -1034,6 +1038,7 @@ model ContractLineItem {
   qualityRulesSnapshot Json? // 合同签订时的物料质量结算规则快照；不随质检模板后续变更
   priceRulesSnapshot Json? // 合同品位分档价格快照；固定价合同为空
   salesPriceRulesSnapshot Json? // 双边合同下游销售方向的分档价格快照
+  pricingQuantityBasis String? // 新合同固化物料 PHYSICAL | DRY_MATTER；历史空值保留兼容
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1200,6 +1205,7 @@ model FinancialSettlementLine {
   waybillLineItemId String?
   weightSelectionId String?
   qualityTaskId    String?
+  directDeliveryId String?
   sourceSnapshot   Json?
   qualityDeductionAmount Decimal @default(0) @db.Decimal(15, 2)
   quantity         Decimal? @db.Decimal(15, 3)
@@ -1229,10 +1235,12 @@ model FinancialSettlementLine {
   waybillLineItem WaybillLineItem? @relation(fields: [waybillLineItemId], references: [id], onDelete: Restrict)
   weightSelection WaybillWeightSelection? @relation(fields: [weightSelectionId], references: [id], onDelete: Restrict)
   qualityTask QualityTask? @relation(fields: [qualityTaskId], references: [id], onDelete: Restrict)
+  directDelivery DirectDelivery? @relation(fields: [directDeliveryId], references: [id], onDelete: Restrict)
 
   @@index([settlementId])
   @@index([orderId])
   @@index([waybillLineItemId])
+  @@index([directDeliveryId])
   @@index([pricingMethod, measuredGradePct])
   @@map("financial_settlement_lines")
 }
@@ -1597,6 +1605,8 @@ model DispatchNotice {
   lineItems                 DispatchNoticeLineItem[]
   waybills                  Waybill[]
   outboundOrder             OutboundOrder?
+  directPurchaseExecution   DirectExecution? @relation("DirectPurchaseNotice")
+  directSalesExecution      DirectExecution? @relation("DirectSalesNotice")
 
   @@index([noticeNo])
   @@index([orderId])
@@ -1661,6 +1671,8 @@ model Waybill {
   salesCompletionConfirmedBy String?
   salesCompletionConfirmedAt DateTime?
   salesCompletionRemarks String?
+  directOutcome       String? // REJECT_RETURN | TO_WAREHOUSE；保留直拨异常去向
+  replacementWaybillId String? @unique
   remarks             String?
   creationBatchId     String?
   creationRowId       String?
@@ -1687,6 +1699,9 @@ model Waybill {
   qualityTask              QualityTask?
   weighTask                WeighTask?
   logisticsSettlementLines LogisticsSettlementLine[]
+  directDeliveries         DirectDelivery[]
+  replacementWaybill       Waybill? @relation("DirectReplacementWaybill", fields: [replacementWaybillId], references: [id], onDelete: Restrict)
+  convertedFromWaybill      Waybill? @relation("DirectReplacementWaybill")
 
   @@unique([creationBatchId, creationRowId])
   @@index([waybillNo])
@@ -1699,6 +1714,74 @@ model Waybill {
   @@index([salesCompletionCustomerTicketId])
   @@index([creationBatchId])
   @@map("waybills")
+}
+
+/// 双边直拨配对通知；旧 DIRECT 不因同名模式而自动纳入。
+model DirectExecution {
+  id               String @id @default(cuid())
+  contractId       String
+  purchaseNoticeId String @unique
+  salesNoticeId    String @unique
+  requestId        String
+  createdBy        String
+  createdAt        DateTime @default(now())
+
+  contract       Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  purchaseNotice DispatchNotice @relation("DirectPurchaseNotice", fields: [purchaseNoticeId], references: [id], onDelete: Restrict)
+  salesNotice    DispatchNotice @relation("DirectSalesNotice", fields: [salesNoticeId], references: [id], onDelete: Restrict)
+
+  @@unique([createdBy, requestId])
+  @@index([contractId])
+  @@map("direct_executions")
+}
+
+/// 直拨确认版本；不关联仓库或库存批次。有效版本唯一由迁移中的部分唯一索引保证。
+model DirectDelivery {
+  id                   String @id @default(cuid())
+  waybillId            String
+  version              Int
+  status               String // PENDING_REVIEW | CONFIRMED | REJECTED | REVERSED
+  weighTicketId        String
+  qualityInspectionId  String
+  quantity             Decimal @db.Decimal(15, 3)
+  pricingQuantity      Decimal @db.Decimal(15, 3)
+  pricingQuantityBasis String
+  snapshot             Json
+  remarks              String
+  createdBy            String
+  createdAt            DateTime @default(now())
+  confirmedAt          DateTime?
+  reviewedBy           String?
+  reviewedAt           DateTime?
+  reviewComment        String?
+  reversedBy           String?
+  reversedAt           DateTime?
+  reversalReason       String?
+
+  waybill Waybill @relation(fields: [waybillId], references: [id], onDelete: Restrict)
+  documents DirectTradeDocument[]
+  settlementLines FinancialSettlementLine[]
+
+  @@unique([waybillId, version])
+  @@index([status])
+  @@map("direct_deliveries")
+}
+
+/// 采购业务入库和销售出库分别编号；共享确认数量、同事务产生，不进入库存账簿。
+model DirectTradeDocument {
+  id               String @id @default(cuid())
+  documentNo       String @unique
+  directDeliveryId String
+  direction        String // PURCHASE | SALES
+  status           String @default("POSTED") // POSTED | REVERSED
+  quantity         Decimal @db.Decimal(15, 3)
+  pricingQuantity  Decimal @db.Decimal(15, 3)
+  createdAt        DateTime @default(now())
+
+  delivery DirectDelivery @relation(fields: [directDeliveryId], references: [id], onDelete: Restrict)
+
+  @@unique([directDeliveryId, direction])
+  @@map("direct_trade_documents")
 }
 
 /// 运单级过磅任务；实际发货、收货及追加称重继续由 WeighTicket 记录。

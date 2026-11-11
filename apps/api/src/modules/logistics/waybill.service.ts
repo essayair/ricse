@@ -40,7 +40,8 @@ export class WaybillService {
     dispatchNotice: {
       include: {
         order: {
-          include: {
+          select: {
+            id: true, orderNo: true, name: true, type: true, status: true, contractId: true, plannedDate: true,
             contract: {
               select: {
                 id: true, contractNo: true, title: true,
@@ -50,6 +51,7 @@ export class WaybillService {
           },
         },
         warehouse: { select: { id: true, code: true, name: true, address: true } },
+        directSalesExecution: true,
       },
     },
     vehicle: { select: { id: true, plateNo: true, driverName: true, driverPhone: true, loadCapacity: true } },
@@ -92,6 +94,7 @@ export class WaybillService {
     },
     salesCompletionConfirmer: { select: { id: true, name: true } },
     salesCompletionReport: { select: { id: true, reportNo: true, institutionName: true, conclusion: true, evidenceStage: true } },
+    directDeliveries: { orderBy: { version: 'desc' as const }, include: { documents: true } },
     outboundReceipts: {
       where: { deletedAt: null, status: { not: 'CANCELLED' } },
       select: { id: true, receiptNo: true, status: true },
@@ -129,6 +132,8 @@ export class WaybillService {
 
   private async resolveCarrier(freightMode?: string, carrierPartnerId?: string) {
     const mode = freightMode || 'SELF';
+    if (!['SELF', 'THIRD_PARTY', 'SOCIAL', 'SUPPLIER', 'CUSTOMER'].includes(mode)) throw new BadRequestException('请选择有效运输组织方式');
+    if (['SUPPLIER', 'CUSTOMER'].includes(mode)) return null;
     if (mode === 'THIRD_PARTY') {
       if (!carrierPartnerId) throw new BadRequestException('第三方承运必须选择已维护的物流承运商');
       return this.requireCarrierPartner(carrierPartnerId);
@@ -300,9 +305,12 @@ export class WaybillService {
         lineItems: { orderBy: { createdAt: 'asc' } },
         order: { include: { contract: true } },
         warehouse: true,
+        directPurchaseExecution: true,
+        directSalesExecution: true,
       },
     });
     if (!notice) throw new NotFoundException('执行通知不存在');
+    if (notice.directPurchaseExecution) throw new BadRequestException(`此采购指令已与销售通知配对，请从销售通知创建共享运单，避免重复派车`);
     if (['TERMINATED', 'VOIDED', 'CLOSED'].includes(notice.order.contract.status)) {
       throw new BadRequestException('合同已终止或作废，不能再创建物流运单');
     }
@@ -518,11 +526,15 @@ export class WaybillService {
     return { batchRequestId: dto.batchRequestId, createdCount: created.length, warnings, items: created };
   }
 
-  async findAll(params: { status?: string; search?: string }, userId: string) {
+  async findAll(params: { status?: string; search?: string; directPending?: boolean }, userId: string) {
     await this.accessControl.assertPermission(userId, 'logistics.view');
     const scope = await this.accessControl.getWaybillScope(userId, 'logistics.view');
     const where: Prisma.WaybillWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
+    if (params.directPending) {
+      where.status = 'SIGNED'; where.salesCompletionConfirmedAt = null;
+      where.dispatchNotice = { directSalesExecution: { isNot: null } };
+    }
     if (params.search) {
       where.OR = [
         { waybillNo: { contains: params.search, mode: 'insensitive' } },
@@ -639,6 +651,9 @@ export class WaybillService {
     if (status === 'CANCELLED' && waybill.outboundReceipts.some(item => item.status === 'POSTED')) {
       throw new BadRequestException('该运单已经完成销售出库，不能取消');
     }
+    if (status === 'CANCELLED' && waybill.dispatchNotice.directSalesExecution) {
+      throw new BadRequestException('配对直拨请使用“取消直拨运单”，系统将校验交付和下游引用');
+    }
     if (status === 'IN_TRANSIT' && (!waybill.plateNo || !waybill.driverName)) {
       throw new BadRequestException('发运前必须完成车辆、车牌和司机调度信息');
     }
@@ -685,6 +700,7 @@ export class WaybillService {
       });
       if (status === 'IN_TRANSIT' && waybill.dispatchNotice.status === 'ISSUED') {
         await tx.dispatchNotice.update({ where: { id: waybill.dispatchNoticeId }, data: { status: 'IN_PROGRESS' } });
+        if (waybill.dispatchNotice.directSalesExecution) await tx.dispatchNotice.updateMany({ where: { id: waybill.dispatchNotice.directSalesExecution.purchaseNoticeId, status: 'ISSUED' }, data: { status: 'IN_PROGRESS' } });
       }
       if (status === 'CANCELLED') {
         const receiptIds = waybill.outboundReceipts
@@ -716,19 +732,20 @@ export class WaybillService {
 
   async confirmSalesCompletion(id: string, customerWeighTicketId: string, qualityReportId: string, remarks: string, userId: string) {
     const waybill = await this.findOne(id, userId, 'logistics.manage');
+    if (waybill.dispatchNotice.directSalesExecution) throw new BadRequestException('请在“直拨交付”中确认销售并同步采购，不可绕过配对单据生成');
     if (waybill.dispatchNotice.type !== 'SALES') throw new BadRequestException('仅销售运单可以确认客户交付完成');
     if (waybill.status !== 'SIGNED') throw new BadRequestException('请先完成客户签收，再确认销售交付完成');
     if (waybill.salesCompletionConfirmedAt) throw new BadRequestException('该车销售交付已确认，不可重复确认');
     if (waybill.dispatchNotice.mode === 'STANDARD' && !waybill.outboundReceipts.some(receipt => receipt.status === 'POSTED')) {
       throw new BadRequestException('请先完成我方销售出库过账');
     }
-    const customerTickets = waybill.weighTickets.filter(ticket => ticket.weighingStage === 'RECEIVING' && ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0);
-    if (!customerTickets.length) throw new BadRequestException('请先登记并复核客户收货磅单');
+    const customerTickets = waybill.weighTickets.filter(ticket => ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0);
+    if (!customerTickets.length) throw new BadRequestException('请先登记并复核至少一张有效交付磅单');
     const customerTicket = customerTickets.find(ticket => ticket.id === customerWeighTicketId);
-    if (!customerTicket) throw new BadRequestException('请选择该运单已复核的客户收货磅单');
-    const customerStageSelection = waybill.weightSelections.find(selection => selection.purpose === 'RECEIVING');
-    if ((customerTickets.length > 1 || customerStageSelection) && customerStageSelection?.weighTicketId !== customerTicket.id) {
-      throw new BadRequestException('客户收货侧有多张磅单，请先确认采信收货磅单');
+    if (!customerTicket) throw new BadRequestException('请选择该运单已复核的有效交付磅单');
+    const customerStageSelection = waybill.weightSelections.find(selection => selection.purpose === customerTicket.weighingStage);
+    if ((customerTickets.filter(t => t.weighingStage === customerTicket.weighingStage).length > 1 || customerStageSelection) && customerStageSelection?.weighTicketId !== customerTicket.id) {
+      throw new BadRequestException('所选侧有多张磅单，请先确认该侧采信磅单');
     }
     const inventorySelection = waybill.weightSelections.find(selection => selection.purpose === 'INVENTORY');
     const reviewedShippingTickets = waybill.weighTickets.filter(ticket => ticket.weighingStage === 'SHIPPING' && ticket.status === 'REVIEWED' && Number(ticket.netWeight || 0) > 0);
@@ -740,13 +757,12 @@ export class WaybillService {
     }
     const task = waybill.qualityTask;
     if (!task || task.status !== 'COMPLETED' || !task.basisInspection || task.basisInspection.id !== qualityReportId || task.basisInspection.status !== 'CONFIRMED') {
-      throw new BadRequestException('请先完成销售交付质检任务，并选定客户收货检测报告形成最终结论');
+      throw new BadRequestException('请先完成销售交付质检任务，并采用一份发货或收货检测报告形成最终结论');
     }
-    if (task.basisInspection.evidenceStage === 'SHIPPING') throw new BadRequestException('我方发货检测报告不能作为客户收货质检依据');
     if (task.basisInspection.evidenceStage === 'UNSPECIFIED') throw new BadRequestException('检测报告尚未标明发货或收货环节，不能确认客户交付');
-    if (task.basisInspection.evidenceStage !== 'RECEIVING') throw new BadRequestException('请选用客户收货环节的检测报告');
+    if (!['SHIPPING', 'RECEIVING'].includes(task.basisInspection.evidenceStage)) throw new BadRequestException('请选择发货或收货环节的有效检测报告');
     if (task.basisInspection.conclusion === 'FUSE') throw new BadRequestException('质检结论为异常拒收，请先处理质量争议');
-    if (!remarks?.trim()) throw new BadRequestException('请说明客户收货报告来源及双方差异处理情况');
+    if (!remarks?.trim()) throw new BadRequestException('请说明采用报告来源及双方差异处理情况');
     const updated = await this.prisma.waybill.updateMany({
       where: { id, status: 'SIGNED', salesCompletionConfirmedAt: null, deletedAt: null },
       data: {

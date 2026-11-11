@@ -139,10 +139,10 @@ export default function CreateDispatchNoticePage() {
       {data && <>
         <div className="grid gap-4 md:grid-cols-3">
           <div><label className="mb-1 block text-sm font-medium">单据类型</label><Input disabled value={data.order.type === 'PURCHASE' ? '供应商发货指令' : '销售发货通知单'} /></div>
-          <div><label className="mb-1 block text-sm font-medium">执行模式</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={mode} onChange={e => setMode(e.target.value)}><option value="STANDARD">常规</option><option value="DIRECT">直拨</option></select></div>
+          <div><label className="mb-1 block text-sm font-medium">执行模式</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={mode} onChange={e => setMode(e.target.value)}><option value="STANDARD">常规运输</option></select></div>
           <div><label className="mb-1 block text-sm font-medium">计划日期</label><Input type="date" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} /></div>
         </div>
-        <label className="flex items-start gap-3 rounded-md border bg-muted/20 p-4 text-sm"><input className="mt-0.5" type="checkbox" checked={qualityRequired} onChange={event => setQualityRequired(event.target.checked)} /><span><span className="block font-medium">{data.order.type === 'PURCHASE' ? '到货后需要质检' : '送达后需要交付质检'}</span><span className="mt-1 block text-xs text-muted-foreground">勾选后，运单到达或送达时自动生成质检任务；销售默认不勾选。</span></span></label>
+        <label className="flex items-start gap-3 rounded-md border bg-muted/20 p-4 text-sm"><input className="mt-0.5" type="checkbox" checked={qualityRequired} onChange={event => setQualityRequired(event.target.checked)} /><span><span className="block font-medium">{data.order.type === 'PURCHASE' ? '到货后需要质检' : '送达后需要交付质检'}</span><span className="mt-1 block text-xs text-muted-foreground">勾选后自动生成质检任务；业务完成至少需要一份有效报告，可关联已有报告。双边直拨请从合同详情配对创建。</span></span></label>
         <div className="grid gap-4 md:grid-cols-2">
           <LocationField
             label={data.order.type === 'PURCHASE' ? '起运地点（供应商发货地）' : '起运地点'}

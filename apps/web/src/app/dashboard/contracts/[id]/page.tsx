@@ -18,6 +18,8 @@ import { settlementMethodLabel } from '@/lib/contract-settlement';
 import { unitLabel } from '@/lib/unit';
 import { BusinessOperationHistory } from '@/components/business-operation-history';
 import { GradePriceRulesView, GradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
+import { BilateralPriceTools } from '@/components/contracts/bilateral-price-tools';
+import { BilateralFlowReview } from '@/components/contracts/bilateral-flow-review';
 import { StatusText } from '@/components/status-text';
 import { confirmAction } from '@/lib/system-dialog';
 import {
@@ -64,7 +66,7 @@ interface ContractDetail {
   department?: { id: string; name: string } | null;
   businessUnitId?: string | null;
   businessUnit?: { id: string; code: string; name: string; type: string; profitCenterCode?: string | null } | null;
-  externalNo?: string; contactPerson?: string; contactPhone?: string;
+  externalNo?: string; salesExternalNo?: string; salesSignedAt?: string; salesPaymentMethod?: string; contactPerson?: string; contactPhone?: string;
   pricingType?: string; overfillPct?: string; shortfallPct?: string;
   deliveryMethod?: string; deliveryLocation?: string;
   settlementBasis?: string; prepayPct?: string; paymentDays?: number; paymentMethod?: string;
@@ -615,6 +617,7 @@ export default function ContractDetailPage() {
               </Button>
             </Link>
           )}
+          {c.type === 'BILATERAL' && ['APPROVED', 'EXECUTING'].includes(c.status) && <Link href={`/dashboard/contracts/${c.id}/direct/new`}><Button size="sm" variant="outline"><Truck className="mr-1 h-4 w-4" />新建直拨执行</Button></Link>}
           {canEdit && (
             <Link href={`/dashboard/contracts/${c.id}/edit`}>
               <Button variant="outline" size="sm"><Edit3 className="h-4 w-4 mr-1" />编辑</Button>
@@ -655,6 +658,7 @@ export default function ContractDetailPage() {
           <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
             <div className="sm:col-span-2"><Field label="合同标题" value={c.title} /></div>
             <Field label="外部合同号" value={c.externalNo || '—'} />
+            {c.type === 'BILATERAL' && <><Field label="销售外部合同号" value={c.salesExternalNo || '历史未记录'} /><Field label="销售合同签订日期" value={c.salesSignedAt ? new Date(c.salesSignedAt).toLocaleDateString('zh-CN') : '历史未记录'} /><Field label="销售收款约定" value={c.salesPaymentMethod || '历史未记录'} /></>}
             <div className="sm:col-span-3"><Field label="我方签约主体（内部）" value={c.signingPartner ? `${c.signingPartner.code} ${c.signingPartner.name}` : c.company ? `${c.company.code} ${c.company.name}（旧数据）` : '—'} /></div>
             <div className="rounded-lg border bg-muted/30 p-4 sm:col-span-3">
               <div className="mb-3 text-xs font-semibold text-muted-foreground">交易对手方与联系人</div>
@@ -740,6 +744,8 @@ export default function ContractDetailPage() {
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
       <ContractSettlementRecords contractId={c.id} />
+      {c.type === 'BILATERAL' && <BilateralFlowReview contractId={c.id} />}
+      {c.type === 'BILATERAL' && c.pricingType === 'GRADE_TIER' && c.lineItems.map(line => <BilateralPriceTools key={line.id} purchase={line.priceRulesSnapshot} sales={line.salesPriceRulesSnapshot} />)}
       {/* Attachments */}
       {c.attachments && c.attachments.length > 0 && (
         <Card>
