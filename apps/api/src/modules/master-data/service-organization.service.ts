@@ -155,7 +155,7 @@ export class ServiceOrganizationService {
       this.prisma.serviceOrganization.findMany({
         where,
         include: { partner: true },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: pageSize,
       }),

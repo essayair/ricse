@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -23,7 +24,7 @@ export function ProductionRecipeForm({ id }: { id?: string }) {
 
   useEffect(() => {
     Promise.all([
-      api.get<{ items: any[] }>('/partners?pageSize=500'),
+      loadAllOptions<any>('/partners?status=ACTIVE'),
       api.get<{ items: any[] }>('/master-data/materials?pageSize=500'),
       id ? api.get<any>(`/production/recipes/${id}`) : Promise.resolve(null),
     ]).then(([partnerData, materialData, recipe]) => {

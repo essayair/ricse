@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 import { MATERIAL_ROLE, quantity } from '@/lib/production';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,7 +21,7 @@ export default function NewProductionTaskPage() {
   const recipe = recipes.find(item => item.id === form.recipeId);
 
   useEffect(() => {
-    Promise.all([api.get<any[]>('/production/recipes?status=ACTIVE'), api.get<any[]>('/master-data/warehouses'), api.get<{ items: any[] }>('/service-organizations?type=PROCESSING_PROVIDER&status=ACTIVE&pageSize=200'), api.get<any[]>('/production/business-unit-options')])
+    Promise.all([api.get<any[]>('/production/recipes?status=ACTIVE'), api.get<any[]>('/master-data/warehouses'), loadAllOptions<any>('/service-organizations?type=PROCESSING_PROVIDER&status=ACTIVE'), api.get<any[]>('/production/business-unit-options')])
       .then(([recipeData, warehouseData, processorData, businessUnitData]) => { setRecipes(recipeData || []); setWarehouses((warehouseData || []).filter(item => item.status === 'ACTIVE')); setProcessors(processorData.items || []); setBusinessUnits(businessUnitData || []); setForm(current => ({ ...current, businessUnitId: current.businessUnitId || businessUnitData.find((unit: any) => unit.isDefault)?.id || (businessUnitData.length === 1 ? businessUnitData[0].id : '') })); })
       .catch((error: any) => alert(error.message));
   }, []);

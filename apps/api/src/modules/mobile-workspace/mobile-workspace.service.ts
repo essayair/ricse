@@ -372,7 +372,6 @@ export class MobileWorkspaceService {
         },
         select: { id: true, partnerId: true, partner: { select: { id: true, code: true, name: true, isInternal: true } } },
         orderBy: { partner: { name: 'asc' } },
-        take: 200,
       }),
     ]);
     return {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, FileText, FlaskConical, Plus, Scale, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { StatusText } from '@/components/status-text';
 import { Badge } from '@/components/ui/badge';
@@ -99,7 +100,7 @@ export default function CreateQualityInspectionPage() {
       else if (items[0]) setWeighTicketId(items[0].id);
       setSampleNo(`${qualityTask.taskNo}-S${String(qualityTask.reports.length + 1).padStart(2, '0')}`);
     }).catch(error => alert(error.message || '质检任务或可用磅单加载失败'));
-    api.get<{ items: InstitutionProfile[] }>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE&pageSize=200')
+    loadAllOptions<InstitutionProfile>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE')
       .then(result => setInstitutions(result.items || []))
       .catch(error => alert(error.message || '质检机构主数据加载失败'));
   }, [router, searchParams]);

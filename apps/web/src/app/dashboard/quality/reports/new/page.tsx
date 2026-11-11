@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 import { openLocalAttachment } from '@/lib/attachment-preview';
 import { toLocalDateTimeInput } from '@/lib/date-time';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,7 @@ import { LocalAttachmentThumbnail } from '@/components/attachment-thumbnail';
 
 type Indicator = { code: string; name: string; operator: string; standardValue: string; measuredValue: string; unit: string; upperValue?: string; fuseValue?: string; indicatorDefinitionId?: string; methodId?: string; methodCode?: string; methodName?: string };
 type Material = { id: string; code: string; name: string; status: string };
-type Institution = { partnerId: string; partner: { name: string } };
+type Institution = { id: string; partnerId: string; partner: { name: string } };
 const fallback: Indicator[] = [
   { code: 'CAF2', name: 'CaF₂', operator: 'GTE', standardValue: '', measuredValue: '', unit: '%' },
   { code: 'MOISTURE', name: '水分', operator: 'LTE', standardValue: '', measuredValue: '', unit: '%' },
@@ -52,7 +53,7 @@ export default function NewStandaloneQualityReportPage() {
     const now = toLocalDateTimeInput(); setSampledAt(now); setTestedAt(now);
     try { setSamplerName(JSON.parse(localStorage.getItem('user') || '{}').name || ''); } catch {}
     api.get<{ items: Material[] }>('/master-data/materials?pageSize=200').then(result => setMaterials(result.items || [])).catch(() => {});
-    api.get<{ items: Institution[] }>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE&pageSize=200').then(result => setInstitutions(result.items || [])).catch(() => {});
+    loadAllOptions<Institution>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE').then(result => setInstitutions(result.items || [])).catch(error => alert(error.message || '质检机构加载失败'));
     if (editId) api.get<ExistingReport>(`/quality-inspections/${editId}`).then(report => {
       skipTemplateForMaterial.current = report.materialId;
       setExistingStatus(report.status); setMaterialId(report.materialId || '');

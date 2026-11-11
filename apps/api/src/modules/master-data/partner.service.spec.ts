@@ -12,6 +12,14 @@ describe('PartnerService', () => {
     service = new PartnerService(prisma);
   });
 
+  it('伙伴分页保留供应商客户双角色，稳定排序避免同时间创建时漏选', async () => {
+    prisma.partner.findMany.mockResolvedValue([{ id: 'both', roles: ['SUPPLIER', 'CUSTOMER'] }] as any);
+    prisma.partner.count.mockResolvedValue(241);
+    const result = await service.findAll({ role: 'SUPPLIER', status: 'ACTIVE', page: 2, pageSize: 200 });
+    expect(result.items[0].id).toBe('both'); expect(result.pagination.totalPages).toBe(2);
+    expect(prisma.partner.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { deletedAt: null, roles: { has: 'SUPPLIER' }, status: 'ACTIVE' }, skip: 200, take: 200, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }));
+  });
+
   it('允许将合作伙伴类别明确清空', async () => {
     prisma.partner.findUnique.mockResolvedValue({
       id: 'partner-1', name: '测试合作伙伴', taxId: '91330000TEST',

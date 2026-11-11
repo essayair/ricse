@@ -21,6 +21,16 @@ describe('司机车辆联合登记与资料附件', () => {
     files.upload.mockResolvedValue({ fileName: 'stored.pdf', size: 14 } as any);
     files.delete.mockResolvedValue(undefined);
   });
+  it('承运商及内部主体候选不被固定200条截断，并保持启用供应商过滤', async () => {
+    prisma.serviceOrganization.findMany.mockResolvedValue(Array.from({ length: 231 }, (_, index) => ({ id: `carrier-${index}` })) as any);
+    prisma.partner.findMany.mockResolvedValue(Array.from({ length: 213 }, (_, index) => ({ id: `partner-${index}` })) as any);
+    const result = await service.carrierOptions();
+    expect(result.items).toHaveLength(231); expect(result.internalPartners).toHaveLength(213);
+    expect(prisma.serviceOrganization.findMany.mock.calls[0][0]).not.toHaveProperty('take');
+    expect(prisma.partner.findMany.mock.calls[0][0]).not.toHaveProperty('take');
+    expect(prisma.serviceOrganization.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } } }) }));
+  });
+
   it('只创建司机，车辆完全独立；附件写入司机档案而非车辆', async () => {
     await expect(service.create({ newDriver }, { driverAttachments: [file()] }, 'u')).resolves.toMatchObject({ driverId: 'd', vehicleId: null, linked: false });
     expect(prisma.vehicle.create).not.toHaveBeenCalled();

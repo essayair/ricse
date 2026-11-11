@@ -179,7 +179,7 @@ export class PartnerService {
         where,
         skip,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.partner.count({ where }),
     ]);

@@ -208,6 +208,7 @@ describe('MobileWorkspaceService', () => {
     expect(result.drivers[0].fleetLinks).toEqual(fleetLinks);
     expect(result.drivers[0].carrierPartnerId).toBeNull();
     expect(result.carriers[0].isInternal).toBe(true);
+    expect(prisma.serviceOrganization.findMany.mock.calls[0][0]).not.toHaveProperty('take');
     for (const resource of [prisma.vehicle.findMany, prisma.driver.findMany]) {
       expect(resource).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({
         fleetLinks: expect.objectContaining({ where: { fleet: { status: 'ACTIVE', deletedAt: null } } }),

@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Building2, Users, Layers, Network, Plus, Loader2, ChevronDown, ChevronRight, Trash2, Check, X, Pencil, ArrowUp, ArrowDown, GripVertical, Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 import { StatusText } from '@/components/status-text';
 import { ClickableRow } from '@/components/clickable-row';
 import { confirmAction } from '@/lib/system-dialog';
@@ -529,7 +530,7 @@ function OrgPageInner() {
           <Button onClick={async () => {
             setPartnerLoading(true);
             try {
-              const ps = await api.get<{ items: any[] }>('/partners');
+              const ps = await loadAllOptions<any>('/partners?status=ACTIVE');
               setPartnerList(Array.isArray(ps?.items) ? ps.items : (Array.isArray(ps) ? ps : []));
               setShowCreateCompany(true); setSelectedPartner(null);
             } catch (e: any) { alert('加载合作伙伴失败: ' + (e.message || '未知错误')); }
@@ -540,7 +541,7 @@ function OrgPageInner() {
             if (tab === 'company') {
               setPartnerLoading(true);
               try {
-                const ps = await api.get<{ items: any[] }>('/partners');
+                const ps = await loadAllOptions<any>('/partners?status=ACTIVE');
                 setPartnerList(Array.isArray(ps?.items) ? ps.items : (Array.isArray(ps) ? ps : []));
               } catch (e: any) { alert('加载合作伙伴失败: ' + (e.message || '未知错误')); return; }
               finally { setPartnerLoading(false); }

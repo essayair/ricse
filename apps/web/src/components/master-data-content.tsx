@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 import { unitLabel } from '@/lib/unit';
 import { StatusText } from '@/components/status-text';
 import { ClickableRow } from '@/components/clickable-row';
@@ -304,7 +305,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
     const params = new URLSearchParams();
     if (roleFilter) params.set('role', roleFilter);
     if (searchTerm) params.set('search', searchTerm);
-    api.get<{ items: Partner[] }>(`/partners?${params}`).then((d) => setPartners(d.items || [])).catch(() => {});
+    loadAllOptions<Partner>(`/partners?${params}`).then((d) => setPartners(d.items || [])).catch(error => alert(error.message || '合作伙伴加载失败'));
   }, [roleFilter, searchTerm]);
 
   const fetchMaterials = useCallback(() => {
@@ -331,7 +332,7 @@ function MasterDataPageInner({ transportOnly = false }: { transportOnly?: boolea
     }
     api.get<MaterialCategory[]>('/master-data/material-categories').then(setCategories).catch(() => {});
     api.get<WarehouseItem[]>('/master-data/warehouses').then((d) => setWarehouses(Array.isArray(d) ? d : [])).catch(() => {});
-    api.get<{ items: VehicleOwnerOption[] }>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE&pageSize=200').then(d => setVehicleOwners(d.items || [])).catch(() => {});
+    loadAllOptions<VehicleOwnerOption>('/service-organizations?type=LOGISTICS_CARRIER&status=ACTIVE').then(d => setVehicleOwners(d.items || [])).catch(error => alert(error.message || '承运商加载失败'));
   }, [transportOnly]);
 
   const fetchDrivers = useCallback(() => {

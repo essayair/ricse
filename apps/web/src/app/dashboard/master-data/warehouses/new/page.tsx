@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save } from 'lucide-react';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 
 const WAREHOUSE_TYPES = [
   { value: 'SELF', label: '自有仓库' },
@@ -51,7 +52,7 @@ export default function WarehouseNewPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get<{ items: Array<{ id: string; partnerId: string; partner: { code: string; name: string } }> }>('/service-organizations?type=WAREHOUSE_PORT&status=ACTIVE&pageSize=200')
+    loadAllOptions<{ id: string; partnerId: string; partner: { code: string; name: string } }>('/service-organizations?type=WAREHOUSE_PORT&status=ACTIVE')
       .then(result => setOperators(result.items || []))
       .catch(() => {});
   }, []);

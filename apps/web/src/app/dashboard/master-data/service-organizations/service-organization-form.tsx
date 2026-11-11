@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { loadAllOptions } from '@/lib/option-loader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,7 @@ export const ORGANIZATION_TYPES = {
 interface Partner { id: string; code: string; name: string }
 interface Organization {
   id: string; partnerId: string; organizationType: keyof typeof ORGANIZATION_TYPES;
+  partner?: Partner;
   licenseNo?: string | null; licenseExpiry?: string | null; qualificationNo?: string | null;
   cmaNo?: string | null; cnasNo?: string | null; serviceScope?: string | null; serviceRegions?: string | null;
   transportModes?: string[]; cargoTypes?: string | null; supportedMaterials?: string | null;
@@ -38,16 +40,23 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
   const router = useRouter();
   const [organizationType, setOrganizationType] = useState(type || 'LOGISTICS_CARRIER');
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [partnerSearch, setPartnerSearch] = useState('');
+  const [partnersLoading, setPartnersLoading] = useState(true);
+  const [partnersError, setPartnersError] = useState('');
   const [form, setForm] = useState<Record<string, string>>(empty);
   const [transportModes, setTransportModes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.get<{ items: Partner[] }>('/partners?role=SUPPLIER&status=ACTIVE&pageSize=200')
-      .then(result => setPartners(result.items || []))
-      .catch(error => alert(error.message));
-    if (id) {
-      api.get<Organization>(`/service-organizations/${id}`).then(item => {
+    let current = true;
+    setPartnersLoading(true); setPartnersError('');
+    Promise.all([
+      loadAllOptions<Partner>('/partners?role=SUPPLIER&status=ACTIVE'),
+      id ? api.get<Organization>(`/service-organizations/${id}`) : Promise.resolve(null),
+    ]).then(([result, item]) => {
+      if (!current) return;
+      setPartners(item?.partner && !result.items.some(p => p.id === item.partnerId) ? [...result.items, item.partner] : result.items);
+      if (item) {
         setOrganizationType(item.organizationType);
         setTransportModes(item.transportModes || []);
         // 只回填表单自身字段；接口返回的 id、时间戳、关联对象等不能随保存请求回传。
@@ -58,8 +67,10 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
           reportCycleDays: item.reportCycleDays?.toString() || '',
         };
         setForm(Object.fromEntries(Object.keys(empty).map(key => [key, loaded[key] == null ? '' : String(loaded[key])])));
-      }).catch(error => alert(error.message));
-    }
+      }
+    }).catch(error => { if (current) setPartnersError(error.message || '合作伙伴加载失败，请重试'); })
+      .finally(() => { if (current) setPartnersLoading(false); });
+    return () => { current = false; };
   }, [id]);
 
   const set = (key: string, value: string) => setForm(current => ({ ...current, [key]: value }));
@@ -91,6 +102,8 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
   };
 
   const title = ORGANIZATION_TYPES[organizationType as keyof typeof ORGANIZATION_TYPES] || '服务生态档案';
+  const keyword = partnerSearch.trim().toLocaleLowerCase();
+  const visiblePartners = partners.filter(item => item.id === form.partnerId || `${item.code} ${item.name}`.toLocaleLowerCase().includes(keyword));
   return <div className="mx-auto max-w-5xl space-y-6">
     <div>
       <h1 className="text-2xl font-bold">{id ? `编辑${title}` : `新建${title}`}</h1>
@@ -101,10 +114,13 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
       <h2 className="font-semibold">主体与状态</h2>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="关联合作伙伴（供应商）*">
-          <select disabled={Boolean(id)} value={form.partnerId} onChange={e => set('partnerId', e.target.value)} className={selectClass}>
-            <option value="">请选择</option>
-            {partners.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
+          {!id && <Input aria-label="搜索关联合作伙伴" value={partnerSearch} onChange={event => setPartnerSearch(event.target.value)} placeholder="按合作伙伴名称或编码搜索" disabled={partnersLoading} />}
+          <select aria-label="关联合作伙伴（供应商）" disabled={Boolean(id) || partnersLoading || Boolean(partnersError)} value={form.partnerId} onChange={e => set('partnerId', e.target.value)} className={selectClass}>
+            <option value="">{partnersLoading ? '正在加载合作伙伴…' : '请选择'}</option>
+            {visiblePartners.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
           </select>
+          {partnersError ? <p role="alert" className="text-xs text-destructive">{partnersError}</p> : <p className="text-xs text-muted-foreground">仅显示已启用且具有供应商角色的合作伙伴（含兼具客户角色的单位）。</p>}
+          {!partnersLoading && !partnersError && !visiblePartners.length && <p className="text-xs text-muted-foreground">{keyword ? '未找到匹配的供应商，请核对名称、编码或合作伙伴角色。' : '暂无可选供应商，请先维护合作伙伴。'}</p>}
         </Field>
         <Field label="档案状态">
           <select value={form.status} onChange={e => set('status', e.target.value)} className={selectClass}>
@@ -173,7 +189,7 @@ export function ServiceOrganizationForm({ type, id }: { type?: string; id?: stri
     <Card className="p-6">
       <Field label="备注"><textarea className="min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={form.remark} onChange={e => set('remark', e.target.value)} /></Field>
     </Card>
-    <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={back}>取消</Button><Button disabled={loading} onClick={() => void submit()}>{loading ? '保存中...' : '保存'}</Button></div>
+    <div className="flex justify-end gap-3 pb-8"><Button variant="outline" onClick={back}>取消</Button><Button disabled={loading || partnersLoading || Boolean(partnersError)} onClick={() => void submit()}>{loading ? '保存中...' : '保存'}</Button></div>
   </div>;
 }
 
