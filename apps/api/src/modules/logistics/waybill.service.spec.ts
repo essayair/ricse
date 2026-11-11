@@ -60,6 +60,18 @@ describe('WaybillService', () => {
     prisma.waybillLineItem.groupBy.mockResolvedValue([] as any);
   });
 
+  it('待直拨交付筛选保持权限且排除取消、转仓、拒收和已结束业务', async () => {
+    const scope = { id: { in: ['permitted-trip'] } };
+    accessControl.getWaybillScope.mockResolvedValueOnce(scope);
+    prisma.waybill.findMany.mockResolvedValueOnce([]);
+    await service.findAll({ directPending: true, status: 'IN_TRANSIT', search: '甘A' }, 'user-1');
+    expect(prisma.waybill.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      deletedAt: null, AND: [scope], status: 'SIGNED', salesCompletionConfirmedAt: null, directOutcome: null,
+      dispatchNotice: { mode: 'DIRECT', directSalesExecution: { isNot: null }, order: { contract: { status: { in: ['APPROVED', 'EXECUTING'] } } } },
+      OR: expect.any(Array),
+    }) }));
+  });
+
   it('从已下达执行通知创建物流运单', async () => {
     prisma.dispatchNotice.findFirst.mockResolvedValue(notice as any);
     prisma.waybill.create.mockResolvedValue({ id: 'waybill-1', waybillNo: 'WB-20260717-0001' } as any);
@@ -176,7 +188,7 @@ describe('WaybillService', () => {
     }, 'user-1');
 
     expect(result.createdCount).toBe(2);
-    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw.mock.calls.some(call => Array.isArray(call[0]) && call[0].join('').includes('pg_advisory_xact_lock'))).toBe(true);
     expect(prisma.waybill.create).toHaveBeenCalledTimes(2);
     expect(prisma.waybill.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
       data: expect.objectContaining({

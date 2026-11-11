@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { BilateralDirectService } from './bilateral-direct.service';
-import { ConfirmDirectDeliveryDto, CreateDirectExecutionDto, DirectReasonDto, ReviewDirectDeliveryDto, ConvertDirectDeliveryDto } from './bilateral-direct.dto';
+import { ConfirmDirectDeliveryDto, CreateDirectExecutionDto, DirectReasonDto, ReviewDirectDeliveryDto, ConvertDirectDeliveryDto, DirectTradeQueryDto } from './bilateral-direct.dto';
 
 @ApiTags('双边直拨')
 @ApiBearerAuth()
@@ -11,6 +11,7 @@ import { ConfirmDirectDeliveryDto, CreateDirectExecutionDto, DirectReasonDto, Re
 @Controller('bilateral-direct')
 export class BilateralDirectController {
   constructor(private readonly service: BilateralDirectService) {}
+  @Get('trade-documents') trades(@Query() query: DirectTradeQueryDto, @CurrentUser('id') id: string) { return this.service.tradeDocuments(query, id); }
   @Post('executions') create(@Body() dto: CreateDirectExecutionDto, @CurrentUser('id') id: string) { return this.service.createExecution(dto, id); }
   @Get('contracts/:id/review') contractReview(@Param('id') id: string, @CurrentUser('id') uid: string) { return this.service.contractReview(id, uid); }
   @Get('contracts/:id/execution-options') executionOptions(@Param('id') id: string, @CurrentUser('id') uid: string) { return this.service.executionOptions(id, uid); }

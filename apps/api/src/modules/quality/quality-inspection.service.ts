@@ -15,6 +15,55 @@ export class QualityInspectionService {
     private readonly inventoryService: InventoryService,
   ) {}
 
+  async reportContracts(userId: string, search?: string, pageNo = 1) {
+    await this.accessControl.assertPermission(userId, 'quality.view');
+    const scope = await this.accessControl.getContractScope(userId, 'quality.view');
+    const where: Prisma.ContractWhereInput = { deletedAt: null, status: { in: ['APPROVED', 'EXECUTING', 'COMPLETED', 'CLOSED', 'TERMINATED'] }, AND: [scope],
+      ...(search?.trim() ? { OR: [{ contractNo: { contains: search.trim(), mode: 'insensitive' } }, { title: { contains: search.trim(), mode: 'insensitive' } }] } : {}) };
+    const page = Math.max(1, Number.isFinite(pageNo) ? Math.floor(pageNo) : 1);
+    const [items, total] = await Promise.all([this.prisma.contract.findMany({ where, select: { id: true, contractNo: true, title: true }, skip: (page - 1) * 100, take: 100, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }), this.prisma.contract.count({ where })]);
+    return { items, total, pageNo: page, pageSize: 100, pagination: { page, pageSize: 100, total, totalPages: Math.ceil(total / 100) } };
+  }
+
+  async institutionOptions(userId: string, taskId?: string, contractId?: string) {
+    const context = await this.accessControl.assertPermission(userId, 'quality.view');
+    if (taskId) contractId = (await this.findTask(taskId, userId)).waybill.dispatchNotice.order.contract.id;
+    let partnerIds: string[] = [];
+    if (contractId) {
+      const scope = await this.accessControl.getContractScope(userId, 'quality.view');
+      const contract = await this.prisma.contract.findFirst({ where: { id: contractId, deletedAt: null, AND: [scope] }, select: { sellerId: true, buyerId: true } });
+      if (!contract) throw new NotFoundException('合同不存在或无权查看');
+      partnerIds = [...new Set([contract.sellerId, contract.buyerId].filter(Boolean) as string[])];
+      if (context.isExternal) partnerIds = partnerIds.filter(id => id === context.externalPartnerId);
+    }
+    const [partners, thirdParties] = await Promise.all([
+      partnerIds.length ? this.prisma.partner.findMany({ where: { id: { in: partnerIds }, status: 'ACTIVE', deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { code: 'asc' } }) : [],
+      this.prisma.serviceOrganization.findMany({ where: { organizationType: 'QUALITY_INSTITUTION', status: 'ACTIVE', deletedAt: null, partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } } }, select: { id: true, name: true, partnerId: true, partner: { select: { id: true, code: true, name: true } } }, orderBy: { id: 'asc' } }),
+    ]);
+    return { contractId: contractId || null, partners: partners.map(partner => ({ id: partner.id, partnerId: partner.id, name: partner.name, partner })), thirdParties };
+  }
+
+  private async resolveInstitution(type: string, partnerId: string | undefined, name: string | undefined, contractId: string | undefined, userId: string) {
+    if (type === 'PARTNER') {
+      if (!contractId || !partnerId) throw new BadRequestException('合作方检测请先选择合同，再选择该合同的供应商或客户');
+      const scope = await this.accessControl.getContractScope(userId, 'quality.manage');
+      const contract = await this.prisma.contract.findFirst({ where: { id: contractId, deletedAt: null, AND: [scope] }, select: { sellerId: true, buyerId: true } });
+      if (!contract) throw new NotFoundException('合同不存在或无权操作');
+      if (![contract.sellerId, contract.buyerId].includes(partnerId)) throw new BadRequestException('合作方检测机构必须是所选合同的供应商或客户');
+      const partner = await this.prisma.partner.findFirst({ where: { id: partnerId, status: 'ACTIVE', deletedAt: null }, select: { id: true, name: true } });
+      if (!partner) throw new BadRequestException('合同交易方不存在或已停用');
+      return partner;
+    }
+    if (type === 'THIRD_PARTY') {
+      if (!partnerId) throw new BadRequestException('第三方检测请选择已维护的质检机构');
+      const profile = await this.prisma.serviceOrganization.findFirst({ where: { partnerId, organizationType: 'QUALITY_INSTITUTION', status: 'ACTIVE', deletedAt: null, partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } } }, include: { partner: { select: { id: true, name: true } } } });
+      if (!profile) throw new BadRequestException('所选质检机构不存在、已停用或合作伙伴不具备供应商角色');
+      return { id: profile.partner.id, name: profile.name || profile.partner.name };
+    }
+    if (!name?.trim()) throw new BadRequestException('检测机构名称不能为空');
+    return { id: null, name: name.trim() };
+  }
+
   private readonly include = {
     creator: { select: { id: true, name: true } },
     confirmer: { select: { id: true, name: true } },
@@ -326,6 +375,9 @@ export class QualityInspectionService {
       const current = await tx.qualityInspection.findUnique({ where: { id: inspectionId }, include: { taskLinks: { where: { unlinkedAt: null } } } });
       if (!current || current.deletedAt) throw new NotFoundException('检测报告不存在');
       if (current.status === 'VOIDED') throw new BadRequestException('已作废的检测报告不能关联');
+      if (current.institutionType === 'PARTNER' && ![contract.seller?.id, contract.buyer?.id].includes(current.institutionPartnerId || undefined)) {
+        throw new BadRequestException('该合作方检测报告的出具单位不属于当前合同交易方，不能跨合同使用');
+      }
       if (current.materialId && !materialIds.includes(current.materialId)) throw new BadRequestException('检测报告物料与所选车辆不一致');
       if (current.taskLinks.length && (
         current.contractId !== contract.id || current.supplierId !== supplierId || current.businessUnitId !== businessUnitId
@@ -698,26 +750,7 @@ export class QualityInspectionService {
       throw new BadRequestException('同一质检单的指标编码不能重复');
     }
     if (!dto.reportNo.trim()) throw new BadRequestException('报告编号不能为空');
-    let institutionPartner: { id: string; name: string } | null = null;
-    if (['PARTNER', 'THIRD_PARTY'].includes(dto.institutionType)) {
-      if (!dto.institutionPartnerId) {
-        throw new BadRequestException('合作方或第三方检测必须选择已维护的质检机构');
-      }
-      const profile = await this.prisma.serviceOrganization.findFirst({
-        where: {
-          partnerId: dto.institutionPartnerId,
-          organizationType: 'QUALITY_INSTITUTION',
-          status: 'ACTIVE',
-          deletedAt: null,
-          partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } },
-        },
-        include: { partner: { select: { id: true, name: true } } },
-      });
-      if (!profile) throw new BadRequestException('所选质检机构不存在、已停用或合作伙伴不具备供应商角色');
-      institutionPartner = { id: profile.partner.id, name: profile.name || profile.partner.name };
-    } else if (!dto.institutionName?.trim()) {
-      throw new BadRequestException('检测机构名称不能为空');
-    }
+    const institutionPartner = await this.resolveInstitution(dto.institutionType, dto.institutionPartnerId, dto.institutionName, task.waybill.dispatchNotice.order.contract.id, userId);
     if (dto.submit && dto.indicators.some(item => item.measuredValue === undefined)) {
       throw new BadRequestException('提交质检结论前请填写全部检测指标');
     }
@@ -850,26 +883,15 @@ export class QualityInspectionService {
     return inspection;
   }
 
-  private async prepareStandalone(dto: CreateStandaloneQualityReportDto) {
+  private async prepareStandalone(dto: CreateStandaloneQualityReportDto, userId: string) {
     const material = await this.prisma.material.findFirst({ where: { id: dto.materialId, deletedAt: null, status: 'ACTIVE' } });
     if (!material) throw new BadRequestException('请选择有效物料');
     if (!dto.reportNo?.trim() || !dto.samplerName?.trim()) throw new BadRequestException('请填写报告编号和取样人');
     if (!dto.indicators?.length) throw new BadRequestException('请至少填写一个检测指标');
     if (new Set(dto.indicators.map(item => item.code.trim())).size !== dto.indicators.length) throw new BadRequestException('检测指标不能重复');
     if (dto.submit && dto.indicators.some(item => item.measuredValue === undefined)) throw new BadRequestException('提交报告前请填写全部实测指标');
-    let institutionName = dto.institutionName?.trim() || '';
-    let institutionPartnerId: string | null = null;
-    if (['PARTNER', 'THIRD_PARTY'].includes(dto.institutionType)) {
-      const profile = await this.prisma.serviceOrganization.findFirst({ where: {
-        partnerId: dto.institutionPartnerId,
-        organizationType: 'QUALITY_INSTITUTION', status: 'ACTIVE', deletedAt: null,
-        partner: { status: 'ACTIVE', deletedAt: null, roles: { has: 'SUPPLIER' } },
-      }, include: { partner: { select: { id: true, name: true } } } });
-      if (!profile) throw new BadRequestException('请选择已维护且启用的质检机构');
-      institutionName = profile.name || profile.partner.name;
-      institutionPartnerId = profile.partner.id;
-    }
-    if (!institutionName) throw new BadRequestException('请填写检测机构名称');
+    const institution = await this.resolveInstitution(dto.institutionType, dto.institutionPartnerId, dto.institutionName, dto.contextContractId, userId);
+    const institutionName = institution.name, institutionPartnerId = institution.id;
     const indicatorIds = [...new Set(dto.indicators.map(item => item.indicatorDefinitionId).filter(Boolean) as string[])];
     const methodIds = [...new Set(dto.indicators.map(item => item.methodId).filter(Boolean) as string[])];
     const [definitions, methods, allowedLinks] = await Promise.all([
@@ -896,7 +918,7 @@ export class QualityInspectionService {
 
   async createStandalone(dto: CreateStandaloneQualityReportDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'quality.manage');
-    const { material, institutionName, institutionPartnerId, evaluated } = await this.prepareStandalone(dto);
+    const { material, institutionName, institutionPartnerId, evaluated } = await this.prepareStandalone(dto, userId);
     return this.prisma.qualityInspection.create({ data: {
       inspectionNo: await this.generateNo(),
       materialId: material.id, materialName: material.name, materialSpec: material.spec,
@@ -939,7 +961,7 @@ export class QualityInspectionService {
 
   async updateStandalone(id: string, dto: CreateStandaloneQualityReportDto, userId: string) {
     await this.findOne(id, userId, 'quality.manage');
-    const { material, institutionName, institutionPartnerId, evaluated } = await this.prepareStandalone(dto);
+    const { material, institutionName, institutionPartnerId, evaluated } = await this.prepareStandalone(dto, userId);
     await this.prisma.$transaction(async tx => {
       const current = await this.assertStandaloneUnlinked(tx, id);
       // Editing a confirmed or voided report must not silently retain its previous confirmation.

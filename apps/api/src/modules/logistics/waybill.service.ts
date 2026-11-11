@@ -7,6 +7,13 @@ import { OutboundService } from '../inventory/outbound.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { BatchCreateWaybillDto, BatchWaybillItemDto, CreateWaybillDto } from './dto/create-waybill.dto';
+import { reserveBusinessNumber } from '../common/business-number';
+
+/** Web 筛选、小程序待办列表和数量统计共用，排除拒收、转仓及已结束合同。 */
+export const DIRECT_PENDING_WHERE = {
+  status: 'SIGNED', salesCompletionConfirmedAt: null, directOutcome: null,
+  dispatchNotice: { mode: 'DIRECT', directSalesExecution: { isNot: null }, order: { contract: { status: { in: ['APPROVED', 'EXECUTING'] } } } },
+} satisfies Prisma.WaybillWhereInput;
 
 export const WAYBILL_RECEIPT_ATTACHMENT_CATEGORIES = [
   'RECEIPT_DOCUMENT',
@@ -103,16 +110,9 @@ export class WaybillService {
   };
 
   private async reserveWaybillNumbers(tx: Prisma.TransactionClient, amount: number) {
-    const now = new Date();
-    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    // Advisory lock returns PostgreSQL `void`; execute it without asking Prisma
-    // to deserialize a result set. This keeps concurrent batch numbering safe
-    // without triggering "Failed to deserialize column of type 'void'".
-    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`RICSE_WAYBILL_${date}`}))`);
-    const count = await tx.waybill.count({ where: { createdAt: { gte: start, lt: end } } });
-    return Array.from({ length: amount }, (_, index) => `WB-${date}-${String(count + index + 1).padStart(4, '0')}`);
+    const first = await reserveBusinessNumber(tx, 'WAYBILL', 'PURCHASE');
+    const separator = first.lastIndexOf('-'), prefix = first.slice(0, separator + 1), start = BigInt(first.slice(separator + 1));
+    return Array.from({ length: amount }, (_, index) => `${prefix}${String(start + BigInt(index)).padStart(4, '0')}`);
   }
 
   private async requireCarrierPartner(carrierPartnerId: string) {
@@ -532,8 +532,7 @@ export class WaybillService {
     const where: Prisma.WaybillWhereInput = { deletedAt: null, AND: [scope] };
     if (params.status) where.status = params.status;
     if (params.directPending) {
-      where.status = 'SIGNED'; where.salesCompletionConfirmedAt = null;
-      where.dispatchNotice = { directSalesExecution: { isNot: null } };
+      Object.assign(where, DIRECT_PENDING_WHERE);
     }
     if (params.search) {
       where.OR = [

@@ -522,7 +522,11 @@ export class MobileWorkspaceController {
   activeWarehouses(@CurrentUser('id') userId: string) { return this.service.activeWarehouses(userId); }
 
   @Get('quality-institutions')
-  activeQualityInstitutions(@CurrentUser('id') userId: string) {
+  async activeQualityInstitutions(@CurrentUser('id') userId: string, @Query('qualityTaskId') taskId?: string, @Query('institutionType') institutionType?: string) {
+    if (taskId) {
+      const options = await this.qualityService.institutionOptions(userId, taskId);
+      return (institutionType === 'PARTNER' ? options.partners : options.thirdParties).map(item => ({ id: item.partnerId, code: item.partner.code, name: item.name || item.partner.name }));
+    }
     return this.service.activeQualityInstitutions(userId);
   }
 

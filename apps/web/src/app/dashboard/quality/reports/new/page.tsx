@@ -30,9 +30,13 @@ export default function NewStandaloneQualityReportPage() {
   const skipTemplateForMaterial = useRef<string | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [partnerInstitutions, setPartnerInstitutions] = useState<Institution[]>([]);
+  const [contracts, setContracts] = useState<Array<{ id: string; contractNo: string; title: string }>>([]);
+  const [contextContractId, setContextContractId] = useState('');
   const [materialId, setMaterialId] = useState('');
   const [evidenceStage, setEvidenceStage] = useState('');
   const [institutionType, setInstitutionType] = useState('OUR');
+  const institutionChoices = institutionType === 'PARTNER' ? partnerInstitutions : institutions;
   const [institutionPartnerId, setInstitutionPartnerId] = useState('');
   const [institutionName, setInstitutionName] = useState('');
   const [reportNo, setReportNo] = useState('');
@@ -68,6 +72,19 @@ export default function NewStandaloneQualityReportPage() {
   }, [editId, router]);
 
   useEffect(() => {
+    if (institutionType !== 'PARTNER') return;
+    let active = true;
+    loadAllOptions<{ id: string; contractNo: string; title: string }>('/quality-inspections/report-contracts').then(result => { if (active) setContracts(result.items); }).catch(error => alert(error.message));
+    return () => { active = false; };
+  }, [institutionType]);
+  useEffect(() => {
+    if (!contextContractId) { setPartnerInstitutions([]); return; }
+    let active = true;
+    api.get<{ partners: Institution[] }>(`/quality-inspections/institution-options?contractId=${encodeURIComponent(contextContractId)}`).then(result => { if (active) setPartnerInstitutions(result.partners); }).catch(error => alert(error.message));
+    return () => { active = false; };
+  }, [contextContractId]);
+
+  useEffect(() => {
     if (!materialId) return;
     if (skipTemplateForMaterial.current === materialId) { skipTemplateForMaterial.current = null; return; }
     let active = true;
@@ -92,7 +109,7 @@ export default function NewStandaloneQualityReportPage() {
     if (result.institutionName) {
       setInstitutionName(result.institutionName);
       if (['PARTNER', 'THIRD_PARTY'].includes(institutionType)) {
-        const matched = institutions.find(item => (serviceOrganizationName(item) === result.institutionName?.trim() || item.partner.name.trim() === result.institutionName?.trim()));
+        const matched = institutionChoices.find(item => (serviceOrganizationName(item) === result.institutionName?.trim() || item.partner.name.trim() === result.institutionName?.trim()));
         setInstitutionPartnerId(matched?.partnerId || '');
         if (!matched) alert('检测机构名称未匹配已维护机构，请核对并手动选择');
       }
@@ -106,11 +123,12 @@ export default function NewStandaloneQualityReportPage() {
     if (!materialId || !reportNo.trim() || !sampledAt || !testedAt || !samplerName.trim()) return alert('请填写物料、报告编号、取样和检测信息');
     if (!evidenceStage) return alert('请选择取样环节（发货侧或收货侧）');
     if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? !institutionPartnerId : !institutionName.trim()) return alert('请选择或填写检测机构');
+    if (institutionType === 'PARTNER' && !contextContractId) return alert('合作方检测请先选择合同');
     if (!indicators.length || indicators.some(row => !row.code.trim() || !row.name.trim() || (submit && row.measuredValue === ''))) return alert('请填写至少一项完整检测结果');
     setSaving(true);
     try {
       const payload = {
-        materialId, samplingGroupNo: samplingGroupNo.trim() || undefined, sampleNo: sampleNo.trim() || undefined,
+        materialId, contextContractId: institutionType === 'PARTNER' ? contextContractId : undefined, samplingGroupNo: samplingGroupNo.trim() || undefined, sampleNo: sampleNo.trim() || undefined,
         sampledAt: new Date(sampledAt).toISOString(), testedAt: new Date(testedAt).toISOString(), samplerName: samplerName.trim(), samplingMethod,
         evidenceStage, institutionType, institutionPartnerId: institutionPartnerId || undefined, institutionName: institutionName.trim(), reportNo: reportNo.trim(), submit,
         remarks: remarks.trim() || undefined,
@@ -146,7 +164,8 @@ export default function NewStandaloneQualityReportPage() {
       <label className="text-sm">取样人 *<Input className="mt-1" value={samplerName} onChange={event => setSamplerName(event.target.value)} /></label>
       <label className="text-sm">取样方法<Input className="mt-1" value={samplingMethod} onChange={event => setSamplingMethod(event.target.value)} /></label>
       <label className="text-sm">检测机构类型<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionType} onChange={event => { setInstitutionType(event.target.value); setInstitutionPartnerId(''); }}><option value="OUR">我方</option><option value="PARTNER">合作方</option><option value="THIRD_PARTY">第三方</option><option value="OTHER">其他</option></select></label>
-      {['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <label className="text-sm">检测机构 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionPartnerId} onChange={event => setInstitutionPartnerId(event.target.value)}><option value="">请选择已维护机构</option>{institutions.map(item => <option key={item.partnerId} value={item.partnerId}>{serviceOrganizationLabel(item)}</option>)}</select></label> : <label className="text-sm">检测机构名称 *<Input className="mt-1" value={institutionName} onChange={event => setInstitutionName(event.target.value)} /></label>}
+      {institutionType === 'PARTNER' && <label className="text-sm">机构所属合同 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={contextContractId} onChange={event => { setContextContractId(event.target.value); setInstitutionPartnerId(''); }}><option value="">请选择合同，仅用于筛选交易方</option>{contracts.map(contract => <option key={contract.id} value={contract.id}>{contract.contractNo} · {contract.title}</option>)}</select></label>}
+      {['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <label className="text-sm">检测机构 *<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={institutionPartnerId} onChange={event => setInstitutionPartnerId(event.target.value)}><option value="">{institutionType === 'PARTNER' ? '请选择合同供应商或客户' : '请选择服务生态质检机构'}</option>{institutionChoices.map(item => <option key={item.partnerId} value={item.partnerId}>{serviceOrganizationLabel(item)}</option>)}</select></label> : <label className="text-sm">检测机构名称 *<Input className="mt-1" value={institutionName} onChange={event => setInstitutionName(event.target.value)} /></label>}
     </Card>
     {materialId && (standardsLoading ? <Card className="p-5 text-sm text-muted-foreground">正在加载物料质检指标…</Card> : <QualityReportTextRecognition indicators={indicators.map(item => ({ code: item.code, name: item.name }))} onApply={applyRecognition} />)}
     <Card className="space-y-3 p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">检测指标</h2><Button variant="outline" size="sm" onClick={() => setIndicators(rows => [...rows, { code: '', name: '', operator: 'GTE', standardValue: '', measuredValue: '', unit: '%' }])}>添加指标</Button></div>

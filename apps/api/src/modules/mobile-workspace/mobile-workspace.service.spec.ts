@@ -89,7 +89,7 @@ describe('MobileWorkspaceService', () => {
     });
     expect(result.account.roleNames).toEqual(['系统管理员']);
     expect(prisma.waybill.count).toHaveBeenCalledTimes(4);
-    expect(prisma.waybill.count).toHaveBeenCalledWith(expect.objectContaining({ where: { deletedAt: null, status: 'SIGNED', salesCompletionConfirmedAt: null, dispatchNotice: { directSalesExecution: { isNot: null } }, AND: [{}] } }));
+    expect(prisma.waybill.count).toHaveBeenCalledWith(expect.objectContaining({ where: { deletedAt: null, status: 'SIGNED', salesCompletionConfirmedAt: null, directOutcome: null, dispatchNotice: { mode: 'DIRECT', directSalesExecution: { isNot: null }, order: { contract: { status: { in: ['APPROVED', 'EXECUTING'] } } } }, AND: [{}] } }));
     expect(prisma.waybill.count).toHaveBeenCalledWith(expect.objectContaining({
       where: { deletedAt: null, status: 'PENDING', AND: [{}] },
     }));

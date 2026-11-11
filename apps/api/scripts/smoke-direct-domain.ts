@@ -39,6 +39,11 @@ async function main() {
     if (useHttp) {
       const denied = await fetch('http://127.0.0.1:3000/api/v1/bilateral-direct/warehouses'); assert.equal(denied.status, 401);
       await http('GET', '/bilateral-direct/warehouses'); check('真实HTTP模块已加载，鉴权拒绝无令牌请求');
+      for (const path of ['/waybills?directPending=invalid', '/bilateral-direct/trade-documents?pageNo=0']) {
+        const invalid = await fetch(`http://127.0.0.1:3000/api/v1${path}`, { headers: { Authorization: `Bearer ${token}` } });
+        assert.equal(invalid.status, 400);
+      }
+      check('真实HTTP布尔筛选与分页参数无效时返回400');
     }
     const stockBefore = await db.inventoryLot.count();
     const category = await db.materialCategory.create({ data: { name: tag } }); categoryId = category.id;
@@ -67,6 +72,10 @@ async function main() {
     } });
     await db.qualityTask.update({ where: { id: task.id }, data: { basisInspectionId: report.id } });
     const input = { weighTicketId: ticket.id, qualityReportId: report.id, remarks: '仅发货侧有效资料，按双方确认口径交付' };
+    if (useHttp) {
+      const pending = await http('GET', `/waybills?directPending=true&search=${encodeURIComponent(tag)}`);
+      assert(pending.items.some((item: any) => item.id === w.id)); check('真实HTTP待直拨交付筛选可找到已签收车次');
+    }
     const preview = useHttp ? await http('POST', `/bilateral-direct/waybills/${w.id}/preview`, input) : await direct.preview(w.id, input, user.id); assert.equal((preview.snapshot as any).pricingQuantity, '19'); check('只有发货侧磅单、报告也可预览，20吨净重折干19吨');
     const confirm = () => useHttp ? http('POST', `/bilateral-direct/waybills/${w.id}/confirm`, input) : direct.confirm(w.id, input, user.id);
     const attempts = await Promise.allSettled([confirm(), confirm()]);
@@ -79,17 +88,32 @@ async function main() {
     const purchaseSources = await finance.settlementSources(contractId, user.id, 'PAYABLE');
     const saleSources = await finance.settlementSources(contractId, user.id, 'RECEIVABLE');
     assert.equal(purchaseSources.length, 1); assert.equal(saleSources.length, 1);
-    assert(purchaseSources[0].available, purchaseSources[0].reasons?.join(';')); assert(saleSources[0].available, saleSources[0].reasons?.join(';'));
-    check('采购与销售结算均能读取直拨来源，缺省侧缺失回退交付依据');
-    for (const [direction, source, expected] of [['PAYABLE', purchaseSources[0], 19000], ['RECEIVABLE', saleSources[0], 22800]] as const) {
+    assert('previewOnly' in purchaseSources[0] && purchaseSources[0].previewOnly); assert(!purchaseSources[0].available); assert(saleSources[0].available, saleSources[0].reasons?.join(';'));
+    await assert.rejects(finance.create({ contractId, direction: 'PAYABLE', settlementScope: 'GOODS', lines: [{ waybillLineItemId: purchaseSources[0].id, orderId: purchaseSources[0].orderId }] } as any, user.id), /请先完成销售结算审批/);
+    check('销售结算完成前采购仅可预览，不能保存');
+    for (const direction of ['RECEIVABLE', 'PAYABLE'] as const) {
+      const source = (await finance.settlementSources(contractId, user.id, direction))[0];
+      assert(source.available, source.reasons?.join(';'));
       const settlement = await finance.create({ contractId, direction, settlementScope: 'GOODS', lines: [{ waybillLineItemId: source.id, orderId: source.orderId }] } as any, user.id);
-      settlements.push(settlement.id); assert.equal(Number(settlement.totalAmount), expected);
+      settlements.push(settlement.id); assert.equal(Number(settlement.totalAmount), direction === 'PAYABLE' ? 19000 : 22800);
       await finance.confirm(settlement.id, user.id);
     }
-    check('两向各自形成并确认采购19000元、销售22800元结算，互不占用');
+    check('销售先确认22800元，采购跟随相同19吨、按采购价计算19000元');
+    if (useHttp) {
+      const list = await http('GET', `/bilateral-direct/trade-documents?contractId=${contractId}`);
+      assert.equal(list.total, 1); assert.equal(list.items[0].documents.length, 2); assert.equal(Number(list.totals.quantity), 20); assert.equal(Number(list.totals.pricingQuantity), 19);
+      assert.equal(list.items[0].evidence.ticketNo, tag); assert(!('snapshot' in list.items[0])); check('真实HTTP直拨进出成对展示且只汇总一次数量，快照按字段投影');
+      const pending = await http('GET', `/waybills?directPending=true&search=${encodeURIComponent(tag)}`);
+      assert.equal(pending.items.length, 0); check('完成直拨交付后从待确认列表移除');
+    }
     await assert.rejects(direct.reverse(w.id, '测试更正', user.id), /结算单/); check('有效下游结算阻止撤销');
-    for (const id of settlements) await finance.voidSettlement(id, user.id);
+    await assert.rejects(finance.voidSettlement(settlements[0], user.id), /请先作废该采购结算/); check('存在跟随采购结算时不可先作废销售结算');
+    for (const id of [...settlements].reverse()) await finance.voidSettlement(id, user.id);
     await direct.reverse(w.id, '结算作废后更正', user.id);
+    if (useHttp) {
+      const list = await http('GET', `/bilateral-direct/trade-documents?contractId=${contractId}&status=REVERSED`);
+      assert.equal(list.total, 1); assert.equal(list.items[0].status, 'REVERSED'); assert.equal(Number(list.totals.quantity), 0); check('撤销版本保留两向记录但不计入有效数量汇总');
+    }
     const revised = await direct.confirm(w.id, input, user.id); assert.equal(revised?.version, 2); check('结算作废后可撤销并重新确认，保留第二版');
     await direct.reverse(w.id, '撤销后测试复核', user.id);
     await direct.confirm(w.id, { ...input, requestReview: true }, user.id);

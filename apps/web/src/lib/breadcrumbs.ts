@@ -57,6 +57,7 @@ const RESOURCE_ROUTES: ResourceRoute[] = [
   { base: '/dashboard/logistics-settlements', section: '物流管理', listLabel: '运费结算单', detailLabel: '物流结算单详情', createLabel: '新建物流结算单' },
   { base: '/dashboard/inbound', section: '库存管理', listLabel: '入库单管理', detailLabel: '入库单详情', createLabel: '入库单生成说明' },
   { base: '/dashboard/outbound', section: '库存管理', listLabel: '出库单管理', detailLabel: '出库单详情', createLabel: '完善出库作业' },
+  { base: '/dashboard/direct-trades', section: '库存管理', listLabel: '直拨进出', detailLabel: '直拨进出记录' },
   { base: '/dashboard/inventory-reversals', section: '库存管理', listLabel: '库存冲销', detailLabel: '库存冲销单详情', createLabel: '新建库存冲销单' },
   { base: '/dashboard/quality', section: '磅单质检', listLabel: '质检管理', detailLabel: '质检任务详情', createLabel: '添加检测报告' },
 ];

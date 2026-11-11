@@ -20,6 +20,16 @@ import { QualityInspectionService } from './quality-inspection.service';
 export class QualityInspectionController {
   constructor(private readonly service: QualityInspectionService, private readonly fileService: FileService) {}
 
+  @Get('institution-options')
+  institutionOptions(@CurrentUser('id') userId: string, @Query('qualityTaskId') taskId?: string, @Query('contractId') contractId?: string) {
+    return this.service.institutionOptions(userId, taskId, contractId);
+  }
+
+  @Get('report-contracts')
+  reportContracts(@CurrentUser('id') userId: string, @Query('search') search?: string, @Query('pageNo') pageNo?: string, @Query('page') page?: string) {
+    return this.service.reportContracts(userId, search, Number(page || pageNo) || 1);
+  }
+
   @Post()
   @ApiOperation({ summary: '从已完成磅单创建质检单' })
   create(@Body() dto: CreateQualityInspectionDto, @CurrentUser('id') userId: string) {

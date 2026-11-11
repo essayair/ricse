@@ -22,6 +22,13 @@ describe('AccessControlService', () => {
     service = module.get(AccessControlService);
   });
 
+  it('管理员查看独立及已关联检测报告不构造空关系 OR 条件', async () => {
+    jest.spyOn(service, 'getContext').mockResolvedValue({ isAdmin: true } as any);
+    const contractScope = jest.spyOn(service, 'getContractScope');
+    await expect(service.getQualityInspectionScope('admin')).resolves.toEqual({});
+    expect(contractScope).not.toHaveBeenCalled();
+  });
+
   it('物流付款要求全部运单都处于当前操作数据范围', async () => {
     jest.spyOn(service, 'getContext').mockResolvedValue({ isAdmin: false, isExternal: false } as any);
     const scope = { dispatchNotice: { order: { contract: { businessUnitId: 'unit-a' } } } };

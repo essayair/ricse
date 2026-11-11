@@ -1,8 +1,19 @@
-import { IsBoolean, IsDateString, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
 /** 磅单与水分报告来自不同环节时须说明原因。 */
 export const CROSS_SIDE_REASONS = { NEGOTIATED_TICKET: '磅单协商', SINGLE_SIDE_REPORT: '只有一方出质检单' } as const;
 import { DispatchLocationDto } from '../dispatch-notice/dto/create-dispatch-notice.dto';
+
+export class DirectTradeQueryDto {
+  @IsOptional() @IsString() @MaxLength(100) search?: string;
+  @IsOptional() @IsIn(['CONFIRMED', 'REVERSED']) status?: string;
+  @IsOptional() @IsString() @IsNotEmpty() contractId?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) startDate?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) endDate?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) pageNo?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize?: number;
+}
 
 export class CreateDirectExecutionDto extends DispatchLocationDto {
   @IsString() @IsNotEmpty() contractId: string;

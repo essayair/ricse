@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { resolvePagination } from '../common/pagination';
+import { reserveBusinessNumber } from '../common/business-number';
 
 const TRANSITIONS: Record<string, string[]> = {
   DRAFT: ['CONFIRMED', 'CANCELLED'],
@@ -45,18 +46,6 @@ export class OrderService {
       orderBy: { createdAt: 'desc' as const },
     },
   };
-
-  private async generateOrderNo(type: string) {
-    const prefix = type === 'PURCHASE' ? 'CGDD' : 'XSDD';
-    const now = new Date();
-    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const count = await this.prisma.order.count({
-      where: { type, createdAt: { gte: start, lt: end } },
-    });
-    return `${prefix}${date}${String(count + 1).padStart(4, '0')}`;
-  }
 
   async create(dto: CreateOrderDto, userId: string) {
     await this.accessControl.assertPermission(userId, 'execution.manage');
@@ -118,7 +107,6 @@ export class OrderService {
         totalPrice: Number(item.quantity) * Number(unitPrice),
       };
     });
-    const orderNo = await this.generateOrderNo(dto.type);
     const totalAmount = lines.reduce((sum, item) => sum + Number(item.totalPrice), 0);
 
     return this.prisma.$transaction(async (tx) => {
@@ -129,7 +117,7 @@ export class OrderService {
       if (current.count !== 1) throw new BadRequestException('合同状态已变化，不能创建执行批次，请刷新后重试');
       const order = await tx.order.create({
         data: {
-          orderNo,
+          orderNo: await reserveBusinessNumber(tx, 'ORDER', dto.type as 'PURCHASE' | 'SALES'),
           name,
           contractId: contract.id,
           type: dto.type,

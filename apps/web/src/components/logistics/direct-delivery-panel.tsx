@@ -6,8 +6,9 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { confirmAction, promptAction } from '@/lib/system-dialog';
+import { DirectEvidenceView, type DirectEvidenceSides } from './direct-evidence-view';
 
-type Snapshot = { quantity: string; pricingQuantity: string; pricingQuantityBasis: string; ticketNo: string; reportNo: string; measuredMoisturePct?: number; crossSide?: boolean; crossSideReason?: string | null };
+type Snapshot = { quantity: string; pricingQuantity: string; pricingQuantityBasis: string; ticketNo: string; reportNo: string; measuredMoisturePct?: number; crossSide?: boolean; crossSideReason?: string | null; evidenceSides?: DirectEvidenceSides };
 const CROSS_SIDE_REASONS: Record<string, string> = { NEGOTIATED_TICKET: '磅单协商', SINGLE_SIDE_REPORT: '只有一方出质检单' };
 type Delivery = { id: string; version: number; status: string; snapshot: Snapshot; remarks: string; documents: Array<{ documentNo: string; direction: string; quantity: string; pricingQuantity: string; status: string }> };
 type Detail = { status: string; directOutcome?: string; replacementWaybillId?: string; plannedQuantity: string; originLocation?: string; destinationLocation?: string; deliveries: Delivery[]; weighTickets: Array<{ id: string; ticketNo: string; weighingStage: string; netWeight: string; weightSelections: Array<{ purpose: string; weighTicketId: string }> }>; reports: Array<{ id: string; reportNo: string; inspectionNo: string; evidenceStage: string; indicators: Array<{ name: string; measuredValue: string | null; unit: string }> }>; qualityTask: { id: string; basisInspectionId: string | null; status: string } | null };
@@ -72,7 +73,7 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
     const reason = await promptAction('请填写原因；系统将检查下游单据引用。', '', { title: action === 'reverse' ? '撤销直拨交付' : action === 'reject-return' ? '整车拒收退回供应商' : '取消直拨运单' });
     if (reason?.trim()) await act(action, { reason });
   }
-  return <Card className="space-y-4 p-5">
+  return <Card id="direct-delivery" className="scroll-mt-6 space-y-4 p-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">直拨交付</h2><span className="text-sm text-muted-foreground">两向数量一致 · 不形成仓库库存</span></div>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {detail?.directOutcome === 'REJECT_RETURN' && <p className="text-sm text-warning">已登记整车拒收退回供应商，两向均未形成交付。</p>}
@@ -81,6 +82,7 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
     {active ? <>
       <p className="text-sm">第 {active.version} 版 · {active.status === 'CONFIRMED' ? '销售与采购交付均已完成' : '等待运营经理复核'}</p>
       <Summary snapshot={active.snapshot} />
+      <DirectEvidenceView value={active.snapshot.evidenceSides} />
       {active.documents.map(d => <p key={d.documentNo} className="text-sm"><span className={d.direction === 'PURCHASE' ? 'text-destructive' : 'text-primary'}>{d.direction === 'PURCHASE' ? '采购业务入库' : '销售出库'}</span> · {d.documentNo}</p>)}
       <p className="text-sm">{active.remarks}</p>
       <div className="flex flex-wrap gap-2">
@@ -104,7 +106,7 @@ export function DirectDeliveryPanel({ waybillId, onChanged }: { waybillId: strin
       <label className="block space-y-2 text-sm"><span>采用依据及差异处理说明 *</span><textarea className="min-h-20 w-full rounded-md border border-input bg-background p-3" value={remarks} onChange={e => { setRemarks(e.target.value); setPreview(undefined); }} /></label>
       {crossSide && <label className="block space-y-2 text-sm"><span className="text-warning">交付磅单与水分报告来自不同环节，请选择原因 *</span><select className={fieldClass} value={crossSideReason} onChange={e => { setCrossSideReason(e.target.value); setPreview(undefined); }}><option value="">请选择原因</option>{Object.entries(CROSS_SIDE_REASONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={exception} onChange={e => { setException(e.target.checked); setPreview(undefined); }} />已核对质量异常，确认按说明接收</label>
-      {preview && <Summary snapshot={preview} />}
+      {preview && <><Summary snapshot={preview} /><DirectEvidenceView value={preview.evidenceSides} /></>}
       <div className="flex flex-wrap gap-2">
         {permissions.manage && <><Button variant="outline" disabled={busy || detail.status !== 'SIGNED'} onClick={() => void calculate()}>预览交付数量</Button><Button disabled={busy || !preview || (crossSide && !crossSideReason)} onClick={async () => { if (await confirmAction('将以同一组依据生成采购业务入库和销售出库，完成两向交付。', { title: '确认直拨交付' })) await act('confirm', body); }}>确认销售交付并同步采购</Button><Button variant="outline" disabled={busy || !preview || (crossSide && !crossSideReason)} onClick={() => void act('confirm', { ...body, requestReview: true })}>提交运营经理复核</Button></>}
         {permissions.logistics && detail.status !== 'CANCELLED' && <Button variant="outline" disabled={busy} onClick={() => void reasonAction('cancel')}>取消运单</Button>}

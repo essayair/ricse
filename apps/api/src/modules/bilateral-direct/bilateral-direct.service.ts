@@ -1,13 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
-import { CreateDirectExecutionDto, ConfirmDirectDeliveryDto, ConvertDirectDeliveryDto, CROSS_SIDE_REASONS } from './bilateral-direct.dto';
+import { CreateDirectExecutionDto, ConfirmDirectDeliveryDto, ConvertDirectDeliveryDto, CROSS_SIDE_REASONS, DirectTradeQueryDto } from './bilateral-direct.dto';
 import { directQuantity } from './direct-quantity';
+import { directEvidenceSnapshot } from './direct-evidence-snapshot';
+import { reserveBusinessNumber } from '../common/business-number';
 
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
-const no = (prefix: string) => `${prefix}-${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }).replace(/-/g, '')}-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
 const active = ['PENDING_REVIEW', 'CONFIRMED'];
 const stable = (v: any): string => JSON.stringify(v, (_key, value) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map(k => [k, value[k]])) : value);
 
@@ -20,6 +20,55 @@ export class BilateralDirectService {
     // 未完成方向级投影前不能把两向内部确认快照向外部账号开放。
     if (context.isExternal) throw new ForbiddenException('直拨内部交付操作仅对有业务权限的内部账号开放');
     return context;
+  }
+
+  /** 按交付版本成对展示业务进出，不读取或累计仓库库存，也不暴露两向价格。 */
+  async tradeDocuments(params: DirectTradeQueryDto, userId: string) {
+    await this.internal(userId, 'inventory.view');
+    const scope = await this.access.getWaybillScope(userId, 'inventory.view');
+    const start = params.startDate ? new Date(`${params.startDate}T00:00:00+08:00`) : undefined;
+    const end = params.endDate ? new Date(new Date(`${params.endDate}T00:00:00+08:00`).getTime() + 86400000) : undefined;
+    if (start && end && start >= end) throw new BadRequestException('结束日期不能早于开始日期');
+    const waybillWhere: Prisma.WaybillWhereInput = {
+      deletedAt: null, AND: [scope],
+      dispatchNotice: { mode: 'DIRECT', directSalesExecution: { is: params.contractId ? { contractId: params.contractId } : {} } },
+    };
+    const where: Prisma.DirectDeliveryWhereInput = {
+      status: params.status || { in: ['CONFIRMED', 'REVERSED'] },
+      documents: { some: {} }, waybill: waybillWhere,
+      ...(start || end ? { confirmedAt: { ...(start ? { gte: start } : {}), ...(end ? { lt: end } : {}) } } : {}),
+    };
+    const search = params.search?.trim();
+    if (search) {
+      const contains = { contains: search, mode: 'insensitive' as const };
+      where.OR = [
+        { documents: { some: { documentNo: contains } } },
+        { waybill: { OR: [{ waybillNo: contains }, { plateNo: contains }, { lineItems: { some: { materialName: contains } } },
+          { dispatchNotice: { order: { contract: { OR: [{ contractNo: contains }, { title: contains }, { seller: { name: contains } }, { buyer: { name: contains } }, { signingPartner: { name: contains } }, { businessUnit: { name: contains } }] } } } }] } },
+      ];
+    }
+    const pageNo = params.pageNo || 1, pageSize = params.pageSize || 50;
+    const [items, total, confirmed] = await Promise.all([
+      this.prisma.directDelivery.findMany({ where, skip: (pageNo - 1) * pageSize, take: pageSize, orderBy: [{ confirmedAt: 'desc' }, { id: 'desc' }], select: {
+        id: true, waybillId: true, version: true, status: true, quantity: true, pricingQuantity: true, pricingQuantityBasis: true,
+        snapshot: true, remarks: true, createdBy: true, confirmedAt: true, reversedAt: true, reversalReason: true,
+        documents: { select: { documentNo: true, direction: true, status: true, quantity: true, pricingQuantity: true } },
+        waybill: { select: { waybillNo: true, plateNo: true, lineItems: { select: { materialName: true } }, dispatchNotice: { select: { order: { select: { contract: { select: {
+          id: true, contractNo: true, title: true, businessUnit: { select: { name: true } }, seller: { select: { name: true } }, buyer: { select: { name: true } }, signingPartner: { select: { name: true } },
+        } } } } } } } },
+      } }),
+      this.prisma.directDelivery.count({ where }),
+      this.prisma.directDelivery.aggregate({ where: { AND: [where, { status: 'CONFIRMED' }] }, _sum: { quantity: true, pricingQuantity: true }, _count: true }),
+    ]);
+    const users = items.length ? await this.prisma.user.findMany({ where: { id: { in: [...new Set(items.map(i => i.createdBy))] } }, select: { id: true, name: true } }) : [];
+    const names = new Map(users.map(u => [u.id, u.name]));
+    return { items: items.map(({ snapshot, createdBy, ...item }) => {
+      const s = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) ? snapshot as Record<string, unknown> : {};
+      return { ...item, operatorName: names.get(createdBy) || '历史用户', evidence: {
+        ticketNo: s.ticketNo, reportNo: s.reportNo, weighingStage: s.weighingStage, evidenceStage: s.evidenceStage,
+        materialName: s.materialName, measuredMoisturePct: s.measuredMoisturePct, crossSide: s.crossSide, crossSideReason: s.crossSideReason, sides: s.evidenceSides,
+      } };
+    }), total, pageNo, pageSize, totals: { confirmedCount: confirmed._count, quantity: confirmed._sum.quantity || 0, pricingQuantity: confirmed._sum.pricingQuantity || 0 } };
   }
 
   async executionOptions(contractId: string, userId: string) {
@@ -75,7 +124,7 @@ export class BilateralDirectService {
           const price = direction === 'SALES' ? source.salesUnitPrice : source.unitPrice;
           if (price == null) throw new BadRequestException('合同缺少对应方向价格');
           order = await tx.order.create({ data: {
-            orderNo: no(direction === 'PURCHASE' ? 'CGDD' : 'XSDD'), name: `${dto.name?.trim() || contract.title}·${direction === 'PURCHASE' ? '采购' : '销售'}直拨`, contractId: contract.id, type: direction,
+            orderNo: await reserveBusinessNumber(tx, 'ORDER', direction as 'PURCHASE' | 'SALES'), name: `${dto.name?.trim() || contract.title}·${direction === 'PURCHASE' ? '采购' : '销售'}直拨`, contractId: contract.id, type: direction,
             status: 'CONFIRMED', totalAmount: price.mul(dto.quantity).toDecimalPlaces(2), plannedDate: dto.plannedDate ? new Date(dto.plannedDate) : null, createdBy: userId,
             lineItems: { create: { contractLineItemId: source.id, materialId: source.materialId, materialName: source.materialName, quantity: dto.quantity, unit: source.unit, unitPrice: price, totalPrice: price.mul(dto.quantity).toDecimalPlaces(2) } },
           }, include: { lineItems: true } });
@@ -85,7 +134,7 @@ export class BilateralDirectService {
         const used = await tx.dispatchNoticeLineItem.aggregate({ where: { orderLineItemId: line.id, dispatchNotice: { deletedAt: null, status: { not: 'CANCELLED' } } }, _sum: { quantity: true } });
         if (new Prisma.Decimal(used._sum.quantity || 0).plus(dto.quantity).gt(line.quantity)) throw new BadRequestException('本次数量超过两向批次剩余可通知数量');
         const notice = await tx.dispatchNotice.create({ data: {
-          noticeNo: no(direction === 'PURCHASE' ? 'PI' : 'SD'), orderId: order.id, type: direction, mode: 'DIRECT', status: 'ISSUED', qualityRequired: true,
+          noticeNo: await reserveBusinessNumber(tx, 'NOTICE', direction as 'PURCHASE' | 'SALES'), orderId: order.id, type: direction, mode: 'DIRECT', status: 'ISSUED', qualityRequired: true,
           originLocation: dto.originLocation.trim(), destinationLocation: dto.destinationLocation.trim(),
           originSourceType: dto.originSourceType || 'MANUAL', destinationSourceType: dto.destinationSourceType || 'MANUAL',
           originWarehouseId: dto.originWarehouseId || null, destinationWarehouseId: dto.destinationWarehouseId || null,
@@ -221,12 +270,12 @@ export class BilateralDirectService {
         const otherTrips = await tx.waybill.count({ where: { dispatchNoticeId: sales.id, id: { not: waybillId }, deletedAt: null, status: { not: 'CANCELLED' } } });
         await tx.dispatchNotice.update({ where: { id: notice.id }, data: { totalQuantity: quantity, status: quantity.eq(0) && !otherTrips ? 'CANCELLED' : notice.status } });
       }
-      const nextNotice = await tx.dispatchNotice.create({ data: { noticeNo: no('PI'), orderId: purchase.orderId, type: 'PURCHASE', mode: 'STANDARD', status: 'ISSUED', qualityRequired: true,
+      const nextNotice = await tx.dispatchNotice.create({ data: { noticeNo: await reserveBusinessNumber(tx, 'NOTICE', 'PURCHASE'), orderId: purchase.orderId, type: 'PURCHASE', mode: 'STANDARD', status: 'ISSUED', qualityRequired: true,
         warehouseId: warehouse.id, destinationWarehouseId: warehouse.id, destinationSourceType: 'WAREHOUSE', originLocation: dto.originLocation?.trim() || (w.status === 'PENDING' ? w.originLocation : w.destinationLocation) || purchase.originLocation,
         destinationLocation: warehouse.address, totalQuantity: qty, createdBy: userId, issuedAt: new Date(), remarks: `由直拨运单 ${w.waybillNo} 整车转入库：${dto.reason.trim()}`,
         lineItems: { create: { orderLineItemId: purchase.lineItems[0].orderLineItemId, materialId: w.lineItems[0].materialId, materialName: w.lineItems[0].materialName, unit: w.lineItems[0].unit, quantity: qty } },
       }, include: { lineItems: true } });
-      const nextWaybill = await tx.waybill.create({ data: { waybillNo: no('WB'), dispatchNoticeId: nextNotice.id, totalQuantity: qty, status: 'PENDING', freightMode: w.freightMode,
+      const nextWaybill = await tx.waybill.create({ data: { waybillNo: await reserveBusinessNumber(tx, 'WAYBILL', 'PURCHASE'), dispatchNoticeId: nextNotice.id, totalQuantity: qty, status: 'PENDING', freightMode: w.freightMode,
         vehicleId: w.vehicleId, driverId: w.driverId, carrierPartnerId: w.carrierPartnerId, carrierName: w.carrierName, plateNo: w.plateNo, driverName: w.driverName, driverPhone: w.driverPhone,
         originLocation: nextNotice.originLocation, destinationLocation: warehouse.address, createdBy: userId, remarks: nextNotice.remarks,
         lineItems: { create: { dispatchNoticeLineItemId: nextNotice.lineItems[0].id, materialId: w.lineItems[0].materialId, materialName: w.lineItems[0].materialName, unit: w.lineItems[0].unit, quantity: qty } },
@@ -264,11 +313,14 @@ export class BilateralDirectService {
     const material = await tx.material.findUnique({ where: { id: source.materialId }, select: { pricingQuantityBasis: true } });
     const basis = source.pricingQuantityBasis || material?.pricingQuantityBasis || '';
     const qty = directQuantity(ticket.netWeight!, basis, task.basisInspection.indicators);
+    const reports = [...new Map([...(task.reports || []), ...(task.reportLinks || []).map(l => l.inspection), task.basisInspection].map(r => [r.id, r])).values()];
+    const evidenceSides = directEvidenceSnapshot(w.weighTickets, reports, task.basisInspection.id);
     return { w, ...qty, pricingQuantityBasis: basis, snapshot: json({ contractId: w.dispatchNotice.order.contractId, contractLineItemId: source.id, executionId: w.dispatchNotice.directSalesExecution!.id,
       materialId: source.materialId, materialName: source.materialName, unit: source.unit, weighTicketId: ticket.id, ticketNo: ticket.ticketNo, ticketUpdatedAt: ticket.updatedAt, weighingStage: ticket.weighingStage,
       reportId: task.basisInspection.id, reportNo: task.basisInspection.reportNo || task.basisInspection.inspectionNo, reportUpdatedAt: task.basisInspection.updatedAt, evidenceStage: task.basisInspection.evidenceStage,
       indicators: task.basisInspection.indicators, decisionVersion: task.decisionVersion, finalConclusion: task.finalConclusion, acceptQualityException: Boolean(dto.acceptQualityException),
       quantity: qty.quantity.toString(), pricingQuantity: qty.pricingQuantity.toString(), pricingQuantityBasis: basis, measuredMoisturePct: qty.measuredMoisturePct,
+      evidenceSides,
       // 仅跨侧时写入，保持同侧快照与历史版本一致。
       ...(crossSide ? { crossSide: true, crossSideReason } : {}),
     }) };
@@ -301,10 +353,17 @@ export class BilateralDirectService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 20000 });
   }
 
-  private async post(tx: Prisma.TransactionClient, delivery: { id: string; quantity: Prisma.Decimal; pricingQuantity: Prisma.Decimal; qualityInspectionId: string; weighTicketId: string; remarks: string }, w: Awaited<ReturnType<BilateralDirectService['load']>>, userId: string) {
-    await tx.directTradeDocument.createMany({ data: ['PURCHASE', 'SALES'].map(direction => ({ documentNo: no(direction === 'PURCHASE' ? 'ZBCG' : 'ZBXS'), directDeliveryId: delivery.id, direction, quantity: delivery.quantity, pricingQuantity: delivery.pricingQuantity })) });
-    await tx.waybill.update({ where: { id: w.id }, data: { salesCompletionReportId: delivery.qualityInspectionId, salesCompletionCustomerTicketId: delivery.weighTicketId,
-      salesCompletionConfirmedBy: userId, salesCompletionConfirmedAt: new Date(), salesCompletionRemarks: delivery.remarks, salesCompletionCustomerWeight: delivery.quantity } });
+  private async post(tx: Prisma.TransactionClient, delivery: { id: string; quantity: Prisma.Decimal; pricingQuantity: Prisma.Decimal; qualityInspectionId: string; weighTicketId: string; remarks: string; snapshot?: unknown }, w: Awaited<ReturnType<BilateralDirectService['load']>>, userId: string) {
+    const documents = [];
+    for (const direction of ['PURCHASE', 'SALES'] as const) documents.push({ documentNo: await reserveBusinessNumber(tx, 'DIRECT', direction), directDeliveryId: delivery.id, direction, quantity: delivery.quantity, pricingQuantity: delivery.pricingQuantity });
+    await tx.directTradeDocument.createMany({ data: documents });
+    const sides = (delivery.snapshot as any)?.evidenceSides;
+    await tx.waybill.update({ where: { id: w.id }, data: { salesCompletionReportId: delivery.qualityInspectionId,
+      salesCompletionCustomerTicketId: sides ? sides.receiving.ticket?.id || null : delivery.weighTicketId,
+      salesCompletionShippingTicketId: sides?.shipping.ticket?.id || null,
+      salesCompletionConfirmedBy: userId, salesCompletionConfirmedAt: new Date(), salesCompletionRemarks: delivery.remarks,
+      salesCompletionCustomerWeight: sides ? sides.receiving.ticket?.netWeight ?? null : delivery.quantity,
+      salesCompletionShippingWeight: sides?.shipping.ticket?.netWeight ?? null, salesCompletionWeightVariance: sides?.weightVariance ?? null } });
     await tx.dispatchNotice.updateMany({ where: { id: { in: [w.dispatchNotice.directSalesExecution!.purchaseNoticeId, w.dispatchNotice.directSalesExecution!.salesNoticeId] }, status: 'ISSUED' }, data: { status: 'IN_PROGRESS' } });
   }
 
@@ -322,7 +381,9 @@ export class BilateralDirectService {
       if (!d) throw new BadRequestException('没有待复核的直拨交付');
       if (approved) {
         const result = await this.prepare(tx, waybillId, { weighTicketId: d.weighTicketId, qualityReportId: d.qualityInspectionId, remarks: d.remarks, acceptQualityException: Boolean((d.snapshot as any).acceptQualityException), crossSideReason: (d.snapshot as any).crossSideReason || undefined }, false);
-        if (stable(result.snapshot) !== stable(d.snapshot)) throw new BadRequestException('采用依据已变化，请退回修改并重新提交复核');
+        const comparable = { ...(result.snapshot as Record<string, unknown>) };
+        if (!(d.snapshot as any).evidenceSides) delete comparable.evidenceSides;
+        if (stable(comparable) !== stable(d.snapshot)) throw new BadRequestException('采用依据已变化，请退回修改并重新提交复核');
         await this.post(tx, d, w, userId);
       }
       const result = await tx.directDelivery.update({ where: { id: d.id }, data: { status: approved ? 'CONFIRMED' : 'REJECTED', confirmedAt: approved ? new Date() : null, reviewedBy: userId, reviewedAt: new Date(), reviewComment: reason.trim() }, include: { documents: true } });

@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
 import { OutboundService } from '../inventory/outbound.service';
 import { CreateDispatchNoticeDto, DispatchLocationDto } from './dto/create-dispatch-notice.dto';
+import { reserveBusinessNumber } from '../common/business-number';
 
 @Injectable()
 export class DispatchNoticeService {
@@ -42,16 +43,6 @@ export class DispatchNoticeService {
       orderBy: { createdAt: 'desc' as const },
     },
   };
-
-  private async generateNo(type: string) {
-    const prefix = type === 'PURCHASE' ? 'PI' : 'SD';
-    const now = new Date();
-    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const count = await this.prisma.dispatchNotice.count({ where: { type, createdAt: { gte: start, lt: end } } });
-    return `${prefix}-${date}-${String(count + 1).padStart(4, '0')}`;
-  }
 
   async getOrderAvailability(orderId: string, userId: string, permission = 'execution.view') {
     await this.accessControl.assertPermission(userId, permission);
@@ -170,7 +161,6 @@ export class DispatchNoticeService {
         unit: source.unit,
       };
     });
-    const noticeNo = await this.generateNo(order.type);
     return this.prisma.$transaction(async tx => {
       const current = await tx.contract.updateMany({
         where: { id: order.contractId, deletedAt: null, status: { in: ['APPROVED', 'EXECUTING'] } },
@@ -179,7 +169,7 @@ export class DispatchNoticeService {
       if (current.count !== 1) throw new BadRequestException('合同已终止或状态已变化，不能创建执行通知');
       return tx.dispatchNotice.create({
       data: {
-        noticeNo,
+          noticeNo: await reserveBusinessNumber(tx, 'NOTICE', order.type as 'PURCHASE' | 'SALES'),
         orderId: order.id,
         type: order.type,
         mode,

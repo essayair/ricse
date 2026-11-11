@@ -48,6 +48,7 @@ export class WeighTicketService {
         lineItems: { orderBy: { createdAt: 'asc' as const } },
         dispatchNotice: {
           include: {
+            directSalesExecution: { select: { id: true } },
             order: {
               include: {
                 contract: {
@@ -92,6 +93,7 @@ export class WeighTicketService {
     lineItems: { orderBy: { createdAt: 'asc' as const } },
     dispatchNotice: {
       include: {
+        directSalesExecution: { select: { id: true } },
         order: {
           include: {
             contract: {
@@ -198,6 +200,7 @@ export class WeighTicketService {
       where: { id: waybillId },
       select: {
         status: true,
+        dispatchNotice: { select: { directSalesExecution: { select: { id: true } } } },
         weighTickets: {
           where: { deletedAt: null, status: { not: 'VOIDED' } },
           select: { status: true, abnormal: true },
@@ -208,7 +211,8 @@ export class WeighTicketService {
     if (!waybill) return null;
     let status = 'PENDING_WEIGHING';
     if (waybill.status === 'CANCELLED') status = 'VOIDED';
-    else if (waybill.weightSelections.some(item => item.purpose === 'INVENTORY')) status = 'COMPLETED';
+    else if (waybill.weightSelections.some(item => waybill.dispatchNotice?.directSalesExecution
+      ? ['SHIPPING', 'RECEIVING'].includes(item.purpose) : item.purpose === 'INVENTORY')) status = 'COMPLETED';
     else if (waybill.weighTickets.some(item => ['COMPLETED', 'REVIEWED'].includes(item.status))) status = 'PENDING_CONFIRMATION';
     else if (waybill.weighTickets.some(item => item.status !== 'PENDING')) status = 'IN_PROGRESS';
     return this.prisma.weighTask.update({ where: { id: task.id }, data: { status } });
@@ -220,12 +224,13 @@ export class WeighTicketService {
       where: { id: waybillId, deletedAt: null },
       select: {
         id: true, status: true, vehicleId: true, plateNo: true,
-        dispatchNotice: { select: { type: true } },
+        dispatchNotice: { select: { type: true, directSalesExecution: { select: { id: true } } } },
       },
     });
     if (!waybill || (!waybill.vehicleId && !waybill.plateNo) || waybill.status === 'CANCELLED') return null;
 
     const isPurchase = waybill.dispatchNotice.type === 'PURCHASE';
+    const isDirect = !!waybill.dispatchNotice.directSalesExecution;
     const stages: Array<'SHIPPING' | 'RECEIVING'> = ['SHIPPING'];
     if (['ARRIVED', 'SIGNED'].includes(waybill.status)) stages.push('RECEIVING');
     let primary = null;
@@ -235,7 +240,7 @@ export class WeighTicketService {
         orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
       });
       const label = weighingStage === 'SHIPPING'
-        ? isPurchase ? '供应商发货' : '我方发货'
+        ? isPurchase || isDirect ? '供应商发货' : '我方发货'
         : isPurchase ? '我方收货' : '客户收货';
       const current = existing || await this.create({
         waybillId, weighingStage,
@@ -265,6 +270,7 @@ export class WeighTicketService {
         lineItems: { orderBy: { createdAt: 'asc' } },
         dispatchNotice: {
           include: {
+            directSalesExecution: { select: { id: true } },
             order: {
               include: {
                 contract: {
@@ -310,6 +316,7 @@ export class WeighTicketService {
         lineItems: { orderBy: { createdAt: 'asc' } },
         dispatchNotice: {
           include: {
+            directSalesExecution: { select: { id: true } },
             order: {
               include: {
                 contract: {
@@ -355,7 +362,9 @@ export class WeighTicketService {
     const materialNames = [...new Set(waybill.lineItems.map(item => item.materialName || item.materialId))];
     const materialSpecs = [...new Set(waybill.lineItems.map(item => materialMap.get(item.materialId)).filter(Boolean))];
     const contract = waybill.dispatchNotice.order.contract;
-    const defaultShipper = isPurchase ? contract.seller?.name : contract.signingPartner?.name;
+    // 直拨：供应商直接发往客户，发货方为供应商、收货方为客户，我方不经手实物。
+    const isDirect = !!waybill.dispatchNotice.directSalesExecution;
+    const defaultShipper = isPurchase || isDirect ? contract.seller?.name : contract.signingPartner?.name;
     const defaultReceiver = isPurchase
       ? contract.signingPartner?.name
       : (contract.type === 'BILATERAL' ? contract.buyer?.name : contract.seller?.name);
@@ -541,10 +550,12 @@ export class WeighTicketService {
   }
 
   /** 历史EXCEPTION仅由计划数量偏差产生，按正常确认进度展示，不改写原始磅单。 */
-  private managementView<T extends { status: string; weighTask: { status: string } | null; weightSelections: Array<{ purpose: string }> }>(item: T): T {
-    if (item.weighTask?.status !== 'EXCEPTION') return item;
+  private managementView<T extends { status: string; weighTask: { status: string } | null; weightSelections: Array<{ purpose: string }>; dispatchNotice?: { directSalesExecution?: { id: string } | null } }>(item: T): T {
+    const direct = Boolean(item.dispatchNotice?.directSalesExecution);
+    if (!item.weighTask || (item.weighTask.status !== 'EXCEPTION' && !direct)) return item;
+    const adopted = item.weightSelections.some(selection => direct ? ['SHIPPING', 'RECEIVING'].includes(selection.purpose) : selection.purpose === 'INVENTORY');
     const status = item.status === 'CANCELLED' ? 'VOIDED'
-      : item.weightSelections.some(selection => selection.purpose === 'INVENTORY') ? 'COMPLETED' : 'PENDING_CONFIRMATION';
+      : adopted ? 'COMPLETED' : item.weighTask.status === 'EXCEPTION' ? 'PENDING_CONFIRMATION' : item.weighTask.status;
     return { ...item, weighTask: { ...item.weighTask, status } };
   }
 
@@ -950,7 +961,7 @@ export class WeighTicketService {
     const scope = await this.accessControl.getWaybillScope(userId, permission);
     const waybill = await this.prisma.waybill.findFirst({
       where: { id: waybillId, deletedAt: null, AND: [scope] },
-      select: { id: true, dispatchNotice: { select: { type: true } } },
+      select: { id: true, dispatchNotice: { select: { type: true, directSalesExecution: { select: { id: true } } } } },
     });
     if (!waybill) throw new NotFoundException('物流运单不存在');
     const ticket = await this.prisma.weighTicket.findFirst({
@@ -966,6 +977,7 @@ export class WeighTicketService {
       await this.syncTaskForWaybill(waybillId, userId);
       return result;
     }
+    if (waybill.dispatchNotice.directSalesExecution) throw new BadRequestException('直拨车次请确认采信发货或收货磅单，交付依据在直拨交付中选择，货款依据在结算中确认');
     if (purpose === 'SETTLEMENT') {
       const activeStageTickets = await this.prisma.weighTicket.count({ where: { waybillId, weighingStage: ticket.weighingStage, deletedAt: null, status: { not: 'VOIDED' } } });
       const stageSelection = await this.prisma.waybillWeightSelection.findFirst({ where: { waybillId, purpose: ticket.weighingStage, isCurrent: true } });
@@ -1019,13 +1031,14 @@ export class WeighTicketService {
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'weigh-selection:' + waybillId}, 0))::text`;
       await tx.$queryRaw`SELECT id FROM waybills WHERE id=${waybillId} FOR UPDATE`;
-      const direct = await tx.waybill.findFirst({ where: { id: waybillId, dispatchNotice: { directSalesExecution: { isNot: null } } }, select: { directDeliveries: { where: { status: { in: ['CONFIRMED', 'PENDING_REVIEW'] } }, select: { id: true }, take: 1 } } });
+      const direct = await tx.waybill.findFirst({ where: { id: waybillId, dispatchNotice: { directSalesExecution: { isNot: null } } }, select: { dispatchNotice: { select: { directSalesExecution: { select: { id: true } } } }, directDeliveries: { where: { status: { in: ['CONFIRMED', 'PENDING_REVIEW'] } }, select: { id: true }, take: 1 } } });
       if (direct?.directDeliveries?.length) throw new BadRequestException('该运单已确认直拨交付或正在复核，请先撤销交付后再更换采信磅单');
       const stage = ticket.weighingStage;
       const current = await tx.waybillWeightSelection.findFirst({ where: { waybillId, purpose: stage, isCurrent: true } });
       const normalizedReason = reason?.trim();
       if (current?.weighTicketId !== ticket.id && current && !normalizedReason) throw new BadRequestException('更换采信磅单须填写变更原因');
-      const isOurSide = (businessType === 'PURCHASE' && stage === 'RECEIVING') || (businessType === 'SALES' && stage === 'SHIPPING');
+      const isDirect = Boolean(direct?.dispatchNotice?.directSalesExecution);
+      const isOurSide = !isDirect && ((businessType === 'PURCHASE' && stage === 'RECEIVING') || (businessType === 'SALES' && stage === 'SHIPPING'));
       const completedSales = businessType === 'SALES' && stage === 'RECEIVING'
         ? await tx.waybill.findFirst({ where: { id: waybillId, salesCompletionConfirmedAt: { not: null } }, select: {
           salesCompletionCustomerTicketId: true, salesCompletionShippingWeight: true, salesCompletionRemarks: true,
@@ -1138,7 +1151,7 @@ export class WeighTicketService {
       where: { id: weighTicketId },
       select: {
         id: true, waybillId: true, weighingStage: true, netWeight: true,
-        waybill: { select: { dispatchNotice: { select: { type: true } } } },
+        waybill: { select: { dispatchNotice: { select: { type: true, directSalesExecution: { select: { id: true } } } } } },
       },
     });
     const quantity = Number(ticket.netWeight || 0);
@@ -1151,6 +1164,7 @@ export class WeighTicketService {
         if (!current) await this.upsertStageSelection(tx, ticket.waybillId, ticket, AUTO_STAGE_SELECTION_REASON, userId);
       });
     }
+    if (ticket.waybill.dispatchNotice.directSalesExecution) return;
     if (ticket.waybill.dispatchNotice.type === 'SALES') {
       if (ticket.weighingStage !== 'SHIPPING') return;
       const purpose = 'INVENTORY';

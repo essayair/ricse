@@ -26,7 +26,7 @@ interface WeightSelection {
 interface ManagementFile {
   id: string; waybillNo: string; status: string; plateNo: string | null; driverName: string | null;
   totalQuantity: string; originLocation: string | null; destinationLocation: string | null; createdAt: string;
-  dispatchNotice: { noticeNo: string; type: string; order: { orderNo: string; name: string; contract: { contractNo: string; title: string } } };
+  dispatchNotice: { noticeNo: string; type: string; directSalesExecution?: { id: string } | null; order: { orderNo: string; name: string; contract: { contractNo: string; title: string } } };
   lineItems: Array<{ id: string; materialName: string | null; materialId: string; quantity: string; unit: string }>;
   weighTickets: ChildTicket[];
   weightSelections: WeightSelection[];
@@ -116,11 +116,16 @@ function StageSummary({ tickets }: { tickets: ChildTicket[] }) {
 function Summary({ label, value, danger = false, warn = false }: { label: string; value: number; danger?: boolean; warn?: boolean }) {
   return <Card className="p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 text-xl font-bold ${danger && value ? 'text-destructive' : warn && value ? 'text-warning' : ''}`}>{value}</div></Card>;
 }
-function effectiveSelection(item: ManagementFile) { return item.weightSelections.find(value => value.purpose === 'INVENTORY'); }
+/** 直拨车次不办理出库，任一称重节点已采信磅单即视为称重依据已确定；交付依据在直拨交付确认中选择。 */
+function effectiveSelection(item: ManagementFile) {
+  if (item.dispatchNotice.directSalesExecution) return item.weightSelections.find(value => value.purpose === 'SHIPPING' || value.purpose === 'RECEIVING');
+  return item.weightSelections.find(value => value.purpose === 'INVENTORY');
+}
 function stageTickets(item: ManagementFile, stage: string) { return item.weighTickets.filter(ticket => ticket.weighingStage === stage && ticket.status !== 'VOIDED'); }
 function materialNames(item: ManagementFile) { return [...new Set(item.lineItems.map(line => line.materialName || line.materialId))].join('、') || '-'; }
 function number(value: string | number) { return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 3 }); }
 function stageName(item: ManagementFile, stage: string) {
+  if (item.dispatchNotice.directSalesExecution) return stage === 'SHIPPING' ? '供应商发货称重' : '客户收货称重';
   if (item.dispatchNotice.type === 'PURCHASE') return stage === 'SHIPPING' ? '供应商发货称重' : '我方收货称重';
   return stage === 'SHIPPING' ? '我方发货称重' : '客户收货称重';
 }

@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { directPurchaseFollowAdjustment } from '@/lib/direct-settlement-follow';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -193,7 +194,18 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   const batches = useMemo(() => [...new Map(sources.map(source => [source.orderId, { id: source.orderId, label: `${source.orderNo} · ${source.orderName}`, status: source.orderStatus }])).values()], [sources]);
   const filtered = sources.filter(source => !batchFilter || source.orderId === batchFilter);
   const selectedRows = sources.filter(source => selected[source.id]);
-  const followSaveBlocked = selectedRows.some(source => source.previewOnly);
+  const followedAdjustment = useMemo(() => directPurchaseFollowAdjustment(sources.filter(source => selected[source.id])), [sources, selected]);
+  const lastAutomaticFollow = useRef(false);
+  useEffect(() => {
+    if (followedAdjustment.adjustment) {
+      setAdjustmentMode('QUANTITY'); setFinalQuantity(String(followedAdjustment.adjustment.finalQuantity));
+      setAdjustmentReason(`跟随销售结算 ${followedAdjustment.adjustment.settlementNo} 的整单数量`);
+      lastAutomaticFollow.current = true;
+    } else if (lastAutomaticFollow.current) {
+      setAdjustmentMode('NONE'); setFinalQuantity(''); setAdjustmentReason(''); lastAutomaticFollow.current = false;
+    }
+  }, [followedAdjustment]);
+  const followSaveBlocked = selectedRows.some(source => source.previewOnly) || Boolean(followedAdjustment.issue);
   const selectedInView = filtered.filter(source => selected[source.id]);
   const viewTotals = rowTotals(selectedInView, selected);
   const detailTotals = rowTotals(selectedRows, selected);
@@ -270,7 +282,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     setError(source.pricingQuantityBasis === 'DRY_MATTER' && reportId !== source.reportId && report && report.measuredMoisturePct == null ? `${source.waybillNo}所选检测报告缺少水分实测值，无法计算折干数量` : '');
   };
   const bulkSide = async (stage: 'SHIPPING' | 'RECEIVING') => {
-    const changes = selectedInView.flatMap(source => {
+    const changes = selectedInView.filter(source => !source.followSales).flatMap(source => {
       const ticket = ticketForStage(source, stage);
       return ticket ? [{ source, ticket }] : [];
     });
@@ -291,7 +303,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   const bulkReport = async (mode: string) => {
     if (!mode) return;
     if (!selectedInView.length) { setError('请先选用需要切换检测报告的车辆'); return; }
-    const changes = selectedInView.flatMap(source => {
+    const changes = selectedInView.filter(source => !source.followSales).flatMap(source => {
       const reportId = mode === 'DEFAULT'
         ? source.defaultReportId || source.inventoryReportId || source.reportId
         : mode.startsWith('REPORT:') ? mode.slice('REPORT:'.length)
@@ -338,7 +350,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
   const resetOverall = () => { setAdjustmentMode('NONE'); setFinalQuantity(''); setFinalAmount(''); setAdjustmentReason(''); setAdjustmentBaseAmount(null); clearAdjustmentErrors(); };
   const resetLine = (source: GoodsSource, line: Line): Line => {
     const ticket = source.availableWeighTickets?.find(ticket => ticket.id === line.weighTicketId);
-    return { ...line, quantity: String(ticket ? ticketQuantity(source, ticket, line.qualityReportId) : source.remainingQuantity), negotiatedQuantity: false, priceAdjusted: false, adjustedUnitPrice: '', adjustmentAmount: '0' };
+    return { ...line, quantity: String(source.followSales || !ticket ? source.remainingQuantity : ticketQuantity(source, ticket, line.qualityReportId)), negotiatedQuantity: false, priceAdjusted: false, adjustedUnitPrice: '', adjustmentAmount: '0' };
   };
   const changeOverallMode = async (mode: 'NONE' | 'QUANTITY' | 'AMOUNT') => {
     if (mode === adjustmentMode || busy) return;
@@ -387,6 +399,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     setPreviewError('');
     setServerAdjustmentIssues({});
     if (!contractId || !selectedRows.length || (gradeTier && taxRatePct === '')) return;
+    if (followedAdjustment.issue) { setError(followedAdjustment.issue); return; }
     const issues = settlementAdjustmentIssues({ mode: adjustmentMode, quantity: finalQuantity, amount: finalAmount,
       reason: adjustmentReason, quantityCeiling: negotiationCeiling, baseQuantity: detailTotals.quantity, baseAmount: adjustmentBaseAmount });
     if (Object.keys(issues).length) return;
@@ -412,9 +425,10 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
     return () => { cancelled = true; previewRequestId.current++; window.clearTimeout(timer); };
     // 仅数量、磅单、报告和税率变化触发试算；备注与日期在提交时一并保存。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractId, selected, sources, gradeTier, taxRatePct, editId, isFinalSettlement, adjustmentMode, finalQuantity, finalAmount, adjustmentReason, adjustmentBaseAmount]);
+  }, [contractId, selected, sources, gradeTier, taxRatePct, editId, isFinalSettlement, adjustmentMode, finalQuantity, finalAmount, adjustmentReason, adjustmentBaseAmount, followedAdjustment.issue]);
 
   const submit = async (save: boolean, acceptVariance = false) => {
+    if (followedAdjustment.issue) { setError(followedAdjustment.issue); return; }
     if (acceptVariance && !quantityReason.trim()) { setQuantityDialogError('请填写数量差异说明'); return; }
     if (hasAdjustmentIssues) { await showAdjustmentIssues(adjustmentIssues); return; }
     if (!save && preview) {
@@ -514,9 +528,9 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
               <div className="flex gap-1"><Button size="sm" variant={allSelectedInView ? 'default' : 'outline'} aria-pressed={allSelectedInView} className="h-7 flex-1 px-2 text-xs" onClick={() => toggle(filtered, true)}>{allSelectedInView ? '已全选' : '全选'}</Button><Button size="sm" variant="outline" className="h-7 flex-1 px-2 text-xs" disabled={!selectedInView.length} onClick={() => toggle(filtered, false)}>全取消</Button></div>
             </th>
             <th className="px-4 py-3 text-center align-top text-xs font-medium text-foreground"><span className="flex h-9 items-center justify-center whitespace-nowrap">已选 {selectedInView.length} / {filtered.length} 车</span>{weighSelection === 'MIXED' && <span className="text-warning">磅单混合口径</span>}</th>
-            <th className="px-4 py-3 font-normal"><Button size="sm" variant={weighSelection === 'SHIPPING' ? 'default' : 'outline'} aria-pressed={weighSelection === 'SHIPPING'} className="h-9 w-full text-xs" disabled={!selectedInView.length} onClick={() => void bulkSide('SHIPPING')}>{weighSelection === 'SHIPPING' ? '已选发货磅单' : '统一选发货'}</Button></th>
-            <th className="px-4 py-3 font-normal"><Button size="sm" variant={weighSelection === 'RECEIVING' ? 'default' : 'outline'} aria-pressed={weighSelection === 'RECEIVING'} className="h-9 w-full text-xs" disabled={!selectedInView.length} onClick={() => void bulkSide('RECEIVING')}>{weighSelection === 'RECEIVING' ? '已选收货磅单' : '统一选收货'}</Button></th>
-            <th className="px-4 py-3 font-normal"><select aria-label="批量选择检测报告" className={`h-9 min-w-0 w-full rounded border px-3 text-xs ${reportSelection && !['MIXED', 'MISSING'].includes(reportSelection) ? 'border-primary bg-primary-bg text-primary' : 'bg-background'}`} value={reportSelection} disabled={!selectedInView.length} onChange={event => void bulkReport(event.target.value)}>
+            <th className="px-4 py-3 font-normal"><Button size="sm" variant={weighSelection === 'SHIPPING' ? 'default' : 'outline'} aria-pressed={weighSelection === 'SHIPPING'} className="h-9 w-full text-xs" disabled={!selectedInView.some(source => !source.followSales)} onClick={() => void bulkSide('SHIPPING')}>{weighSelection === 'SHIPPING' ? '已选发货磅单' : '统一选发货'}</Button></th>
+            <th className="px-4 py-3 font-normal"><Button size="sm" variant={weighSelection === 'RECEIVING' ? 'default' : 'outline'} aria-pressed={weighSelection === 'RECEIVING'} className="h-9 w-full text-xs" disabled={!selectedInView.some(source => !source.followSales)} onClick={() => void bulkSide('RECEIVING')}>{weighSelection === 'RECEIVING' ? '已选收货磅单' : '统一选收货'}</Button></th>
+            <th className="px-4 py-3 font-normal"><select aria-label="批量选择检测报告" className={`h-9 min-w-0 w-full rounded border px-3 text-xs ${reportSelection && !['MIXED', 'MISSING'].includes(reportSelection) ? 'border-primary bg-primary-bg text-primary' : 'bg-background'}`} value={reportSelection} disabled={!selectedInView.some(source => !source.followSales)} onChange={event => void bulkReport(event.target.value)}>
               <option value="" disabled>批量选择检测报告</option><option value="MIXED" disabled>混合口径（逐车选用）</option><option value="MISSING" disabled>缺少可用报告</option><option value="DEFAULT">沿用默认报告</option><option value="SHIPPING">发货侧报告</option><option value="RECEIVING">收货侧报告</option>
               {commonReports.map(report => <option key={report.id} value={`REPORT:${report.id}`}>共用报告 · {report.reportNo}</option>)}
             </select></th>
@@ -536,9 +550,9 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
             return <tr key={source.id} className={source.settlementOccupied ? 'border-t align-top bg-muted/40 text-muted-foreground' : line ? 'border-t align-top bg-primary-bg/30' : 'border-t align-top'}>
               <td className={`sticky left-0 z-10 border-r px-4 py-4 ${source.settlementOccupied ? 'bg-muted' : line ? 'bg-primary-bg' : 'bg-background'}`}><label className={`flex items-start gap-2 font-medium ${source.settlementOccupied ? 'cursor-not-allowed' : 'cursor-pointer'}`}><input className="mt-0.5 shrink-0" type="checkbox" aria-label={`选用运单 ${source.waybillNo}`} checked={Boolean(line)} disabled={source.settlementOccupied || (!eligible(source) && !line)} onChange={event => toggle([source], event.target.checked)} /><span className="break-all text-xs leading-5">{source.orderNo}</span></label><div className="mt-1 pl-5 text-xs leading-5 text-muted-foreground">{source.waybillNo}</div>{source.followSales && <div className="mt-2 pl-5 text-xs leading-5 text-muted-foreground">磅单、报告、数量跟随销售结算{source.followSalesSettlementNo ? <a className="ml-1 text-primary hover:underline" href={`/dashboard/settlements/${source.followSalesSettlementId}`}>{source.followSalesSettlementNo}</a> : ''}</div>}{source.previewOnly && <div className="mt-1 pl-5 text-xs leading-5 text-warning">请先完成销售结算审批，当前仅可预览</div>}{source.settlementOccupied && <div className="mt-2 pl-5 text-xs">已创建结算单{source.occupiedSettlements?.map(settlement => <a key={settlement.id} className="mt-1 block text-primary hover:underline" href={`/dashboard/settlements/${settlement.id}`}>{settlement.settlementNo}</a>)}</div>}</td>
               <td className="space-y-1.5 px-4 py-4"><div className="font-medium">{source.plateNo || '未录车牌'}</div><div className="line-clamp-2 text-xs leading-5 text-muted-foreground" title={source.materialName}>{source.materialName || '—'}</div>{variance && <div className="text-xs text-warning">磅差 {tons(variance.amount)} 吨</div>}</td>
-              <td className="px-4 py-4"><WeighSideChoice source={source} stage="SHIPPING" selectedId={line?.weighTicketId} lower={variance?.lowerStage === 'SHIPPING'} disabled={!line} onSelect={ticket => selectTicket(source, ticket)} /></td>
-              <td className="px-4 py-4"><WeighSideChoice source={source} stage="RECEIVING" selectedId={line?.weighTicketId} lower={variance?.lowerStage === 'RECEIVING'} disabled={!line} onSelect={ticket => selectTicket(source, ticket)} /></td>
-              <td className="px-4 py-4"><select aria-label={`${source.waybillNo}本次检测报告`} className="h-9 min-w-0 w-full rounded border bg-background px-2 text-xs" disabled={!line} value={line?.qualityReportId || ''} onChange={event => selectReport(source, event.target.value)}><option value="">沿用默认报告</option>{source.availableQualityReports?.map(report => <option key={report.id} value={report.id}>{report.evidenceStage === 'SHIPPING' ? '发货侧' : report.evidenceStage === 'RECEIVING' ? '收货侧' : '未标明环节'} · {report.reportNo}</option>)}</select>{line && chosenReport && <div className="mt-2 space-y-1.5 text-xs text-muted-foreground"><div className="line-clamp-2 leading-5" title={chosenReport.institutionName}>{chosenReport.institutionName || '未填机构'}</div><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className={chosenReport.conclusion === 'FUSE' ? 'text-destructive' : chosenReport.conclusion === 'DEDUCTION' ? 'text-warning' : ''}>{reportConclusion[chosenReport.conclusion] || chosenReport.conclusion}</span><span>CaF₂ {chosenReport.measuredGradePct == null ? '—' : `${chosenReport.measuredGradePct}%`}</span>{chosenReport.measuredRecoveryPct != null && <span>回收率 {chosenReport.measuredRecoveryPct}%</span>}</div></div>}</td>
+              <td className="px-4 py-4"><WeighSideChoice source={source} stage="SHIPPING" selectedId={line?.weighTicketId} lower={variance?.lowerStage === 'SHIPPING'} disabled={!line || Boolean(source.followSales)} onSelect={ticket => selectTicket(source, ticket)} /></td>
+              <td className="px-4 py-4"><WeighSideChoice source={source} stage="RECEIVING" selectedId={line?.weighTicketId} lower={variance?.lowerStage === 'RECEIVING'} disabled={!line || Boolean(source.followSales)} onSelect={ticket => selectTicket(source, ticket)} /></td>
+              <td className="px-4 py-4"><select aria-label={`${source.waybillNo}本次检测报告`} className="h-9 min-w-0 w-full rounded border bg-background px-2 text-xs" disabled={!line || Boolean(source.followSales)} value={line?.qualityReportId || ''} onChange={event => selectReport(source, event.target.value)}><option value="">沿用默认报告</option>{source.availableQualityReports?.map(report => <option key={report.id} value={report.id}>{report.evidenceStage === 'SHIPPING' ? '发货侧' : report.evidenceStage === 'RECEIVING' ? '收货侧' : '未标明环节'} · {report.reportNo}</option>)}</select>{line && chosenReport && <div className="mt-2 space-y-1.5 text-xs text-muted-foreground"><div className="line-clamp-2 leading-5" title={chosenReport.institutionName}>{chosenReport.institutionName || '未填机构'}</div><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className={chosenReport.conclusion === 'FUSE' ? 'text-destructive' : chosenReport.conclusion === 'DEDUCTION' ? 'text-warning' : ''}>{reportConclusion[chosenReport.conclusion] || chosenReport.conclusion}</span><span>CaF₂ {chosenReport.measuredGradePct == null ? '—' : `${chosenReport.measuredGradePct}%`}</span>{chosenReport.measuredRecoveryPct != null && <span>回收率 {chosenReport.measuredRecoveryPct}%</span>}</div></div>}</td>
               <td className="px-4 py-4 text-right align-middle tabular-nums"><div className="whitespace-nowrap font-medium">{line ? tons(selectedTicket?.netWeight) : '—'}</div>{line && source.inventoryTicketNo && selectedTicket?.ticketNo !== source.inventoryTicketNo && <div className="mt-1 text-xs leading-5 text-warning" title="本次结算磅单与出入库磅单不同">非出入库口径</div>}</td>
               <td className="whitespace-nowrap px-4 py-4 text-right align-middle tabular-nums">{moisturePct == null ? '—' : Number(moisturePct).toFixed(2)}</td>
               <td className="px-4 py-4 text-right align-middle tabular-nums"><div className="whitespace-nowrap font-medium">{tons(selectedDryWeight)}</div>{line && source.pricingQuantityBasis === 'DRY_MATTER' && selectedDryWeight == null && <div className="mt-1 text-xs text-warning">缺少水分</div>}</td>
@@ -578,13 +592,13 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       })}</tbody>
       <tfoot className="border-t-2 bg-surface-2 font-medium tabular-nums"><tr><td colSpan={2} className="px-4 py-4">明细合计（{selectedRows.length} 车）</td><td className="px-4 py-4 text-right">{tons(detailTotals.quantity)}</td><td className="px-4 py-4 text-right text-muted-foreground">—</td><td className="px-4 py-4 text-xs font-normal text-muted-foreground">整单调整不摊回车辆</td><td className="px-4 py-4 text-right">{preview ? paymentMoney(preview.settlementAdjustment?.base.qualityDeductionAmount ?? preview.qualityDeductionAmount) : '待计算'}</td><td className="px-4 py-4 text-right">{preview ? paymentMoney(preview.settlementAdjustment?.base.totalAmount ?? preview.totalAmount) : '待计算'}</td></tr></tfoot>
     </table></div>
-    <section className="space-y-4 rounded-md border bg-surface-2 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">最终结算</h3><div className="flex flex-wrap gap-2">{([['NONE', '按明细合计'], ['QUANTITY', '调整总干基'], ['AMOUNT', '调整总金额']] as const).map(([mode, label]) => <Button key={mode} size="sm" variant={adjustmentMode === mode ? 'default' : 'outline'} aria-pressed={adjustmentMode === mode} disabled={busy || (mode === 'QUANTITY' && selectedRows.some(source => source.pricingQuantityBasis !== 'DRY_MATTER'))} onClick={() => void changeOverallMode(mode)}>{label}</Button>)}</div></div>
+    <section className="space-y-4 rounded-md border bg-surface-2 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">最终结算</h3><div className="flex flex-wrap gap-2">{([['NONE', '按明细合计'], ['QUANTITY', '调整总干基'], ['AMOUNT', '调整总金额']] as const).map(([mode, label]) => <Button key={mode} size="sm" variant={adjustmentMode === mode ? 'default' : 'outline'} aria-pressed={adjustmentMode === mode} disabled={busy || Boolean(followedAdjustment.adjustment) || (mode === 'QUANTITY' && selectedRows.some(source => source.pricingQuantityBasis !== 'DRY_MATTER'))} onClick={() => void changeOverallMode(mode)}>{label}</Button>)}</div></div>
       <div className="grid gap-4 md:grid-cols-3">
         <label data-validation-field="settlement-adjustment-quantity" className="space-y-1 text-sm"><span>最终结算数量（{selectedRows.every(source => source.pricingQuantityBasis === 'DRY_MATTER') ? '干基' : '计价'}吨）</span>
           <Input id="settlement-adjustment-quantity" aria-label="最终结算数量" aria-invalid={Boolean(adjustmentIssues.quantity) || undefined}
             aria-describedby={adjustmentMode === 'QUANTITY' ? `settlement-adjustment-ceiling${adjustmentIssues.quantity ? ' settlement-adjustment-quantity-error' : ''}` : undefined}
             className={adjustmentIssues.quantity ? 'border-destructive focus-visible:ring-destructive' : ''}
-            type="number" min="0.001" step="0.001" disabled={busy} readOnly={adjustmentMode !== 'QUANTITY'}
+            type="number" min="0.001" step="0.001" disabled={busy} readOnly={adjustmentMode !== 'QUANTITY' || Boolean(followedAdjustment.adjustment)}
             value={adjustmentMode === 'QUANTITY' ? finalQuantity : preview?.quantity ?? detailTotals.quantity ?? ''}
             onChange={event => { setFinalQuantity(event.target.value); clearAdjustmentErrors(); }}/>
           {adjustmentMode === 'QUANTITY' && <p id="settlement-adjustment-ceiling" className="text-xs text-muted-foreground">{negotiationCeiling == null ? '可协商上限待核对，请补齐双方单据。' : `可协商上限：${tons(negotiationCeiling)} 吨，按双方有效磅单及质检报告计算。`}</p>}
@@ -616,7 +630,7 @@ export function GoodsSettlementEditor({ direction = 'PAYABLE', editId }: { direc
       {preview.quantityReview?.differences?.length > 0 && <p role="alert" className="rounded border border-warning-border bg-warning-bg p-3 text-sm text-warning">存在数量差异，生成时请填写双方确认说明，线下签字盖章。</p>}
       <GoodsSettlementDocumentPreview contract={contract} preview={preview} sources={sources} sales={sales} remarks={remarks} quantityReason={quantityReason} />
     </Card>}
-    <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4 shadow-lg"><div className="text-sm">已选 <b>{selectedTotals.count}</b> 车 · 最终结算数量 <b>{tons(preview?.quantity ?? (adjustmentMode === 'QUANTITY' ? Number(finalQuantity) : selectedTotals.quantity))}</b> 吨 · {preview ? <>货物原金额 {paymentMoney(preview.grossAmount)} · 质量扣款 {paymentMoney(preview.qualityDeductionAmount)} · 其他加减 {paymentMoney(preview.adjustmentAmount)} · 结算金额 <b>{paymentMoney(preview.totalAmount)}</b></> : <span className="text-muted-foreground">{hasAdjustmentIssues ? '待完善调整信息' : previewError ? '试算失败' : '金额待试算'}</span>}{error && <div role="alert" className="mt-1 font-medium text-warning">{error === CHECK_ADJUSTMENT_FIELDS ? error : <>{previewError ? '无法生成结算单预览：' : '请先处理：'}{error}</>}</div>}</div><div className="flex flex-wrap items-center gap-2">{followSaveBlocked && <span className="text-xs text-warning">请先完成销售结算审批，当前仅可预览</span>}<Button type="button" variant="outline" disabled={busy} onClick={() => void submit(false)}>{busy ? '生成预览中…' : '预览结算单'}</Button><Button type="button" disabled={busy || followSaveBlocked} onClick={() => void submit(true)}>{busy ? '处理中…' : editId ? '保存草稿修改' : '保存结算草稿'}</Button></div></div>
+    <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4 shadow-lg"><div className="text-sm">已选 <b>{selectedTotals.count}</b> 车 · 最终结算数量 <b>{tons(preview?.quantity ?? (adjustmentMode === 'QUANTITY' ? Number(finalQuantity) : selectedTotals.quantity))}</b> 吨 · {preview ? <>货物原金额 {paymentMoney(preview.grossAmount)} · 质量扣款 {paymentMoney(preview.qualityDeductionAmount)} · 其他加减 {paymentMoney(preview.adjustmentAmount)} · 结算金额 <b>{paymentMoney(preview.totalAmount)}</b></> : <span className="text-muted-foreground">{hasAdjustmentIssues ? '待完善调整信息' : previewError ? '试算失败' : '金额待试算'}</span>}{error && <div role="alert" className="mt-1 font-medium text-warning">{error === CHECK_ADJUSTMENT_FIELDS ? error : <>{previewError ? '无法生成结算单预览：' : '请先处理：'}{error}</>}</div>}</div><div className="flex flex-wrap items-center gap-2">{followSaveBlocked && <span className="text-xs text-warning">{followedAdjustment.issue || '请先完成销售结算审批，当前仅可预览'}</span>}<Button type="button" variant="outline" disabled={busy || Boolean(followedAdjustment.issue)} onClick={() => void submit(false)}>{busy ? '生成预览中…' : '预览结算单'}</Button><Button type="button" disabled={busy || followSaveBlocked} onClick={() => void submit(true)}>{busy ? '处理中…' : editId ? '保存草稿修改' : '保存结算草稿'}</Button></div></div>
     <Dialog open={quantityDialogOpen} onOpenChange={open => { if (!busy) setQuantityDialogOpen(open); }}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>确认溢短装数量差异</DialogTitle><DialogDescription>按实际数量生成结算单，说明进入打印件，供双方线下签字盖章。</DialogDescription></DialogHeader>
       {quantityDialogReview && <QuantityReviewSummary review={quantityDialogReview} />}
       <label className="mt-4 block space-y-1 text-sm"><span>数量差异说明 *</span><textarea aria-label="数量差异说明" rows={3} className={`w-full rounded-md border bg-background p-2 ${quantityDialogError && !quantityReason.trim() ? 'border-destructive' : ''}`} value={quantityReason} onChange={e => { setQuantityReason(e.target.value); setQuantityDialogError(''); }} placeholder="请填写实际数量偏差及双方确认的处理依据" /></label>

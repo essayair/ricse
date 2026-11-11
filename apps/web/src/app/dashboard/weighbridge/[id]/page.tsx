@@ -96,6 +96,7 @@ interface WeighTicket {
     dispatchNotice: {
       noticeNo: string;
       type: string;
+      directSalesExecution?: { id: string } | null;
       order: {
         name: string;
         orderNo: string;
@@ -399,7 +400,7 @@ export default function WeighTicketDetailPage() {
         <Button variant="ghost" size="icon" onClick={() => router.push(`/dashboard/weighbridge/management/${ticket.waybill.id}`)}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
           <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold">{ticket.ticketNo}</h1><Badge variant="outline">{ticket.weighingStage === 'SHIPPING' ? '发货称重' : '收货称重'} · 第 {ticket.sequence} 张</Badge>{ticket.isSupplementary && <Badge variant="outline">追加磅单</Badge>}<StatusText status={ticket.status}>{STATUS[ticket.status]}</StatusText>{ticket.abnormal && <Badge variant="outline" className="border-warning-border bg-warning-bg text-warning">计划数量偏差</Badge>}</div>
-          <p className="mt-1 text-sm text-muted-foreground">{ticket.direction === 'INBOUND' ? '采购入场' : '销售出场'} · {ticket.waybill.plateNo || '无车牌'}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{ticket.waybill.dispatchNotice.directSalesExecution ? '双边直拨' : ticket.direction === 'INBOUND' ? '采购入场' : '销售出场'} · {ticket.waybill.plateNo || '无车牌'}</p>
         </div>
       </div>
       <div className="flex gap-2">

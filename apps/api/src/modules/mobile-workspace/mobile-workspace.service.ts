@@ -6,7 +6,7 @@ import { ContractService } from '../contract/contract.service';
 import { DispatchNoticeService } from '../dispatch-notice/dispatch-notice.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { OutboundService } from '../inventory/outbound.service';
-import { WaybillService } from '../logistics/waybill.service';
+import { DIRECT_PENDING_WHERE, WaybillService } from '../logistics/waybill.service';
 import { OrderService } from '../order/order.service';
 import { QualityInspectionService } from '../quality/quality-inspection.service';
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
@@ -149,7 +149,7 @@ export class MobileWorkspaceService {
 
   private isMobileTodo(module: MobileBusinessModule, item: any, todo: string) {
     if (module === 'waybills') {
-      if (todo === 'DIRECT_DELIVERY') return item.status === 'SIGNED' && item.dispatchNotice?.directSalesExecution && !item.salesCompletionConfirmedAt;
+      if (todo === 'DIRECT_DELIVERY') return item.status === 'SIGNED' && item.dispatchNotice?.directSalesExecution && !item.salesCompletionConfirmedAt && !item.directOutcome;
       if (todo === 'ACTIVE') return ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(item.status);
       // 历史待办链接统一归入待发运，不再把缺资料运单分成另一个业务阶段。
       if (['PENDING', 'PENDING_UNASSIGNED', 'PENDING_READY'].includes(todo)) return item.status === 'PENDING';
@@ -262,7 +262,7 @@ export class MobileWorkspaceService {
       canViewInventory ? this.access.getOutboundReceiptScope(userId).then(scope => this.prisma.outboundReceipt.count({
         where: { deletedAt: null, status: { in: ['PENDING', 'READY', 'VARIANCE_PENDING'] }, AND: [scope] },
       })) : Promise.resolve(0),
-      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({ where: { deletedAt: null, status: 'SIGNED', salesCompletionConfirmedAt: null, dispatchNotice: { directSalesExecution: { isNot: null } }, AND: [scope] } })) : Promise.resolve(0),
+      canViewLogistics ? this.access.getWaybillScope(userId).then(scope => this.prisma.waybill.count({ where: { deletedAt: null, ...DIRECT_PENDING_WHERE, AND: [scope] } })) : Promise.resolve(0),
     ]);
     const pendingContractApprovals = new Set(pendingRows.map((item) => `${item.contractId}:${item.round}:${item.step}`)).size;
     const pendingPaymentApprovals = this.finance && (context.isAdmin || context.permissions.includes('settlement.payment.approve'))

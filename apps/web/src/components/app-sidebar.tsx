@@ -73,6 +73,7 @@ const NAV_ITEMS: NavGroup[] = [
       { href: '/dashboard/inventory', label: '在库总览' },
       { href: '/dashboard/inbound', label: '入库单管理' },
       { href: '/dashboard/outbound', label: '出库单管理' },
+      { href: '/dashboard/direct-trades', label: '直拨进出' },
       { href: '/dashboard/inventory-reversals', label: '库存冲销' },
     ],
   },
@@ -193,7 +194,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
     if (href.startsWith('/dashboard/logistics-settlements')) return 'logistics.settlement.view';
     if (href.startsWith('/dashboard/dispatch') || href.startsWith('/dashboard/waybills')) return 'logistics.view';
     if (href.startsWith('/dashboard/weighbridge') || href.startsWith('/dashboard/quality')) return 'quality.view';
-    if (href.startsWith('/dashboard/inventory') || href.startsWith('/dashboard/inbound') || href.startsWith('/dashboard/outbound')) return 'inventory.view';
+    if (href.startsWith('/dashboard/inventory') || href.startsWith('/dashboard/inbound') || href.startsWith('/dashboard/outbound') || href.startsWith('/dashboard/direct-trades')) return 'inventory.view';
     if (href.startsWith('/dashboard/production')) return 'production.view';
     if (href.startsWith('/dashboard/settlement') || href.startsWith('/dashboard/payables') || SETTLEMENT_NAV_HREFS.some(item => href.startsWith(item))) return 'settlement.view';
     if (href.startsWith('/dashboard/industry-database')) return 'industry.database.view';

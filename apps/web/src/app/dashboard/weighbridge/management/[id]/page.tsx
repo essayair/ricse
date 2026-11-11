@@ -34,7 +34,7 @@ interface Selection {
 interface ManagementFile {
   id: string; waybillNo: string; status: string; plateNo: string | null; driverName: string | null; driverPhone: string | null;
   totalQuantity: string; originLocation: string | null; destinationLocation: string | null;
-  dispatchNotice: { id: string; noticeNo: string; type: string; order: { id: string; orderNo: string; name: string; contract: { id: string; contractNo: string; title: string } } };
+  dispatchNotice: { id: string; noticeNo: string; type: string; directSalesExecution?: { id: string } | null; order: { id: string; orderNo: string; name: string; contract: { id: string; contractNo: string; title: string } } };
   lineItems: Array<{ id: string; materialName: string | null; materialId: string; quantity: string; unit: string }>;
   weighTickets: Ticket[]; weightSelections: Selection[];
   weighTask: { id: string; taskNo: string; status: string; plannedQuantity: string; completedAt: string | null; attachments: EvidenceAttachment[] };
@@ -103,6 +103,7 @@ export default function WeighbridgeManagementDetailPage() {
   if (!item) return <div className="py-20 text-center text-muted-foreground">加载中...</div>;
   const current = currentSelection(item);
   const sales = item.dispatchNotice.type === 'SALES';
+  const direct = !!item.dispatchNotice.directSalesExecution;
   const settlement = item.weightSelections.find(s => s.purpose === 'SETTLEMENT');
   const basisLabel = effectiveWeightLabel(item.dispatchNotice.type);
   const shipping = activeTickets(item, 'SHIPPING');
@@ -128,12 +129,14 @@ export default function WeighbridgeManagementDetailPage() {
       <Card className="p-5"><div className="mb-4 flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><h2 className="font-semibold">上游业务单据</h2></div><button className="w-full text-left" onClick={() => router.push(`/dashboard/dispatch-notices/${item.dispatchNotice.id}`)}><div className="font-medium">{item.dispatchNotice.order.name}</div><div className="mt-1 font-mono text-xs text-primary">{item.dispatchNotice.order.orderNo} · {item.dispatchNotice.noticeNo}</div><div className="mt-2 text-xs text-muted-foreground">合同 {item.dispatchNotice.order.contract.contractNo} · {item.dispatchNotice.order.contract.title}</div></button></Card>
     </div>
 
-    <Card className={`p-5 ${current ? 'border-primary/40 bg-primary/5' : 'border-warning-border bg-warning-bg/50'}`}>
+    {direct && <Card className="flex flex-wrap items-center justify-between gap-4 p-5"><div><h2 className="font-semibold">直拨车次称重依据</h2><p className="mt-1 text-xs text-muted-foreground">供应商直接发往客户，我方不办理出库。供应商发货、客户收货两侧分别复核采信磅单；交付采用哪一侧磅单在物流运单的直拨交付确认中选择，销售结算默认采用交付依据，采购结算跟随销售结算。</p></div><Button variant="outline" onClick={() => router.push(`/dashboard/waybills/${item.id}`)}>前往直拨交付确认</Button></Card>}
+
+    {!direct && <Card className={`p-5 ${current ? 'border-primary/40 bg-primary/5' : 'border-warning-border bg-warning-bg/50'}`}>
       <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><CheckCircle2 className={`h-5 w-5 ${current ? 'text-primary' : 'text-warning'}`} /><h2 className="font-semibold">当前{basisLabel}</h2></div><p className="mt-1 text-xs text-muted-foreground">{sales ? '销售出库按我方采信发货磅单；客户收货磅单独立采信，货款结算依据另行确认。' : '采购入库按我方采信收货磅单；供应商发货磅单独立采信，货款结算依据另行确认。'}</p></div>{current ? <StatusText status="COMPLETED">已确定</StatusText> : <StatusText status="PENDING">待选择</StatusText>}</div>
       {current ? <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5"><Field label="磅单编号" value={current.weighTicket.ticketNo} /><Field label="称重节点" value={stageLabel(item, current.weighTicket.weighingStage)} /><Field label="执行数量" value={`${number(current.quantity)} 吨`} /><Field label="选用人" value={current.selector.name} /><Field label="选用时间" value={formatDateTimeToSecond(current.selectedAt)} />{current.reason && <div className="sm:col-span-2 lg:col-span-5"><Field label="选用/变更原因" value={current.reason} /></div>}</div> : <div className="mt-4 text-sm text-warning">请先在我方称重节点确认采信磅单；同侧多张磅单时必须人工选择。</div>}
-    </Card>
+    </Card>}
 
-    <Card className="space-y-3 p-5"><h2 className="font-semibold">{sales ? '销售' : '采购'}货款结算磅单</h2><p className="text-xs text-muted-foreground">{sales ? '可按约定使用客户收货磅单或我方发货磅单，改选不改变已出库数量。' : '可按合同或双方协商使用供应商发货磅单或我方收货磅单；不会回写入库实物数量。'}</p>{settlement ? <div className="grid gap-4 sm:grid-cols-3"><Field label="磅单编号" value={settlement.weighTicket.ticketNo}/><Field label="结算依据数量" value={weight(settlement.quantity)}/><Field label="选用人 / 时间" value={settlement.selector.name + ' · ' + formatDateTimeToSecond(settlement.selectedAt)}/></div> : <p className="text-sm text-warning">尚未确认货款结算磅单，请在下方有效磅单中选择。</p>}</Card>
+    {!direct && <Card className="space-y-3 p-5"><h2 className="font-semibold">{sales ? '销售' : '采购'}货款结算磅单</h2><p className="text-xs text-muted-foreground">{sales ? '可按约定使用客户收货磅单或我方发货磅单，改选不改变已出库数量。' : '可按合同或双方协商使用供应商发货磅单或我方收货磅单；不会回写入库实物数量。'}</p>{settlement ? <div className="grid gap-4 sm:grid-cols-3"><Field label="磅单编号" value={settlement.weighTicket.ticketNo}/><Field label="结算依据数量" value={weight(settlement.quantity)}/><Field label="选用人 / 时间" value={settlement.selector.name + ' · ' + formatDateTimeToSecond(settlement.selectedAt)}/></div> : <p className="text-sm text-warning">尚未确认货款结算磅单，请在下方有效磅单中选择。</p>}</Card>}
 
     {difference !== null && <Card className="flex flex-wrap items-center justify-between gap-3 p-4"><div><div className="text-sm font-medium">发货与收货采信磅差</div><div className="mt-1 text-xs text-muted-foreground">收货净重 − 发货净重</div></div><div className={`text-xl font-bold ${difference === 0 ? 'text-success' : 'text-warning'}`}>{difference > 0 ? '+' : ''}{number(difference)} 吨</div></Card>}
 
@@ -149,7 +152,7 @@ export default function WeighbridgeManagementDetailPage() {
         const stageBasisLabel = stage === 'SHIPPING' ? '采信发货磅单' : '采信收货磅单';
         const mustChoose = tickets.length > 1 && !stageSelected;
         return <Card key={stage} className="overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/30 p-5"><div><h2 className="font-semibold">{stageLabel(item, stage)}</h2><p className="mt-1 text-xs text-muted-foreground">共 {tickets.length} 张磅单（含待填写）；首张由系统在对应节点生成{externalStage ? '，收到外部凭证后录入' : ''}，每张可保留多次称重记录</p><p className={`mt-1 text-xs ${mustChoose ? 'text-warning' : 'text-muted-foreground'}`}>{stageSelected ? `${stageBasisLabel}：${stageSelected.weighTicket.ticketNo} · ${stageSelected.selector.name}` : mustChoose ? `有多张磅单，请人工确认${stageBasisLabel}` : '只有一张有效磅单时，复核后系统默认采信'}</p></div>{canCreate ? <Button size="sm" variant={blankTicket || tickets.length ? 'outline' : 'default'} onClick={() => router.push(blankTicket ? `/dashboard/weighbridge/${blankTicket.id}` : `/dashboard/weighbridge/create?waybillId=${item.id}&stage=${stage}`)}><Plus className="mr-1 h-4 w-4" />{createLabel}</Button> : <Badge variant="outline">到达后自动生成</Badge>}</div>
-          <div className="space-y-3 p-4">{tickets.length ? tickets.map(ticket => <div key={ticket.id}><TicketCard ticket={ticket} basisLabel={stageBasisLabel} selected={stageSelected?.weighTicketId === ticket.id} onOpen={() => router.push(`/dashboard/weighbridge/${ticket.id}`)} onSelect={() => void selectEffective(ticket, stage)} />{ticket.status === 'REVIEWED' && <Button className="mt-2 w-full" size="sm" variant="outline" disabled={settlement?.weighTicketId === ticket.id || (tickets.length > 1 && stageSelected?.weighTicketId !== ticket.id)} title={tickets.length > 1 && stageSelected?.weighTicketId !== ticket.id ? `请先确认${stageBasisLabel}` : undefined} onClick={() => void selectEffective(ticket, 'SETTLEMENT')}>{settlement?.weighTicketId === ticket.id ? '当前货款结算磅单' : `选为${sales ? '销售' : '采购'}货款结算磅单`}</Button>}</div>) : <div className="py-10 text-center text-sm text-muted-foreground"><Scale className="mx-auto mb-2 h-7 w-7 opacity-40" />暂无{stageLabel(item, stage)}</div>}</div>
+          <div className="space-y-3 p-4">{tickets.length ? tickets.map(ticket => <div key={ticket.id}><TicketCard ticket={ticket} basisLabel={stageBasisLabel} selected={stageSelected?.weighTicketId === ticket.id} onOpen={() => router.push(`/dashboard/weighbridge/${ticket.id}`)} onSelect={() => void selectEffective(ticket, stage)} />{ticket.status === 'REVIEWED' && !direct && <Button className="mt-2 w-full" size="sm" variant="outline" disabled={settlement?.weighTicketId === ticket.id || (tickets.length > 1 && stageSelected?.weighTicketId !== ticket.id)} title={tickets.length > 1 && stageSelected?.weighTicketId !== ticket.id ? `请先确认${stageBasisLabel}` : undefined} onClick={() => void selectEffective(ticket, 'SETTLEMENT')}>{settlement?.weighTicketId === ticket.id ? '当前货款结算磅单' : `选为${sales ? '销售' : '采购'}货款结算磅单`}</Button>}</div>) : <div className="py-10 text-center text-sm text-muted-foreground"><Scale className="mx-auto mb-2 h-7 w-7 opacity-40" />暂无{stageLabel(item, stage)}</div>}</div>
         </Card>;
       })}
     </div>
@@ -172,6 +175,7 @@ function number(value: string | number) { return Number(value).toLocaleString('z
 function weight(value: string | null) { return value ? `${number(value)} 吨` : '-'; }
 function materialNames(item: ManagementFile) { return [...new Set(item.lineItems.map(line => line.materialName || line.materialId))].join('、') || '-'; }
 function stageLabel(item: ManagementFile, stage: string) {
+  if (item.dispatchNotice.directSalesExecution) return stage === 'SHIPPING' ? '供应商发货称重' : '客户收货称重';
   if (item.dispatchNotice.type === 'PURCHASE') return stage === 'SHIPPING' ? '供应商发货称重' : '我方收货称重';
   return stage === 'SHIPPING' ? '我方发货称重' : '客户收货称重';
 }

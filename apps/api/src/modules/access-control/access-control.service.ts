@@ -551,6 +551,9 @@ export class AccessControlService {
   }
 
   async getQualityInspectionScope(userId: string, permissionCode = 'quality.view'): Promise<Prisma.QualityInspectionWhereInput> {
+    // Prisma 会折叠 OR 中空的关系条件；管理员的 contract:{} 不能表达“全部报告”。
+    // 独立报告关联后不一定有 weighTicketId，必须显式返回管理员的完整范围。
+    if ((await this.getContext(userId)).isAdmin) return {};
     return { OR: [
       { weighTicket: await this.getWeighTicketScope(userId, permissionCode) },
       { contract: await this.getContractScope(userId, permissionCode) },

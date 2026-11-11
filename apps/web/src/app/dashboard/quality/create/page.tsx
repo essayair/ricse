@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, FileText, FlaskConical, Plus, Scale, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { serviceOrganizationName, serviceOrganizationLabel } from '@/lib/service-organization';
-import { loadAllOptions } from '@/lib/option-loader';
 import { formatDateTimeToSecond, toLocalDateTimeInput } from '@/lib/date-time';
 import { StatusText } from '@/components/status-text';
 import { Badge } from '@/components/ui/badge';
@@ -71,6 +70,8 @@ export default function CreateQualityInspectionPage() {
   const [institutionPartnerId, setInstitutionPartnerId] = useState('');
   const [institutionName, setInstitutionName] = useState('');
   const [institutions, setInstitutions] = useState<InstitutionProfile[]>([]);
+  const [partnerInstitutions, setPartnerInstitutions] = useState<InstitutionProfile[]>([]);
+  const institutionChoices = institutionType === 'PARTNER' ? partnerInstitutions : institutions;
   const [reportNo, setReportNo] = useState('');
   const [testedAt, setTestedAt] = useState('');
   const [indicators, setIndicators] = useState<Indicator[]>(DEFAULT_INDICATORS);
@@ -101,8 +102,8 @@ export default function CreateQualityInspectionPage() {
       else if (items[0]) setWeighTicketId(items[0].id);
       setSampleNo(`${qualityTask.taskNo}-S${String(qualityTask.reports.length + 1).padStart(2, '0')}`);
     }).catch(error => alert(error.message || '质检任务或可用磅单加载失败'));
-    loadAllOptions<InstitutionProfile>('/service-organizations?type=QUALITY_INSTITUTION&status=ACTIVE')
-      .then(result => setInstitutions(result.items || []))
+    api.get<{ partners: InstitutionProfile[]; thirdParties: InstitutionProfile[] }>(`/quality-inspections/institution-options?qualityTaskId=${encodeURIComponent(taskId)}`)
+      .then(result => { setInstitutions(result.thirdParties); setPartnerInstitutions(result.partners); })
       .catch(error => alert(error.message || '质检机构主数据加载失败'));
   }, [router, searchParams]);
 
@@ -196,7 +197,7 @@ export default function CreateQualityInspectionPage() {
     if (result.institutionName) {
       setInstitutionName(result.institutionName);
       if (['PARTNER', 'THIRD_PARTY'].includes(institutionType)) {
-        const matched = institutions.find(item => item.partner.name.trim() === result.institutionName?.trim());
+        const matched = institutionChoices.find(item => item.partner.name.trim() === result.institutionName?.trim());
         setInstitutionPartnerId(matched?.partnerId || '');
         if (!matched) alert('检测机构名称未匹配已维护机构，请核对并手动选择');
       }
@@ -212,7 +213,7 @@ export default function CreateQualityInspectionPage() {
     if (!ticket) return alert('请选择关联磅单');
     if (!selectedSample) return alert('请先返回质检任务登记并选择一份样品');
     if (!sampledAt || !samplerName.trim()) return alert('请填写取样时间和取样人');
-    if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) && !institutionPartnerId) return alert('请选择已维护的质检机构');
+    if (['PARTNER', 'THIRD_PARTY'].includes(institutionType) && !institutionPartnerId) return alert(institutionType === 'PARTNER' ? '请选择当前合同的供应商或客户' : '请选择已维护的第三方质检机构');
     if (!institutionName.trim() || !reportNo.trim() || !testedAt) return alert('请填写检测机构、报告编号和检测时间');
     if (!indicators.length || indicators.some(item => !item.name.trim() || item.measuredValue === '' || item.standardValue === '')) return alert('请完整填写指标名称、标准值和检测结果');
     setSaving(true);
@@ -273,7 +274,7 @@ export default function CreateQualityInspectionPage() {
       {ticket && <p className="text-sm text-muted-foreground">本报告取样环节：{ticket.weighingStage === 'SHIPPING' ? '发货侧' : '收货侧'}。由所关联磅单确定；检测机构类型另行填写，两者不是同一个概念。</p>}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Field label="机构类型 *"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionType} onChange={event => { setInstitutionType(event.target.value); setInstitutionPartnerId(''); setInstitutionName(''); }}>{Object.entries(INSTITUTION_TYPE).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-        <Field label="检测机构 *">{['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionPartnerId} onChange={event => { const id = event.target.value; const item = institutions.find(value => value.partnerId === id); setInstitutionPartnerId(id); setInstitutionName(item ? serviceOrganizationName(item) : ''); }}><option value="">请选择已维护的质检机构</option>{institutions.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {serviceOrganizationLabel(item)}</option>)}</select> : <Input value={institutionName} onChange={event => setInstitutionName(event.target.value)} placeholder="填写实际出具报告的机构" />}</Field>
+        <Field label="检测机构 *">{['PARTNER', 'THIRD_PARTY'].includes(institutionType) ? <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={institutionPartnerId} onChange={event => { const id = event.target.value; const item = institutionChoices.find(value => value.partnerId === id); setInstitutionPartnerId(id); setInstitutionName(item ? serviceOrganizationName(item) : ''); }}><option value="">{institutionType === 'PARTNER' ? '请选择合同供应商或客户' : '请选择服务生态质检机构'}</option>{institutionChoices.map(item => <option key={item.id} value={item.partnerId}>{item.partner.code} · {serviceOrganizationLabel(item)}</option>)}</select> : <Input value={institutionName} onChange={event => setInstitutionName(event.target.value)} placeholder="填写实际出具报告的机构" />}</Field>
         <Field label="报告编号 *"><Input value={reportNo} onChange={event => setReportNo(event.target.value)} /></Field>
         <Field label="检测时间 *"><Input type="datetime-local" step="1" value={testedAt} onChange={event => setTestedAt(event.target.value)} /></Field>
       </div>

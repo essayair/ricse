@@ -293,6 +293,40 @@ describe('WeighTicketService', () => {
     expect(prisma.weighTask.update).not.toHaveBeenCalled();
   });
 
+  it.each(['SHIPPING', 'RECEIVING'])('直拨%s磅单的发收货主体为供应商和客户', async weighingStage => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ ...waybill, status: 'ARRIVED', dispatchNotice: {
+      type: 'SALES', directSalesExecution: { id: 'direct-1' }, order: { contract: { type: 'BILATERAL', seller: { name: '上游矿山' }, buyer: { name: '下游客户' }, signingPartner: { name: '我方贸易商' } } },
+    } } as any);
+    prisma.weighTicket.create.mockResolvedValueOnce({ ...ticket, weighingStage } as any);
+    await service.create({ waybillId: waybill.id, weighingStage }, 'user-1');
+    expect(prisma.weighTicket.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ shipperName: '上游矿山', receiverName: '下游客户' }) }));
+  });
+
+  it.each(['SHIPPING', 'RECEIVING'])('直拨%s唯一有效磅单只自动采信该侧，不生成库存或结算选用', async weighingStage => {
+    prisma.weighTicket.findUniqueOrThrow.mockResolvedValueOnce({ id: ticket.id, waybillId: waybill.id, weighingStage, netWeight: 100, waybill: { dispatchNotice: { type: 'SALES', directSalesExecution: { id: 'direct-1' } } } } as any);
+    prisma.weighTicket.count.mockResolvedValueOnce(1);
+    prisma.waybillWeightSelection.findFirst.mockResolvedValueOnce(null);
+    prisma.waybillWeightSelection.create.mockResolvedValueOnce({ id: 'stage-selection' } as any);
+    await (service as any).applyDefaultSelections(ticket.id, 'user-1');
+    expect(prisma.waybillWeightSelection.create).toHaveBeenCalledTimes(1);
+    expect(prisma.waybillWeightSelection.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ purpose: weighingStage }) }));
+  });
+
+  it.each(['INVENTORY', 'SETTLEMENT'])('直拨禁止绕过交付和结算去指定%s用途', async purpose => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, dispatchNotice: { type: 'SALES', directSalesExecution: { id: 'direct-1' } } } as any);
+    prisma.weighTicket.findFirst.mockResolvedValueOnce({ id: ticket.id, netWeight: 100, weighingStage: 'SHIPPING' } as any);
+    await expect(service.selectEffectiveTicket(waybill.id, ticket.id, '测试', 'user-1', purpose)).rejects.toThrow('交付依据在直拨交付中选择');
+    expect(prisma.waybillWeightSelection.create).not.toHaveBeenCalled();
+  });
+
+  it('直拨任一侧已采信后过磅任务完成，无需库存依据', async () => {
+    prisma.waybill.findFirst.mockResolvedValueOnce({ id: waybill.id, status: 'SIGNED', plateNo: '甘A12345', totalQuantity: 100 } as any);
+    prisma.weighTask.findUnique.mockResolvedValueOnce({ id: 'task-1', plannedQuantity: 100 } as any);
+    prisma.waybill.findUnique.mockResolvedValueOnce({ status: 'SIGNED', dispatchNotice: { directSalesExecution: { id: 'direct-1' } }, weighTickets: [{ status: 'REVIEWED' }], weightSelections: [{ purpose: 'RECEIVING' }] } as any);
+    await service.syncTaskForWaybill(waybill.id, 'user-1');
+    expect(prisma.weighTask.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'COMPLETED' } });
+  });
+
   it('销售运单允许在发运前创建出库磅单', async () => {
     prisma.waybill.findFirst.mockResolvedValue({
       ...waybill,

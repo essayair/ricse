@@ -18,7 +18,7 @@ interface Waybill {
     sequence: number; isSupplementary: boolean; additionReason: string | null;
   }>;
   lineItems: Array<{ materialId: string; materialName: string | null }>;
-  dispatchNotice: { id: string; type: string; noticeNo: string; order: { name: string; orderNo: string; contract: {
+  dispatchNotice: { id: string; type: string; noticeNo: string; directSalesExecution?: { id: string } | null; order: { name: string; orderNo: string; contract: {
     contractNo: string; type: string;
     seller: { name: string } | null; buyer: { name: string } | null; signingPartner: { name: string } | null;
   } } };
@@ -96,7 +96,7 @@ export default function CreateWeighTicketPage() {
     setDriverName(item.driverName || '');
     setMaterialName([...new Set(item.lineItems.map(line => line.materialName || line.materialId))].join('、'));
     setMaterialSpec([...new Set(item.lineItems.map(line => { const material = materials.find(value => value.id === line.materialId); return material?.spec || material?.grade || ''; }).filter(Boolean))].join('、'));
-    setShipperName(isPurchase ? (contract.seller?.name || '') : (contract.signingPartner?.name || ''));
+    setShipperName(isPurchase || item.dispatchNotice.directSalesExecution ? (contract.seller?.name || '') : (contract.signingPartner?.name || ''));
     setReceiverName(isPurchase ? (contract.signingPartner?.name || '') : (contract.type === 'BILATERAL' ? contract.buyer?.name || '' : contract.seller?.name || ''));
   }, [waybillId, waybills, materials]);
 

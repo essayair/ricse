@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, DefaultValuePipe, Delete, Get, HttpCode, Param, ParseBoolPipe, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
@@ -28,8 +28,9 @@ export class WaybillController {
   }
 
   @Get()
-  findAll(@CurrentUser('id') userId: string, @Query('status') status?: string, @Query('search') search?: string) {
-    return this.service.findAll({ status, search }, userId);
+  findAll(@CurrentUser('id') userId: string, @Query('status') status?: string, @Query('search') search?: string,
+    @Query('directPending', new DefaultValuePipe(false), ParseBoolPipe) directPending = false) {
+    return this.service.findAll({ status, search, directPending }, userId);
   }
 
   @Get('dispatch-notices/:id/availability')

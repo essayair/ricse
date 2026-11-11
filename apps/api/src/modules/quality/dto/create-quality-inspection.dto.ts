@@ -54,6 +54,7 @@ export class CreateQualityInspectionDto {
 /** 不依赖单车任务或磅单的独立实验室检测报告。 */
 export class CreateStandaloneQualityReportDto {
   @IsString() materialId: string;
+  @IsOptional() @IsString() @MaxLength(100) contextContractId?: string;
   @IsOptional() @IsString() @MaxLength(100) samplingGroupNo?: string;
   @IsDateString() sampledAt: string;
   @IsString() @MaxLength(100) samplerName: string;
