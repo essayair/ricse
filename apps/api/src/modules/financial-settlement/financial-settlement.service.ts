@@ -878,10 +878,12 @@ export class FinancialSettlementService {
       const source = line.sourceSnapshot as Record<string, any> | null;
       return Number(line.adjustmentAmount || 0) !== 0 || Boolean(source?.negotiatedQuantity)
         || Boolean(source?.lineAdjustment?.priceAdjusted) || Boolean(source?.settlementAdjustment?.mode && source.settlementAdjustment.mode !== 'NONE')
-        || source?.settlementWeightSource === 'SELECTED_OTHER_SIDE'
-        || Boolean(source?.inventoryReportId && source.reportId && source.inventoryReportId !== source.reportId)
-        || Boolean(source?.defaultReportId && source.reportId && source.defaultReportId !== source.reportId)
-        || Boolean(source?.customerTicketNo && source.ticketNo && source.customerTicketNo !== source.ticketNo);
+        || (!source?.directDeliveryId && (
+          source?.settlementWeightSource === 'SELECTED_OTHER_SIDE'
+          || Boolean(source?.inventoryReportId && source.reportId && source.inventoryReportId !== source.reportId)
+          || Boolean(source?.defaultReportId && source.reportId && source.defaultReportId !== source.reportId)
+          || Boolean(source?.customerTicketNo && source.ticketNo && source.customerTicketNo !== source.ticketNo)
+        ));
     });
   }
 

@@ -190,6 +190,16 @@ describe('FinancialSettlementService payment approvals', () => {
       sourceSnapshot: { settlementQuantityReview: { confirmed: true, reason: '线下盖章确认', differences: [{ type: 'OVER' }] } } }] })).toBe(false);
   });
 
+  it('直拨仅切换侧别依据不触发审批，普通仓储和商务调整仍触发', () => {
+    const basis = { settlementWeightSource: 'SELECTED_OTHER_SIDE', inventoryReportId: 'r1', reportId: 'r2', defaultReportId: 'r1', customerTicketNo: 'P1', ticketNo: 'P2' };
+    const required = (source: object) => (service as any).settlementRequiresApproval({ adjustmentAmount: 0, lines: [{ adjustmentAmount: 0, sourceSnapshot: source }] });
+    expect(required({ ...basis, directDeliveryId: 'delivery' })).toBe(false);
+    expect(required(basis)).toBe(true);
+    for (const change of [{ negotiatedQuantity: true }, { lineAdjustment: { priceAdjusted: true } }, { settlementAdjustment: { mode: 'QUANTITY' } }, { settlementAdjustment: { mode: 'AMOUNT' } }]) {
+      expect(required({ ...basis, directDeliveryId: 'delivery', ...change })).toBe(true);
+    }
+  });
+
   it.each(['PAYABLE', 'RECEIVABLE'] as const)('%s 预览与创建采用最终干基重算值，原车明细不被改写', async direction => {
     const prototype = direction === 'PAYABLE' ? PurchaseSettlementBasis.prototype : SalesSettlementBasis.prototype;
     const spy = jest.spyOn(prototype, 'sources').mockResolvedValue([{
