@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
+test('Standalone生产镜像同时复制页面、静态构建和public资源', () => {
+  const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
+  const runtime = dockerfile.split(' AS runtime')[1];
+  assert(runtime, '必须检查运行时阶段，而非仅构建阶段');
+  assert.match(runtime, /COPY[^\n]*\/\.next\/standalone\s+\.\//);
+  assert.match(runtime, /COPY[^\n]*\/\.next\/static\s+\.\/apps\/web\/\.next\/static/);
+  assert.match(runtime, /COPY[^\n]*\/apps\/web\/public\s+\.\/apps\/web\/public/);
+});
+
 test('全站入口配置统一的网站图标和缓存版本', () => {
   const entry = readFileSync(new URL('../src/app/layout.tsx', import.meta.url), 'utf8');
   assert(entry.includes('icons:') && entry.includes('apple:'));
