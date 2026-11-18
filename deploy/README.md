@@ -29,8 +29,12 @@ mkdir -p deploy/certs
 `127.0.0.1:8080` 和 `127.0.0.1:8443`，避免覆盖同一台 ECS 上的官网及其他子域名。
 云效主机发布会根据 `deploy/nginx/host-edge.conf.template` 安装
 `/etc/nginx/conf.d/ricse.conf`，再启动主机 Nginx。服务器需预先安装 Nginx。
-发布还会同步 `deploy/certbot` 中的续期钩子；证书续期时会临时停止主机 Nginx，
-更新 RICSE 共享证书后再恢复服务。
+发布还会同步 `deploy/certbot` 中的续期钩子与安全续期入口。每张证书分开运行：
+webroot 验证保持 Nginx 在线，standalone 仅在自身续期时临时停/启 Nginx，
+避免全局停站钩子让其他域名验证失败；RICSE证书更新后仍同步共享目录并加载。
+自动续期继续使用现有 `certbot-renew.timer`，服务入口由 systemd drop-in 指向
+`/usr/local/sbin/ricse-safe-cert-renew`。不要再手动执行带全局目录钩子的裸 `certbot renew`；
+使用该入口，或为指定 webroot 证书加 `--no-directory-hooks` 并明确平滑重载。
 
 `--seed` 只用于初始化测试数据，不应在每次发布时重复执行。
 

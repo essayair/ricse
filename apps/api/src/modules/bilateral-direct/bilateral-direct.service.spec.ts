@@ -24,6 +24,19 @@ describe('双边直拨确认与纠错', () => {
   function prepared(current = w()) {
     return { w: current, quantity: new Prisma.Decimal(20), pricingQuantity: new Prisma.Decimal(19), pricingQuantityBasis: 'DRY_MATTER', snapshot: { quantity: '20', pricingQuantity: '19' } };
   }
+  it('真实交付预览使用下游免扣规则，两向共用98.2吨计价量', async () => {
+    const source = { id: 'contract-line', materialId: 'material', materialName: '萤石矿', unit: 'TON', pricingQuantityBasis: 'DRY_MATTER',
+      salesPriceRulesSnapshot: { quantityBasis: 'DRY_MATTER', moistureDeductionMode: 'EXCESS', moistureBasePct: 5 } };
+    const current: any = { ...w(), attachments: [{ category: 'RECEIPT_DOCUMENT' }], weighTickets: [{ id: 'ticket', netWeight: new Prisma.Decimal(100), weighingStage: 'RECEIVING', weightSelections: [], ticketNo: 'BD1', updatedAt: new Date() }],
+      qualityTask: { status: 'COMPLETED', basisInspectionId: 'report', finalConclusion: 'PASS', decisionVersion: 1, reports: [], reportLinks: [], basisInspection: { id: 'report', status: 'CONFIRMED', evidenceStage: 'RECEIVING', reportNo: 'QC1', indicators: [{ code: 'MOISTURE', name: '水分', unit: '%', measuredValue: new Prisma.Decimal(6.8) }] } } };
+    current.lineItems = [{ dispatchNoticeLineItem: { orderLineItem: { contractLineItemId: source.id } } }];
+    current.dispatchNotice = { ...current.dispatchNotice, order: { contractId: 'contract', contract: { status: 'APPROVED', pricingType: 'GRADE_TIER', lineItems: [source] } } };
+    db.material = { findUnique: jest.fn().mockResolvedValue({ pricingQuantityBasis: 'PHYSICAL' }) };
+    jest.spyOn(service as any, 'load').mockResolvedValue(current);
+    const result = await (service as any).prepare(db, 'trip', dto);
+    expect(result.pricingQuantity.toNumber()).toBe(98.2);
+    expect(result.snapshot).toMatchObject({ moistureDeductionMode: 'EXCESS', moistureBasePct: 5, pricingQuantity: '98.2', quantity: '100' });
+  });
   it('一次操作生成两向等量单据，绝不调用库存表', async () => {
     jest.spyOn(service as any, 'prepare').mockResolvedValue(prepared());
     await service.confirm('trip', dto, 'operator');

@@ -13,7 +13,7 @@ RUN sed -i \
   "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g; s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
   /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl \
+  && apt-get install -y --no-install-recommends openssl poppler-utils \
   && rm -rf /var/lib/apt/lists/* \
   && npm install --global "pnpm@${PNPM_VERSION}" --registry="${NPM_REGISTRY}"
 WORKDIR /app
@@ -44,7 +44,7 @@ RUN sed -i \
   "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g; s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
   /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl \
+  && apt-get install -y --no-install-recommends openssl poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

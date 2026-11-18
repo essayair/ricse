@@ -6,6 +6,7 @@ import { ArrowDownLeft, ArrowUpRight, CheckCircle2, CircleDollarSign, Plus, Prin
 import { api } from '@/lib/api';
 import { settlementColumnTotal } from '@/lib/settlement-table-totals';
 import { settlementDetailHref } from '@/lib/settlement-navigation';
+import { fundMatchesContract } from '@/lib/settlement-fund-options';
 import { StatusText } from '@/components/status-text';
 import { ClickableRow } from '@/components/clickable-row';
 import { useListQuery } from '@/lib/use-list-query';
@@ -57,7 +58,7 @@ interface Fund {
   paymentStage: string; paymentMethod: string; status: string; amount: string; allocatedAmount: string; refundedAmount: string;
   occurredAt: string; bankReference?: string | null; ourBankAccount?: string | null; counterpartyBankAccount?: string | null;
   instrumentNo?: string | null; instrumentDueDate?: string | null; remarks?: string | null;
-  contract: { id: string; contractNo: string; title: string }; legalEntity: { name: string }; counterparty: { name: string };
+  contract: { id: string; contractNo: string; title: string } | null; legalEntity: { name: string }; counterparty: { name: string } | null;
   creator: { name: string }; relatedTransaction?: { id: string; transactionNo: string; paymentStage: string; amount: string } | null;
 }
 
@@ -241,15 +242,15 @@ export function SettlementWorkbench({ direction, standalone = false, showTitle =
   };
 
   const candidateFunds = useMemo(() => selected ? funds.filter((fund) => (
-    fund.contract.id === selected.contract.id
+    fundMatchesContract(fund, selected.contract.id)
       && fund.status !== 'VOIDED'
       && ['ADVANCE', 'PROGRESS', 'SETTLEMENT', 'FINAL', 'OTHER'].includes(fund.paymentStage)
       && availableFund(fund) > 0
   )) : [], [funds, selected]);
-  const reverseCandidates = funds.filter((item) => item.contract.id === fundForm.contractId && item.status !== 'VOIDED' && item.direction === (receivable ? 'RECEIPT' : 'PAYMENT') && (fundForm.paymentStage === 'GUARANTEE_RETURN' ? item.paymentStage === 'GUARANTEE' : item.paymentStage !== 'GUARANTEE') && availableFund(item) > 0);
+  const reverseCandidates = funds.filter((item) => fundMatchesContract(item, fundForm.contractId) && item.status !== 'VOIDED' && item.direction === (receivable ? 'RECEIPT' : 'PAYMENT') && (fundForm.paymentStage === 'GUARANTEE_RETURN' ? item.paymentStage === 'GUARANTEE' : item.paymentStage !== 'GUARANTEE') && availableFund(item) > 0);
 
   function availableFund(fund: Fund) { return Math.max(0, Number(fund.amount) - Number(fund.allocatedAmount) - Number(fund.refundedAmount)); }
-  function usableFunds(item: Settlement) { return funds.filter((fund) => fund.contract.id === item.contract.id && fund.status !== 'VOIDED' && ['ADVANCE', 'PROGRESS', 'SETTLEMENT', 'FINAL', 'OTHER'].includes(fund.paymentStage) && availableFund(fund) > 0); }
+  function usableFunds(item: Settlement) { return funds.filter((fund) => fundMatchesContract(fund, item.contract.id) && fund.status !== 'VOIDED' && ['ADVANCE', 'PROGRESS', 'SETTLEMENT', 'FINAL', 'OTHER'].includes(fund.paymentStage) && availableFund(fund) > 0); }
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -326,7 +327,7 @@ function SettlementTable({ items, dueDateLabel }: { items: Settlement[]; dueDate
 
 function FundTable({ items, cashLabel, canManage, onVoid }: { items: Fund[]; cashLabel: string; canManage: boolean; onVoid: (item: Fund) => void }) {
   if (!items.length) return <Empty text={`暂无${cashLabel}、预收预付或退款记录。`}/>;
-  return <div className="overflow-x-auto"><table className="w-full min-w-[1180px] text-sm"><thead className="border-b bg-muted/40 text-left text-muted-foreground"><tr><th className="p-3">资金单号</th><th className="p-3">款项类型</th><th className="p-3">支付方式</th><th className="p-3">状态</th><th className="p-3">合同</th><th className="p-3">收付方向</th><th className="p-3 text-right">发生金额</th><th className="p-3 text-right">已核销/退回</th><th className="p-3 text-right">可用余额</th><th className="p-3">日期</th><th className="p-3">操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b"><td className="p-3 font-mono">{item.transactionNo}</td><td className="p-3">{STAGE[item.paymentStage] || item.paymentStage}{item.relatedTransaction && <div className="text-xs text-muted-foreground">原：{item.relatedTransaction.transactionNo}</div>}</td><td className="p-3">{METHOD[item.paymentMethod] || item.paymentMethod}</td><td className="p-3"><StatusText status={item.status}>{STATUS[item.status] || item.status}</StatusText></td><td className="p-3"><div>{item.contract.contractNo}</div><div className="max-w-44 truncate text-xs text-muted-foreground">{item.contract.title}</div></td><td className="p-3">{item.direction === 'RECEIPT' ? '收款' : '付款'}</td><td className="p-3 text-right font-medium">{money(item.amount)}</td><td className="p-3 text-right">{money(Number(item.allocatedAmount) + Number(item.refundedAmount))}</td><td className="p-3 text-right">{money(Math.max(0, Number(item.amount) - Number(item.allocatedAmount) - Number(item.refundedAmount)))}</td><td className="p-3">{day(item.occurredAt)}</td><td className="p-3">{canManage && item.status !== 'VOIDED' && <Button size="sm" variant="ghost" onClick={() => onVoid(item)}>作废</Button>}</td></tr>)}</tbody></table></div>;
+  return <div className="overflow-x-auto"><table className="w-full min-w-[1180px] text-sm"><thead className="border-b bg-muted/40 text-left text-muted-foreground"><tr><th className="p-3">资金单号</th><th className="p-3">款项类型</th><th className="p-3">支付方式</th><th className="p-3">状态</th><th className="p-3">合同</th><th className="p-3">收付方向</th><th className="p-3 text-right">发生金额</th><th className="p-3 text-right">已核销/退回</th><th className="p-3 text-right">可用余额</th><th className="p-3">日期</th><th className="p-3">操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b"><td className="p-3 font-mono">{item.transactionNo}</td><td className="p-3">{STAGE[item.paymentStage] || item.paymentStage}{item.relatedTransaction && <div className="text-xs text-muted-foreground">原：{item.relatedTransaction.transactionNo}</div>}</td><td className="p-3">{METHOD[item.paymentMethod] || item.paymentMethod}</td><td className="p-3"><StatusText status={item.status}>{STATUS[item.status] || item.status}</StatusText></td><td className="p-3"><div>{item.contract?.contractNo || '未关联合同'}</div><div className="max-w-44 truncate text-xs text-muted-foreground">{item.contract?.title || '—'}</div></td><td className="p-3">{item.direction === 'RECEIPT' ? '收款' : '付款'}</td><td className="p-3 text-right font-medium">{money(item.amount)}</td><td className="p-3 text-right">{money(Number(item.allocatedAmount) + Number(item.refundedAmount))}</td><td className="p-3 text-right">{money(Math.max(0, Number(item.amount) - Number(item.allocatedAmount) - Number(item.refundedAmount)))}</td><td className="p-3">{day(item.occurredAt)}</td><td className="p-3">{canManage && item.status !== 'VOIDED' && <Button size="sm" variant="ghost" onClick={() => onVoid(item)}>作废</Button>}</td></tr>)}</tbody></table></div>;
 }
 
 function ContractLedger({ contracts }: { contracts: ContractOption[] }) {

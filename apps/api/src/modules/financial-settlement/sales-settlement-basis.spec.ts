@@ -49,6 +49,14 @@ describe('销售交付后的逐车应收来源', () => {
       inventoryNetWeight: 100, customerNetWeight: 98, weightVariance: -2, unitPrice: 2000, totalAmount: 176400 });
     expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
   });
+  it('销售免扣水分独立生效，按所选客户净重计算，不改我方出库', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'contract', type: 'SALES', pricingType: 'GRADE_TIER', lineItems: [{ id: 'contract-line', unitPrice: new Prisma.Decimal(700),
+      priceRulesSnapshot: { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX', quantityBasis: 'DRY_MATTER',
+        moistureDeductionMode: 'EXCESS', moistureBasePct: 5, moistureMaxPct: null, bands: DEFAULT_FLUORITE_ORE_BANDS, exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'FRAGMENT', formulaConfirmed: true } }] } as any);
+    row.waybill.qualityTask.basisInspection.indicators = [{ code: 'CAF2', unit: '%', measuredValue: new Prisma.Decimal(32.5) }, { code: 'MOISTURE', unit: '%', measuredValue: new Prisma.Decimal(6.8) }];
+    expect((await basis.sources('contract', 'user'))[0]).toMatchObject({ available: true, netWeight: 98, totalQuantity: 96.236, dryQuantity: 91.336, moistureDeductionMode: 'EXCESS', moistureBasePct: 5 });
+    expect(row.waybill.outboundReceipts[0].outboundQuantity.toNumber()).toBe(100);
+  });
   it('销售协商范围也采用我方发货报告水分，不只套用客户水分', async () => {
     row.waybill.qualityTask.reportLinks = [{ inspection: { id: 'our-report', status: 'CONFIRMED', evidenceStage: 'SHIPPING', conclusion: 'PASS',
       indicators: [{ code: 'MOISTURE', measuredValue: new Prisma.Decimal(5) }] } }];

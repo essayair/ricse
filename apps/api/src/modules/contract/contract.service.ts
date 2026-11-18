@@ -8,6 +8,7 @@ import { normalizeUploadFilename } from '../common/filename-encoding';
 import { AccessControlService } from '../access-control/access-control.service';
 import { resolvePagination } from '../common/pagination';
 import { bilateralContractView } from './bilateral-visibility';
+import { buildContractCopyTemplate } from './contract-copy';
 
 type QuantityValue = { quantity: unknown; unit: string };
 type ApprovalContractContext = {
@@ -477,11 +478,44 @@ export class ContractService {
     }
   }
 
+  async copyTemplate(id: string, userId: string) {
+    const access = await this.accessControl.assertPermission(userId, 'contract.create');
+    const source = await this.findOne(id, userId, 'contract.view');
+    if (access.isExternal && source.type === 'BILATERAL') throw new ForbiddenException('外部企业不能复制双边合同');
+    const options = await this.getFormOptions(userId);
+    const template = buildContractCopyTemplate(source, { departmentId: options.defaultDepartmentId, businessUnitId: options.defaultBusinessUnitId,
+      allowedBusinessUnitIds: options.businessUnits.map(unit => unit.id) });
+    const form = template.draftData.form;
+    for (const field of ['signingPartnerId', 'sellerId', 'buyerId']) {
+      const id = String(form[field] || '');
+      if (id && !options.partners.some(partner => partner.id === id)) {
+        template.warnings.push(`原${field === 'signingPartnerId' ? '我方主体' : field === 'buyerId' ? '下游客户' : '交易对手方'}已停用、删除或不可选，请重新选择`);
+        form[field] = ''; (template as any)[field] = '';
+      }
+    }
+    if (source.businessUnitId && source.businessUnitId !== form.businessUnitId) template.warnings.push(form.businessUnitId
+      ? '原业务单元不在新建授权范围内，已改为当前默认业务单元，请核对'
+      : '原业务单元不在新建授权范围内，请重新选择业务单元');
+    const ids = template.lineItems.map(line => line.materialId).filter(Boolean);
+    // 仅暴露合同填写所需的物料目录，不要求业务员拥有主数据管理/查询权限。
+    const materials = await this.prisma.material.findMany({ where: { deletedAt: null, OR: [{ status: 'ACTIVE' }, { id: { in: ids } }] },
+      select: { id: true, code: true, name: true, status: true, unit: true }, orderBy: [{ code: 'asc' }, { id: 'asc' }] });
+    for (const [index, line] of template.lineItems.entries()) {
+      if (line.materialId && !materials.some(material => material.id === line.materialId && material.status === 'ACTIVE')) {
+        template.warnings.push(`第${index + 1}行物料“${line.materialName || line.materialId}”已停用或删除，请重新选择`);
+        line.materialId = '';
+      }
+    }
+    return { ...template, sourceMaterials: materials };
+  }
+
   async create(dto: CreateContractDto, userId: string) {
     const access = await this.accessControl.assertPermission(userId, 'contract.create');
     if (access.isExternal && dto.type === 'BILATERAL') {
       throw new ForbiddenException('双边合同由内部运营人员维护；外部企业仅可查看本方方向资料');
     }
+    const copySource = dto.copySourceContractId ? await this.findOne(dto.copySourceContractId, userId, 'contract.view') : null;
+    if (copySource && access.isExternal && copySource.type === 'BILATERAL') throw new ForbiddenException('外部企业不能复制双边合同');
     const selectedParties = [dto.sellerId, dto.buyerId, dto.signingPartnerId].filter(Boolean);
     if (
       access.isExternal
@@ -529,7 +563,7 @@ export class ContractService {
     const normalizedLineItems = await this.normalizeMaterialNames(dto.lineItems || []);
 
     try {
-      return await this.prisma.contract.create({
+      const createContract = (client: Prisma.TransactionClient | PrismaService) => client.contract.create({
         data: {
           contractNo,
           clientRequestId: dto.clientRequestId,
@@ -591,6 +625,15 @@ export class ContractService {
           },
         },
         include: this.include,
+      });
+      if (!copySource) return await createContract(this.prisma);
+      return await this.prisma.$transaction(async tx => {
+        const created = await createContract(tx);
+        await tx.businessOperationLog.create({ data: {
+          businessType: 'CONTRACT', businessId: created.id, action: 'COPY_FROM', actionLabel: '复制新建合同', operatorId: userId,
+          details: { sourceContractId: copySource.id, sourceContractNo: copySource.contractNo, attachmentsCopied: false, reason: `复制自合同 ${copySource.contractNo}，未复制附件和后续业务` },
+        } });
+        return created;
       });
     } catch (error: any) {
       // 两次相同请求并发到达时，唯一约束只允许创建一份草稿。
@@ -678,6 +721,7 @@ export class ContractService {
       items: items.map((contract) => ({
         ...bilateralContractView(this.withFulfillment(contract), context?.isExternal ? context.externalPartnerId : null),
         allowedPermissions: permissionMap.get(contract.id) || [],
+        canCopy: Boolean(context && (context.isAdmin || context.permissions?.includes('contract.create')) && !(context.isExternal && contract.type === 'BILATERAL')),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     };
@@ -715,6 +759,7 @@ export class ContractService {
     );
     return {
       permissions,
+      canCopy: Boolean((context.isAdmin || context.permissions?.includes('contract.create')) && !(context.isExternal && contract.type === 'BILATERAL')),
       canEdit: ['DRAFT', 'REJECTED'].includes(contract.status) && permissions.includes('contract.edit'),
       canSubmit: ['DRAFT', 'REJECTED'].includes(contract.status) && permissions.includes('contract.submit'),
       canApprove: contract.status === 'PENDING_APPROVAL'

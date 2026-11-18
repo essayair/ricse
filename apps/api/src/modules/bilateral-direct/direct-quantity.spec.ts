@@ -3,6 +3,12 @@ import { directQuantity } from './direct-quantity';
 
 describe('直拨共同交付数量', () => {
   const water = (value: string | null) => [{ code: 'MOISTURE', name: '水分', unit: '%', measuredValue: value }];
+  it('新合同超基准扣水：两向共同数量按净重扣除超标部分', () => {
+    const rule = { moistureDeductionMode: 'EXCESS' as const, moistureBasePct: 5 };
+    expect(directQuantity(100, 'DRY_MATTER', water('3'), rule).pricingQuantity.toNumber()).toBe(100);
+    expect(directQuantity(100, 'DRY_MATTER', water('6.8'), rule)).toMatchObject({ moistureDeductionMode: 'EXCESS', moistureBasePct: 5 });
+    expect(directQuantity(100, 'DRY_MATTER', water('6.8'), rule).pricingQuantity.toNumber()).toBe(98.2);
+  });
   it('实物计价不强制水分，主辅数量相同', () => {
     const q = directQuantity('120', 'PHYSICAL', []);
     expect(q.quantity.toString()).toBe('120'); expect(q.pricingQuantity.eq(q.quantity)).toBe(true);

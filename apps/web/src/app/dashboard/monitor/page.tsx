@@ -134,7 +134,7 @@ export default function MonitorPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">影像监控</h1>
+          <h1 className="text-2xl font-bold">视频监控</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             维护监控平台凭据与摄像头点位。官网和数字大屏统一读取此处配置，不再各自硬编码。
           </p>

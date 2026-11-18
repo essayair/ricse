@@ -5,6 +5,8 @@ import { evaluateGradePrice, readMeasuredPct } from '../contract/grade-price-rul
 import { evaluateContractQualityRules } from '../quality/contract-quality-rules';
 import { goodsAmounts } from './payment-balance';
 import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
+import { moisturePricingSnapshot } from '@ricse/shared-types/moisture-pricing';
+import { settlementMoistureQuantity } from '../contract/moisture-pricing';
 
 const APPROVED_SETTLEMENT = ['CONFIRMED', 'PARTIALLY_SETTLED', 'SETTLED'];
 const SETTLEMENT_STATUS_LABEL: Record<string, string> = { DRAFT: '草稿', PENDING_APPROVAL: '审批中', REJECTED: '已驳回' };
@@ -82,12 +84,14 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
       settlementId: sale.settlement.id, settlementNo: sale.settlement.settlementNo, finalQuantity: Number(salesAdjustment.final.quantity),
       waybillLineItemIds: sale.settlement.lines.map(line => line.waybillLineItemId).filter(Boolean) as string[],
     } : null;
-    const total = sale ? Number(sale.quantity) : basis === 'DRY_MATTER' ? dry || 0 : net || 0;
+    // 直拨采购的数量规则与数量一起跟随销售；采购自己的价格/质量条款仍单独核价。
+    const moistureRule = purchase ? saleSnapshot || (gradeTier ? item?.salesPriceRulesSnapshot : null) : gradeTier ? gradeRules : null;
+    const total = sale ? Number(sale.quantity) : basis === 'DRY_MATTER' ? settlementMoistureQuantity(net, moisture, moistureRule) ?? 0 : net || 0;
     const used = row.settlementLines.reduce((a, l) => a.plus(l.quantity || 0), new Prisma.Decimal(0)).toNumber();
     const remaining = Math.max(0, new Prisma.Decimal(total).minus(used).toDecimalPlaces(3).toNumber());
     const negotiable = purchase
       ? (followAdjustment ? Number(saleSnapshot?.lineAdjustment?.quantityCeiling ?? total) : total)
-      : negotiableGoodsQuantity(total, basis, effective, reports, moisture);
+      : negotiableGoodsQuantity(total, basis, effective, reports, moisture, moistureRule);
     const grade = gradeTier && gradeRules ? evaluateGradePrice(gradeRules, gradeRules.selectedSpec, remaining, report?.indicators || []) : null;
     const evaluation = report && item?.qualityRulesSnapshot ? evaluateContractQualityRules(item.qualityRulesSnapshot, report.indicators) : null;
     const defaultAccepted = task?.basisInspectionId === report?.id && ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(task?.qualityDisposition || '');
@@ -114,7 +118,7 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
     else if (purchase && !salesApproved) followReasons.push(`${FOLLOW_SALES_PENDING}（销售结算 ${sale!.settlement.settlementNo} 当前${SETTLEMENT_STATUS_LABEL[sale!.settlement.status] || sale!.settlement.status}）`);
     const snapshot = { directDeliveryId: d?.id, directVersion: d?.version, direction, contractLineItemId: item?.id, contractRules: item?.qualityRulesSnapshot,
       gradeRules, weighTicketId: ticket?.id, ticketUpdatedAt: ticket?.updatedAt, reportId: report?.id, reportUpdatedAt: report?.updatedAt,
-      decisionVersion: task?.decisionVersion, quantityBasis: basis, totalQuantity: total, unitPrice, taxRatePct: item?.taxRatePct?.toString(), deduction, recovery, disposition,
+      decisionVersion: task?.decisionVersion, quantityBasis: basis, totalQuantity: total, unitPrice, taxRatePct: item?.taxRatePct?.toString(), deduction, recovery, disposition, ...moisturePricingSnapshot(moistureRule),
       ...(purchase ? { followSalesLineId: sale?.id || null, followSalesQuantity: sale ? String(sale.quantity) : null, salesApproved, followAdjustment } : {}) };
     const signature = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
     const inventoryReport = purchase ? report : deliveryReport;
@@ -133,7 +137,7 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
       followSalesStatus: sale?.settlement.status || null, followAdjustment, previewOnly: purchase && followReasons.length > 0 && reasons.length === 0,
       inventoryTicketNo: deliveryTicket?.ticketNo, inventoryNetWeight: deliveryTicket?.netWeight == null ? null : Number(deliveryTicket.netWeight),
       customerTicketNo: purchase ? ticket?.ticketNo : deliveryTicket?.ticketNo, customerNetWeight: d ? Number(d.quantity) : null, shippingNetWeight: effective.get('SHIPPING')?.netWeight == null ? null : Number(effective.get('SHIPPING')!.netWeight),
-      grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight), netWeight: net, measuredMoisturePct: moisture, dryQuantity: dry,
+      grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight), netWeight: net, measuredMoisturePct: moisture, dryQuantity: dry, ...moisturePricingSnapshot(moistureRule),
       pricingQuantityBasis: basis, salesCompletionConfirmedAt: d?.confirmedAt, inboundDate: d?.confirmedAt, inboundPostedAt: d?.confirmedAt,
       inboundNo: d?.documents.find(doc => doc.direction === 'PURCHASE')?.documentNo, outboundNo: d?.documents.find(doc => doc.direction === 'SALES')?.documentNo,
       qualityTaskId: task?.id, taskNo: task?.taskNo, reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo,

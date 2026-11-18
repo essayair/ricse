@@ -6,6 +6,11 @@ import type { GradePriceSnapshot } from '../components/contracts/grade-price-rul
 const rule: GradePriceSnapshot = { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX', quantityBasis: 'DRY_MATTER', selectedSpec: 'FRAGMENT', moistureMaxPct: 5, formulaConfirmed: true, exceptionHandling: 'MANUAL_REVIEW', bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: 14.8, RUN_OF_MINE: null } }] };
 
 test('完整规则无错误，未采用规格可以留空价格', () => assert.deepEqual(gradePriceRuleErrors(rule), {}));
+test('新免扣模式要求基准水分，但质量水分上限可以明确不设', () => {
+  assert.deepEqual(gradePriceRuleErrors({ ...rule, moistureDeductionMode: 'EXCESS', moistureBasePct: 5, moistureMaxPct: null }), {});
+  assert.equal(gradePriceRuleErrors({ ...rule, moistureDeductionMode: 'EXCESS', moistureBasePct: null }).moistureBasePct, '请填写基准水分，须大于等于0且小于100%');
+  assert.deepEqual(gradePriceRuleErrors({ ...rule, moistureDeductionMode: 'EXCESS', moistureBasePct: 0, moistureMaxPct: null }), {});
+});
 test('规格、计价重量、水分上限和确认均有独立错误位置', () => {
   const errors = gradePriceRuleErrors({ ...rule, selectedSpec: '', quantityBasis: undefined, moistureMaxPct: null, formulaConfirmed: false });
   assert.deepEqual(Object.keys(errors), ['selectedSpec', 'quantityBasis', 'moistureMaxPct', 'formulaConfirmed']);

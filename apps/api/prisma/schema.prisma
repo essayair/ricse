@@ -55,6 +55,7 @@ model User {
   decidedQualityTasks              QualityTask[]                @relation("QualityTaskDecider")
   qualityMethodPreferences         QualityMethodPreference[]
   uploadedAttachments              Attachment[]                 @relation("AttachmentUploader")
+  archivedBusinessImages           BusinessImage[]              @relation("BusinessImageCreator")
   createdInboundReceipts           InboundReceipt[]             @relation("InboundReceiptCreator")
   createdBusinessInbounds          BusinessInbound[]            @relation("BusinessInboundCreator")
   createdOutboundOrders            OutboundOrder[]              @relation("OutboundOrderCreator")
@@ -1010,6 +1011,7 @@ model Contract {
   paymentRequests      PaymentRequest[]
   fundClaims           FundClaim[]
   directExecutions     DirectExecution[]
+  businessImages       BusinessImage[]
 
   @@unique([createdBy, clientRequestId])
   @@index([contractNo])
@@ -1608,6 +1610,7 @@ model DispatchNotice {
   outboundOrder             OutboundOrder?
   directPurchaseExecution   DirectExecution? @relation("DirectPurchaseNotice")
   directSalesExecution      DirectExecution? @relation("DirectSalesNotice")
+  businessImages            BusinessImage[]
 
   @@index([noticeNo])
   @@index([orderId])
@@ -3066,6 +3069,7 @@ model Attachment {
   driver            Driver?            @relation(fields: [driverId], references: [id], onDelete: Restrict)
   vehicle           Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   uploader          User?              @relation("AttachmentUploader", fields: [uploadedBy], references: [id])
+  businessImage     BusinessImage?
 
   @@index([partnerId])
   @@index([contractId])
@@ -3088,6 +3092,37 @@ model Attachment {
   @@index([uploadedBy])
   @@index([sourceType])
   @@map("attachments")
+}
+
+/// 合同下集中归档的影像；与附件共享主键，关联业务单据仍复用原附件，不复制文件。
+model BusinessImage {
+  id                String   @id
+  contractId        String
+  dispatchNoticeId  String?
+  documentType      String
+  sourceOriginalName String
+  remarks           String? // 逐份归档备注，不影响文件名称或原单据内容
+  originalSize      Int
+  photoCompressed   Boolean  @default(false)
+  fileHash          String
+  nameKey           String   @default("") // 数据库同步附件名称：去首尾空格、忽略大小写，同合同归档名称唯一
+  clientRequestId   String
+  confirmedAt       DateTime @default(now())
+  createdBy         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  attachment        Attachment @relation(fields: [id], references: [id], onDelete: Cascade)
+  contract          Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  dispatchNotice    DispatchNotice? @relation(fields: [dispatchNoticeId], references: [id], onDelete: Restrict)
+  creator           User @relation("BusinessImageCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@unique([createdBy, clientRequestId])
+  @@unique([contractId, fileHash])
+  @@unique([contractId, nameKey])
+  @@index([contractId, createdAt])
+  @@index([dispatchNoticeId])
+  @@index([documentType])
+  @@map("business_images")
 }
 
 // ========== 内容运营中心 ==========

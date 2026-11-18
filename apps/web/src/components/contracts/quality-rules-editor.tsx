@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { contractQualitySnapshot } from '@/lib/contract-quality-snapshot';
 
 type Rule = {
   indicatorId?: string; code: string; name: string; symbol?: string | null; unit: string;
@@ -54,7 +55,7 @@ export function QualityRulesEditor({ materialId, scene, value, onChange }: {
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const snapshot = value && value.materialId === materialId ? value : null;
+  const snapshot = contractQualitySnapshot(value, materialId);
 
   useEffect(() => {
     if (!materialId || snapshot) return;

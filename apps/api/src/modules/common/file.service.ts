@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as Minio from 'minio';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class FileService {
@@ -100,5 +101,22 @@ export class FileService {
 
   async delete(fileName: string): Promise<void> {
     await this.client.removeObject(this.bucket, fileName);
+    // 派生预览可随原件清理，原单据删除入口也不会遗留孤立缩略图。
+    try { await this.client.removeObject(this.bucket, this.previewKey(fileName)); } catch {}
+  }
+
+  private previewKey(fileName: string) { return `business-previews/${createHash('sha256').update(fileName).digest('hex')}.jpg`; }
+
+  async uploadPreview(fileName: string, buffer: Buffer) {
+    await this.client.putObject(this.bucket, this.previewKey(fileName), buffer, buffer.length, { 'Content-Type': 'image/jpeg' });
+  }
+
+  async previewUrl(fileName: string): Promise<string | null> {
+    const key = this.previewKey(fileName);
+    try { await this.client.statObject(this.bucket, key); } catch (error: any) {
+      if (['NotFound', 'NoSuchKey', 'NoSuchObject'].includes(error?.code) || error?.statusCode === 404) return null;
+      throw error;
+    }
+    return this.getUrl(key);
   }
 }

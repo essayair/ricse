@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 test('全站入口配置统一的网站图标和缓存版本', () => {
   const entry = readFileSync(new URL('../src/app/layout.tsx', import.meta.url), 'utf8');
   assert(entry.includes('icons:') && entry.includes('apple:'));
-  for (const path of ['/favicon.ico?v=20261118', '/brand/favicon-32.png?v=20261118', '/brand/favicon-192.png?v=20261118', '/brand/apple-touch-icon.png?v=20261118']) assert(entry.includes(path));
+  for (const path of ['/favicon.ico?v=20261118c', '/brand/favicon-32.png?v=20261118c', '/brand/favicon-192.png?v=20261118c', '/brand/apple-touch-icon.png?v=20261118c']) assert(entry.includes(path));
 });
 test('公开图标资源格式、透明度及多尺寸完整', () => {
   const ico = readFileSync(new URL('../public/favicon.ico', import.meta.url));

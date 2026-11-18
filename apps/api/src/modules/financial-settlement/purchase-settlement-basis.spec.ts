@@ -29,6 +29,18 @@ describe('逐车质量结算来源与版本', () => {
     expect(rows[0]).toMatchObject({ available: false, settlementOccupied: true, totalQuantity: 100, remainingQuantity: 40, totalAmount: 78400, deductionPerTon: 40 });
     expect(rows[0].reasons.join('；')).toContain('不可重复选择');
   });
+  it('采购免扣水分按合同计算结算量，不覆盖实际干基和库存过账数量', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', lineItems: [{
+      id: 'cl', unitPrice: new Prisma.Decimal(700), taxRatePct: new Prisma.Decimal(13),
+      priceRulesSnapshot: { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX', quantityBasis: 'DRY_MATTER',
+        moistureDeductionMode: 'EXCESS', moistureBasePct: 5, moistureMaxPct: null, bands: DEFAULT_FLUORITE_ORE_BANDS, exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'FRAGMENT', formulaConfirmed: true },
+    }] } as any);
+    source.waybill.inboundReceipts[0].weighTicket.netWeight = new Prisma.Decimal(100);
+    source.waybill.qualityTask.basisInspection.indicators = [{ code: 'CAF2', unit: '%', measuredValue: new Prisma.Decimal(32.5) }, { code: 'MOISTURE', unit: '%', measuredValue: new Prisma.Decimal(6.8) }];
+    const [row] = await service.sources('c', 'u');
+    expect(row).toMatchObject({ totalQuantity: 98.2, dryQuantity: 93.2, moistureDeductionMode: 'EXCESS', moistureBasePct: 5, gradePrice: { status: 'READY' } });
+    expect(source.waybill.inboundReceipts[0].businessInbound.pricingQuantity.toNumber()).toBe(100);
+  });
   it('同一运单其他物料行被结算草稿使用时，也不能重复选择', async () => {
     source.waybill.lineItems.push({ id: 'sibling' });
     prisma.financialSettlement.findMany.mockResolvedValue([{ id: 'draft', settlementNo: 'YF-1', status: 'DRAFT', lines: [{ waybillLineItemId: 'sibling' }] }] as any);

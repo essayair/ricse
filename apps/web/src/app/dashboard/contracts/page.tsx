@@ -17,6 +17,7 @@ import { confirmAction } from '@/lib/system-dialog';
 
 interface Contract {
   id: string;
+  canCopy?: boolean;
   contractNo: string;
   title: string;
   externalNo: string | null;
@@ -271,6 +272,7 @@ export default function ContractsPage() {
                     <div className="mt-1 text-muted-foreground">{formatDate(c.createdAt)}</div>
                   </td>
                   <td className="px-4 py-3">
+                    {c.canCopy && <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); router.push(`/dashboard/contracts/${c.id}/copy`); }}>复制</Button>}
                     {['APPROVED', 'EXECUTING'].includes(c.status) && c.allowedPermissions?.includes('execution.manage') ? (
                       <Button
                         size="sm"
@@ -290,7 +292,7 @@ export default function ContractsPage() {
                         title="删除草稿">
                         <Trash2 className="h-4 w-4" />
                       </button>
-                    ) : <span className="text-muted-foreground">—</span>}
+                    ) : !c.canCopy && <span className="text-muted-foreground">—</span>}
                   </td>
                 </ClickableRow>
               ))}

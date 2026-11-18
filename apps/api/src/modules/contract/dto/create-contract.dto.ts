@@ -81,6 +81,8 @@ export class CreateContractLineItemDto {
 }
 
 export class CreateContractDto {
+  @ApiPropertyOptional({ description: '复制来源合同ID，仅用于权限复核和操作留痕，不复制关联业务' })
+  @IsOptional() @IsString() @MaxLength(64) copySourceContractId?: string;
   @IsOptional() @IsString() @MaxLength(100) salesExternalNo?: string;
   @IsOptional() @IsDateString() salesSignedAt?: string;
   @IsOptional() @IsString() @MaxLength(200) salesPaymentMethod?: string;

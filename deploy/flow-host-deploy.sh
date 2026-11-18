@@ -91,6 +91,13 @@ if [[ "${ENABLE_HTTPS}" == "true" ]]; then
     /etc/letsencrypt/renewal-hooks/deploy/10-ricse-cert-copy
   install -m 755 "${CERTBOT_HOOK_SOURCE}/post/10-ricse-nginx-start" \
     /etc/letsencrypt/renewal-hooks/post/10-ricse-nginx-start
+  # 混合 webroot/standalone 证书不能共用全局“先停Nginx”钩子。
+  install -d -m 755 /usr/local/libexec /etc/systemd/system/certbot-renew.service.d
+  install -m 755 "${CERTBOT_HOOK_SOURCE}/safe-renew.sh" /usr/local/sbin/ricse-safe-cert-renew
+  install -m 755 "${CERTBOT_HOOK_SOURCE}/safe-deploy.sh" /usr/local/libexec/ricse-cert-deploy
+  install -m 644 "${CERTBOT_HOOK_SOURCE}/certbot-renew.override.conf" \
+    /etc/systemd/system/certbot-renew.service.d/ricse-safe-renew.conf
+  systemctl daemon-reload
   nginx -t
 fi
 

@@ -1,13 +1,16 @@
 import type { GradePriceSnapshot } from '../components/contracts/grade-price-rules-editor';
 import type { FieldErrors } from './form-validation';
+import { deductibleMoisturePct } from '@ricse/shared-types/moisture-pricing';
 
 /** 提交审批前的字段级校验；保存草稿不调用阻断。 */
 export function gradePriceRuleErrors(rule: GradePriceSnapshot | null | undefined): FieldErrors {
   const errors: FieldErrors = {};
   if (!rule?.selectedSpec || !['FRAGMENT', 'RUN_OF_MINE'].includes(rule.selectedSpec)) errors.selectedSpec = '请选择本行货物规格（碎屑或统矿）';
-  if (!rule?.quantityBasis || !['DRY_MATTER', 'PHYSICAL'].includes(rule.quantityBasis)) errors.quantityBasis = '请选择计价重量：净重折干或净重';
-  if (rule?.moistureMaxPct == null) errors.moistureMaxPct = '请填写水分上限（%）';
-  else if (!Number.isFinite(rule.moistureMaxPct) || rule.moistureMaxPct < 0 || rule.moistureMaxPct > 100) errors.moistureMaxPct = '水分上限须在0至100%之间';
+  if (!rule?.quantityBasis || !['DRY_MATTER', 'PHYSICAL'].includes(rule.quantityBasis)) errors.quantityBasis = '请选择计价重量：按合同扣水后的净重或净重';
+  if (rule?.moistureDeductionMode && !['ACTUAL', 'EXCESS'].includes(rule.moistureDeductionMode)) errors.moistureDeductionMode = '请选择有效的扣水方式';
+  if (rule?.moistureDeductionMode === 'EXCESS' && rule.quantityBasis !== 'PHYSICAL' && deductibleMoisturePct(0, rule) == null) errors.moistureBasePct = '请填写基准水分，须大于等于0且小于100%';
+  if (!rule?.moistureDeductionMode && rule?.moistureMaxPct == null) errors.moistureMaxPct = '请填写水分上限（%）';
+  else if (rule?.moistureMaxPct != null && (!Number.isFinite(rule.moistureMaxPct) || rule.moistureMaxPct < 0 || rule.moistureMaxPct > 100)) errors.moistureMaxPct = '水分上限须在0至100%之间';
   if (!rule?.bands?.length) errors.bands = '请至少填写一个品位区间及对应的元/度单价';
   rule?.bands?.forEach((band, index) => {
     const key = `bands.${index}`;

@@ -19,6 +19,7 @@ import { ProductionModule } from './modules/production/production.module';
 import { PlatformUsersModule } from './modules/platform-users/platform-users.module';
 import { MobileWorkspaceModule } from './modules/mobile-workspace/mobile-workspace.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
+import { BusinessImageModule } from './modules/business-images/business-image.module';
 import { FinancialSettlementModule } from './modules/financial-settlement/financial-settlement.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { IndustryDatabaseModule } from './modules/industry-database/industry-database.module';
@@ -48,6 +49,7 @@ import { PrismaExceptionFilter } from './modules/common/prisma-exception.filter'
     PlatformUsersModule,
     MobileWorkspaceModule,
     MonitorModule,
+    BusinessImageModule,
     FinancialSettlementModule,
     NotificationModule,
     IndustryDatabaseModule,

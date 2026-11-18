@@ -5,6 +5,21 @@ const rules = { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINT
   exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'FRAGMENT', formulaConfirmed: true };
 
 describe('萤石矿品位分档计价', () => {
+  it('免扣基准不是质量上限，超基准扣重后仍可计算档位金额', () => {
+    const value = { ...rules, quantityBasis: 'DRY_MATTER', moistureDeductionMode: 'EXCESS', moistureBasePct: 5, moistureMaxPct: null };
+    expect(() => parseGradePriceRules(value)).not.toThrow();
+    expect(evaluateGradePrice(value, 'FRAGMENT', 98.2, [
+      { code: 'CAF2', measuredValue: 32.5, unit: '%' }, { code: 'MOISTURE', measuredValue: 6.8, unit: '%' },
+    ])).toMatchObject({ status: 'READY', unitPrice: 737.75, amountExTax: 72447.05 });
+    expect(evaluateGradePrice({ ...value, moistureMaxPct: 6 }, 'FRAGMENT', 98.2, [
+      { code: 'CAF2', measuredValue: 32.5, unit: '%' }, { code: 'MOISTURE', measuredValue: 6.8, unit: '%' },
+    ])).toMatchObject({ status: 'REVIEW_REQUIRED' });
+  });
+  it('免扣模式必须填写有效基准，不复用旧水分上限', () => {
+    for (const moistureBasePct of [null, undefined, -1, 100]) {
+      expect(() => parseGradePriceRules({ ...rules, moistureDeductionMode: 'EXCESS', moistureBasePct })).toThrow('基准水分');
+    }
+  });
   it('37% 落在 35–40 档，按元/度计算税前单价与金额', () => {
     expect(evaluateGradePrice(rules, 'FRAGMENT', 100, [
       { code: 'CAF2', measuredValue: 37, unit: '%' }, { code: 'MOISTURE', measuredValue: 4, unit: '%' },

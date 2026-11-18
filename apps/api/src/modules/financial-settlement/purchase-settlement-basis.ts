@@ -8,6 +8,8 @@ import { evaluateContractQualityRules } from '../quality/contract-quality-rules'
 import { goodsAmounts } from './payment-balance';
 import { assertCurrentGoodsQuantityCeiling, assertGoodsSettlementSummary } from './goods-settlement-adjustment';
 import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
+import { moisturePricingSnapshot, type MoisturePricingRule } from '@ricse/shared-types/moisture-pricing';
+import { settlementMoistureQuantity } from '../contract/moisture-pricing';
 import { directSettlementSources } from './direct-settlement-sources';
 
 export const snapshotJson = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
@@ -64,6 +66,7 @@ export class PurchaseSettlementBasis {
       const settlementOccupied = row.settlementLines.length > 0 || occupiedSettlements.length > 0;
       const item = contract.lineItems.find(l => l.id === row.dispatchNoticeLineItem.orderLineItem.contractLineItemId);
       const isGradeTier = contract.pricingType === 'GRADE_TIER';
+      const moistureRule = isGradeTier ? item?.priceRulesSnapshot as MoisturePricingRule | null : null;
       const gradeQuantityBasis = isGradeTier ? (item?.priceRulesSnapshot as { quantityBasis?: 'PHYSICAL' | 'DRY_MATTER' } | null)?.quantityBasis || 'PHYSICAL' : null;
       const receipt = w.inboundReceipts.find(r => r.status === 'POSTED' && r.businessInbound?.status === 'POSTED');
       const posted = receipt?.businessInbound, inventoryTicket = receipt?.weighTicket;
@@ -94,8 +97,9 @@ export class PurchaseSettlementBasis {
         : new Prisma.Decimal(netWeight).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(measuredMoisturePct).div(100))).toDecimalPlaces(3).toNumber();
       // 库存过账口径与合同货款口径分离：新分档合同可约定所选净重折干，存量合同沿用原净重口径。
       const settlementQuantityBasis = gradeQuantityBasis || posted?.pricingQuantityBasis || 'PHYSICAL';
+      const moistureAdjustedQuantity = settlementMoistureQuantity(netWeight, measuredMoisturePct, moistureRule);
       const totalQuantity = isGradeTier
-        ? (settlementQuantityBasis === 'DRY_MATTER' ? (dryQuantity ?? 0) : (netWeight ?? 0))
+        ? (settlementQuantityBasis === 'DRY_MATTER' ? (moistureAdjustedQuantity ?? 0) : (netWeight ?? 0))
         : separateSettlementTicket || separateSettlementReport
           ? (settlementQuantityBasis === 'DRY_MATTER' ? (dryQuantity ?? 0) : (netWeight ?? 0))
           : Number(posted?.pricingQuantity ?? posted?.quantity ?? 0);
@@ -108,7 +112,7 @@ export class PurchaseSettlementBasis {
           : candidates.length === 1 && candidates[0].status === 'REVIEWED' ? candidates[0] : undefined;
         if (effective) effectiveByStage.set(stage, effective);
       }
-      const negotiableQuantity = negotiableGoodsQuantity(totalQuantity, settlementQuantityBasis, effectiveByStage, availableReports.values(), measuredMoisturePct);
+      const negotiableQuantity = negotiableGoodsQuantity(totalQuantity, settlementQuantityBasis, effectiveByStage, availableReports.values(), measuredMoisturePct, moistureRule);
       const usedQuantity = row.settlementLines.reduce((sum, l) => sum.plus(l.quantity || 0), new Prisma.Decimal(0));
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const negotiableRemainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(negotiableQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
@@ -170,7 +174,7 @@ export class PurchaseSettlementBasis {
         gradePrice: gradePrice?.status === 'READY' ? { gradePct: gradePrice.gradePct, moisturePct: gradePrice.moisturePct, band: gradePrice.band, spec: gradePrice.spec, rate: gradePrice.rate, unitPriceExTax: gradePrice.unitPrice,
           // 仅约定回收率条款的合同写入回收率事实，存量依据签名保持不变。
           ...('recovery' in gradePrice ? { recoveryPct: gradePrice.recoveryPct, recovery: gradePrice.recovery } : {}) } : null,
-        priceRulesSnapshot: isGradeTier ? item?.priceRulesSnapshot : null };
+        priceRulesSnapshot: isGradeTier ? item?.priceRulesSnapshot : null, ...moisturePricingSnapshot(moistureRule) };
       const priorBasis = { ...basis, inboundQuantity: posted?.quantity?.toString() };
       delete (priorBasis as Partial<typeof basis>).inboundPhysicalQuantity;
       const legacyBasis = { contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
@@ -197,7 +201,7 @@ export class PurchaseSettlementBasis {
         inboundDate: receipt?.receivedAt || posted?.postedAt || null,
         grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight),
         tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
-        netWeight, measuredMoisturePct, dryQuantity,
+        netWeight, measuredMoisturePct, dryQuantity, ...moisturePricingSnapshot(moistureRule),
         pricingQuantityBasis: settlementQuantityBasis,
         qualityTaskId: task?.id, taskNo: task?.taskNo, reportId: report?.id, reportNo: report?.reportNo || report?.inspectionNo,
         inventoryReportId: inventoryReport?.id, inventoryReportNo: inventoryReport?.reportNo || inventoryReport?.inspectionNo,

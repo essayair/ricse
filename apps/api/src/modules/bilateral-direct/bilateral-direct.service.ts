@@ -311,8 +311,9 @@ export class BilateralDirectService {
     const source = w.dispatchNotice.order.contract.lineItems.find(l => l.id === w.lineItems[0].dispatchNoticeLineItem.orderLineItem.contractLineItemId);
     if (!source) throw new BadRequestException('无法匹配合同物料行');
     const material = await tx.material.findUnique({ where: { id: source.materialId }, select: { pricingQuantityBasis: true } });
-    const basis = source.pricingQuantityBasis || material?.pricingQuantityBasis || '';
-    const qty = directQuantity(ticket.netWeight!, basis, task.basisInspection.indicators);
+    const salesRules = w.dispatchNotice.order.contract.pricingType === 'GRADE_TIER' ? source.salesPriceRulesSnapshot as any : null;
+    const basis = (salesRules?.moistureDeductionMode ? salesRules.quantityBasis : null) || source.pricingQuantityBasis || material?.pricingQuantityBasis || '';
+    const qty = directQuantity(ticket.netWeight!, basis, task.basisInspection.indicators, salesRules);
     const reports = [...new Map([...(task.reports || []), ...(task.reportLinks || []).map(l => l.inspection), task.basisInspection].map(r => [r.id, r])).values()];
     const evidenceSides = directEvidenceSnapshot(w.weighTickets, reports, task.basisInspection.id);
     return { w, ...qty, pricingQuantityBasis: basis, snapshot: json({ contractId: w.dispatchNotice.order.contractId, contractLineItemId: source.id, executionId: w.dispatchNotice.directSalesExecution!.id,
@@ -320,6 +321,7 @@ export class BilateralDirectService {
       reportId: task.basisInspection.id, reportNo: task.basisInspection.reportNo || task.basisInspection.inspectionNo, reportUpdatedAt: task.basisInspection.updatedAt, evidenceStage: task.basisInspection.evidenceStage,
       indicators: task.basisInspection.indicators, decisionVersion: task.decisionVersion, finalConclusion: task.finalConclusion, acceptQualityException: Boolean(dto.acceptQualityException),
       quantity: qty.quantity.toString(), pricingQuantity: qty.pricingQuantity.toString(), pricingQuantityBasis: basis, measuredMoisturePct: qty.measuredMoisturePct,
+      ...(salesRules?.moistureDeductionMode ? { moistureDeductionMode: salesRules.moistureDeductionMode, ...(salesRules.moistureDeductionMode === 'EXCESS' ? { moistureBasePct: salesRules.moistureBasePct } : {}) } : {}),
       evidenceSides,
       // 仅跨侧时写入，保持同侧快照与历史版本一致。
       ...(crossSide ? { crossSide: true, crossSideReason } : {}),

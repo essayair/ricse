@@ -77,6 +77,12 @@ export class ContractController {
     return this.contractService.getBusinessUnitFilterOptions(userId);
   }
 
+  @Get(':id/copy-template')
+  @ApiOperation({ summary: '读取复制新建模板，不生成合同；需查看来源及创建权限' })
+  copyTemplate(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.contractService.copyTemplate(id, userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '合同详情' })
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {

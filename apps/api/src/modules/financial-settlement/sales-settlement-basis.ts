@@ -8,6 +8,8 @@ import { assertCurrentGoodsQuantityCeiling, assertGoodsSettlementSummary } from 
 import { signature } from './purchase-settlement-basis';
 import { negotiableGoodsQuantity } from './negotiable-goods-quantity';
 import { directSettlementSources } from './direct-settlement-sources';
+import { moisturePricingSnapshot, type MoisturePricingRule } from '@ricse/shared-types/moisture-pricing';
+import { settlementMoistureQuantity } from '../contract/moisture-pricing';
 
 /** 销售货款以交付事实编制；我方出库过账量始终单独留存，不被客户计量覆盖。 */
 export class SalesSettlementBasis {
@@ -55,6 +57,7 @@ export class SalesSettlementBasis {
       const item = contract.lineItems.find(line => line.id === row.dispatchNoticeLineItem.orderLineItem.contractLineItemId);
       const gradeTier = contract.pricingType === 'GRADE_TIER';
       const gradeRules = contract.type === 'BILATERAL' ? item?.salesPriceRulesSnapshot : item?.priceRulesSnapshot;
+      const moistureRule = gradeTier ? gradeRules as MoisturePricingRule | null : null;
       const outbound = w.outboundReceipts.find(receipt => receipt.status === 'POSTED');
       const inventoryTicket = outbound?.weighTicket;
       const task = w.qualityTask;
@@ -76,7 +79,7 @@ export class SalesSettlementBasis {
       const netWeight = ticket?.netWeight == null ? null : Number(ticket.netWeight);
       const dryQuantity = netWeight == null || measuredMoisturePct == null ? null
         : new Prisma.Decimal(netWeight).mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(measuredMoisturePct).div(100))).toDecimalPlaces(3).toNumber();
-      const totalQuantity = pricingQuantityBasis === 'DRY_MATTER' ? (dryQuantity ?? 0) : (netWeight ?? 0);
+      const totalQuantity = pricingQuantityBasis === 'DRY_MATTER' ? (settlementMoistureQuantity(netWeight, measuredMoisturePct, moistureRule) ?? 0) : (netWeight ?? 0);
       const effectiveByStage = new Map<string, (typeof w.weighTickets)[number]>();
       for (const stage of ['SHIPPING', 'RECEIVING']) {
         const candidates = w.weighTickets.filter(candidate => candidate.weighingStage === stage);
@@ -85,7 +88,7 @@ export class SalesSettlementBasis {
           : candidates.length === 1 && candidates[0].status === 'REVIEWED' ? candidates[0] : undefined;
         if (effective) effectiveByStage.set(stage, effective);
       }
-      const negotiableQuantity = negotiableGoodsQuantity(totalQuantity, pricingQuantityBasis, effectiveByStage, reports.values(), measuredMoisturePct);
+      const negotiableQuantity = negotiableGoodsQuantity(totalQuantity, pricingQuantityBasis, effectiveByStage, reports.values(), measuredMoisturePct, moistureRule);
       const usedQuantity = row.settlementLines.reduce((sum, line) => sum.plus(line.quantity || 0), new Prisma.Decimal(0));
       const remainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(totalQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
       const negotiableRemainingQuantity = Prisma.Decimal.max(0, new Prisma.Decimal(negotiableQuantity).minus(usedQuantity)).toDecimalPlaces(3).toNumber();
@@ -133,7 +136,7 @@ export class SalesSettlementBasis {
         outboundReceiptId: outbound?.id, outboundQuantity: outbound?.outboundQuantity?.toString(), outboundStatus: outbound?.status,
         weighTicketId: ticket?.id, ticketUpdatedAt: ticket?.updatedAt, weightSelectionId: sourceSelection?.id,
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, reportId: report?.id, reportUpdatedAt: report?.updatedAt,
-        pricingQuantityBasis, totalQuantity, unitPrice, contractTaxRatePct: item?.taxRatePct?.toString(), gradePrice: gradePrice?.status === 'READY' ? gradePrice : null,
+        pricingQuantityBasis, totalQuantity, unitPrice, contractTaxRatePct: item?.taxRatePct?.toString(), gradePrice: gradePrice?.status === 'READY' ? gradePrice : null, ...moisturePricingSnapshot(moistureRule),
       };
       return {
         id: row.id, waybillLineItemId: row.id, waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo,
@@ -153,7 +156,7 @@ export class SalesSettlementBasis {
         availableQualityReports: [...reports.values()].map(candidate => ({ id: candidate.id, reportNo: candidate.reportNo || candidate.inspectionNo, evidenceStage: candidate.evidenceStage, institutionName: candidate.institutionName, conclusion: candidate.conclusion,
           measuredGradePct: readMeasuredPct(candidate.indicators || [], 'GRADE'), measuredMoisturePct: readMeasuredPct(candidate.indicators || [], 'MOISTURE'), measuredRecoveryPct: readMeasuredPct(candidate.indicators || [], 'RECOVERY') })),
         netWeight, grossWeight: ticket?.grossWeight == null ? null : Number(ticket.grossWeight), tareWeight: ticket?.tareWeight == null ? null : Number(ticket.tareWeight),
-        measuredMoisturePct, dryQuantity, pricingQuantityBasis, totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity,
+        measuredMoisturePct, dryQuantity, ...moisturePricingSnapshot(moistureRule), pricingQuantityBasis, totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity,
         negotiableQuantity, negotiableRemainingQuantity, settlementOccupied, occupiedSettlements,
         unitPrice, contractTaxRatePct: item?.taxRatePct == null ? null : Number(item.taxRatePct), pricingType: contract.pricingType || 'FIXED', gradePrice, deductionPerTon: 0, recoveryDeductionPerTon,
         qualityDisposition: task?.qualityDisposition && task.qualityDisposition !== 'PENDING'

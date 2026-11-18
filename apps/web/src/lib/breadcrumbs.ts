@@ -296,6 +296,8 @@ function resolveFinance(pathname: string, params?: BreadcrumbSearchParams): Brea
 }
 
 function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): BreadcrumbResult {
+  const contractCopy = pathname.match(/^\/dashboard\/contracts\/([^/]+)\/copy$/);
+  if (contractCopy) return { supported: true, items: withHome([{ label: '采销管理' }, { label: '合同管理', href: '/dashboard/contracts' }, { label: '来源合同', href: `/dashboard/contracts/${contractCopy[1]}` }, { label: '复制新建合同' }]) };
   if (pathname === '/dashboard') return { items: [{ label: '首页' }], supported: true };
 
   const finance = resolveFinance(pathname, params);
@@ -320,7 +322,9 @@ function resolveBreadcrumbs(pathname: string, params?: BreadcrumbSearchParams): 
   const exactRoutes: Record<string, BreadcrumbItem[]> = {
     '/dashboard/dispatch': [{ label: '物流管理' }, { label: '调度看板' }],
     '/dashboard/inventory': [{ label: '库存管理' }, { label: '在库总览' }],
-    '/dashboard/monitor': [{ label: '影像监控' }],
+    '/dashboard/monitor': [{ label: '影像监控' }, { label: '视频监控' }],
+    '/dashboard/business-images': [{ label: '影像监控' }, { label: '业务影像' }],
+    '/dashboard/business-images/new': [{ label: '影像监控' }, { label: '业务影像', href: '/dashboard/business-images' }, { label: '归档资料' }],
     '/dashboard/system/access-control': [{ label: '系统管理' }, { label: '用户与权限' }],
     '/dashboard/system/approvals': [{ label: '系统管理' }, { label: '审批流程' }],
     '/dashboard/content/articles': [{ label: '内容运营中心' }, { label: '资讯管理' }],

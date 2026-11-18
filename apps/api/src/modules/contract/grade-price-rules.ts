@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { deductibleMoisturePct, type MoisturePricingRule } from '@ricse/shared-types/moisture-pricing';
 
 export type GradePriceBand = { lower: number; upper: number; rates: { FRAGMENT: number | null; RUN_OF_MINE: number | null } };
 /**
@@ -13,13 +14,13 @@ export type RecoveryAdjustmentRule = {
   stepMode: 'PROPORTIONAL' | 'FULL_POINT';
   note?: string;
 };
-export type GradePriceRules = {
+export type GradePriceRules = MoisturePricingRule & {
   version: 1;
   method: 'CAF2_GRADE_TIER';
   quantityBasis?: 'PHYSICAL' | 'DRY_MATTER';
   gradeUnit: 'PERCENT_POINTS';
   rateUnit: 'CNY_PER_DEGREE_EX_TAX';
-  moistureMaxPct: number;
+  moistureMaxPct: number | null;
   bands: GradePriceBand[];
   exceptionHandling: 'MANUAL_REVIEW';
   selectedSpec: 'FRAGMENT' | 'RUN_OF_MINE';
@@ -42,12 +43,18 @@ export function parseGradePriceRules(value: unknown, options: { requireQuantityB
     throw new BadRequestException('请选择本行货物规格（碎屑或统矿）');
   }
   if ((options.requireQuantityBasis || rules.quantityBasis != null) && !['PHYSICAL', 'DRY_MATTER'].includes(rules.quantityBasis || '')) {
-    throw new BadRequestException('请选择计价重量：所选磅单净重折干或所选磅单净重');
+    throw new BadRequestException('请选择计价重量：按合同扣水后的净重或所选磅单净重');
   }
-  if (rules.moistureMaxPct == null) {
+  if (rules.moistureDeductionMode && !['ACTUAL', 'EXCESS'].includes(rules.moistureDeductionMode)) {
+    throw new BadRequestException('请选择有效的扣水方式');
+  }
+  if (rules.moistureDeductionMode === 'EXCESS' && rules.quantityBasis !== 'PHYSICAL' && deductibleMoisturePct(0, rules) == null) {
+    throw new BadRequestException('请填写基准水分（免扣水分），须大于等于0且小于100%');
+  }
+  if (!rules.moistureDeductionMode && rules.moistureMaxPct == null) {
     throw new BadRequestException('请填写水分上限（%）');
   }
-  if (!Number.isFinite(rules.moistureMaxPct) || Number(rules.moistureMaxPct) < 0 || Number(rules.moistureMaxPct) > 100) {
+  if (rules.moistureMaxPct != null && (!Number.isFinite(rules.moistureMaxPct) || Number(rules.moistureMaxPct) < 0 || Number(rules.moistureMaxPct) > 100)) {
     throw new BadRequestException('水分上限必须为0至100之间的百分比');
   }
   if (!Array.isArray(rules.bands) || !rules.bands.length) {
@@ -136,7 +143,7 @@ export function evaluateGradePrice(rulesValue: unknown, spec: 'FRAGMENT' | 'RUN_
   const reasons: string[] = [];
   if (gradePct === null) reasons.push('缺少有效的 CaF₂ 实测品位');
   if (moisturePct === null) reasons.push('缺少有效的水分实测值');
-  if (moisturePct !== null && moisturePct > rules.moistureMaxPct) reasons.push(`水分 ${moisturePct}% 超过合同上限 ${rules.moistureMaxPct}%，须人工确认处理方式`);
+  if (moisturePct !== null && rules.moistureMaxPct != null && moisturePct > rules.moistureMaxPct) reasons.push(`水分 ${moisturePct}% 超过合同${rules.moistureDeductionMode ? '质量水分' : ''}上限 ${rules.moistureMaxPct}%，须人工确认处理方式`);
   if (rules.recoveryAdjustment && recoveryPct === null) reasons.push('合同约定选矿回收率扣价，所选检测报告缺少有效的“选矿回收率”实测值');
   const band = gradePct === null ? null : rules.bands.find(row => gradePct >= row.lower && gradePct < row.upper) || null;
   if (gradePct !== null && !band) reasons.push(`CaF₂ ${gradePct}% 不在合同价格表区间内`);

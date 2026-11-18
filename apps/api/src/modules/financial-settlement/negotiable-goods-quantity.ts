@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { readMeasuredPct } from '../contract/grade-price-rules';
+import { type MoisturePricingRule } from '@ricse/shared-types/moisture-pricing';
+import { settlementMoistureQuantity } from '../contract/moisture-pricing';
 
 type Ticket = { weighingStage: string; netWeight: Prisma.Decimal.Value | null };
 type Report = { evidenceStage?: string | null; status: string; deletedAt?: Date | null; indicators?: Parameters<typeof readMeasuredPct>[0] };
@@ -11,6 +13,7 @@ export function negotiableGoodsQuantity(
   effectiveByStage: ReadonlyMap<string, Ticket>,
   reports: Iterable<Report>,
   selectedMoisturePct: number | null,
+  moistureRule?: MoisturePricingRule | null,
 ): number {
   // 保留既有边界：仅一侧有效计量，不能借协商入口扩大数量。
   if (!effectiveByStage.has('SHIPPING') || !effectiveByStage.has('RECEIVING')) return baseQuantity;
@@ -27,7 +30,8 @@ export function negotiableGoodsQuantity(
     // 历史报告未分类或本侧未单独化验时，沿用已选报告，不凭空推定水分为0。
     if (!moistureValues.length && validMoisture(selectedMoisturePct)) moistureValues.push(selectedMoisturePct);
     for (const moisture of moistureValues) {
-      candidates.push(net.mul(new Prisma.Decimal(1).minus(new Prisma.Decimal(moisture).div(100))).toDecimalPlaces(3).toNumber());
+      const quantity = settlementMoistureQuantity(net, moisture, moistureRule);
+      if (quantity != null) candidates.push(quantity);
     }
   }
   return Math.max(...candidates);

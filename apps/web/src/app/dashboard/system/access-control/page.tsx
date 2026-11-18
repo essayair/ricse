@@ -71,6 +71,7 @@ const MODULE_LABELS: Record<string, string> = {
   LOGISTICS: '物流管理',
   QUALITY: '磅单质检',
   MONITOR: '影像监控',
+  BUSINESS_IMAGE: '业务影像',
   INVENTORY: '库存管理',
   PRODUCTION: '生产管理',
   SETTLEMENT: '资金结算',

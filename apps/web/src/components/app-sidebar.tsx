@@ -185,6 +185,7 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
   const canViewIndustry = userRole === 'ADMIN'
     || permissions.some((code) => code.startsWith('industry.database.'));
   const canViewMonitor = userRole === 'ADMIN' || permissions.some((code) => code.startsWith('monitor.'));
+  const canViewBusinessImages = userRole === 'ADMIN' || permissions.includes('business_image.view');
   const can = (permission: string) => userRole === 'ADMIN' || permissions.includes(permission);
   const permissionForHref = (href: string) => {
     if (href.startsWith('/dashboard/contracts')) return 'contract.view';
@@ -290,13 +291,15 @@ export function AppSidebar({ userRole, permissions = [] }: { userRole: string; p
           />
         ))}
 
-        {/* 影像监控是独立业务入口，位于应收管理之后；配置能力仍由 monitor.* 权限控制。 */}
-        {canViewMonitor && (
-          <SidebarIconItem
+        {(canViewMonitor || canViewBusinessImages) && (
+          <SidebarGroupItem
             icon={Video}
             label="影像监控"
-            isActive={pathname === '/dashboard/monitor'}
-            href="/dashboard/monitor"
+            items={[
+              ...(canViewBusinessImages ? [{ href: '/dashboard/business-images', label: '业务影像' }] : []),
+              ...(canViewMonitor ? [{ href: '/dashboard/monitor', label: '视频监控' }] : []),
+            ]}
+            isActive={isActive}
           />
         )}
 

@@ -9,6 +9,8 @@ const BASE = 'http://127.0.0.1:3000/api/v1';
 const OUT = process.argv[2] || `/private/tmp/ricse-direct-http-${Date.now()}.json`;
 const stamp = new Date().toISOString().replace(/\D/g, '').slice(4, 14);
 const TAG = `E2E-ZB-${stamp}`;
+const EXCESS_MOISTURE = process.env.TEST_MOISTURE_EXCESS === '1';
+const firstSettlementQuantity = EXCESS_MOISTURE ? 19.7 : 19.1;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
 const results = []; const observations = []; const ctx = {};
 let token; let THIRD_PARTY_ID;
@@ -50,7 +52,7 @@ const observe = (id, title, detail) => { observations.push({ id, title, detail }
 const bands = (delta = 0) => [[10, 15, 14.8], [15, 20, 18.5], [20, 25, 20.5], [25, 30, 22], [30, 35, 22.7], [35, 40, 23.2], [40, 45, 23.5], [45, 50, 23.8]]
   .map(([lower, upper, rate]) => ({ lower, upper, rates: { FRAGMENT: +(rate + delta).toFixed(4), RUN_OF_MINE: +(rate + delta).toFixed(4) } }));
 const grade = delta => ({ version: 1, method: 'CAF2_GRADE_TIER', quantityBasis: 'DRY_MATTER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
-  moistureMaxPct: 8, bands: bands(delta), exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'RUN_OF_MINE', formulaConfirmed: true, recoveryAdjustment: null });
+  moistureMaxPct: 8, ...(EXCESS_MOISTURE ? { moistureDeductionMode: 'EXCESS', moistureBasePct: delta ? 3 : 4 } : {}), bands: bands(delta), exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'RUN_OF_MINE', formulaConfirmed: true, recoveryAdjustment: null });
 
 async function fillTicket(ticketId, gross, tare, remark) {
   await api(`/weigh-tickets/${ticketId}/weights`, 'PATCH', { source: 'DIRECT', grossWeight: gross, tareWeight: tare });
@@ -70,6 +72,7 @@ async function report(taskId, sampleId, ticketId, stage, institutionType, caf2, 
     indicators: [
       { code: 'CAF2', name: '氟化钙', operator: 'GTE', standardValue: 10, measuredValue: caf2, unit: '%' },
       { code: 'MOISTURE', name: '水分', operator: 'LTE', standardValue: 8, measuredValue: moisture, unit: '%' },
+      { code: 'CACO3', name: '碳酸钙', operator: 'LTE', standardValue: 1, measuredValue: 0.8, unit: '%' },
     ], remarks: '本地模拟数据，非真实检测',
   });
   await upload(`/quality-inspections/${r.id}/attachments`, 'REPORT', '检测报告');
@@ -244,10 +247,10 @@ async function main() {
     await step('T1-14', '常规“销售完成确认”接口对直拨运单被拦截', () => expectFail(`/waybills/${t1.w.id}/sales-completion`, 'POST', { customerWeighTicketId: t1.recvTicket?.id, qualityReportId: t1.reps.B?.id, remarks: 'x' }, /直拨交付/));
     await step('T1-15', '交付说明为空被拦截', () => expectFail(`/bilateral-direct/waybills/${t1.w.id}/preview`, 'POST', { weighTicketId: t1.recvTicket?.id, qualityReportId: t1.reps.B?.id, remarks: '' }));
     await step('T1-16', '采用发货侧报告（非最终采用报告）被拦截', () => expectFail(`/bilateral-direct/waybills/${t1.w.id}/preview`, 'POST', { weighTicketId: t1.recvTicket?.id, qualityReportId: t1.reps.A?.id, remarks: '测试' }, /报告|判定/));
-    const prev = await step('T1-17', '直拨交付预览：收货磅单 19.8 吨 × (1-4.5%) 折干', async () => {
+    const prev = await step('T1-17', '直拨交付预览：按合同扣水方式计算收货磅单计价量', async () => {
       const p = await api(`/bilateral-direct/waybills/${t1.w.id}/preview`, 'POST', { weighTicketId: t1.recvTicket.id, qualityReportId: t1.reps.B.id, remarks: '预览' });
       observe('T1-17', '交付预览快照', { quantity: p.snapshot.quantity, pricingQuantity: p.snapshot.pricingQuantity, basis: p.snapshot.pricingQuantityBasis, moisture: p.snapshot.measuredMoisturePct, createsInventory: p.createsInventory });
-      assert.equal(Number(p.snapshot.quantity), 19.8); assert.equal(Number(p.snapshot.pricingQuantity), 18.909); return `实物 ${p.snapshot.quantity} / 折干 ${p.snapshot.pricingQuantity}`;
+      assert.equal(Number(p.snapshot.quantity), 19.8); assert.equal(Number(p.snapshot.pricingQuantity), EXCESS_MOISTURE ? 19.503 : 18.909); return `实物 ${p.snapshot.quantity} / 计价 ${p.snapshot.pricingQuantity}`;
     });
     const inv0 = await api('/inventory/overview').catch(() => null);
     const d1 = await step('T1-18', '确认直拨交付（仓储库管）：生成采购业务入库 + 销售出库', async () => {
@@ -337,8 +340,8 @@ async function main() {
     });
     const sales = await src('RECEIVABLE');
     const s1 = sales.find(x => x.waybillId === t1.w.id), s2 = sales.find(x => x.waybillId === t2.w.id);
-    await step('S-04', '销售结算默认采用交付确认的磅单与报告（第1车为供应商发货磅单 20 吨 × (1-4.5%) = 19.1）', async () => {
-      assert.equal(s1.weighTicketId, t1.shipTicket.id); assert.equal(s1.reportId, t1.reps.B.id); assert.equal(s1.remainingQuantity, 19.1);
+    await step('S-04', '销售结算采用交付依据，按合同扣水后形成数量', async () => {
+      assert.equal(s1.weighTicketId, t1.shipTicket.id); assert.equal(s1.reportId, t1.reps.B.id); assert.equal(s1.remainingQuantity, firstSettlementQuantity);
       return `第1车 ${s1.ticketNo} ${s1.remainingQuantity} 吨；第2车 ${s2.ticketNo} ${s2.remainingQuantity} 吨`;
     });
     const ys1 = await step('S-05', '第1车销售结算（默认依据）：创建草稿', async () => {
@@ -350,7 +353,7 @@ async function main() {
       return expectFail('/financial-settlements', 'POST', { contractId: C, direction: 'PAYABLE', settlementScope: 'GOODS', lines: [lineOf(x)] }, /草稿/);
     });
     await step('S-07', '第1车销售结算确认并审批', async () => { await api(`/financial-settlements/${ys1.id}/confirm`, 'POST', {}); const r = await approveAll(ys1.id); assert.equal(r.status, 'CONFIRMED'); return `${r.settlementNo} ${r.status} 数量 ${r.quantity} 金额 ${r.totalAmount}`; });
-    const ys2 = await step('S-08', '第2车销售结算：协商数量 18.3 吨（低于折干 18.754）', async () => {
+    const ys2 = await step('S-08', '第2车销售结算：协商数量18.3吨，低于本车合同扣水计价量', async () => {
       const r = await api('/financial-settlements', 'POST', { contractId: C, direction: 'RECEIVABLE', settlementScope: 'GOODS', lines: [lineOf(s2, { quantity: 18.3, negotiatedQuantity: true, remarks: `${TAG}与客户协商按 18.3 吨结算` })], remarks: TAG });
       ctx.ys2 = { id: r.id, no: r.settlementNo, q: r.quantity, amt: r.totalAmount }; assert.equal(Number(r.quantity), 18.3); return r;
     });
@@ -361,7 +364,7 @@ async function main() {
     const pay = await step('S-10', '销售审批后：采购来源跟随销售（磅单、报告、数量）', async () => {
       const list = await src('PAYABLE'); const a = list.find(v => v.waybillId === t1.w.id), b = list.find(v => v.waybillId === t2.w.id);
       assert(a.available && b.available, JSON.stringify([a.reasons, b.reasons]));
-      assert.equal(a.weighTicketId, t1.shipTicket.id); assert.equal(a.reportId, t1.reps.B.id); assert.equal(a.remainingQuantity, 19.1); assert.equal(a.availableWeighTickets.length, 1);
+      assert.equal(a.weighTicketId, t1.shipTicket.id); assert.equal(a.reportId, t1.reps.B.id); assert.equal(a.remainingQuantity, firstSettlementQuantity); assert.equal(a.availableWeighTickets.length, 1);
       assert.equal(b.remainingQuantity, 18.3); assert.equal(b.followSalesSettlementNo, ys2.settlementNo);
       ctx.p1 = { a: { q: a.remainingQuantity, price: a.unitPrice }, b: { q: b.remainingQuantity, price: b.unitPrice } };
       return `第1车 ${a.remainingQuantity} 吨（采购价 ${a.unitPrice} 元/吨）跟随 ${a.followSalesSettlementNo}；第2车 ${b.remainingQuantity} 吨跟随 ${b.followSalesSettlementNo}`;
@@ -377,7 +380,7 @@ async function main() {
       const yf = await step('S-16', '采购结算按跟随数量创建（金额按采购价）', async () => {
         const r = await api('/financial-settlements', 'POST', base({}));
         ctx.yfId = r.id; ctx.yf = { id: r.id, no: r.settlementNo, q: r.quantity, amt: r.totalAmount, lines: r.lines.map(l => ({ q: l.quantity, price: l.unitPrice, amt: l.totalAmount })) };
-        assert.equal(Number(r.quantity), 37.4); return `${r.settlementNo} 数量 ${r.quantity}（销售 19.1＋18.3）金额 ${r.totalAmount}`;
+        assert.equal(Number(r.quantity), Number((firstSettlementQuantity + 18.3).toFixed(3))); return `${r.settlementNo} 数量 ${r.quantity}（销售 ${firstSettlementQuantity}＋18.3）金额 ${r.totalAmount}`;
       });
       await step('S-17', '存在跟随的采购结算时，作废销售结算被拦截', () => expectFail(`/financial-settlements/${ys1.id}/void`, 'POST', {}, /先作废该采购结算/));
       if (ctx.yfId) await step('S-18', '采购结算确认并审批（含协商数量车次须上传签章确认单）', async () => {
