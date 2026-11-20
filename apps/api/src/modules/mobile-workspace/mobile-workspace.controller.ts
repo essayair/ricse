@@ -27,6 +27,7 @@ import { CreateDriverDto } from '../master-data/dto/driver.dto';
 import { CreateVehicleDto } from '../master-data/dto/vehicle.dto';
 import { BatchCreateWaybillDto } from '../logistics/dto/create-waybill.dto';
 import { AssignWaybillDto } from '../logistics/dto/assign-waybill.dto';
+import { UpdateCargoSpecDto } from '../logistics/dto/update-cargo-spec.dto';
 import { SelectEffectiveRecordsDto, UpdateWeighTicketStatusDto, UpdateWeighWeightsDto } from '../weighbridge/dto/update-weigh-ticket.dto';
 import { SelectWaybillWeightDto } from '../weighbridge/dto/select-waybill-weight.dto';
 import { UpdateQualityStatusDto } from '../quality/dto/update-quality-status.dto';
@@ -302,6 +303,11 @@ export class MobileWorkspaceController {
     @CurrentUser('id') userId: string,
   ) {
     return this.waybillService.assign(id, data, userId);
+  }
+
+  @Patch('waybills/:id/cargo-spec')
+  updateWaybillCargoSpec(@Param('id') id: string, @Body() dto: UpdateCargoSpecDto, @CurrentUser('id') userId: string) {
+    return this.waybillService.updateCargoSpec(id, dto.cargoSpec, dto.reason, userId);
   }
 
   @Patch('waybills/:id/carrier')

@@ -23,6 +23,22 @@ describe('逐车质量结算来源与版本', () => {
     source.waybill.inboundReceipts[0].businessInbound.pricingQuantity = new Prisma.Decimal(100);
     prisma.waybillLineItem.findMany.mockResolvedValue([source]);
   });
+  it('采购分别计价按本车实际规格取价，漏填时不套合同残留默认值', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'c', type: 'PURCHASE', pricingType: 'GRADE_TIER', lineItems: [{ id: 'cl', unitPrice: new Prisma.Decimal(700),
+      priceRulesSnapshot: { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX', quantityBasis: 'PHYSICAL', moistureMaxPct: 5, exceptionHandling: 'MANUAL_REVIEW', formulaConfirmed: true, selectedSpec: 'FRAGMENT', specPricingMode: 'BY_SPEC', applicableSpecs: ['FRAGMENT', 'RUN_OF_MINE'], bands: [{ lower: 30, upper: 35, rates: { FRAGMENT: 22.7, RUN_OF_MINE: 24 } }] } }] } as any);
+    source.waybill.qualityTask.basisInspection.indicators = [{ code: 'CAF2', unit: '%', measuredValue: 32.5 }, { code: 'MOISTURE', unit: '%', measuredValue: 4 }];
+    let row = (await service.sources('c', 'u'))[0];
+    expect(row.gradePrice).toMatchObject({ status: 'REVIEW_REQUIRED' });
+    expect(row.reasons.join('；')).toContain('补充本车货物规格');
+    source.waybill.cargoSpec = 'RUN_OF_MINE';
+    row = (await service.sources('c', 'u'))[0];
+    expect(row).toMatchObject({ cargoSpec: 'RUN_OF_MINE', unitPrice: 780, gradePrice: { status: 'READY', spec: 'RUN_OF_MINE', rate: 24 } });
+    const signatureBefore = row.signature;
+    source.waybill.cargoSpec = 'FRAGMENT';
+    const changed = (await service.sources('c', 'u'))[0];
+    expect(changed.signature).not.toBe(signatureBefore);
+  });
+
   it('已有部分数量结算也占用整张运单，不能因余量或切换磅单重复创建', async () => {
     source.settlementLines.push({ quantity: new Prisma.Decimal(60) });
     const rows = await service.sources('c', 'u');

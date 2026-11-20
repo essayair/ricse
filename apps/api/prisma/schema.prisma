@@ -1650,6 +1650,7 @@ model Waybill {
   waybillNo           String    @unique
   dispatchNoticeId    String
   status              String    @default("PENDING") // PENDING | IN_TRANSIT | ARRIVED | SIGNED | CANCELLED
+  cargoSpec           String?   // 本车实际规格 FRAGMENT | RUN_OF_MINE；一车一种，可后补，不猜测历史值
   freightMode         String    @default("SELF") // SELF | THIRD_PARTY | SOCIAL（社会运力：车辆/司机归属不校验，开票承运商可延迟绑定）
   vehicleId           String?
   driverId            String?

@@ -15,11 +15,12 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { DriverSelect } from './driver-select';
 import { driverMatchesTransport, FleetCarrierLink, vehicleMatchesTransport } from '@/lib/logistics-resources';
+import { CARGO_SPECS, SPEC_LABELS, type CargoSpec } from '@ricse/shared-types/grade-price-spec';
 
 interface Notice { id: string; noticeNo: string; type: string; status: string; order: { orderNo: string; name: string; contract: { contractNo: string } } }
 interface Available {
   notice: Notice & { originLocation?: string; destinationLocation?: string; warehouse?: { address?: string } | null };
-  lineItems: Array<{ dispatchNoticeLineItemId: string; materialName: string | null; materialId: string; unit: string; noticeQuantity: number; waybillQuantity: number; availableQuantity: number }>;
+  lineItems: Array<{ dispatchNoticeLineItemId: string; cargoSpecOptions?: CargoSpec[]; materialName: string | null; materialId: string; unit: string; noticeQuantity: number; waybillQuantity: number; availableQuantity: number }>;
 }
 interface Vehicle {
   id: string; plateNo: string; vehicleType: string; brand?: string; driverName?: string; driverPhone?: string; loadCapacity: string;
@@ -34,6 +35,7 @@ interface Driver {
   fleetLinks?: FleetCarrierLink[];
 }
 interface Row {
+  cargoSpec: CargoSpec | '';
   clientRowId: string; freightMode: string; carrierPartnerId: string; vehicleId: string;
   plateNo: string; driverMode: 'ARCHIVE' | 'MANUAL'; driverId: string; driverName: string; driverPhone: string;
   plannedDepartureAt: string; plannedArrivalAt: string; quantities: Record<string, number>; selectedMaterialLineItemId: string; remarks: string;
@@ -109,6 +111,10 @@ export default function WaybillCreateForm() {
         return next;
       });
     }
+  };
+  const cargoOptionsForRow = (row: Row) => {
+    const selected = data?.lineItems.filter(line => Number(row.quantities[line.dispatchNoticeLineItemId]) > 0 || row.selectedMaterialLineItemId === line.dispatchNoticeLineItemId) || [];
+    return CARGO_SPECS.filter(spec => selected.length ? selected.every(line => line.cargoSpecOptions?.includes(spec)) : data?.lineItems.some(line => line.cargoSpecOptions?.includes(spec)));
   };
   const addRow = () => setRows(current => [...current, blankRow({
     freightMode: current[current.length - 1]?.freightMode || 'SELF', carrierPartnerId: current[current.length - 1]?.carrierPartnerId || '',
@@ -234,6 +240,7 @@ export default function WaybillCreateForm() {
         dispatchNoticeId: data.notice.id, batchRequestId: requestId.current,
         items: rows.map(row => ({
           clientRowId: row.clientRowId, freightMode: row.freightMode,
+          cargoSpec: row.cargoSpec || undefined,
           carrierPartnerId: row.carrierPartnerId || undefined, vehicleId: row.vehicleId || undefined,
           driverId: row.driverId || undefined, plateNo: row.plateNo.trim().toUpperCase(),
           driverName: row.driverName.trim(), driverPhone: row.driverPhone.trim(),
@@ -279,6 +286,12 @@ export default function WaybillCreateForm() {
     <button type="button" className="text-xs text-primary hover:underline" onClick={() => patchRow(row.clientRowId, { driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '' })}>从司机档案选择</button>
   </>}
   {row.freightMode === 'THIRD_PARTY' && !row.carrierPartnerId && <p className="text-xs text-muted-foreground">请先选择本行物流承运商</p>}
+  {data.lineItems.some(line => line.cargoSpecOptions?.length) && <label className="block text-xs text-muted-foreground">本车货物规格
+    <select className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground" value={row.cargoSpec} onChange={event => patchRow(row.clientRowId, { cargoSpec: event.target.value as CargoSpec | '' })}>
+      <option value="">稍后确认（一车一种规格）</option>
+      {cargoOptionsForRow(row).map(spec => <option key={spec} value={spec}>{SPEC_LABELS[spec]}</option>)}
+    </select>
+  </label>}
   {data.lineItems.length > 1 && <label className="block text-xs text-muted-foreground">本车运输物料（未填计划数量时选）
     <select className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground" value={row.selectedMaterialLineItemId} onChange={event => patchRow(row.clientRowId, { selectedMaterialLineItemId: event.target.value })}>
       <option value="">请选择物料</option>
@@ -305,7 +318,7 @@ function rowIssues(row: Row, multiMaterial: boolean) {
   if (row.plannedDepartureAt && row.plannedArrivalAt && new Date(row.plannedArrivalAt) <= new Date(row.plannedDepartureAt)) issues.push('预计到达时间必须晚于计划发运时间');
   return issues;
 }
-function blankRow(defaults: Partial<Row> = {}): Row { return { clientRowId: makeUuid(), freightMode: 'SELF', carrierPartnerId: '', vehicleId: '', plateNo: '', driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '', plannedDepartureAt: '', plannedArrivalAt: '', quantities: {}, selectedMaterialLineItemId: '', remarks: '', ...defaults }; }
+function blankRow(defaults: Partial<Row> = {}): Row { return { cargoSpec: '', clientRowId: makeUuid(), freightMode: 'SELF', carrierPartnerId: '', vehicleId: '', plateNo: '', driverMode: 'ARCHIVE', driverId: '', driverName: '', driverPhone: '', plannedDepartureAt: '', plannedArrivalAt: '', quantities: {}, selectedMaterialLineItemId: '', remarks: '', ...defaults }; }
 function makeUuid() { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, value => { const random = Math.random() * 16 | 0; return (value === 'x' ? random : (random & 0x3) | 0x8).toString(16); }); }
 
 function parseDispatchLine(line: string, data: Available, vehicles: Vehicle[], carriers: CarrierProfile[], drivers: Driver[], defaults: Partial<Row>) {

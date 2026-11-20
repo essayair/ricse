@@ -3,3 +3,8 @@ export function contractQualitySnapshot<T extends { materialId?: string; items: 
   if (!value || !Array.isArray(value.items)) return null;
   return !value.materialId || value.materialId === materialId ? value : null;
 }
+
+/** 仅用于新建合同取模板；不回写已有快照。不参与判定的参考指标不能变成商务验收门槛。 */
+export function contractQualityTemplateItems<T>(items: T[] | null | undefined): T[] {
+  return (items || []).filter(item => (item as { participates?: boolean } | null)?.participates !== false);
+}

@@ -29,6 +29,7 @@ export class PurchaseSettlementBasis {
     if (!['PURCHASE', 'BILATERAL'].includes(contract.type)) throw new BadRequestException('仅支持采购方向的采购结算');
     // 在资金写事务中锁定依据行，避免校验通过到保存付款之间检测/磅单被并发改写。
     if (typeof (this.prisma as any).$transaction !== 'function') {
+      await this.prisma.$queryRaw`SELECT w.id FROM waybills w JOIN dispatch_notices d ON d.id=w."dispatchNoticeId" JOIN orders o ON o.id=d."orderId" WHERE o."contractId"=${contractId} ORDER BY w.id FOR SHARE OF w`;
       await this.prisma.$queryRaw`SELECT q."id" FROM "quality_tasks" q JOIN "waybills" w ON w."id"=q."waybillId" JOIN "dispatch_notices" d ON d."id"=w."dispatchNoticeId" JOIN "orders" o ON o."id"=d."orderId" WHERE o."contractId"=${contractId} ORDER BY q."id" FOR SHARE OF q`;
       await this.prisma.$queryRaw`SELECT q."id" FROM "quality_inspections" q JOIN "quality_tasks" t ON t."id"=q."qualityTaskId" JOIN "waybills" w ON w."id"=t."waybillId" JOIN "dispatch_notices" d ON d."id"=w."dispatchNoticeId" JOIN "orders" o ON o."id"=d."orderId" WHERE o."contractId"=${contractId} ORDER BY q."id" FOR SHARE OF q`;
       await this.prisma.$queryRaw`SELECT s."id" FROM "waybill_weight_selections" s JOIN "waybills" w ON w."id"=s."waybillId" JOIN "dispatch_notices" d ON d."id"=w."dispatchNoticeId" JOIN "orders" o ON o."id"=d."orderId" WHERE o."contractId"=${contractId} ORDER BY s."id" FOR SHARE OF s`;
@@ -143,7 +144,7 @@ export class PurchaseSettlementBasis {
       if (remainingQuantity <= 0) reasons.push('该来源数量已全部结算或被结算草稿占用');
       if (!['TON', '吨', 't'].includes(row.unit)) reasons.push('当前自动质量扣款仅支持已明确以吨计价的物料');
       const gradePrice = isGradeTier && item?.priceRulesSnapshot
-        ? evaluateGradePrice(item.priceRulesSnapshot, (item.priceRulesSnapshot as any).selectedSpec, remainingQuantity, report?.indicators || [])
+        ? evaluateGradePrice(item.priceRulesSnapshot, w.cargoSpec as 'FRAGMENT' | 'RUN_OF_MINE' | null, remainingQuantity, report?.indicators || [])
         : null;
       // 矿石分档价本身以实测品位决定价格；若合同没有另设质量拒收/扣款条款，
       // 不把旧的通用质检模板阈值误当作矿石交易的拒收线。
@@ -164,7 +165,7 @@ export class PurchaseSettlementBasis {
       // 回收率扣价属于合同价格条款（不含税元/吨），与质量扣款规则分开记录，避免触发“分档价与质量扣价叠加”拦截。
       const recoveryDeductionPerTon = gradePrice?.status === 'READY' ? gradePrice.recovery?.deductionPerTon || 0 : 0;
       const qualityReady = Boolean(task && !task.deletedAt && task.status === 'COMPLETED' && report && !report.deletedAt && report.status === 'CONFIRMED' && (gradePriceCanSettle || ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(selectedDisposition || '')));
-      const basis = { contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
+      const basis = { ...(w.cargoSpec ? { cargoSpec: w.cargoSpec } : {}), contractLineItemId: item?.id, contractRules: task?.contractQualitySnapshot || item?.qualityRulesSnapshot,
         waybillLineItemId: row.id, weightSelectionId: selection?.id, weight: totalQuantity,
         weighTicketId: ticket?.id || receipt?.weighTicketId, ticketUpdatedAt: ticket?.updatedAt,
         businessInboundId: posted?.id, inboundQuantity: (posted?.pricingQuantity ?? posted?.quantity)?.toString(), inboundPhysicalQuantity: posted?.quantity?.toString(), inboundStatus: posted?.status, inboundPostedAt: posted?.postedAt,
@@ -183,7 +184,7 @@ export class PurchaseSettlementBasis {
         qualityTaskId: task?.id, decisionVersion: task?.decisionVersion, qualityDisposition: selectedDisposition,
         reportId: report?.id, reportUpdatedAt: report?.updatedAt, unitPrice: item?.unitPrice.toString(), deductionPerTon };
       return {
-        id: row.id, waybillLineItemId: row.id, waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo,
+        id: row.id, cargoSpec: w.cargoSpec, waybillLineItemId: row.id, waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo,
         orderId: order.id, orderNo: order.orderNo, orderName: order.name, orderStatus: order.status, waybillStatus: w.status,
         contractLineItemId: item?.id, materialName: row.materialName || item?.materialName, unit: row.unit,
         totalQuantity, usedQuantity: usedQuantity.toNumber(), remainingQuantity, negotiableQuantity, negotiableRemainingQuantity,

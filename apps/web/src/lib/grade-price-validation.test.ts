@@ -28,3 +28,11 @@ test('区间、所选规格报价错误定位到具体档位', () => {
 test('启用回收率条款时补充参数检查', () => {
   assert.match(gradePriceRuleErrors({ ...rule, recoveryAdjustment: { baselinePct: null, deductionPerPointPerDegree: null, stepMode: 'PROPORTIONAL' } }).recovery, /回收率基准/);
 });
+
+test('多规格统一计价只要求一套同步价格，分别计价逐个校验', () => {
+  const unified: GradePriceSnapshot = { ...rule, selectedSpec: '', specPricingMode: 'UNIFIED', applicableSpecs: ['FRAGMENT', 'RUN_OF_MINE'], bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: 14.8, RUN_OF_MINE: 14.8 } }] };
+  assert.deepEqual(gradePriceRuleErrors(unified), {});
+  assert.match(gradePriceRuleErrors({ ...unified, applicableSpecs: [] }).selectedSpec, /至少选择一种/);
+  assert.match(gradePriceRuleErrors({ ...unified, bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: 14.8, RUN_OF_MINE: 16 } }] })['bands.0.FRAGMENT'], /统一价格不一致/);
+  assert.match(gradePriceRuleErrors({ ...unified, specPricingMode: 'BY_SPEC', bands: rule.bands })['bands.0.RUN_OF_MINE'], /统矿单价/);
+});

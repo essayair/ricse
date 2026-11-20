@@ -6,14 +6,17 @@ import { pairFromExclusive, pairFromInclusive } from './tax-price-fields';
 import { gradePriceRuleErrors } from '@/lib/grade-price-validation';
 import type { FieldErrors } from '@/lib/form-validation';
 import type { MoisturePricingRule } from '@ricse/shared-types/moisture-pricing';
+import { applicableGradeSpecs, SPEC_LABELS, type GradeSpecRule } from '@ricse/shared-types/grade-price-spec';
+import { confirmAction } from '@/lib/system-dialog';
+import { parsePastedBands } from '@/lib/grade-price-paste';
 
 type Spec = 'FRAGMENT' | 'RUN_OF_MINE';
 type GradeBand = { lower: number | null; upper: number | null; rates: { FRAGMENT: number | null; RUN_OF_MINE: number | null } };
 
-export interface GradePriceSnapshot extends MoisturePricingRule {
+export interface GradePriceSnapshot extends MoisturePricingRule, GradeSpecRule {
   version: 1; method: 'CAF2_GRADE_TIER'; gradeUnit: 'PERCENT_POINTS'; rateUnit: 'CNY_PER_DEGREE_EX_TAX';
   quantityBasis?: 'PHYSICAL' | 'DRY_MATTER';
-  moistureMaxPct: number | null; selectedSpec: Spec | ''; formulaConfirmed: boolean;
+  moistureMaxPct: number | null; selectedSpec?: Spec | ''; formulaConfirmed: boolean;
   exceptionHandling: 'MANUAL_REVIEW';
   bands: GradeBand[];
   /** 选矿回收率扣价：低于基准时每低 1 个百分点扣若干不含税元/度，只扣不奖。 */
@@ -43,29 +46,12 @@ function RecoveryAdjustmentFields({ rule, taxRate, onChange }: { rule: GradePric
 const emptyBand = (): GradeBand => ({ lower: null, upper: null, rates: { FRAGMENT: null, RUN_OF_MINE: null } });
 export const defaultGradePriceSnapshot: GradePriceSnapshot = {
   version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
-  moistureMaxPct: null, moistureDeductionMode: 'EXCESS', moistureBasePct: null, quantityBasis: 'DRY_MATTER', selectedSpec: '', formulaConfirmed: false, exceptionHandling: 'MANUAL_REVIEW',
+  moistureMaxPct: null, moistureDeductionMode: 'EXCESS', moistureBasePct: null, quantityBasis: 'DRY_MATTER', selectedSpec: '', applicableSpecs: [], specPricingMode: 'UNIFIED', formulaConfirmed: false, exceptionHandling: 'MANUAL_REVIEW',
   bands: [[10, 15], [15, 20], [20, 25], [25, 30], [30, 35], [35, 40], [40, 45], [45, 50]]
     .map(([lower, upper]) => ({ lower, upper, rates: { FRAGMENT: null, RUN_OF_MINE: null } })),
 };
 
-/** 支持 Excel 多行：下限、上限、单价（当前规格）或下限、上限、碎屑价、统矿价。 */
-function parsePastedBands(text: string, selectedSpec: Spec | ''): GradeBand[] {
-  const rows = text.split(/\r?\n/).map(row => row.trim()).filter(row =>
-    row && /\d/.test(row.replace(/CaF[₂2]/gi, '品位')),
-  );
-  if (!rows.length) throw new Error('请先粘贴品位区间和单价');
-  return rows.map((row, index) => {
-    const numbers = row.replace(/CaF[₂2]/gi, '品位').match(/\d+(?:\.\d+)?/g)?.map(Number) || [];
-    if (numbers.length !== 3 && numbers.length !== 4) throw new Error(`第 ${index + 1} 行应填写下限、上限和单价；也可以分别填写两种规格的单价`);
-    const [lower, upper, firstRate, secondRate] = numbers;
-    if (lower < 0 || upper > 100 || lower >= upper || firstRate <= 0 || (secondRate !== undefined && secondRate <= 0)) throw new Error(`第 ${index + 1} 行的品位区间或单价无效`);
-    if (secondRate === undefined && !selectedSpec) throw new Error('粘贴单列价格前，请先选择本行货物规格');
-    return { lower, upper, rates: {
-      FRAGMENT: secondRate === undefined ? (selectedSpec === 'FRAGMENT' ? firstRate : null) : firstRate,
-      RUN_OF_MINE: secondRate === undefined ? (selectedSpec === 'RUN_OF_MINE' ? firstRate : null) : secondRate,
-    } };
-  });
-}
+
 
 function GradeField({ name, label, error, onBlur, children, required = true }: { name: string; label: string; error?: string; onBlur: () => void; children: ReactElement; required?: boolean }) {
   return <div data-validation-field={name} onBlur={onBlur} className={`space-y-1 scroll-mt-28 ${error ? '[&_input]:border-destructive [&_select]:border-destructive [&_input]:bg-destructive/5 [&_select]:bg-destructive/5' : ''}`}>
@@ -77,6 +63,17 @@ function GradeField({ name, label, error, onBlur, children, required = true }: {
 
 export function GradePriceRulesEditor({ value, taxRate = '13', onChange, errors = {}, validationPrefix }: { value: GradePriceSnapshot | null | undefined; taxRate?: string; onChange: (value: GradePriceSnapshot) => void; errors?: FieldErrors; validationPrefix?: string }) {
   const rule = value || defaultGradePriceSnapshot;
+  const specs = applicableGradeSpecs(rule);
+  const unified = rule.specPricingMode === 'UNIFIED';
+  const priceSpecs = unified ? [specs[0] || 'FRAGMENT'] : specs;
+  const changeSpecs = (spec: Spec, checked: boolean) => {
+    const next = (['FRAGMENT', 'RUN_OF_MINE'] as Spec[]).filter(s => s === spec ? checked : specs.includes(s));
+    onChange({ ...rule, selectedSpec: '', applicableSpecs: next, specPricingMode: rule.specPricingMode || 'BY_SPEC', bands: rule.bands.map(b => ({ ...b, rates: unified ? { FRAGMENT: next.includes('FRAGMENT') ? b.rates[specs[0]] ?? null : null, RUN_OF_MINE: next.includes('RUN_OF_MINE') ? b.rates[specs[0]] ?? null : null } : { FRAGMENT: next.includes('FRAGMENT') ? b.rates.FRAGMENT : null, RUN_OF_MINE: next.includes('RUN_OF_MINE') ? b.rates.RUN_OF_MINE : null } })) });
+  };
+  const changeMode = async (mode: 'UNIFIED' | 'BY_SPEC') => {
+    if (mode === 'UNIFIED' && specs.length > 1 && rule.bands.some(b => b.rates[specs[0]] !== b.rates[specs[1]]) && !await confirmAction('将采用首个适用规格的价格，替换其他规格价格。请核对合同后确认。', { title: '改为统一计价' })) return;
+    onChange({ ...rule, selectedSpec: '', applicableSpecs: specs, specPricingMode: mode, bands: rule.bands.map(b => ({ ...b, rates: mode === 'UNIFIED' ? { FRAGMENT: specs.includes('FRAGMENT') ? b.rates[specs[0]] ?? null : null, RUN_OF_MINE: specs.includes('RUN_OF_MINE') ? b.rates[specs[0]] ?? null : null } : b.rates })) });
+  };
   const generatedId = useId();
   const prefix = validationPrefix || `gradePrice-${generatedId}`;
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -91,11 +88,12 @@ export function GradePriceRulesEditor({ value, taxRate = '13', onChange, errors 
   });
   const updateRate = (index: number, spec: Spec, text: string, input: 'exclusive' | 'inclusive') => {
     const exclusive = input === 'inclusive' ? pairFromInclusive(text, taxRate).exclusive : text;
-    updateBand(index, { rates: { ...rule.bands[index].rates, [spec]: exclusive === '' ? null : Number(exclusive) } });
+    const rate = exclusive === '' ? null : Number(exclusive);
+    updateBand(index, { rates: unified ? { FRAGMENT: specs.includes('FRAGMENT') ? rate : null, RUN_OF_MINE: specs.includes('RUN_OF_MINE') ? rate : null } : { ...rule.bands[index].rates, [spec]: rate } });
   };
   const pasteBands = () => {
     try {
-      onChange({ ...rule, bands: parsePastedBands(pastedText, rule.selectedSpec) });
+      onChange({ ...rule, bands: parsePastedBands(pastedText, rule) });
       setPastedText('');
       setPasteError('');
     } catch (error) {
@@ -105,7 +103,8 @@ export function GradePriceRulesEditor({ value, taxRate = '13', onChange, errors 
   return <div className="mt-4 rounded-lg border p-4">
     <div className="font-medium">按 CaF₂ 品位分档计价<span className="ml-0.5 text-destructive">*</span></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-3">
-      {field('selectedSpec', '本行货物规格', <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={rule.selectedSpec} onChange={event => onChange({ ...rule, selectedSpec: event.target.value as GradePriceSnapshot['selectedSpec'] })}><option value="">请选择货物规格</option><option value="FRAGMENT">碎屑</option><option value="RUN_OF_MINE">统矿</option></select>)}
+      {field('selectedSpec', '合同适用规格（可多选）', <div className="flex min-h-9 items-center gap-4 rounded-md border px-3">{(['FRAGMENT', 'RUN_OF_MINE'] as Spec[]).map(spec => <label key={spec} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={specs.includes(spec)} onChange={event => changeSpecs(spec, event.target.checked)} />{SPEC_LABELS[spec]}</label>)}</div>)}
+      {field('specPricingMode', '规格计价方式', <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={unified ? 'UNIFIED' : 'BY_SPEC'} onChange={event => void changeMode(event.target.value as 'UNIFIED' | 'BY_SPEC')}><option value="UNIFIED">统一计价</option><option value="BY_SPEC">按规格分别计价</option></select>)}
       {field('quantityBasis', '计价重量', <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={rule.quantityBasis || ''} onChange={event => onChange({ ...rule, quantityBasis: (event.target.value || undefined) as GradePriceSnapshot['quantityBasis'], ...(event.target.value === 'PHYSICAL' ? { moistureDeductionMode: 'ACTUAL', moistureBasePct: null } : {}) })}><option value="">请选择计价重量</option><option value="DRY_MATTER">按合同扣水后的净重</option><option value="PHYSICAL">所选磅单净重</option></select>)}
       {rule.quantityBasis !== 'PHYSICAL' && field('moistureDeductionMode', '扣水方式', <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={rule.moistureDeductionMode || 'ACTUAL'} onChange={event => onChange({ ...rule, moistureDeductionMode: event.target.value as 'ACTUAL' | 'EXCESS' })}><option value="EXCESS">仅扣超出基准的水分</option><option value="ACTUAL">按全部实测水分折干</option></select>)}
       {rule.quantityBasis !== 'PHYSICAL' && rule.moistureDeductionMode === 'EXCESS' && field('moistureBasePct', '基准水分（免扣水分，%）', <Input type="number" min="0" max="99.99" step="0.01" placeholder="请填写免扣水分" value={rule.moistureBasePct ?? ''} onChange={event => onChange({ ...rule, moistureBasePct: numberOrNull(event.target.value) })} />)}
@@ -114,17 +113,17 @@ export function GradePriceRulesEditor({ value, taxRate = '13', onChange, errors 
     <p className="mt-2 text-xs text-muted-foreground">{rule.quantityBasis === 'PHYSICAL' ? '按磅单净重计价，不扣水。' : rule.moistureDeductionMode === 'EXCESS' ? '结算重量＝净重×[1－max(实测水分－基准水分，0)÷100]；未超过基准不扣水。' : '折干重量＝净重×（1－实测水分÷100）。'}质量水分上限及质量结算规则中的限制独立生效，免扣基准不代表拒收标准。</p>
     <div data-validation-field={`${prefix}.bands`} className="mt-4 scroll-mt-28 overflow-x-auto">
       {errorFor('bands') && <p role="alert" className="mb-2 text-xs text-destructive">{errorFor('bands')}</p>}
-      <table className="min-w-[960px] w-full text-sm"><thead className="border-b bg-muted/50 text-left"><tr><th className="px-2 py-2">品位下限（%）<span className="text-destructive">*</span></th><th className="px-2 py-2">品位上限（%，不含）<span className="text-destructive">*</span></th>{(['FRAGMENT', 'RUN_OF_MINE'] as const).flatMap(spec => [<th key={`${spec}-ex`} className="px-2 py-2">{spec === 'FRAGMENT' ? '碎屑' : '统矿'}不含税（元/度）{rule.selectedSpec === spec && <span className="text-destructive">*</span>}</th>, <th key={`${spec}-in`} className="px-2 py-2">{spec === 'FRAGMENT' ? '碎屑' : '统矿'}含税（元/度）</th>])}<th className="px-2 py-2">操作</th></tr></thead>
+      <table className={unified ? 'min-w-[640px] w-full text-sm' : 'min-w-[960px] w-full text-sm'}><thead className="border-b bg-muted/50 text-left"><tr><th className="px-2 py-2">品位下限（%）<span className="text-destructive">*</span></th><th className="px-2 py-2">品位上限（%，不含）<span className="text-destructive">*</span></th>{priceSpecs.flatMap(spec => [<th key={`${spec}-ex`} className="px-2 py-2">{unified ? '统一价格 · ' : `${SPEC_LABELS[spec]} · `}不含税（元/度）{specs.includes(spec) && <span className="text-destructive">*</span>}</th>, <th key={`${spec}-in`} className="px-2 py-2">{unified ? '统一价格 · ' : `${SPEC_LABELS[spec]} · `}含税（元/度）</th>])}<th className="px-2 py-2">操作</th></tr></thead>
         <tbody>{rule.bands.map((band, index) => <tr key={index} className="border-b align-top">
           <td data-validation-field={`${prefix}.bands.${index}.range`} onBlur={() => touch(`bands.${index}.range`)} className="px-2 py-2 scroll-mt-28"><Input aria-label={`第${index + 1}档品位下限`} aria-required aria-invalid={Boolean(errorFor(`bands.${index}.range`))} className={errorFor(`bands.${index}.range`) ? 'border-destructive bg-destructive/5' : ''} type="number" min="0" max="100" step="0.01" value={band.lower ?? ''} onChange={event => updateBand(index, { lower: event.target.value === '' ? null : Number(event.target.value) })} />{errorFor(`bands.${index}.range`) && <p role="alert" className="mt-1 text-xs text-destructive">{errorFor(`bands.${index}.range`)}</p>}</td>
           <td onBlur={() => touch(`bands.${index}.range`)} className="px-2 py-2"><Input aria-label={`第${index + 1}档品位上限`} aria-required aria-invalid={Boolean(errorFor(`bands.${index}.range`))} className={errorFor(`bands.${index}.range`) ? 'border-destructive bg-destructive/5' : ''} type="number" min="0" max="100" step="0.01" value={band.upper ?? ''} onChange={event => updateBand(index, { upper: event.target.value === '' ? null : Number(event.target.value) })} /></td>
-          {(['FRAGMENT', 'RUN_OF_MINE'] as const).flatMap(spec => [<td key={`${spec}-ex`} data-validation-field={`${prefix}.bands.${index}.${spec}`} onBlur={() => touch(`bands.${index}.${spec}`)} className="px-2 py-2 scroll-mt-28"><Input aria-label={`第${index + 1}档${spec}不含税价`} aria-required={rule.selectedSpec === spec} aria-invalid={Boolean(errorFor(`bands.${index}.${spec}`))} className={errorFor(`bands.${index}.${spec}`) ? 'border-destructive bg-destructive/5' : ''} type="number" min="0" step="0.0001" value={band.rates[spec] ?? ''} onChange={event => updateRate(index, spec, event.target.value, 'exclusive')} />{errorFor(`bands.${index}.${spec}`) && <p role="alert" className="mt-1 text-xs text-destructive">{errorFor(`bands.${index}.${spec}`)}</p>}</td>, <td key={`${spec}-in`} onBlur={() => touch(`bands.${index}.${spec}`)} className="px-2 py-2"><Input aria-label={`第${index + 1}档${spec}含税价`} aria-invalid={Boolean(errorFor(`bands.${index}.${spec}`))} className={errorFor(`bands.${index}.${spec}`) ? 'border-destructive bg-destructive/5' : ''} type="number" min="0" step="0.0001" value={band.rates[spec] == null ? '' : pairFromExclusive(String(band.rates[spec]), taxRate).inclusive} onChange={event => updateRate(index, spec, event.target.value, 'inclusive')} /></td>])}
+          {priceSpecs.flatMap(spec => [<td key={`${spec}-ex`} data-validation-field={`${prefix}.bands.${index}.${spec}`} onBlur={() => touch(`bands.${index}.${spec}`)} className="px-2 py-2 scroll-mt-28"><Input disabled={!specs.length} placeholder={specs.length ? '' : '请先选规格'} aria-label={`第${index + 1}档${unified ? '统一' : SPEC_LABELS[spec]}不含税价`} aria-required={specs.includes(spec)} aria-invalid={Boolean(errorFor(`bands.${index}.${spec}`))} className={errorFor(`bands.${index}.${spec}`) ? 'border-destructive bg-destructive/5' : ''} type="number" min="0" step="0.0001" value={band.rates[spec] ?? ''} onChange={event => updateRate(index, spec, event.target.value, 'exclusive')} />{errorFor(`bands.${index}.${spec}`) && <p role="alert" className="mt-1 text-xs text-destructive">{errorFor(`bands.${index}.${spec}`)}</p>}</td>, <td key={`${spec}-in`} onBlur={() => touch(`bands.${index}.${spec}`)} className="px-2 py-2"><Input disabled={!specs.length} placeholder={specs.length ? '' : '请先选规格'} aria-label={`第${index + 1}档${unified ? '统一' : SPEC_LABELS[spec]}含税价`} aria-invalid={Boolean(errorFor(`bands.${index}.${spec}`))} className={errorFor(`bands.${index}.${spec}`) ? 'border-destructive bg-destructive/5' : ''} type="number" min="0" step="0.0001" value={band.rates[spec] == null ? '' : pairFromExclusive(String(band.rates[spec]), taxRate).inclusive} onChange={event => updateRate(index, spec, event.target.value, 'inclusive')} /></td>])}
           <td className="px-2 py-2"><button type="button" className="text-destructive hover:underline" onClick={() => onChange({ ...rule, bands: rule.bands.filter((_, i) => i !== index) })}>删除</button></td>
         </tr>)}</tbody>
       </table>
     </div>
     <button type="button" className="mt-3 rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={() => onChange({ ...rule, bands: [...rule.bands, emptyBand()] })}>添加品位区间</button>
-    <div className="mt-4"><label className="text-sm font-medium">从表格粘贴价格<textarea className="mt-1 min-h-20 w-full rounded-md border bg-background p-2 text-sm font-normal" value={pastedText} onChange={event => { setPastedText(event.target.value); setPasteError(''); }} placeholder={'每行：下限　上限　当前规格单价；或下限　上限　碎屑单价　统矿单价\n例如：10\t15\t14.80'} /></label><p className="mt-1 text-xs text-muted-foreground">从 Excel 复制多行即可；按不含税元/度读取，填入后替换当前区间。</p>{pasteError && <p role="alert" className="mt-1 text-sm text-destructive">{pasteError}</p>}<button type="button" className="mt-2 rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={pasteBands}>解析并填入</button></div>
+    <div className="mt-4"><label className="text-sm font-medium">从表格粘贴价格<textarea className="mt-1 min-h-20 w-full rounded-md border bg-background p-2 text-sm font-normal" value={pastedText} onChange={event => { setPastedText(event.target.value); setPasteError(''); }} placeholder={'统一计价：下限　上限　统一单价；分别计价：下限　上限　碎屑价　统矿价\n例如：10\t15\t14.80'} /></label><p className="mt-1 text-xs text-muted-foreground">从 Excel 复制多行即可；按不含税元/度读取，填入后替换当前区间。</p>{pasteError && <p role="alert" className="mt-1 text-sm text-destructive">{pasteError}</p>}<button type="button" className="mt-2 rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={pasteBands}>解析并填入</button></div>
     <div data-validation-field={`${prefix}.formulaConfirmed`} onBlur={() => touch('formulaConfirmed')} className={`mt-4 scroll-mt-28 rounded-md p-2 ${errorFor('formulaConfirmed') ? 'border border-destructive bg-destructive/5' : ''}`}>
       <label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" aria-required aria-invalid={Boolean(errorFor('formulaConfirmed'))} checked={rule.formulaConfirmed} onChange={event => onChange({ ...rule, formulaConfirmed: event.target.checked })} /><span>我已确认品位分档规则、元/度口径及人工例外处理<span className="ml-0.5 text-destructive">*</span></span></label>
       <p className="mt-1 text-xs text-muted-foreground">1度为1个百分点（37%按37度）；税前金额＝结算吨数×实测度数×档位价格，另计合同约定扣价。</p>
@@ -137,7 +136,18 @@ export function GradePriceRulesEditor({ value, taxRate = '13', onChange, errors 
 
 export function GradePriceRulesView({ value, title, taxRate }: { value: GradePriceSnapshot | null | undefined; title: string; taxRate?: string | number | null }) {
   if (!value?.bands?.length) return null;
+  const specs = applicableGradeSpecs(value);
+  const unified = value.specPricingMode === 'UNIFIED';
+  const columns = unified ? specs.slice(0, 1) : specs;
   const price = (rate: number | null) => rate == null ? '—' : String(rate);
   const inclusive = (rate: number | null) => rate == null ? '—' : pairFromExclusive(String(rate), String(taxRate)).inclusive;
-  return <div className="mt-3 overflow-x-auto rounded-md border p-3 text-xs"><div className="mb-2 font-semibold">{title} · {value.selectedSpec === 'FRAGMENT' ? '碎屑' : value.selectedSpec === 'RUN_OF_MINE' ? '统矿' : '未选规格'} · 质量水分上限：{value.moistureMaxPct == null ? '未另设' : `${value.moistureMaxPct}%`}</div><p className="mb-2 text-xs text-muted-foreground">{value.quantityBasis === 'PHYSICAL' ? '按净重计价，不扣水。' : value.moistureDeductionMode === 'EXCESS' ? `基准水分（免扣）${value.moistureBasePct ?? '待填'}%；仅扣超出基准部分，不超不扣。` : '按全部实测水分折干（历史规则沿用原口径）。'}</p><table className="w-full border-collapse"><thead className="border-b bg-muted/50 text-left"><tr><th className="p-2">CaF₂ 实测品位</th><th className="p-2">碎屑不含税（元/度）</th>{taxRate != null && <th className="p-2">碎屑含税（元/度）</th>}<th className="p-2">统矿不含税（元/度）</th>{taxRate != null && <th className="p-2">统矿含税（元/度）</th>}</tr></thead><tbody>{value.bands.map((band, index) => <tr key={index} className="border-b"><td className="p-2">{band.lower ?? '—'}% ≤ CaF₂ &lt; {band.upper ?? '—'}%</td><td className="p-2">{price(band.rates.FRAGMENT)}</td>{taxRate != null && <td className="p-2">{inclusive(band.rates.FRAGMENT)}</td>}<td className="p-2">{price(band.rates.RUN_OF_MINE)}</td>{taxRate != null && <td className="p-2">{inclusive(band.rates.RUN_OF_MINE)}</td>}</tr>)}</tbody></table>{value.recoveryAdjustment && <p className="mt-2">选矿回收率扣价：低于 {value.recoveryAdjustment.baselinePct ?? '—'}% 时，每低 1 个百分点扣 {value.recoveryAdjustment.deductionPerPointPerDegree ?? '—'} 元/度（不含税）{taxRate != null && value.recoveryAdjustment.deductionPerPointPerDegree != null ? `，含税 ${pairFromExclusive(String(value.recoveryAdjustment.deductionPerPointPerDegree), String(taxRate)).inclusive} 元/度` : ''}；{value.recoveryAdjustment.stepMode === 'FULL_POINT' ? '按整百分点计算' : '按实际差额计算'}，只扣不奖。{value.recoveryAdjustment.note ? `条款原文：${value.recoveryAdjustment.note}` : ''}</p>}<p className="mt-2 text-muted-foreground">元/度按实测百分数百分点计算；品位越档或超过另行约定的质量水分上限须人工确认；超过免扣基准仅按约定扣水。</p></div>;
+  return <div className="mt-3 overflow-x-auto rounded-md border p-3 text-xs">
+    <div className="mb-2 font-semibold">{title} · {specs.map(s => SPEC_LABELS[s]).join('、') || '未选规格'} · {unified ? '统一计价' : '按规格计价'} · 质量水分上限：{value.moistureMaxPct == null ? '未另设' : value.moistureMaxPct + '%'}</div>
+    <p className="mb-2 text-muted-foreground">{value.quantityBasis === 'PHYSICAL' ? '按净重计价，不扣水。' : value.moistureDeductionMode === 'EXCESS' ? '基准水分（免扣）' + (value.moistureBasePct ?? '待填') + '%；仅扣超出基准部分，不超不扣。' : '按全部实测水分折干（历史规则沿用原口径）。'}</p>
+    <table className="w-full border-collapse"><thead className="border-b bg-muted/50 text-left"><tr><th className="p-2">CaF₂实测品位</th>{columns.flatMap(spec => [<th key={spec + '-ex'} className="p-2">{unified ? '统一价格' : SPEC_LABELS[spec]}不含税（元/度）</th>, ...(taxRate != null ? [<th key={spec + '-in'} className="p-2">{unified ? '统一价格' : SPEC_LABELS[spec]}含税（元/度）</th>] : [])])}</tr></thead>
+      <tbody>{value.bands.map((band, index) => <tr key={index} className="border-b"><td className="p-2">{band.lower ?? '—'}% ≤ CaF₂ &lt; {band.upper ?? '—'}%</td>{columns.flatMap(spec => [<td key={spec + '-ex'} className="p-2">{price(band.rates[spec])}</td>, ...(taxRate != null ? [<td key={spec + '-in'} className="p-2">{inclusive(band.rates[spec])}</td>] : [])])}</tr>)}</tbody>
+    </table>
+    {value.recoveryAdjustment && <p className="mt-2">选矿回收率扣价：低于{value.recoveryAdjustment.baselinePct ?? '—'}%时，每低1个百分点扣{value.recoveryAdjustment.deductionPerPointPerDegree ?? '—'}元/度（不含税）{taxRate != null && value.recoveryAdjustment.deductionPerPointPerDegree != null ? '，含税' + pairFromExclusive(String(value.recoveryAdjustment.deductionPerPointPerDegree), String(taxRate)).inclusive + '元/度' : ''}；{value.recoveryAdjustment.stepMode === 'FULL_POINT' ? '按整百分点计算' : '按实际差额计算'}，只扣不奖。{value.recoveryAdjustment.note || ''}</p>}
+    <p className="mt-2 text-muted-foreground">元/度按实测百分数百分点计算；品位越档或超过质量水分上限须人工确认。</p>
+  </div>;
 }

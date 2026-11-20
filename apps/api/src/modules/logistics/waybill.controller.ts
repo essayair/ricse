@@ -9,6 +9,7 @@ import { BatchCreateWaybillDto, CreateWaybillDto } from './dto/create-waybill.dt
 import { WaybillReceiptAttachmentCategory, WaybillService } from './waybill.service';
 import { AssignWaybillDto } from './dto/assign-waybill.dto';
 import { ConfirmSalesCompletionDto } from './dto/confirm-sales-completion.dto';
+import { UpdateCargoSpecDto } from './dto/update-cargo-spec.dto';
 
 @ApiTags('物流运单与调度')
 @ApiBearerAuth()
@@ -87,6 +88,11 @@ export class WaybillController {
   @Patch(':id/assignment')
   assign(@Param('id') id: string, @Body() data: AssignWaybillDto, @CurrentUser('id') userId: string) {
     return this.service.assign(id, data, userId);
+  }
+
+  @Patch(':id/cargo-spec')
+  updateCargoSpec(@Param('id') id: string, @Body() dto: UpdateCargoSpecDto, @CurrentUser('id') userId: string) {
+    return this.service.updateCargoSpec(id, dto.cargoSpec, dto.reason, userId);
   }
 
   @Patch(':id/status')

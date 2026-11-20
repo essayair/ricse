@@ -276,7 +276,7 @@ export class BilateralDirectService {
         lineItems: { create: { orderLineItemId: purchase.lineItems[0].orderLineItemId, materialId: w.lineItems[0].materialId, materialName: w.lineItems[0].materialName, unit: w.lineItems[0].unit, quantity: qty } },
       }, include: { lineItems: true } });
       const nextWaybill = await tx.waybill.create({ data: { waybillNo: await reserveBusinessNumber(tx, 'WAYBILL', 'PURCHASE'), dispatchNoticeId: nextNotice.id, totalQuantity: qty, status: 'PENDING', freightMode: w.freightMode,
-        vehicleId: w.vehicleId, driverId: w.driverId, carrierPartnerId: w.carrierPartnerId, carrierName: w.carrierName, plateNo: w.plateNo, driverName: w.driverName, driverPhone: w.driverPhone,
+        cargoSpec: w.cargoSpec, vehicleId: w.vehicleId, driverId: w.driverId, carrierPartnerId: w.carrierPartnerId, carrierName: w.carrierName, plateNo: w.plateNo, driverName: w.driverName, driverPhone: w.driverPhone,
         originLocation: nextNotice.originLocation, destinationLocation: warehouse.address, createdBy: userId, remarks: nextNotice.remarks,
         lineItems: { create: { dispatchNoticeLineItemId: nextNotice.lineItems[0].id, materialId: w.lineItems[0].materialId, materialName: w.lineItems[0].materialName, unit: w.lineItems[0].unit, quantity: qty } },
       } });

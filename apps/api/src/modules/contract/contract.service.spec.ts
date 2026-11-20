@@ -485,6 +485,19 @@ describe('ContractService', () => {
       await expect(service.getApprovalReadiness('test-id')).rejects.toThrow('第1项货物采购方向品位价格：请选择计价重量');
     });
 
+    it('模板全部指标不参与判定时，允许明确保存的空质量规则', async () => {
+      prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '参考指标物料', status: 'ACTIVE', categoryId: 'cat', qualityTemplateId: 'q', qualityTemplate: { status: 'ACTIVE', items: [{ participates: false }] } }] as any);
+      await expect((service as any).validateContractForSubmission(prisma, { ...mockContract, lineItems: [{ ...mockContract.lineItems[0], qualityRulesSnapshot: { templateId: 'q', items: [] } }] })).resolves.toBeUndefined();
+    });
+    it('即使只有参考指标，未读取确认的质量规则仍须提示', async () => {
+      prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '参考指标物料', status: 'ACTIVE', categoryId: 'cat', qualityTemplateId: 'q', qualityTemplate: { status: 'ACTIVE', items: [{ participates: false }] } }] as any);
+      await expect((service as any).validateContractForSubmission(prisma, mockContract)).rejects.toThrow('核对并保存质量结算规则');
+    });
+    it('存在参与判定指标时，空质量规则仍被拒绝', async () => {
+      prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '验收物料', status: 'ACTIVE', categoryId: 'cat', qualityTemplateId: 'q', qualityTemplate: { status: 'ACTIVE', items: [{ participates: true }] } }] as any);
+      await expect((service as any).validateContractForSubmission(prisma, { ...mockContract, lineItems: [{ ...mockContract.lineItems[0], qualityRulesSnapshot: { templateId: 'q', items: [] } }] })).rejects.toThrow('核对并保存质量结算规则');
+    });
+
     it('停用物料可以保留草稿，但不能提交审批', async () => {
       prisma.contract.findFirst.mockResolvedValue(mockContract as any);
       prisma.material.findMany.mockResolvedValue([{ id: 'material-1', name: '测试物料', status: 'INACTIVE' }] as any);

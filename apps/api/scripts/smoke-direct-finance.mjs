@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 const url = new URL(process.env.DATABASE_URL || '');
-assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && url.pathname === '/ricse_dev', '仅本地ricse_dev');
+assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && url.port === '5433' && url.pathname === '/ricse_dev', '仅本地localhost:5433/ricse_dev');
 const input = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 assert(input.tag?.startsWith('E2E-ZB-') && input.results.every(r => r.result === 'PASS'), '仅接续成功的自建E2E流程');
 const db = new PrismaClient(); const base = 'http://127.0.0.1:3000/api/v1';

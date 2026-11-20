@@ -21,6 +21,9 @@ export class SalesSettlementBasis {
     const contract = await this.prisma.contract.findFirst({ where: { id: contractId, deletedAt: null, AND: [scope] }, include: { lineItems: true } });
     if (!contract) throw new NotFoundException('合同不存在或无权访问');
     if (!['SALES', 'BILATERAL'].includes(contract.type)) throw new BadRequestException('仅支持销售方向的货物结算');
+    if (typeof (this.prisma as any).$transaction !== 'function') {
+      await this.prisma.$queryRaw`SELECT w.id FROM waybills w JOIN dispatch_notices d ON d.id=w."dispatchNoticeId" JOIN orders o ON o.id=d."orderId" WHERE o."contractId"=${contractId} ORDER BY w.id FOR SHARE OF w`;
+    }
     const legacy = await this.prisma.financialSettlement.findMany({
       where: { contractId, direction: 'RECEIVABLE', deletedAt: null, status: { not: 'VOIDED' }, id: excludeSettlementId ? { not: excludeSettlementId } : undefined },
       include: { lines: true },
@@ -117,7 +120,7 @@ export class SalesSettlementBasis {
       if (negotiableRemainingQuantity <= 0) reasons.push('该车货物无剩余可结算数量');
       if (!['TON', '吨', 't'].includes(row.unit)) reasons.push('当前自动货物结算仅支持吨计价');
       const rules = gradeRules;
-      const gradePrice = gradeTier && rules ? evaluateGradePrice(rules, (rules as any).selectedSpec, remainingQuantity, report?.indicators || []) : null;
+      const gradePrice = gradeTier && rules ? evaluateGradePrice(rules, w.cargoSpec as 'FRAGMENT' | 'RUN_OF_MINE' | null, remainingQuantity, report?.indicators || []) : null;
       if (gradeTier && gradePrice?.status !== 'READY') reasons.push(...(gradePrice?.reasons || ['销售合同品位分档价缺少有效依据']));
       // 合同已约定回收率扣价时，仅“选矿回收率”未达标不再视为质量争议：差额已按合同条款计入扣价。
       const recoveryPricedByContract = gradePrice?.status === 'READY' && Boolean(gradePrice.recovery) && report?.conclusion === 'DEDUCTION'
@@ -130,6 +133,7 @@ export class SalesSettlementBasis {
       const unitPrice = gradePrice?.status === 'READY' ? gradePrice.unitPrice : Number(contract.type === 'BILATERAL' ? item?.salesUnitPrice || 0 : item?.unitPrice || 0);
       const recoveryDeductionPerTon = gradePrice?.status === 'READY' ? gradePrice.recovery?.deductionPerTon || 0 : 0;
       const basis = {
+        ...(w.cargoSpec ? { cargoSpec: w.cargoSpec } : {}),
         waybillLineItemId: row.id, contractLineItemId: item?.id, waybillId: w.id,
         salesCompletionConfirmedAt: w.salesCompletionConfirmedAt, salesCompletionReportId: w.salesCompletionReportId,
         salesCompletionCustomerTicketId: w.salesCompletionCustomerTicketId, salesCompletionShippingTicketId: w.salesCompletionShippingTicketId,
@@ -139,7 +143,7 @@ export class SalesSettlementBasis {
         pricingQuantityBasis, totalQuantity, unitPrice, contractTaxRatePct: item?.taxRatePct?.toString(), gradePrice: gradePrice?.status === 'READY' ? gradePrice : null, ...moisturePricingSnapshot(moistureRule),
       };
       return {
-        id: row.id, waybillLineItemId: row.id, waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo,
+        id: row.id, cargoSpec: w.cargoSpec, waybillLineItemId: row.id, waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo,
         orderId: order.id, orderNo: order.orderNo, orderName: order.name, orderStatus: order.status,
         contractLineItemId: item?.id, materialName: row.materialName || item?.materialName, unit: row.unit,
         salesCompletionConfirmedAt: w.salesCompletionConfirmedAt, outboundNo: outbound?.receiptNo,

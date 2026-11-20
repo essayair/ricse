@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { deductibleMoisturePct, type MoisturePricingRule } from '@ricse/shared-types/moisture-pricing';
+import { applicableGradeSpecs, resolveGradeSpec, SPEC_LABELS, type CargoSpec, type GradeSpecRule } from '@ricse/shared-types/grade-price-spec';
 
 export type GradePriceBand = { lower: number; upper: number; rates: { FRAGMENT: number | null; RUN_OF_MINE: number | null } };
 /**
@@ -14,7 +15,7 @@ export type RecoveryAdjustmentRule = {
   stepMode: 'PROPORTIONAL' | 'FULL_POINT';
   note?: string;
 };
-export type GradePriceRules = MoisturePricingRule & {
+export type GradePriceRules = MoisturePricingRule & GradeSpecRule & {
   version: 1;
   method: 'CAF2_GRADE_TIER';
   quantityBasis?: 'PHYSICAL' | 'DRY_MATTER';
@@ -23,7 +24,6 @@ export type GradePriceRules = MoisturePricingRule & {
   moistureMaxPct: number | null;
   bands: GradePriceBand[];
   exceptionHandling: 'MANUAL_REVIEW';
-  selectedSpec: 'FRAGMENT' | 'RUN_OF_MINE';
   formulaConfirmed: true;
   recoveryAdjustment?: RecoveryAdjustmentRule | null;
 };
@@ -39,9 +39,9 @@ export function parseGradePriceRules(value: unknown, options: { requireQuantityB
   if (!rules || rules.version !== 1 || rules.method !== 'CAF2_GRADE_TIER') {
     throw new BadRequestException('请填写并保存品位分档价格规则');
   }
-  if (!['FRAGMENT', 'RUN_OF_MINE'].includes(rules.selectedSpec || '')) {
-    throw new BadRequestException('请选择本行货物规格（碎屑或统矿）');
-  }
+  const specs = applicableGradeSpecs(rules);
+  if (rules.specPricingMode != null && !['UNIFIED', 'BY_SPEC'].includes(rules.specPricingMode)) throw new BadRequestException('请选择统一计价或按规格分别计价');
+  if (!specs.length || (rules.specPricingMode != null && (!Array.isArray(rules.applicableSpecs) || specs.length !== rules.applicableSpecs.length))) throw new BadRequestException(rules.specPricingMode == null ? '请选择本行货物规格（碎屑或统矿）' : '请选择有效的合同适用规格（碎屑、统矿，可多选且不可重复）');
   if ((options.requireQuantityBasis || rules.quantityBasis != null) && !['PHYSICAL', 'DRY_MATTER'].includes(rules.quantityBasis || '')) {
     throw new BadRequestException('请选择计价重量：按合同扣水后的净重或所选磅单净重');
   }
@@ -71,20 +71,17 @@ export function parseGradePriceRules(value: unknown, options: { requireQuantityB
   }
   let previousUpper: number | null = null;
   for (const [index, band] of rules.bands.entries()) {
-    const selectedRate = band?.rates?.[rules.selectedSpec as 'FRAGMENT' | 'RUN_OF_MINE'];
-    const otherRate = band?.rates?.[rules.selectedSpec === 'FRAGMENT' ? 'RUN_OF_MINE' : 'FRAGMENT'];
     if (!Number.isFinite(band?.lower) || !Number.isFinite(band?.upper) || band.lower < 0 || band.upper > 100 || band.lower >= band.upper) {
       throw new BadRequestException(`第${index + 1}档品位上下限须在0至100%内，且下限小于上限`);
     }
     if (previousUpper !== null && band.lower !== previousUpper) {
       throw new BadRequestException(`第${index + 1}档品位下限须等于上一档上限，区间必须连续、不重叠`);
     }
-    if (!Number.isFinite(selectedRate) || Number(selectedRate) <= 0) {
-      throw new BadRequestException(`请填写第${index + 1}档${rules.selectedSpec === 'FRAGMENT' ? '碎屑' : '统矿'}单价（元/度，须大于0）`);
+    for (const spec of ['FRAGMENT', 'RUN_OF_MINE'] as const) {
+      const rate = band?.rates?.[spec];
+      if ((specs.includes(spec) || rate != null) && (!Number.isFinite(rate) || Number(rate) <= 0)) throw new BadRequestException(`请填写第${index + 1}档${SPEC_LABELS[spec]}单价（元/度，须大于0）`);
     }
-    if (otherRate != null && (!Number.isFinite(otherRate) || otherRate <= 0)) {
-      throw new BadRequestException(`第${index + 1}档另一规格的单价须大于0，不适用时请留空`);
-    }
+    if (rules.specPricingMode === 'UNIFIED' && specs.some(spec => band.rates[spec] !== band.rates[specs[0]])) throw new BadRequestException(`第${index + 1}档统一计价的适用规格价格必须一致，请重新填写统一价格`);
     previousUpper = band.upper;
   }
   const recovery = rules.recoveryAdjustment;
@@ -132,8 +129,9 @@ export function evaluateRecoveryAdjustment(rule: RecoveryAdjustmentRule | null |
  * 仅计算税前价；缺报告、品位越档或水分超限均转人工，不推测合同外规则。
  * unitPrice 为档位原价（实测度数 × 元/度），回收率扣价单列在 recovery.deductionPerTon，不改写原单价。
  */
-export function evaluateGradePrice(rulesValue: unknown, spec: 'FRAGMENT' | 'RUN_OF_MINE', quantity: number, indicators: Indicator[]) {
+export function evaluateGradePrice(rulesValue: unknown, actualSpec: CargoSpec | null | undefined, quantity: number, indicators: Indicator[]) {
   const rules = parseGradePriceRules(rulesValue);
+  const resolution = resolveGradeSpec(rules, actualSpec);
   const gradePct = readMeasuredPct(indicators, 'GRADE');
   const moisturePct = readMeasuredPct(indicators, 'MOISTURE');
   const hasRecoveryRule = Boolean(rules.recoveryAdjustment);
@@ -141,6 +139,7 @@ export function evaluateGradePrice(rulesValue: unknown, spec: 'FRAGMENT' | 'RUN_
   // 未约定回收率条款时不输出新增字段，保证存量结算依据签名不变。
   const recoveryFacts = hasRecoveryRule ? { recoveryPct } : {};
   const reasons: string[] = [];
+  if (resolution.error) reasons.push(resolution.error);
   if (gradePct === null) reasons.push('缺少有效的 CaF₂ 实测品位');
   if (moisturePct === null) reasons.push('缺少有效的水分实测值');
   if (moisturePct !== null && rules.moistureMaxPct != null && moisturePct > rules.moistureMaxPct) reasons.push(`水分 ${moisturePct}% 超过合同${rules.moistureDeductionMode ? '质量水分' : ''}上限 ${rules.moistureMaxPct}%，须人工确认处理方式`);
@@ -148,7 +147,8 @@ export function evaluateGradePrice(rulesValue: unknown, spec: 'FRAGMENT' | 'RUN_
   const band = gradePct === null ? null : rules.bands.find(row => gradePct >= row.lower && gradePct < row.upper) || null;
   if (gradePct !== null && !band) reasons.push(`CaF₂ ${gradePct}% 不在合同价格表区间内`);
   if (!Number.isFinite(quantity) || quantity <= 0) reasons.push('结算数量必须大于0');
-  if (reasons.length || !band || gradePct === null) return { status: 'REVIEW_REQUIRED' as const, reasons, gradePct, moisturePct, ...recoveryFacts, band: band || null };
+  if (reasons.length || !band || gradePct === null || !resolution.spec) return { status: 'REVIEW_REQUIRED' as const, reasons, gradePct, moisturePct, ...recoveryFacts, band: band || null };
+  const spec = resolution.spec;
   const rate = band.rates[spec];
   if (rate == null || rate <= 0) return { status: 'REVIEW_REQUIRED' as const, reasons: ['该规格未配置品位分档单价'], gradePct, moisturePct, ...recoveryFacts, band: { lower: band.lower, upper: band.upper } };
   const unitPrice = new Prisma.Decimal(gradePct).mul(rate).toDecimalPlaces(4).toNumber();

@@ -21,7 +21,7 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
   if (contract.type !== 'BILATERAL') return [];
   if (typeof (prisma as any).$transaction !== 'function') {
     // 与交付撤销串行；不能校验完依据后被并发撤销。
-    await prisma.$queryRaw`SELECT d.id FROM direct_deliveries d JOIN waybills w ON w.id=d."waybillId" JOIN direct_executions e ON e."salesNoticeId"=w."dispatchNoticeId" WHERE e."contractId"=${contract.id} AND d.status='CONFIRMED' ORDER BY d.id FOR SHARE OF d`;
+    await prisma.$queryRaw`SELECT d.id FROM direct_deliveries d JOIN waybills w ON w.id=d."waybillId" JOIN direct_executions e ON e."salesNoticeId"=w."dispatchNoticeId" WHERE e."contractId"=${contract.id} AND d.status='CONFIRMED' ORDER BY d.id FOR SHARE OF d, w`;
   }
   const rows = await prisma.waybillLineItem.findMany({
     where: { waybill: { deletedAt: null, status: { not: 'CANCELLED' }, dispatchNotice: { directSalesExecution: { is: { contractId: contract.id } }, deletedAt: null, status: { not: 'CANCELLED' } } } },
@@ -92,7 +92,7 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
     const negotiable = purchase
       ? (followAdjustment ? Number(saleSnapshot?.lineAdjustment?.quantityCeiling ?? total) : total)
       : negotiableGoodsQuantity(total, basis, effective, reports, moisture, moistureRule);
-    const grade = gradeTier && gradeRules ? evaluateGradePrice(gradeRules, gradeRules.selectedSpec, remaining, report?.indicators || []) : null;
+    const grade = gradeTier && gradeRules ? evaluateGradePrice(gradeRules, w.cargoSpec as 'FRAGMENT' | 'RUN_OF_MINE' | null, remaining, report?.indicators || []) : null;
     const evaluation = report && item?.qualityRulesSnapshot ? evaluateContractQualityRules(item.qualityRulesSnapshot, report.indicators) : null;
     const defaultAccepted = task?.basisInspectionId === report?.id && ['PASS', 'LEGACY', 'ACCEPT_WITH_DEDUCTION'].includes(task?.qualityDisposition || '');
     const disposition = gradeTier && !item?.qualityRulesSnapshot && grade?.status === 'READY' ? 'PASS' : defaultAccepted ? task!.qualityDisposition : evaluation?.disposition || (report?.conclusion === 'PASS' ? 'PASS' : 'REVIEW_REQUIRED');
@@ -116,7 +116,7 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
     const followReasons: string[] = [];
     if (purchase && !sale) followReasons.push(`${FOLLOW_SALES_PENDING}（本车尚未编制销售结算，以下数量仅按销售默认依据试算）`);
     else if (purchase && !salesApproved) followReasons.push(`${FOLLOW_SALES_PENDING}（销售结算 ${sale!.settlement.settlementNo} 当前${SETTLEMENT_STATUS_LABEL[sale!.settlement.status] || sale!.settlement.status}）`);
-    const snapshot = { directDeliveryId: d?.id, directVersion: d?.version, direction, contractLineItemId: item?.id, contractRules: item?.qualityRulesSnapshot,
+    const snapshot = { ...(w.cargoSpec ? { cargoSpec: w.cargoSpec } : {}), directDeliveryId: d?.id, directVersion: d?.version, direction, contractLineItemId: item?.id, contractRules: item?.qualityRulesSnapshot,
       gradeRules, weighTicketId: ticket?.id, ticketUpdatedAt: ticket?.updatedAt, reportId: report?.id, reportUpdatedAt: report?.updatedAt,
       decisionVersion: task?.decisionVersion, quantityBasis: basis, totalQuantity: total, unitPrice, taxRatePct: item?.taxRatePct?.toString(), deduction, recovery, disposition, ...moisturePricingSnapshot(moistureRule),
       ...(purchase ? { followSalesLineId: sale?.id || null, followSalesQuantity: sale ? String(sale.quantity) : null, salesApproved, followAdjustment } : {}) };
@@ -125,7 +125,7 @@ export async function directSettlementSources(prisma: PrismaService, contract: a
     const allReasons = [...reasons, ...followReasons];
     return {
       id: row.id, waybillLineItemId: row.id, directDeliveryId: d?.id, directVersion: d?.version, direct: true,
-      waybillId: w.id, waybillNo: w.waybillNo, plateNo: w.plateNo, waybillStatus: w.status,
+      waybillId: w.id, cargoSpec: w.cargoSpec, waybillNo: w.waybillNo, plateNo: w.plateNo, waybillStatus: w.status,
       orderId: order.id, orderNo: order.orderNo, orderName: order.name, orderStatus: order.status,
       contractLineItemId: item?.id, materialName: row.materialName || item?.materialName, unit: row.unit,
       totalQuantity: total, usedQuantity: used, remainingQuantity: remaining, negotiableQuantity: negotiable, negotiableRemainingQuantity: Math.max(0, negotiable - used),

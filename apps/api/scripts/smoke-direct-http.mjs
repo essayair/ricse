@@ -10,6 +10,8 @@ const OUT = process.argv[2] || `/private/tmp/ricse-direct-http-${Date.now()}.jso
 const stamp = new Date().toISOString().replace(/\D/g, '').slice(4, 14);
 const TAG = `E2E-ZB-${stamp}`;
 const EXCESS_MOISTURE = process.env.TEST_MOISTURE_EXCESS === '1';
+const SPEC_MODE = process.env.TEST_SPEC_PRICING_MODE || '';
+assert(['', 'UNIFIED', 'BY_SPEC'].includes(SPEC_MODE), '不支持的规格计价测试模式');
 const firstSettlementQuantity = EXCESS_MOISTURE ? 19.7 : 19.1;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
 const results = []; const observations = []; const ctx = {};
@@ -50,9 +52,10 @@ async function step(id, title, fn) {
 const observe = (id, title, detail) => { observations.push({ id, title, detail }); console.log('OBS ', id, title, JSON.stringify(detail)); save(); };
 
 const bands = (delta = 0) => [[10, 15, 14.8], [15, 20, 18.5], [20, 25, 20.5], [25, 30, 22], [30, 35, 22.7], [35, 40, 23.2], [40, 45, 23.5], [45, 50, 23.8]]
-  .map(([lower, upper, rate]) => ({ lower, upper, rates: { FRAGMENT: +(rate + delta).toFixed(4), RUN_OF_MINE: +(rate + delta).toFixed(4) } }));
+  .map(([lower, upper, rate]) => ({ lower, upper, rates: { FRAGMENT: +(rate + delta).toFixed(4), RUN_OF_MINE: +(rate + delta + (SPEC_MODE === 'BY_SPEC' ? 2 : 0)).toFixed(4) } }));
 const grade = delta => ({ version: 1, method: 'CAF2_GRADE_TIER', quantityBasis: 'DRY_MATTER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX',
-  moistureMaxPct: 8, ...(EXCESS_MOISTURE ? { moistureDeductionMode: 'EXCESS', moistureBasePct: delta ? 3 : 4 } : {}), bands: bands(delta), exceptionHandling: 'MANUAL_REVIEW', selectedSpec: 'RUN_OF_MINE', formulaConfirmed: true, recoveryAdjustment: null });
+  moistureMaxPct: 8, ...(EXCESS_MOISTURE ? { moistureDeductionMode: 'EXCESS', moistureBasePct: delta ? 3 : 4 } : {}), bands: bands(delta), exceptionHandling: 'MANUAL_REVIEW',
+  ...(SPEC_MODE ? { selectedSpec: '', specPricingMode: SPEC_MODE, applicableSpecs: ['FRAGMENT', 'RUN_OF_MINE'] } : { selectedSpec: 'RUN_OF_MINE' }), formulaConfirmed: true, recoveryAdjustment: null });
 
 async function fillTicket(ticketId, gross, tare, remark) {
   await api(`/weigh-tickets/${ticketId}/weights`, 'PATCH', { source: 'DIRECT', grossWeight: gross, tareWeight: tare });
@@ -94,7 +97,8 @@ async function truck(n, salesNoticeId, plate, shipping, receiving, reports) {
   const P = `T${n}`;
   const w = await step(`${P}-01`, `第${n}车：从销售直拨通知创建共享运单（运输方式：供应商承运）`, async () => {
     const notice = await api(`/dispatch-notices/${salesNoticeId}`);
-    const w = await api('/waybills', 'POST', { dispatchNoticeId: salesNoticeId, freightMode: 'SUPPLIER', plateNo: plate, driverName: `模拟司机${n}`, driverPhone: `1990000${String(1100 + n)}`, lineItems: [{ dispatchNoticeLineItemId: notice.lineItems[0].id, quantity: 20 }], remarks: TAG });
+    const w = await api('/waybills', 'POST', { dispatchNoticeId: salesNoticeId, freightMode: 'SUPPLIER', ...(SPEC_MODE && n === 1 ? { cargoSpec: 'FRAGMENT' } : {}), plateNo: plate, driverName: `模拟司机${n}`, driverPhone: `1990000${String(1100 + n)}`, lineItems: [{ dispatchNoticeLineItemId: notice.lineItems[0].id, quantity: 20 }], remarks: TAG });
+    if (SPEC_MODE) { assert.deepEqual(w.cargoSpecOptions, ['FRAGMENT', 'RUN_OF_MINE']); assert(!JSON.stringify(w).includes('priceRulesSnapshot')); }
     ctx[`waybill${n}`] = { id: w.id, waybillNo: w.waybillNo }; return w;
   });
   if (!w) return {};
@@ -131,7 +135,7 @@ async function truck(n, salesNoticeId, plate, shipping, receiving, reports) {
 }
 
 async function main() {
-  const db = new URL(process.env.DATABASE_URL || ''); assert(['localhost', '127.0.0.1'].includes(db.hostname) && /dev|test/.test(db.pathname), '仅允许本地 dev 库');
+  const db = new URL(process.env.DATABASE_URL || ''); assert(['localhost', '127.0.0.1'].includes(db.hostname) && db.port === '5433' && db.pathname === '/ricse_dev', '仅允许本地 localhost:5433/ricse_dev');
   if (process.env.TEST_USERNAME && process.env.TEST_PASSWORD) {
     const login = await fetch(BASE + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: process.env.TEST_USERNAME, password: process.env.TEST_PASSWORD }) }).then(r => r.json());
     assert(login.token, '登录失败'); token = login.token;
@@ -161,7 +165,7 @@ async function main() {
   // ---------- 二、合同 ----------
   const resolved = await api(`/quality-standards/resolve?materialId=${material.id}&scene=PURCHASE`); const t = resolved.template;
   const qualityRulesSnapshot = { materialId: material.id, templateId: t.id, templateCode: t.code, templateName: t.name, templateVersion: t.version,
-    items: t.items.map(i => ({ indicatorId: i.indicatorId, code: i.indicator.code, name: i.indicator.name, symbol: i.indicator.symbol, unit: i.unit, operator: i.operator, standardValue: Number(i.standardValue), upperValue: null,
+    items: t.items.filter(i => i.participates !== false).map(i => ({ indicatorId: i.indicatorId, code: i.indicator.code, name: i.indicator.name, symbol: i.indicator.symbol, unit: i.unit, operator: i.operator, standardValue: i.standardValue == null ? null : Number(i.standardValue), upperValue: null,
       deductionMode: 'NONE', deductionStep: null, deductionAmount: null, deductionCondition: 'OUTSIDE_STANDARD', deductionLowerValue: null, deductionUpperValue: null, deductionLimitValue: null, rejectOperator: 'NONE', rejectValue: null })) };
   const contractBody = { clientRequestId: TAG, title: `${TAG}双边直拨全流程模拟`, type: 'BILATERAL', signingPartnerId: own.id, sellerId: supplier.id, buyerId: customer.id,
     departmentId: dept.id, businessUnitId: unit.id, externalNo: `${TAG}-CG`, salesExternalNo: `${TAG}-XS`, signedAt: '2026-11-10', salesSignedAt: '2026-11-11', salesPaymentMethod: '货到验收后 T/T',
@@ -252,7 +256,7 @@ async function main() {
       observe('T1-17', '交付预览快照', { quantity: p.snapshot.quantity, pricingQuantity: p.snapshot.pricingQuantity, basis: p.snapshot.pricingQuantityBasis, moisture: p.snapshot.measuredMoisturePct, createsInventory: p.createsInventory });
       assert.equal(Number(p.snapshot.quantity), 19.8); assert.equal(Number(p.snapshot.pricingQuantity), EXCESS_MOISTURE ? 19.503 : 18.909); return `实物 ${p.snapshot.quantity} / 计价 ${p.snapshot.pricingQuantity}`;
     });
-    const inv0 = await api('/inventory/overview').catch(() => null);
+    const inv0 = await api(`/inventory/overview?ownerPartnerId=${own.id}`);
     const d1 = await step('T1-18', '确认直拨交付（仓储库管）：生成采购业务入库 + 销售出库', async () => {
       const d = await api(`/bilateral-direct/waybills/${t1.w.id}/confirm`, 'POST', { weighTicketId: t1.recvTicket.id, qualityReportId: t1.reps.B.id, remarks: `${TAG}按客户收货磅单与客户检测交付；发货 20.000 吨、收货 19.800 吨，差 0.2 吨为途耗，各自结算时处理` });
       assert.equal(d.status, 'CONFIRMED'); assert.equal(d.documents.length, 2); ctx.d1id = d.id;
@@ -272,10 +276,10 @@ async function main() {
       return `双侧快照已固化；客户重量 ${w.salesCompletionCustomerWeight}，发货重量 ${w.salesCompletionShippingWeight}，差异 ${w.salesCompletionWeightVariance}`;
     });
     await step('T1-22', '直拨交付不影响我方库存（库存总览前后对比）', async () => {
-      const inv1 = await api('/inventory/overview').catch(() => null);
-      const sum = v => rows(v).reduce((s, x) => s + Number(x.availableQuantity ?? x.quantity ?? 0), 0);
+      const inv1 = await api(`/inventory/overview?ownerPartnerId=${own.id}`);
+      const sum = v => { assert(v?.summary && Number.isFinite(Number(v.summary.totalPhysicalQuantity)), '库存总览缺少汇总，不能把空解析冒充0'); return Number(v.summary.totalPhysicalQuantity); };
       const a = sum(inv0), b = sum(inv1); observe('T1-22', '库存总览可用量合计', { before: a, after: b });
-      assert.equal(a, b); return `前 ${a} / 后 ${b}`;
+      assert.equal(a, b); assert.equal(inv1.summary.lotCount, 0); return `隔离货权主体：前 ${a} / 后 ${b}，无库存批次`;
     });
     await step('T1-23', '“出库管理”与库存台账中能否看到本车销售出库', async () => {
       const orders = rows(await api(`/outbound-receipts/orders?search=${encodeURIComponent(exec.salesNotice.noticeNo)}`));
@@ -325,6 +329,37 @@ async function main() {
     const src = async dir => rows(await api(`/financial-settlements/options/goods-sources?contractId=${C}&direction=${dir}`)).filter(x => x.direct);
     const lineOf = (s, extra = {}) => ({ orderId: s.orderId, waybillLineItemId: s.id, ...extra });
     const approveAll = async id => { for (let i = 0; i < 15; i++) { const x = await api(`/financial-settlements/${id}`); if (x.status !== 'PENDING_APPROVAL') return x; await api(`/financial-settlements/${id}/approve`, 'POST', { comment: `${TAG}模拟审批` }); } throw new Error('审批未结束'); };
+    if (SPEC_MODE) {
+      await step('SPEC-01', '实际规格暂缺：统一价可算，分别计价必须补填', async () => {
+        const row = (await src('RECEIVABLE')).find(x => x.waybillId === t2.w.id);
+        assert.equal(row.gradePrice.status, SPEC_MODE === 'BY_SPEC' ? 'REVIEW_REQUIRED' : 'READY');
+        if (SPEC_MODE === 'BY_SPEC') assert(row.reasons.some(r => r.includes('补充本车货物规格')));
+        return row.gradePrice.status;
+      });
+      await step('SPEC-02', '已确认直拨且尚未结算，首次补填统矿规格', async () => {
+        const w = await api(`/waybills/${t2.w.id}/cargo-spec`, 'PATCH', { cargoSpec: 'RUN_OF_MINE' });
+        assert.equal(w.cargoSpec, 'RUN_OF_MINE');
+        assert.deepEqual(w.cargoSpecOptions, ['FRAGMENT', 'RUN_OF_MINE']);
+        assert(!JSON.stringify(w).includes('priceRulesSnapshot'));
+        return '本车统矿，合同价格快照不从物流接口外泄';
+      });
+      await step('SPEC-03', '两车按本车规格、品位及销售表取价', async () => {
+        const sale = await src('RECEIVABLE');
+        for (const [waybillId, spec, measured] of [[t1.w.id, 'FRAGMENT', 32.6], [t2.w.id, 'RUN_OF_MINE', 29.4]]) {
+          const row = sale.find(x => x.waybillId === waybillId);
+          const rate = grade(1).bands.find(b => measured >= b.lower && measured < b.upper).rates[spec];
+          assert.equal(row.cargoSpec, spec); assert.equal(row.gradePrice.status, 'READY'); assert.equal(row.gradePrice.rate, rate);
+          assert.equal(row.unitPrice, Number((measured * rate).toFixed(4)));
+        }
+        return sale.map(x => `${x.cargoSpec}：${x.gradePrice.rate}元/度 × ${x.gradePrice.gradePct}度`).join('；');
+      });
+      await step('SPEC-04', '混装规格、无原因更正和已交付规格更正均拦截', async () => {
+        await expectFail(`/waybills/${t2.w.id}/cargo-spec`, 'PATCH', { cargoSpec: ['FRAGMENT', 'RUN_OF_MINE'] });
+        await expectFail(`/waybills/${t2.w.id}/cargo-spec`, 'PATCH', { cargoSpec: 'FRAGMENT' }, /更正原因/);
+        await expectFail(`/waybills/${t2.w.id}/cargo-spec`, 'PATCH', { cargoSpec: 'FRAGMENT', reason: '模拟填错更正' }, /先撤销/);
+        return '未静默改动已交付规格';
+      });
+    }
     let p0 = await step('S-01', '销售结算前：采购来源标记“跟随销售、仅可预览”', async () => {
       const list = await src('PAYABLE'); assert.equal(list.length, 2);
       for (const x of list) { assert(x.followSales); assert(x.previewOnly); assert(!x.available); assert(x.reasons.some(r => r.includes('请先完成销售结算审批'))); }

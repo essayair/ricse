@@ -14,6 +14,7 @@ export class CreateWaybillLineDto {
 }
 
 export class WaybillCreateFieldsDto {
+  @IsOptional() @IsIn(['FRAGMENT', 'RUN_OF_MINE']) cargoSpec?: 'FRAGMENT' | 'RUN_OF_MINE';
   @IsOptional()
   @IsIn(['SELF', 'THIRD_PARTY', 'SOCIAL', 'SUPPLIER', 'CUSTOMER'])
   freightMode?: string;

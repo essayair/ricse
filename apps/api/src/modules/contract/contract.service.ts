@@ -437,12 +437,13 @@ export class ContractService {
     }
     const materials = await client.material.findMany({
       where: { id: { in: contract.lineItems.map(item => item.materialId) }, deletedAt: null },
-      select: { id: true, name: true, status: true, categoryId: true, qualityTemplateId: true, qualityTemplate: { select: { status: true } } },
+      select: { id: true, name: true, status: true, categoryId: true, qualityTemplateId: true, qualityTemplate: { select: { status: true, items: { select: { participates: true } } } } },
     });
     const scene = contract.type === 'SALES' ? 'SALES' : 'PURCHASE';
     const fallbackTemplates = await client.qualityTemplate.findMany({
       where: { status: 'ACTIVE', materialCategoryId: { in: [...new Set(materials.map(material => material.categoryId))] }, businessScene: { in: [scene, 'GENERAL'] } },
-      select: { materialCategoryId: true },
+      select: { materialCategoryId: true, items: { select: { participates: true } } },
+      orderBy: [{ businessScene: 'desc' }, { updatedAt: 'desc' }],
     }) || [];
     const materialById = new Map(materials.map(material => [material.id, material]));
     for (const line of contract.lineItems) {
@@ -451,8 +452,11 @@ export class ContractService {
         throw new BadRequestException(`物料“${material?.name || line.materialId}”不存在或已停用，不能提交合同`);
       }
       const hasDirectTemplate = Boolean(material?.qualityTemplateId && material.qualityTemplate?.status === 'ACTIVE');
-      const hasFallbackTemplate = fallbackTemplates.some(template => template.materialCategoryId === material?.categoryId);
-      if ((hasDirectTemplate || hasFallbackTemplate) && (!line.qualityRulesSnapshot || !Array.isArray((line.qualityRulesSnapshot as any).items) || !(line.qualityRulesSnapshot as any).items.length)) {
+      const selectedTemplate = hasDirectTemplate ? material.qualityTemplate : fallbackTemplates.find(template => template.materialCategoryId === material.categoryId);
+      const requiresRules = selectedTemplate ? selectedTemplate.items?.some(item => item.participates !== false) ?? true : false;
+      const snapshotItems = (line.qualityRulesSnapshot as any)?.items;
+      // 全部是参考指标时，明确保存的空规则有效；没读取/没确认模板仍不等同于“无验收规则”。
+      if (selectedTemplate && (!Array.isArray(snapshotItems) || (requiresRules && !snapshotItems.length))) {
         throw new BadRequestException(`物料“${material?.name || line.materialId}”已配置质检模板，请先在合同明细中核对并保存质量结算规则`);
       }
       const rules = (line.qualityRulesSnapshot as any)?.items;

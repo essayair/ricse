@@ -13,6 +13,7 @@ import type { SettlementSummaryAdjustment } from './settlement-adjustment-summar
 export const paymentMoney = (value: unknown) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const QUALITY_LABELS: Record<string, string> = { PENDING: '待检测', PASS: '合格接收', LEGACY: '历史验收', DEDUCTION_PENDING: '待确认扣款接收', ACCEPT_WITH_DEDUCTION: '已确认扣款接收', REJECT: '拒收', REVIEW_REQUIRED: '待人工判定' };
 export interface GoodsSource {
+  cargoSpec?: 'FRAGMENT' | 'RUN_OF_MINE' | null;
   moistureDeductionMode?: 'ACTUAL' | 'EXCESS'; moistureBasePct?: number | null;
   /** 直拨采购：磅单、报告、数量跟随同车已审批的销售结算；previewOnly 表示销售结算尚未审批，只能预览。 */
   followSales?: boolean; followSalesSettlementId?: string | null; followSalesSettlementNo?: string | null; followSalesStatus?: string | null; previewOnly?: boolean;
@@ -34,7 +35,7 @@ export interface GoodsSource {
   availableWeighTickets?: Array<{ id: string; ticketNo: string; weighingStage: string; netWeight: number | null; isSelectable?: boolean }>;
   settlementWeightSource?: 'INVENTORY_DEFAULT' | 'EXPLICIT_INVENTORY' | 'SELECTED_OTHER_SIDE';
   measuredMoisturePct?: number | null; dryQuantity?: number | null; pricingQuantityBasis?: string;
-  pricingType?: string; contractTaxRatePct?: number | null; gradePrice?: { status: 'READY' | 'REVIEW_REQUIRED'; gradePct?: number | null; moisturePct?: number | null; recoveryPct?: number | null; rate?: number; unitPrice?: number; band?: { lower: number; upper: number }; reasons?: string[];
+  pricingType?: string; contractTaxRatePct?: number | null; gradePrice?: { status: 'READY' | 'REVIEW_REQUIRED'; spec?: 'FRAGMENT' | 'RUN_OF_MINE'; gradePct?: number | null; moisturePct?: number | null; recoveryPct?: number | null; rate?: number; unitPrice?: number; band?: { lower: number; upper: number }; reasons?: string[];
     recovery?: { baselinePct: number; shortfallPoints: number; deductionPerTon: number; stepMode: 'PROPORTIONAL' | 'FULL_POINT' } | null; netUnitPrice?: number };
   recoveryDeductionPerTon?: number;
   signature: string; totalAmount: number; evaluation?: { items?: Array<{ name: string; reason: string; deductionPerTon?: number }> }; qualityAcceptance?: { name: string; acceptedAt: string; reason: string };

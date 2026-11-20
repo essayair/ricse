@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
@@ -8,6 +8,8 @@ import { QualityInspectionService } from '../quality/quality-inspection.service'
 import { WeighTicketService } from '../weighbridge/weigh-ticket.service';
 import { BatchCreateWaybillDto, BatchWaybillItemDto, CreateWaybillDto } from './dto/create-waybill.dto';
 import { reserveBusinessNumber } from '../common/business-number';
+import { assertCargoSpec, noticeLineCargoSpecs, publicCargoNotice, publicCargoWaybill } from './cargo-spec';
+import type { CargoSpec } from '@ricse/shared-types/grade-price-spec';
 
 /** Web 筛选、小程序待办列表和数量统计共用，排除拒收、转仓及已结束合同。 */
 export const DIRECT_PENDING_WHERE = {
@@ -51,7 +53,8 @@ export class WaybillService {
             id: true, orderNo: true, name: true, type: true, status: true, contractId: true, plannedDate: true,
             contract: {
               select: {
-                id: true, contractNo: true, title: true,
+                id: true, contractNo: true, title: true, type: true, pricingType: true,
+                lineItems: { select: { id: true, priceRulesSnapshot: true, salesPriceRulesSnapshot: true } },
                 businessUnit: { select: { id: true, code: true, name: true } },
               },
             },
@@ -65,7 +68,7 @@ export class WaybillService {
     driver: { select: { id: true, name: true, phone: true, licenseNo: true, licenseClass: true } },
     carrierPartner: { select: { id: true, code: true, name: true, roles: true } },
     creator: { select: { id: true, name: true } },
-    lineItems: { orderBy: { createdAt: 'asc' as const } },
+    lineItems: { orderBy: { createdAt: 'asc' as const }, include: { dispatchNoticeLineItem: { include: { orderLineItem: true } } } },
     weighTickets: {
       where: { deletedAt: null },
       select: {
@@ -259,6 +262,7 @@ export class WaybillService {
         throw new BadRequestException(`第 ${rowNumber} 行运单明细无效或重复`);
       }
       seen.add(line.dispatchNoticeLineItemId);
+      assertCargoSpec(item.cargoSpec, source.cargoSpecOptions);
       return {
         dispatchNoticeLineItemId: line.dispatchNoticeLineItemId,
         materialId: source.materialId,
@@ -269,6 +273,7 @@ export class WaybillService {
     });
     return {
       clientRowId: item.clientRowId,
+      cargoSpec: item.cargoSpec || null,
       freightMode,
       carrier,
       vehicle,
@@ -302,8 +307,8 @@ export class WaybillService {
     const notice = await this.prisma.dispatchNotice.findFirst({
       where: { id: dispatchNoticeId, deletedAt: null, AND: [scope] },
       include: {
-        lineItems: { orderBy: { createdAt: 'asc' } },
-        order: { include: { contract: true } },
+        lineItems: { orderBy: { createdAt: 'asc' }, include: { orderLineItem: true } },
+        order: { include: { contract: { include: { lineItems: true } } } },
         warehouse: true,
         directPurchaseExecution: true,
         directSalesExecution: true,
@@ -324,9 +329,10 @@ export class WaybillService {
     });
     const map = new Map(used.map(item => [item.dispatchNoticeLineItemId, Number(item._sum.quantity || 0)]));
     return {
-      notice,
+      notice: publicCargoNotice(notice),
       lineItems: notice.lineItems.map(item => ({
         dispatchNoticeLineItemId: item.id,
+        cargoSpecOptions: noticeLineCargoSpecs(item, notice),
         materialId: item.materialId,
         materialName: item.materialName,
         unit: item.unit,
@@ -376,6 +382,7 @@ export class WaybillService {
       const source = sources.get(item.dispatchNoticeLineItemId);
       if (!source || seen.has(item.dispatchNoticeLineItemId)) throw new BadRequestException('运单明细无效或重复');
       seen.add(item.dispatchNoticeLineItemId);
+      assertCargoSpec(dto.cargoSpec, source.cargoSpecOptions);
       return {
         dispatchNoticeLineItemId: item.dispatchNoticeLineItemId,
         materialId: source.materialId,
@@ -398,6 +405,7 @@ export class WaybillService {
           status: 'PENDING',
           dispatchNoticeId: notice.id,
           freightMode,
+          cargoSpec: dto.cargoSpec || null,
           vehicleId: dto.vehicleId || null,
           driverId: dto.driverId || null,
           carrierPartnerId: carrier?.id || null,
@@ -421,7 +429,7 @@ export class WaybillService {
     if (notice.type === 'SALES' && notice.mode === 'STANDARD') {
       return this.findOne(created.id, userId, 'logistics.manage');
     }
-    return created;
+    return publicCargoWaybill(created);
   }
 
   async createBatch(dto: BatchCreateWaybillDto, userId: string) {
@@ -490,6 +498,7 @@ export class WaybillService {
             status: 'PENDING',
             dispatchNoticeId: dto.dispatchNoticeId,
             freightMode: item.freightMode,
+            cargoSpec: item.cargoSpec,
             vehicleId: item.vehicle?.id || null,
             driverId: item.driver?.id || null,
             carrierPartnerId: item.carrier?.id || null,
@@ -523,7 +532,7 @@ export class WaybillService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 30000 });
 
     for (const waybill of created) await this.syncCreatedWaybill(waybill, userId);
-    return { batchRequestId: dto.batchRequestId, createdCount: created.length, warnings, items: created };
+    return { batchRequestId: dto.batchRequestId, createdCount: created.length, warnings, items: created.map(item => publicCargoWaybill(item)) };
   }
 
   async findAll(params: { status?: string; search?: string; directPending?: boolean }, userId: string) {
@@ -547,7 +556,7 @@ export class WaybillService {
     const items = await this.prisma.waybill.findMany({
       where, include: this.include, take: 100, orderBy: { createdAt: 'desc' },
     });
-    return { items, total: items.length };
+    return { items: items.map(item => publicCargoWaybill(item)), total: items.length };
   }
 
   async findOne(id: string, userId: string, permission = 'logistics.view') {
@@ -557,7 +566,30 @@ export class WaybillService {
       where: { id, deletedAt: null, AND: [scope] }, include: this.include,
     });
     if (!waybill) throw new NotFoundException('物流运单不存在');
-    return waybill;
+    return publicCargoWaybill(waybill);
+  }
+
+  async updateCargoSpec(id: string, cargoSpec: CargoSpec | null, reason: string | undefined, userId: string) {
+    const waybill = await this.findOne(id, userId, 'logistics.manage');
+    if (waybill.status === 'CANCELLED') throw new BadRequestException('已取消运单不能修改货物规格');
+    assertCargoSpec(cargoSpec, waybill.cargoSpecOptions);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "waybills" WHERE id=${id} FOR UPDATE`;
+      const current = await tx.waybill.findUniqueOrThrow({ where: { id } });
+      if (current.cargoSpec === cargoSpec) return waybill;
+      if (current.deletedAt || current.status === 'CANCELLED') throw new BadRequestException('运单状态已变化，请刷新');
+      if (current.cargoSpec && !reason?.trim()) throw new BadRequestException('修改或清空已填规格时，请填写更正原因');
+      const occupied = await tx.financialSettlementLine.count({ where: { waybillLineItem: { waybillId: id }, settlement: { deletedAt: null, status: { not: 'VOIDED' } } } });
+      const confirmed = await tx.directDelivery.count({ where: { waybillId: id, status: { in: ['CONFIRMED', 'PENDING_REVIEW'] } } });
+      // 首次补填不改变交付数量；已填规格的更正不得绕过交付复核，结算占用后连首次补填也锁定。
+      if (occupied || (confirmed && current.cargoSpec)) throw new BadRequestException('本车已有有效结算单或直拨交付确认，请先撤销相关单据后更正规格');
+      const updated = await tx.waybill.update({ where: { id }, data: { cargoSpec }, include: this.include });
+      await tx.businessOperationLog.create({ data: { businessType: 'WAYBILL', businessId: id, action: 'UPDATE', actionLabel: '更正本车货物规格', operatorId: userId, details: { before: current.cargoSpec, after: cargoSpec, reason: reason?.trim() || '补充实际规格' } } });
+      return { ...publicCargoWaybill(updated), cargoSpecOptions: waybill.cargoSpecOptions };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch(error => {
+      if (error?.code === 'P2034') throw new ConflictException('运单或结算正在被其他人员修改，请刷新后重新确认货物规格');
+      throw error;
+    });
   }
 
   async assign(id: string, data: {
@@ -726,7 +758,7 @@ export class WaybillService {
     }
     if (status === 'CANCELLED') await this.weighService.voidTaskForWaybill(id, userId);
     else await this.weighService.syncTaskForWaybill(id, userId);
-    return updated;
+    return publicCargoWaybill(updated);
   }
 
   async confirmSalesCompletion(id: string, customerWeighTicketId: string, qualityReportId: string, remarks: string, userId: string) {

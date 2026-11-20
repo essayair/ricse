@@ -60,6 +60,47 @@ describe('WaybillService', () => {
     prisma.waybillLineItem.groupBy.mockResolvedValue([] as any);
   });
 
+  describe('本车货物规格补充与更正', () => {
+    const prepare = (cargoSpec: string | null = null) => {
+      const row = { id: 'w-spec', status: 'SIGNED', cargoSpec, cargoSpecOptions: ['FRAGMENT', 'RUN_OF_MINE'] } as any;
+      jest.spyOn(service, 'findOne').mockResolvedValue(row);
+      prisma.waybill.findUniqueOrThrow.mockResolvedValue(row);
+      prisma.waybill.update.mockResolvedValue(row);
+      prisma.financialSettlementLine.count.mockResolvedValue(0);
+      prisma.directDelivery.count.mockResolvedValue(0);
+      return row;
+    };
+    it('运输后可以补充规格，有权限及操作留痕', async () => {
+      prepare();
+      await service.updateCargoSpec('w-spec', 'FRAGMENT', undefined, 'user-1');
+      expect(service.findOne).toHaveBeenCalledWith('w-spec', 'user-1', 'logistics.manage');
+      expect(prisma.waybill.update).toHaveBeenCalledWith(expect.objectContaining({ data: { cargoSpec: 'FRAGMENT' } }));
+      expect(prisma.businessOperationLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actionLabel: '更正本车货物规格', details: expect.objectContaining({ before: null, after: 'FRAGMENT' }) }) }));
+    });
+    it('已填规格的更改及清空必须有原因', async () => {
+      prepare('FRAGMENT');
+      await expect(service.updateCargoSpec('w-spec', 'RUN_OF_MINE', '', 'user-1')).rejects.toThrow('更正原因');
+      await expect(service.updateCargoSpec('w-spec', null, undefined, 'user-1')).rejects.toThrow('更正原因');
+      expect(prisma.waybill.update).not.toHaveBeenCalled();
+    });
+    it('有效结算单（含草稿）及直拨交付确认锁定规格', async () => {
+      prepare();
+      prisma.financialSettlementLine.count.mockResolvedValue(1);
+      await expect(service.updateCargoSpec('w-spec', 'FRAGMENT', undefined, 'user-1')).rejects.toThrow('先撤销');
+      prisma.financialSettlementLine.count.mockResolvedValue(0);
+      prisma.directDelivery.count.mockResolvedValue(1);
+      prisma.waybill.findUniqueOrThrow.mockResolvedValue({ id: 'w-spec', status: 'SIGNED', cargoSpec: 'FRAGMENT' } as any);
+      await expect(service.updateCargoSpec('w-spec', 'RUN_OF_MINE', '原规格填错', 'user-1')).rejects.toThrow('先撤销');
+      expect(prisma.waybill.update).not.toHaveBeenCalled();
+    });
+    it('直拨已确认但尚未结算时允许首次补填，避免分别计价无法结算', async () => {
+      prepare();
+      prisma.directDelivery.count.mockResolvedValue(1);
+      await service.updateCargoSpec('w-spec', 'RUN_OF_MINE', undefined, 'user-1');
+      expect(prisma.waybill.update).toHaveBeenCalledWith(expect.objectContaining({ data: { cargoSpec: 'RUN_OF_MINE' } }));
+    });
+  });
+
   it('待直拨交付筛选保持权限且排除取消、转仓、拒收和已结束业务', async () => {
     const scope = { id: { in: ['permitted-trip'] } };
     accessControl.getWaybillScope.mockResolvedValueOnce(scope);

@@ -1,15 +1,24 @@
 /** 本地 HTTP 全链路实测；保留带 E2E 标识的模拟单据，不执行任何银行支付。 */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { PrismaClient } from '@prisma/client';
+import { JwtService } from '@nestjs/jwt';
 
 const BASE = 'http://127.0.0.1:3000/api/v1';
 const variant = process.env.TEST_VARIANT || 'A';
 assert(['A', 'B'].includes(variant), '测试变体仅允许A或B');
-const STATE = variant === 'A' ? '/private/tmp/ricse-bilateral-20261110-state.json' : '/private/tmp/ricse-bilateral-20261110-B-state.json';
+const specMode = process.env.TEST_SPEC_PRICING_MODE || '';
+assert(['', 'UNIFIED', 'BY_SPEC'].includes(specMode), '规格模式无效');
+const gradeRule = (sales = false) => ({ version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX', quantityBasis: 'DRY_MATTER', moistureDeductionMode: 'ACTUAL', moistureMaxPct: 10, specPricingMode: specMode, applicableSpecs: ['FRAGMENT', 'RUN_OF_MINE'], formulaConfirmed: true, exceptionHandling: 'MANUAL_REVIEW', bands: [{ lower: 30, upper: 35, rates: { FRAGMENT: sales ? 24.7 : 22.7, RUN_OF_MINE: specMode === 'BY_SPEC' ? sales ? 26 : 24 : sales ? 24.7 : 22.7 } }] });
+const expectedPayable = specMode ? Number((19 * 32.5 * gradeRule().bands[0].rates.RUN_OF_MINE * 1.13).toFixed(2)) : 19000;
+const expectedReceivable = specMode ? Number((19 * 32.5 * gradeRule(true).bands[0].rates.RUN_OF_MINE * 1.13).toFixed(2)) : 22800;
+const remainingPayment = Number((expectedPayable - 6000).toFixed(2));
+const STATE = process.argv[2] || (variant === 'A' ? '/private/tmp/ricse-bilateral-20261110-state.json' : '/private/tmp/ricse-bilateral-20261110-B-state.json');
 const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : {
-  tag: `E2E-BI-20261110-${variant}`, cache: {}, checks: [], failures: [], startedAt: new Date().toISOString(),
+  tag: process.env.TEST_RUN_TAG || `E2E-BI-20261110-${variant}`, cache: {}, checks: [], failures: [], startedAt: new Date().toISOString(),
 };
 const tag = state.tag;
+assert(/^E2E-BI-[A-Za-z0-9-]+$/.test(tag), '只允许E2E-BI标记的模拟数据');
 const checkpoint = () => fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
 let token;
@@ -76,7 +85,9 @@ async function weigh(waybillId, stage, prefix) {
 async function quality(waybill, ticket, prefix, stage = 'RECEIVING') {
   const task = await once(`${prefix}-自动质检任务`, async () => {
     const list = rows(await api('/quality-tasks?search=' + encodeURIComponent(waybill.waybillNo)));
-    const found = list.find(t => t.waybillId === waybill.id); assert(found, '车辆到达后应自动生成质检任务'); return found;
+    const found = list.find(t => t.waybillId === waybill.id);
+    if (!found && prefix.startsWith('销售')) return api(`/quality-tasks/waybills/${waybill.id}`, 'POST', {}); // 不强制发货质检时，销售完成前可补建收货检测任务。
+    assert(found, '车辆到达后应自动生成质检任务'); return found;
   });
   const sample = await once(`${prefix}-取样`, () => api(`/quality-tasks/${task.id}/samples`, 'POST', {
     sampledAt: iso(), sampleLabel: `${tag}-${prefix}样品`, samplerName: '模拟质检员',
@@ -121,21 +132,21 @@ async function finance(business) {
     lines: [{ orderId: b.purchaseOrderId, waybillLineItemId: b.purchaseWaybillLineId, weighTicketId: b.purchaseTicketId, qualityReportId: b.purchaseReportId, quantity: 19 }], remarks: tag };
   const receivableDto = { contractId: b.contractId, direction: 'RECEIVABLE', settlementScope: 'GOODS', taxRatePct: 13,
     lines: [{ orderId: b.saleOrderId, waybillLineItemId: b.saleWaybillLineId, weighTicketId: b.saleTicketId, qualityReportId: b.saleReportId, quantity: 19 }], remarks: tag };
-  await once('采购结算预览计算', async () => { const r = await api('/financial-settlements/preview-goods', 'POST', payableDto); assert.equal(Number(r.totalAmount), 19000); return r; });
+  await once('采购结算预览计算', async () => { const r = await api('/financial-settlements/preview-goods', 'POST', payableDto); assert.equal(Number(r.totalAmount), expectedPayable); return r; });
   const payable = await once('采购结算单', () => api('/financial-settlements', 'POST', payableDto));
-  assert.equal(Number(payable.totalAmount), 19000);
+  assert.equal(Number(payable.totalAmount), expectedPayable);
   await once('采购防重复结算', () => api('/financial-settlements', 'POST', payableDto, 400));
   await once('确认采购应付', () => api(`/financial-settlements/${payable.id}/confirm`, 'POST', {}));
   await once('采购结算审批如需', () => approveSettlement(payable.id));
-  await once('销售结算预览计算', async () => { const r = await api('/financial-settlements/preview-goods', 'POST', receivableDto); assert.equal(Number(r.totalAmount), 22800); return r; });
+  await once('销售结算预览计算', async () => { const r = await api('/financial-settlements/preview-goods', 'POST', receivableDto); assert.equal(Number(r.totalAmount), expectedReceivable); return r; });
   const receivable = await once('销售结算单', () => api('/financial-settlements', 'POST', receivableDto));
-  assert.equal(Number(receivable.totalAmount), 22800);
+  assert.equal(Number(receivable.totalAmount), expectedReceivable);
   await once('销售防重复结算', () => api('/financial-settlements', 'POST', receivableDto, 400));
   await once('确认销售应收', () => api(`/financial-settlements/${receivable.id}/confirm`, 'POST', {}));
   await once('销售结算审批如需', () => approveSettlement(receivable.id));
   const request = await once('创建采购付款申请', () => api('/financial-settlements/payment-requests', 'POST', {
     ...bank, contractId: b.contractId, settlementId: payable.id, basisType: 'SETTLEMENT', businessType: 'PURCHASE',
-    paymentStage: 'SETTLEMENT', paymentMethod: 'BANK_TRANSFER', amount: 19000, conditionTypes: ['INBOUND', 'QUALITY'],
+    paymentStage: 'SETTLEMENT', paymentMethod: 'BANK_TRANSFER', amount: expectedPayable, conditionTypes: ['INBOUND', 'QUALITY'],
     purpose: `${tag}采购结算付款`, conditionText: '已收货、合格质检及入库过账，按已确认结算金额申请', clientRequestId: tag + '-payment', remarks: '模拟，不执行银行支付',
   }));
   await once('业务确认付款申请', () => api(`/financial-settlements/payment-requests/${request.id}/business-confirm`, 'POST', {}));
@@ -155,34 +166,34 @@ async function finance(business) {
   await once('财务确认第一笔付款', () => api(`/financial-settlements/funds/${firstPayment.id}/confirm`, 'POST', {}));
   const partial = await once('核销第一笔付款', () => api(`/financial-settlements/${payable.id}/allocate`, 'POST', { fundTransactionId: firstPayment.id, amount: 6000 }));
   assert.equal(partial.status, 'PARTIALLY_SETTLED'); assert.equal(Number(partial.settledAmount), 6000);
-  const secondPayment = await once('第二笔模拟付款单13000', () => upload(`/financial-settlements/payment-requests/${request.id}/execute-with-voucher`, undefined,
-    { ...execution, amount: 13000, occurredAt: iso(), bankReference: tag + '-PAY-2' }));
+  const secondPayment = await once('第二笔模拟尾款单', () => upload(`/financial-settlements/payment-requests/${request.id}/execute-with-voucher`, undefined,
+    { ...execution, amount: remainingPayment, occurredAt: iso(), bankReference: tag + '-PAY-2' }));
   await once('财务确认第二笔付款', () => api(`/financial-settlements/funds/${secondPayment.id}/confirm`, 'POST', {}));
-  const paid = await once('核销付款结清应付', () => api(`/financial-settlements/${payable.id}/allocate`, 'POST', { fundTransactionId: secondPayment.id, amount: 13000 }));
-  assert.equal(paid.status, 'SETTLED'); assert.equal(Number(paid.settledAmount), 19000);
+  const paid = await once('核销付款结清应付', () => api(`/financial-settlements/${payable.id}/allocate`, 'POST', { fundTransactionId: secondPayment.id, amount: remainingPayment }));
+  assert.equal(paid.status, 'SETTLED'); assert.equal(Number(paid.settledAmount), expectedPayable);
   const requestAfter = await api(`/financial-settlements/payment-requests/${request.id}`); assert.equal(requestAfter.status, 'PAID');
   await once('已付清禁止重复付款', () => api(`/financial-settlements/payment-requests/${request.id}/execute`, 'POST', { ...execution, amount: 1 }, 400));
-  const receipt = await once('登记未认领收款22800', () => api('/financial-settlements/funds', 'POST', {
+  const receipt = await once('登记未认领收款', () => api('/financial-settlements/funds', 'POST', {
     legalEntityPartnerId: b.own.id, businessType: 'SALES', paymentStage: 'SETTLEMENT', paymentMethod: 'BANK_TRANSFER',
-    amount: 22800, occurredAt: iso(), bankReference: tag + '-RECEIPT', ourBankAccount: bank.ourBankAccount,
+    amount: expectedReceivable, occurredAt: iso(), bankReference: tag + '-RECEIPT', ourBankAccount: bank.ourBankAccount,
     ourBankAccountName: b.own.name, ourBankName: bankName, counterpartyBankAccount: '000000001103',
     counterpartyBankAccountName: b.customer.name, counterpartyBankName: bankName, actualPayerName: b.customer.name, actualPayeeName: b.own.name,
     remarks: `${tag}模拟银行到账，先登记后认领`,
   }));
   assert.equal(receipt.status, 'PENDING_CLAIM');
   await once('收款认领到销售批次', () => api(`/financial-settlements/funds/${receipt.id}/claim`, 'POST', {
-    contractId: b.contractId, orderId: b.saleOrderId, paymentStage: 'SETTLEMENT', amount: 22800, remarks: tag,
+    contractId: b.contractId, orderId: b.saleOrderId, paymentStage: 'SETTLEMENT', amount: expectedReceivable, remarks: tag,
   }));
   await once('收款无凭证确认阻断', () => api(`/financial-settlements/funds/${receipt.id}/confirm`, 'POST', {}, 400));
   await once('收款回单附件', () => upload(`/financial-settlements/funds/${receipt.id}/attachments`));
   await once('财务确认销售收款', () => api(`/financial-settlements/funds/${receipt.id}/confirm`, 'POST', {}));
-  const collected = await once('核销收款结清应收', () => api(`/financial-settlements/${receivable.id}/allocate`, 'POST', { fundTransactionId: receipt.id, amount: 22800 }));
-  assert.equal(collected.status, 'SETTLED'); assert.equal(Number(collected.settledAmount), 22800);
+  const collected = await once('核销收款结清应收', () => api(`/financial-settlements/${receivable.id}/allocate`, 'POST', { fundTransactionId: receipt.id, amount: expectedReceivable }));
+  assert.equal(collected.status, 'SETTLED'); assert.equal(Number(collected.settledAmount), expectedReceivable);
   await once('重复收款流水阻断', () => api('/financial-settlements/funds', 'POST', {
-    legalEntityPartnerId: b.own.id, businessType: 'SALES', paymentStage: 'SETTLEMENT', paymentMethod: 'BANK_TRANSFER', amount: 22800,
+    legalEntityPartnerId: b.own.id, businessType: 'SALES', paymentStage: 'SETTLEMENT', paymentMethod: 'BANK_TRANSFER', amount: expectedReceivable,
     occurredAt: iso(), bankReference: tag + '-RECEIPT', ourBankAccount: bank.ourBankAccount, actualPayerName: b.customer.name,
   }, 400));
-  for (const [key, settlement, amount] of [['进项', payable, 19000], ['销项', receivable, 22800]]) {
+  for (const [key, settlement, amount] of [['进项', payable, expectedPayable], ['销项', receivable, expectedReceivable]]) {
     await once(`${key}发票登记与分摊`, () => api(`/financial-settlements/${settlement.id}/invoices`, 'POST', {
       invoiceNo: tag + '-' + key, issuedAt: '2026-11-10', materialName: '模拟萤石矿', quantity: 19,
       taxRate: 13, taxAmount: Math.round((amount - amount / 1.13) * 100) / 100, taxInclusiveAmount: amount,
@@ -196,7 +207,7 @@ async function finance(business) {
     const s = await api(`/financial-settlements/${payable.id}`);
     const allocation = s.allocations.find(a => a.fundTransactionId === firstPayment.id && !a.reversedAt); assert(allocation);
     const reversed = await api(`/financial-settlements/allocations/${allocation.id}/reverse`, 'POST', { reason: `${tag}模拟冲回后重核销` });
-    assert.equal(reversed.status, 'PARTIALLY_SETTLED'); assert.equal(Number(reversed.settledAmount), 13000);
+    assert.equal(reversed.status, 'PARTIALLY_SETTLED'); assert.equal(Number(reversed.settledAmount), remainingPayment);
     const reapplied = await api(`/financial-settlements/${payable.id}/allocate`, 'POST', { fundTransactionId: firstPayment.id, amount: 6000 });
     assert.equal(reapplied.status, 'SETTLED'); return true;
   });
@@ -229,19 +240,26 @@ async function finance(business) {
 
 async function main() {
   const database = new URL(process.env.DATABASE_URL || '');
-  assert(['localhost', '127.0.0.1', '[::1]'].includes(database.hostname) && /dev|test/i.test(database.pathname), '仅允许本地dev/test数据库；请使用 node --env-file=.env 运行');
+  assert(['localhost', '127.0.0.1', '[::1]'].includes(database.hostname) && database.port === '5433' && database.pathname === '/ricse_dev', '仅允许本地localhost:5433/ricse_dev；请使用 node --env-file=.env 运行');
   const health = await fetch(BASE + '/health').then(r => r.json()); assert.equal(health.status, 'ok');
   const username = process.env.TEST_USERNAME;
   const password = process.env.TEST_PASSWORD;
-  assert(username && password, '请通过 TEST_USERNAME、TEST_PASSWORD 提供本地测试账号，不在脚本中保存登录凭据');
-  const login = await fetch(BASE + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) });
-  const auth = await login.json(); assert(auth.token, '本地管理员登录失败'); token = auth.token;
+  if (username && password) {
+    const login = await fetch(BASE + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    const auth = await login.json(); assert(auth.token, '本地管理员登录失败'); token = auth.token;
+  } else {
+    const db = new PrismaClient();
+    try {
+      const user = await db.user.findFirstOrThrow({ where: { role: 'ADMIN', status: 'ACTIVE' } });
+      token = new JwtService().sign({ sub: user.id, username: user.username, role: user.role, tokenVersion: user.tokenVersion }, { secret: process.env.JWT_SECRET, expiresIn: '30m' });
+    } finally { await db.$disconnect(); }
+  }
   const opts = await api('/contracts/form-options');
   const unit = opts.businessUnits.find(u => u.name === '龙游萤石事业部');
   const dept = opts.departments.find(d => d.name === '业务运营部'); assert(unit && dept);
   const material = rows(await api('/master-data/materials?pageSize=100')).find(m => m.code === 'TRD000003' && m.status === 'ACTIVE');
   assert(material && material.pricingQuantityBasis === 'DRY_MATTER');
-  const own = await once('模拟我方主体', () => api('/partners', 'POST', { code: variant === 'A' ? 'E61110' : 'E61111', name: `${tag}模拟贸易主体`, isInternal: true, roles: ['SUPPLIER', 'CUSTOMER'], remark: '仅本地全链路测试，非真实企业' }));
+  const own = await once('模拟我方主体', () => api('/partners', 'POST', { code: process.env.TEST_RUN_TAG ? `V${String(Date.now()).slice(-5)}` : variant === 'A' ? 'E61110' : 'E61111', name: `${tag}模拟贸易主体`, isInternal: true, roles: ['SUPPLIER', 'CUSTOMER'], remark: '仅本地全链路测试，非真实企业' }));
   const supplier = await once('模拟供应商', () => api('/partners', 'POST', { name: `${tag}模拟供应商`, roles: ['SUPPLIER'], remark: '仅本地全链路测试' }));
   const customer = await once('模拟客户', () => api('/partners', 'POST', { name: `${tag}模拟客户`, roles: ['CUSTOMER'], remark: '仅本地全链路测试' }));
   for (const [key, partner, no] of [['我方', own, '000000001101'], ['供方', supplier, '000000001102'], ['客户', customer, '000000001103']]) {
@@ -253,21 +271,21 @@ async function main() {
   const resolved = await api(`/quality-standards/resolve?materialId=${material.id}&scene=PURCHASE`);
   const t = resolved.template;
   const qualityRulesSnapshot = { materialId: material.id, templateId: t.id, templateCode: t.code, templateName: t.name, templateVersion: t.version,
-    items: t.items.map(i => ({ indicatorId: i.indicatorId, code: i.indicator.code, name: i.indicator.name, symbol: i.indicator.symbol, unit: i.unit,
-      operator: i.operator, standardValue: Number(i.standardValue), upperValue: null, deductionMode: 'NONE', deductionStep: null, deductionAmount: null,
+    items: t.items.filter(i => i.participates !== false).map(i => ({ indicatorId: i.indicatorId, code: i.indicator.code, name: i.indicator.name, symbol: i.indicator.symbol, unit: i.unit,
+      operator: i.operator, standardValue: i.standardValue == null ? null : Number(i.standardValue), upperValue: null, deductionMode: 'NONE', deductionStep: null, deductionAmount: null,
       deductionCondition: 'OUTSIDE_STANDARD', deductionLowerValue: null, deductionUpperValue: null, deductionLimitValue: null, rejectOperator: 'NONE', rejectValue: null })) };
   let contract = await once('创建双边合同', () => api('/contracts', 'POST', {
     clientRequestId: tag, title: `${tag}双边合同采购销售全链路模拟`, type: 'BILATERAL', signingPartnerId: own.id,
-    sellerId: supplier.id, buyerId: customer.id, departmentId: dept.id, businessUnitId: unit.id, externalNo: tag,
-    pricingType: 'FIXED', totalAmount: 20000, signedAt: '2026-11-10', settlementMethod: '收货质检后按折干重量结算；货款结清后闭环',
+    sellerId: supplier.id, buyerId: customer.id, departmentId: dept.id, businessUnitId: unit.id, externalNo: tag, salesExternalNo: tag + '-XS', salesSignedAt: '2026-11-10', salesPaymentMethod: '货到结算，模拟收款',
+    pricingType: specMode ? 'GRADE_TIER' : 'FIXED', totalAmount: 20000, signedAt: '2026-11-10', settlementMethod: '收货质检后按折干重量结算；货款结清后闭环',
     settlementBasis: '各方向分别采用选定的净重及实测水分折干', prepayPct: 0, paymentDays: 0, paymentMethod: 'T/T',
     deliveryMethod: '供方送货入库，后由我方发货至客户', deliveryLocation: warehouse.address,
     overfillPct: 10, shortfallPct: 10, remarks: `${tag}纯模拟，不进行真实收付`,
     lineItems: [{ materialId: material.id, materialName: material.name, quantity: 20, unit: '吨', unitPrice: 1000,
-      salesUnitPrice: 1200, taxRatePct: 13, qualityRulesSnapshot }],
+      salesUnitPrice: 1200, taxRatePct: 13, qualityRulesSnapshot, ...(specMode ? { priceRulesSnapshot: gradeRule(), salesPriceRulesSnapshot: gradeRule(true) } : {}) }],
   }));
   await once('合同缺附件阻断', async () => { const e = await api(`/contracts/${contract.id}/status`, 'PATCH', { status: 'PENDING_APPROVAL' }, 400); assert.match(e.message, /附件/); return true; });
-  await once('合同附件上传', () => upload(`/contracts/${contract.id}/attachments`, 'OTHER'));
+  await once('合同附件上传', async () => { await upload(`/contracts/${contract.id}/attachments`, 'PURCHASE_CONTRACT'); return upload(`/contracts/${contract.id}/attachments`, 'SALES_CONTRACT'); });
   await once('合同提交审批', () => api(`/contracts/${contract.id}/status`, 'PATCH', { status: 'PENDING_APPROVAL' }));
   contract = await once('合同完整审批链', () => approveContract(contract.id));
   const line = contract.lineItems[0]; assert.equal(Number(line.unitPrice), 1000); assert.equal(Number(line.salesUnitPrice), 1200);
@@ -277,7 +295,7 @@ async function main() {
     destinationSourceType: 'WAREHOUSE', destinationWarehouseId: warehouse.id, warehouseId: warehouse.id,
     mode: 'STANDARD', qualityRequired: true, lineItems: [{ orderLineItemId: order.lineItems[0].id, quantity: 20 }], remarks: tag }));
   await once('下达采购通知', () => api(`/dispatch-notices/${notice.id}/status`, 'PATCH', { status: 'ISSUED' }));
-  const purchaseWaybill = await once('采购运单', () => api('/waybills', 'POST', { dispatchNoticeId: notice.id, freightMode: 'SOCIAL', plateNo: '浙H11110', driverName: '模拟采购司机', driverPhone: '19900001101', remarks: tag }));
+  const purchaseWaybill = await once('采购运单', () => api('/waybills', 'POST', { dispatchNoticeId: notice.id, freightMode: 'SOCIAL', ...(specMode ? { cargoSpec: 'RUN_OF_MINE' } : {}), plateNo: '浙H11110', driverName: '模拟采购司机', driverPhone: '19900001101', remarks: tag }));
   await once('采购发运', () => api(`/waybills/${purchaseWaybill.id}/status`, 'PATCH', { status: 'IN_TRANSIT' }));
   await once('采购到达', () => api(`/waybills/${purchaseWaybill.id}/status`, 'PATCH', { status: 'ARRIVED' }));
   const purchaseShipping = await weigh(purchaseWaybill.id, 'SHIPPING', '采购发货');
@@ -305,7 +323,7 @@ async function main() {
     originLocation: warehouse.address, originSourceType: 'WAREHOUSE', originWarehouseId: warehouse.id, destinationLocation: '模拟客户收货地',
     qualityRequired: variant === 'B', lineItems: [{ orderLineItemId: saleOrder.lineItems[0].id, quantity: 20 }], remarks: tag }));
   await once('下达销售通知预占', () => api(`/dispatch-notices/${saleNotice.id}/status`, 'PATCH', { status: 'ISSUED' }));
-  const saleWaybill = await once('销售运单', () => api('/waybills', 'POST', { dispatchNoticeId: saleNotice.id, freightMode: 'SOCIAL', plateNo: '浙H11111', driverName: '模拟销售司机', driverPhone: '19900001102', remarks: tag }));
+  const saleWaybill = await once('销售运单', () => api('/waybills', 'POST', { dispatchNoticeId: saleNotice.id, freightMode: 'SOCIAL', ...(specMode ? { cargoSpec: 'RUN_OF_MINE' } : {}), plateNo: '浙H11111', driverName: '模拟销售司机', driverPhone: '19900001102', remarks: tag }));
   await once('未出库禁止发运', async () => { const e = await api(`/waybills/${saleWaybill.id}/status`, 'PATCH', { status: 'IN_TRANSIT' }, 400); assert.match(e.message, /出库/); return true; });
   const saleShipping = await weigh(saleWaybill.id, 'SHIPPING', '销售发货');
   await once('销售出库磅单选用', () => api(`/weigh-tickets/waybills/${saleWaybill.id}/selections/INVENTORY`, 'PATCH', { weighTicketId: saleShipping.id, reason: tag }));

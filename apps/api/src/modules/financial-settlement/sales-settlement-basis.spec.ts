@@ -42,6 +42,17 @@ describe('销售交付后的逐车应收来源', () => {
     prisma.waybillLineItem.findMany.mockResolvedValue([row]);
   });
 
+  it('销售分别计价读取本车规格及销售价格表', async () => {
+    prisma.contract.findFirst.mockResolvedValue({ id: 'contract', type: 'BILATERAL', pricingType: 'GRADE_TIER', lineItems: [{ id: 'contract-line', unitPrice: new Prisma.Decimal(600), salesUnitPrice: new Prisma.Decimal(700),
+      priceRulesSnapshot: { invalidPurchaseRuleMustNotBeUsed: true },
+      salesPriceRulesSnapshot: { version: 1, method: 'CAF2_GRADE_TIER', gradeUnit: 'PERCENT_POINTS', rateUnit: 'CNY_PER_DEGREE_EX_TAX', quantityBasis: 'PHYSICAL', moistureMaxPct: 15, exceptionHandling: 'MANUAL_REVIEW', formulaConfirmed: true, specPricingMode: 'BY_SPEC', applicableSpecs: ['FRAGMENT', 'RUN_OF_MINE'], bands: [{ lower: 30, upper: 35, rates: { FRAGMENT: 25, RUN_OF_MINE: 26 } }] } }] } as any);
+    row.waybill.qualityTask.basisInspection.indicators = [{ code: 'CAF2', unit: '%', measuredValue: 32.5 }, { code: 'MOISTURE', unit: '%', measuredValue: 10 }];
+    row.waybill.cargoSpec = 'FRAGMENT';
+    expect((await basis.sources('contract', 'user'))[0]).toMatchObject({ cargoSpec: 'FRAGMENT', unitPrice: 812.5, gradePrice: { status: 'READY', rate: 25 } });
+    row.waybill.cargoSpec = 'RUN_OF_MINE';
+    expect((await basis.sources('contract', 'user'))[0]).toMatchObject({ cargoSpec: 'RUN_OF_MINE', unitPrice: 845, gradePrice: { status: 'READY', rate: 26 } });
+  });
+
   it('按客户收货磅单与最终报告折干形成应收，不改写我方出库数量', async () => {
     const source = (await basis.sources('contract', 'user'))[0];
     expect(source).toMatchObject({ available: true, totalQuantity: 88.2, remainingQuantity: 88.2,
