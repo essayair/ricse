@@ -13,7 +13,7 @@ type Rule = {
   operator?: string;
   standardValue?: number | null;
   upperValue?: number | null;
-  deductionMode?: 'NONE' | 'PER_STEP' | 'FLAT';
+  deductionMode?: 'NONE' | 'REVIEW' | 'PER_STEP' | 'FLAT';
   deductionStep?: number | null;
   deductionAmount?: number | null;
   deductionCondition?: 'OUTSIDE_STANDARD' | 'IN_RANGE';
@@ -63,6 +63,9 @@ export function evaluateContractQualityRules(snapshot: unknown, indicators: Arra
   if (!Array.isArray(rules) || !rules.length) return null;
 
   const results = rules.map((rule) => {
+    // 模板标准只是检测参考；只有合同明确配置偏差处理或拒收条件才参与商业处置。
+    const hasDeduction = ['REVIEW', 'PER_STEP', 'FLAT'].includes(rule.deductionMode || '');
+    const hasRejection = Boolean(rule.rejectOperator && rule.rejectOperator !== 'NONE' && rule.rejectValue != null);
     const expectedCode = String(rule.code || '').toLowerCase();
     const expectedName = String(rule.name || '').toLowerCase();
     const measured = indicators.find((item) => (
@@ -76,11 +79,13 @@ export function evaluateContractQualityRules(snapshot: unknown, indicators: Arra
     let amount = 0;
     let reason = '';
 
-    if (value == null) {
+    if (!hasDeduction && !hasRejection) {
+      result = 'REFERENCE'; reason = '仅作检测参考，合同未约定偏差处理或拒收条件';
+    } else if (value == null) {
       result = 'REVIEW_REQUIRED'; reason = '选定报告缺少该指标的实测值';
     } else if (matches(value, rule.rejectOperator, rule.rejectValue)) {
       result = 'REJECT'; reason = '实测值达到合同拒收条件';
-    } else if (rule.deductionCondition === 'IN_RANGE') {
+    } else if (rule.deductionMode === 'FLAT' && rule.deductionCondition === 'IN_RANGE') {
       const lower = rule.deductionLowerValue;
       const upper = rule.deductionUpperValue;
       if (lower == null || upper == null) {
@@ -92,7 +97,7 @@ export function evaluateContractQualityRules(snapshot: unknown, indicators: Arra
       } else if (!standardPass) {
         result = 'REVIEW_REQUIRED'; reason = '实测值超出已配置的合同规则范围';
       }
-    } else if (!standardPass) {
+    } else if (!standardPass && hasDeduction) {
       if (rule.deductionMode === 'FLAT') {
         amount = Number(rule.deductionAmount || 0);
         result = amount > 0 ? 'DEDUCTION' : 'REVIEW_REQUIRED';
@@ -113,8 +118,8 @@ export function evaluateContractQualityRules(snapshot: unknown, indicators: Arra
           result = amount > 0 ? 'DEDUCTION' : 'REVIEW_REQUIRED';
           reason = amount > 0 ? '按偏差比例线性计算，单位为元/吨' : '无法计算扣款';
         }
-      } else {
-        result = 'REVIEW_REQUIRED'; reason = '合同未配置该指标的扣款或拒收处理方式';
+      } else if (rule.deductionMode === 'REVIEW') {
+        result = 'REVIEW_REQUIRED'; reason = '实测值偏离合同标准，按约定待人工判定';
       }
     }
     return {

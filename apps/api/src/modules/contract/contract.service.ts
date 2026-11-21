@@ -469,13 +469,16 @@ export class ContractService {
           if (!rule.code || !rule.name || !['GTE', 'GT', 'LTE', 'LT', 'EQ', 'RANGE'].includes(rule.operator)) {
             throw new BadRequestException(`物料“${material?.name || line.materialId}”的质量规则缺少有效指标或合同标准`);
           }
+          if (['REVIEW', 'PER_STEP', 'FLAT'].includes(rule.deductionMode) && rule.standardValue == null) {
+            throw new BadRequestException(`指标“${rule.name}”已设置偏差处理，请填写合同阈值`);
+          }
           if (rule.deductionMode === 'PER_STEP' && (!(Number(rule.deductionStep) > 0) || !(Number(rule.deductionAmount) >= 0))) {
             throw new BadRequestException(`指标“${rule.name}”请填写大于0的扣款步长及有效的元/吨标准`);
           }
           if (rule.deductionMode === 'FLAT' && !(Number(rule.deductionAmount) >= 0)) {
             throw new BadRequestException(`指标“${rule.name}”请填写有效的固定扣款标准`);
           }
-          if (rule.deductionCondition === 'IN_RANGE' && (rule.deductionLowerValue == null || rule.deductionUpperValue == null || Number(rule.deductionLowerValue) > Number(rule.deductionUpperValue))) {
+          if (rule.deductionMode === 'FLAT' && rule.deductionCondition === 'IN_RANGE' && (rule.deductionLowerValue == null || rule.deductionUpperValue == null || Number(rule.deductionLowerValue) > Number(rule.deductionUpperValue))) {
             throw new BadRequestException(`指标“${rule.name}”的扣款区间上下限不完整或顺序错误`);
           }
           if (rule.rejectOperator && rule.rejectOperator !== 'NONE' && rule.rejectValue == null) {

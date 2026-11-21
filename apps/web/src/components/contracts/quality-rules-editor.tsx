@@ -7,7 +7,7 @@ import { contractQualitySnapshot, contractQualityTemplateItems } from '@/lib/con
 type Rule = {
   indicatorId?: string; code: string; name: string; symbol?: string | null; unit: string;
   operator: string; standardValue: number | null; upperValue: number | null;
-  deductionMode: 'NONE' | 'PER_STEP' | 'FLAT'; deductionStep: number | null;
+  deductionMode: 'NONE' | 'REVIEW' | 'PER_STEP' | 'FLAT'; deductionStep: number | null;
   deductionAmount: number | null; deductionCondition: 'OUTSIDE_STANDARD' | 'IN_RANGE';
   deductionLowerValue: number | null; deductionUpperValue: number | null;
   deductionLimitValue: number | null; rejectOperator: string; rejectValue: number | null;
@@ -43,10 +43,7 @@ function preset(item: any, templateCode: string): Rule {
       rejectOperator: 'GT', rejectValue: rule.upperValue ?? 50,
     });
   }
-  if (item.fuseValue != null) {
-    const rejectOperator = item.operator === 'GTE' ? 'LT' : item.operator === 'LTE' ? 'GT' : null;
-    if (rejectOperator) Object.assign(rule, { rejectOperator, rejectValue: Number(item.fuseValue) });
-  }
+  // 模板阈值不自动转为合同拒收条件；合同经办人须明确约定。
   return rule;
 }
 
@@ -94,8 +91,9 @@ export function QualityRulesEditor({ materialId, scene, value, onChange }: {
     {error && <div className="py-2 text-sm text-destructive">{error}</div>}
     {!loading && snapshot && !snapshot.items.length && <div className={snapshot.templateId ? 'rounded bg-muted p-3 text-sm text-muted-foreground' : 'rounded bg-warning-bg p-3 text-sm text-warning'}>{snapshot.templateId ? '本模板没有参与验收判定的指标。' : '该物料尚未配置质检模板。请先在物料/质检模板中配置检测指标，再返回合同选择物料。'}</div>}
     {snapshot?.items.map((rule, index) => <div key={`${rule.indicatorId || rule.code}-${index}`} className="mt-3 grid grid-cols-12 items-end gap-2 rounded border p-2">
-      <div className="col-span-12 md:col-span-3"><div className="text-xs text-muted-foreground">检测指标 / 合同要求</div><div className="mt-1 text-sm font-medium">{rule.symbol || rule.name}　{rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? ` – ${rule.upperValue}` : ''} {rule.unit}</div></div>
-      <label className="col-span-6 md:col-span-2 text-xs">偏差处理<select className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" value={rule.deductionMode} onChange={e => update(index, { deductionMode: e.target.value as Rule['deductionMode'] })}><option value="NONE">按标准验收</option><option value="PER_STEP">按偏差扣款</option><option value="FLAT">固定扣款</option></select></label>
+      <div className="col-span-12 md:col-span-3"><div className="text-xs text-muted-foreground">检测指标 / {rule.deductionMode === 'NONE' && rule.rejectOperator === 'NONE' ? '模板参考值' : '合同标准'}</div><div className="mt-1 text-sm font-medium">{rule.symbol || rule.name}　{rule.operator} {rule.standardValue}{rule.operator === 'RANGE' ? ` – ${rule.upperValue}` : ''} {rule.unit}</div></div>
+      <label className="col-span-6 md:col-span-2 text-xs">偏差处理<select className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" value={rule.deductionMode} onChange={e => update(index, { deductionMode: e.target.value as Rule['deductionMode'] })}><option value="NONE">不处理（仅供参考）</option><option value="REVIEW">超标待人工判定</option><option value="PER_STEP">按偏差扣款</option><option value="FLAT">固定扣款</option></select></label>
+      {rule.deductionMode !== 'NONE' && <label className="col-span-6 md:col-span-2 text-xs">合同阈值（{rule.unit}）<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.standardValue ?? ''} onChange={e => update(index, { standardValue: e.target.value === '' ? null : Number(e.target.value) })} /></label>}
       {rule.deductionMode === 'PER_STEP' && <><label className="col-span-3 md:col-span-2 text-xs">每步偏差<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" min="0.0001" step="0.1" value={rule.deductionStep ?? ''} onChange={e => update(index, { deductionStep: e.target.value === '' ? null : Number(e.target.value) })} /></label><label className="col-span-3 md:col-span-2 text-xs">扣款标准（元/吨）<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" min="0" step="0.01" value={rule.deductionAmount ?? ''} onChange={e => update(index, { deductionAmount: e.target.value === '' ? null : Number(e.target.value) })} /></label></>}
       {rule.deductionMode === 'FLAT' && <label className="col-span-6 md:col-span-2 text-xs">固定扣款（元/吨）<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" min="0" step="0.01" value={rule.deductionAmount ?? ''} onChange={e => update(index, { deductionAmount: e.target.value === '' ? null : Number(e.target.value) })} /></label>}
       {rule.deductionCondition === 'IN_RANGE' && <><label className="col-span-3 md:col-span-1 text-xs">区间下限<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.deductionLowerValue ?? ''} onChange={e => update(index, { deductionLowerValue: e.target.value === '' ? null : Number(e.target.value) })} /></label><label className="col-span-3 md:col-span-1 text-xs">区间上限<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.deductionUpperValue ?? ''} onChange={e => update(index, { deductionUpperValue: e.target.value === '' ? null : Number(e.target.value) })} /></label></>}
@@ -103,6 +101,6 @@ export function QualityRulesEditor({ materialId, scene, value, onChange }: {
       {rule.rejectOperator !== 'NONE' && <label className="col-span-3 md:col-span-1 text-xs">拒收值<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.rejectValue ?? ''} onChange={e => update(index, { rejectValue: e.target.value === '' ? null : Number(e.target.value) })} /></label>}
       {rule.deductionMode === 'PER_STEP' && <label className="col-span-6 md:col-span-2 text-xs">扣款区间边界（可选）<input className="mt-1 h-9 w-full rounded border bg-background px-2 text-sm" type="number" step="0.01" value={rule.deductionLimitValue ?? ''} onChange={e => update(index, { deductionLimitValue: e.target.value === '' ? null : Number(e.target.value) })} /></label>}
     </div>)}
-    {snapshot && snapshot.items.length > 0 && <p className="mt-2 text-xs text-muted-foreground">未配置扣款方式的指标，若实测值偏离合同质量要求，系统将标记“待人工判定”，不会自动放行或扣款。按偏差比例线性计算，结算金额仍由资金结算模块单独生成。</p>}
+    {snapshot && snapshot.items.length > 0 && <p className="mt-2 text-xs text-muted-foreground">未设置偏差处理、拒收条件的模板指标仅供参考，不拦截结算。需要超标复核时请选择“超标待人工判定”。</p>}
   </div>;
 }
