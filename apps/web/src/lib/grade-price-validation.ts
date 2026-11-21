@@ -2,6 +2,7 @@ import type { GradePriceSnapshot } from '../components/contracts/grade-price-rul
 import type { FieldErrors } from './form-validation';
 import { deductibleMoisturePct } from '@ricse/shared-types/moisture-pricing';
 import { applicableGradeSpecs } from '@ricse/shared-types/grade-price-spec';
+import { RECOVERY_ADJUSTMENT_ENTRY_ENABLED } from '@ricse/shared-types/contract-pricing-policy';
 
 /** 提交审批前的字段级校验；保存草稿不调用阻断。 */
 export function gradePriceRuleErrors(rule: GradePriceSnapshot | null | undefined): FieldErrors {
@@ -28,8 +29,7 @@ export function gradePriceRuleErrors(rule: GradePriceSnapshot | null | undefined
     }
     if (rule.specPricingMode === 'UNIFIED' && specs.some(spec => band.rates[spec] !== band.rates[specs[0]])) errors[`${key}.${specs[0]}`] = `第${index + 1}档统一价格不一致，请重新填写统一单价`;
   });
-  if (!rule?.formulaConfirmed) errors.formulaConfirmed = '请勾选确认品位分档规则、元/度口径及人工例外处理';
-  if (rule?.recoveryAdjustment) {
+  if (RECOVERY_ADJUSTMENT_ENTRY_ENABLED && rule?.recoveryAdjustment) {
     const recovery = rule.recoveryAdjustment;
     if (recovery.baselinePct == null || !Number.isFinite(recovery.baselinePct) || recovery.baselinePct <= 0 || recovery.baselinePct > 100) errors.recovery = '请填写有效的选矿回收率基准（大于0且不超过100%）';
     else if (recovery.deductionPerPointPerDegree == null || !Number.isFinite(recovery.deductionPerPointPerDegree) || recovery.deductionPerPointPerDegree <= 0) errors.recovery = '请填写选矿回收率每低1个百分点的扣价（元/度，须大于0）';

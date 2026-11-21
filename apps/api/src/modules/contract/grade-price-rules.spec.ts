@@ -47,7 +47,6 @@ describe('萤石矿品位分档计价', () => {
     ['selectedSpec', '', '请选择本行货物规格'],
     ['moistureMaxPct', null, '请填写水分上限'],
     ['moistureMaxPct', -1, '水分上限必须'],
-    ['formulaConfirmed', false, '请勾选确认品位分档规则、元/度口径及人工例外处理'],
     ['exceptionHandling', undefined, '人工例外处理规则缺失'],
   ])('缺失或错误字段 %s 返回准确提示', (key, value, message) => {
     expect(() => parseGradePriceRules({ ...rules, [key]: value })).toThrow(message as string);
@@ -57,6 +56,10 @@ describe('萤石矿品位分档计价', () => {
     expect(() => parseGradePriceRules(rules)).not.toThrow();
     expect(() => parseGradePriceRules({ ...rules, quantityBasis: 'PHYSICAL' }, { requireQuantityBasis: true })).not.toThrow();
     expect(() => parseGradePriceRules({ ...rules, quantityBasis: 'DRY_MATTER' }, { requireQuantityBasis: true })).not.toThrow();
+  });
+  it('不再以人工勾选作为有效规则的条件，未勾选与缺失历史字段均可计算', () => {
+    expect(() => parseGradePriceRules({ ...rules, formulaConfirmed: false })).not.toThrow();
+    expect(() => parseGradePriceRules({ ...rules, formulaConfirmed: undefined })).not.toThrow();
   });
   it('缺价提示准确指向第几档及规格', () => {
     expect(() => parseGradePriceRules({ ...rules, bands: [{ lower: 10, upper: 15, rates: { FRAGMENT: null, RUN_OF_MINE: null } }] })).toThrow('第1档碎屑单价');

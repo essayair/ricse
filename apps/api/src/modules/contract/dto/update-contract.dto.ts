@@ -19,6 +19,10 @@ export class UpdateContractDto {
   @IsOptional() @IsString() externalNo?: string;
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() contactPhone?: string;
+  @IsOptional() @IsString() @MaxLength(100) purchaseContactPerson?: string;
+  @IsOptional() @IsString() @MaxLength(50) purchaseContactPhone?: string;
+  @IsOptional() @IsString() @MaxLength(100) salesContactPerson?: string;
+  @IsOptional() @IsString() @MaxLength(50) salesContactPhone?: string;
   @IsOptional() @IsString() pricingType?: string;
   @IsOptional() @IsNumber() overfillPct?: number;
   @IsOptional() @IsNumber() shortfallPct?: number;

@@ -1,5 +1,6 @@
 'use client';
 import { PurchasePaymentShortcut } from '@/components/settlement/purchase-payment-shortcut';
+import { contactText, hasLegacyBilateralContact } from '@/lib/contract-contacts';
 import { ContractSettlementRecords } from '@/components/settlement/contract-settlement-records';
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
@@ -67,6 +68,7 @@ interface ContractDetail {
   businessUnitId?: string | null;
   businessUnit?: { id: string; code: string; name: string; type: string; profitCenterCode?: string | null } | null;
   externalNo?: string; salesExternalNo?: string; salesSignedAt?: string; salesPaymentMethod?: string; contactPerson?: string; contactPhone?: string;
+  purchaseContactPerson?: string; purchaseContactPhone?: string; salesContactPerson?: string; salesContactPhone?: string;
   pricingType?: string; overfillPct?: string; shortfallPct?: string;
   deliveryMethod?: string; deliveryLocation?: string;
   settlementBasis?: string; prepayPct?: string; paymentDays?: number; paymentMethod?: string;
@@ -665,11 +667,21 @@ export default function ContractDetailPage() {
             <div className="rounded-lg border bg-muted/30 p-4 sm:col-span-3">
               <div className="mb-3 text-xs font-semibold text-muted-foreground">交易对手方与联系人</div>
               <div className={`grid grid-cols-1 gap-4 ${c.type === 'BILATERAL' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
-                <Field label={c.type === 'PURCHASE' ? '交易对手方（供应商）' : c.type === 'SALES' ? '交易对手方（客户）' : '上游交易对手方（供应商）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
-                {c.type === 'BILATERAL' && <Field label="下游交易对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />}
-                <Field label={c.type === 'BILATERAL' ? '本合同主要对接人' : '联系人'} value={c.contactPerson || '—'} />
-                <Field label="联系电话" value={c.contactPhone || '—'} />
+                {c.type === 'BILATERAL' ? <>
+                  <div className="space-y-4">
+                    <Field label="上游交易对手方（供应商）" value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2"><Field label="联系人" value={c.purchaseContactPerson || '—'} /><Field label="联系电话" value={c.purchaseContactPhone || '—'} /></div>
+                  </div>
+                  <div className="space-y-4">
+                    <Field label="下游交易对手方（客户）" value={c.buyer ? `${c.buyer.code} ${c.buyer.name}` : '—'} />
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2"><Field label="联系人" value={c.salesContactPerson || '—'} /><Field label="联系电话" value={c.salesContactPhone || '—'} /></div>
+                  </div>
+                </> : <>
+                  <Field label={c.type === 'PURCHASE' ? '交易对手方（供应商）' : '交易对手方（客户）'} value={c.seller ? `${c.seller.code} ${c.seller.name}` : '—'} />
+                  <Field label="联系人" value={c.contactPerson || '—'} /><Field label="联系电话" value={c.contactPhone || '—'} />
+                </>}
               </div>
+              {c.type === 'BILATERAL' && hasLegacyBilateralContact(c) && <p className="mt-4 text-sm text-muted-foreground">历史共用联系人（待核对）：{contactText(c.contactPerson, c.contactPhone)}</p>}
             </div>
             <Field label={c.type === 'BILATERAL' ? '采购金额（审批口径）' : '总金额'} value={<span className="text-lg font-bold text-primary">¥{Number(c.totalAmount).toLocaleString()}</span>} />
             {c.type === 'BILATERAL' && <Field label="销售金额" value={<span className="font-mono">¥{bilateralSalesAmount.toLocaleString()}</span>} />}

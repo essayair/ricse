@@ -19,6 +19,9 @@ import { confirmAction, promptAction } from '@/lib/system-dialog';
 import { QualityRulesEditor } from '@/components/contracts/quality-rules-editor';
 import { GradePriceRulesEditor, GradePriceSnapshot, defaultGradePriceSnapshot } from '@/components/contracts/grade-price-rules-editor';
 import { TaxPriceFields, pairFromInclusive } from '@/components/contracts/tax-price-fields';
+import { contactText, hasLegacyBilateralContact, partnerContactDefaults } from '@/lib/contract-contacts';
+import { PricingTypeSelect } from './pricing-type-select';
+import { editableGradePriceRule } from '@ricse/shared-types/contract-pricing-policy';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -108,12 +111,14 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ file: File; name: string; category?: string }>>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [removedRecoveryRule, setRemovedRecoveryRule] = useState(false);
 
   const [form, setForm] = useState({
     type: 'PURCHASE', title: '',
     signingPartnerId: '', departmentId: '', businessUnitId: '', externalNo: '',
     salesExternalNo: '', salesSignedAt: '', salesPaymentMethod: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
+    purchaseContactPerson: '', purchaseContactPhone: '', salesContactPerson: '', salesContactPhone: '',
     pricingType: 'FIXED', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
     signedAt: '', effectiveAt: '', expireAt: '',
@@ -130,6 +135,12 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
   const set = (k: string, v: string) => {
     setIsDirty(true);
     setForm(f => ({ ...f, [k]: v }));
+  };
+
+  const handleSelectPartner = (id: string, field: 'sellerId' | 'buyerId') => {
+    const partner = [...supplierPartners, ...customerPartners].find(item => item.id === id);
+    setIsDirty(true);
+    setForm(current => ({ ...current, [field]: id, ...partnerContactDefaults(current.type, field, partner) }));
   };
 
   useEffect(() => {
@@ -170,6 +181,10 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
         buyerId: contract.buyerId || '',
         contactPerson: contract.contactPerson || '',
         contactPhone: contract.contactPhone || '',
+        purchaseContactPerson: contract.purchaseContactPerson || '',
+        purchaseContactPhone: contract.purchaseContactPhone || '',
+        salesContactPerson: contract.salesContactPerson || '',
+        salesContactPhone: contract.salesContactPhone || '',
         pricingType: contract.pricingType || 'FIXED',
         overfillPct: contract.overfillPct ?? '10',
         shortfallPct: contract.shortfallPct ?? '10',
@@ -192,6 +207,7 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
         ? contract.draftData.lineItems
         : null;
       const restoredLines = rawDraftLines || contract.lineItems;
+      setRemovedRecoveryRule((restoredLines || []).some((line: any) => line.priceRulesSnapshot?.recoveryAdjustment || line.salesPriceRulesSnapshot?.recoveryAdjustment));
       if (restoredLines?.length > 0) {
         setLineItems(restoredLines.map((item: any) => ({
           materialId: item.materialId || '',
@@ -205,8 +221,8 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
           salesUnitPriceExTax: item.salesUnitPriceExTax == null ? '' : String(item.salesUnitPriceExTax),
           remarks: item.remarks || '',
           qualityRulesSnapshot: item.qualityRulesSnapshot || null,
-          priceRulesSnapshot: item.priceRulesSnapshot || null,
-          salesPriceRulesSnapshot: item.salesPriceRulesSnapshot || null,
+          priceRulesSnapshot: editableGradePriceRule(item.priceRulesSnapshot) || null,
+          salesPriceRulesSnapshot: editableGradePriceRule(item.salesPriceRulesSnapshot) || null,
         })));
       }
     }).catch(e => {
@@ -500,20 +516,24 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
 
           <SectionTitle>交易对手方</SectionTitle>
           {form.type === 'BILATERAL' ? (
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-3 rounded-lg border border-business-purchase-border bg-business-purchase-bg p-4">
                 <div className="text-xs font-bold tracking-wider text-business-purchase">上游交易对手方 · 供应商（采购端）</div>
                 <FormField label="上游供应商" required>
-                  <select value={form.sellerId} onChange={e => set('sellerId', e.target.value)} className={SELECT_CLS}>
+                  <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className={SELECT_CLS}>
                     <option value="">请选择</option>
                     {supplierPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
                   </select>
                 </FormField>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField label="联系人"><Input maxLength={100} value={form.purchaseContactPerson} onChange={e => set('purchaseContactPerson', e.target.value)} /></FormField>
+                  <FormField label="联系电话"><Input maxLength={50} value={form.purchaseContactPhone} onChange={e => set('purchaseContactPhone', e.target.value)} /></FormField>
+                </div>
               </div>
               <div className="space-y-3 rounded-lg border border-business-sales-border bg-business-sales-bg p-4">
                 <div className="text-xs font-bold tracking-wider text-business-sales">下游交易对手方 · 客户（销售端）</div>
                 <FormField label="下游客户" required>
-                  <select value={form.buyerId} onChange={e => set('buyerId', e.target.value)} className={SELECT_CLS}>
+                  <select value={form.buyerId} onChange={e => handleSelectPartner(e.target.value, 'buyerId')} className={SELECT_CLS}>
                     <option value="">请选择</option>
                     {customerPartners.map(p => {
                       const disabled = p.id === form.signingPartnerId || p.id === form.sellerId;
@@ -522,12 +542,16 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
                     })}
                   </select>
                 </FormField>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField label="联系人"><Input maxLength={100} value={form.salesContactPerson} onChange={e => set('salesContactPerson', e.target.value)} /></FormField>
+                  <FormField label="联系电话"><Input maxLength={50} value={form.salesContactPhone} onChange={e => set('salesContactPhone', e.target.value)} /></FormField>
+                </div>
               </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <FormField label={form.type === 'PURCHASE' ? '交易对手方（供应商）' : '交易对手方（客户）'} required>
-              <select value={form.sellerId} onChange={e => set('sellerId', e.target.value)} className={SELECT_CLS}>
+              <select value={form.sellerId} onChange={e => handleSelectPartner(e.target.value, 'sellerId')} className={SELECT_CLS}>
                 <option value="">请选择</option>
                 {(form.type === 'PURCHASE' ? supplierPartners : customerPartners).map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
               </select>
@@ -540,14 +564,8 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
             </FormField>
           </div>
           )}
-          {form.type === 'BILATERAL' && (
-            <>
-              <div className="mb-3 mt-4 text-xs font-medium text-muted-foreground">本合同主要对接人（可选）</div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                <FormField label="联系人"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></FormField>
-                <FormField label="联系电话"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></FormField>
-              </div>
-            </>
+          {form.type === 'BILATERAL' && hasLegacyBilateralContact(form) && (
+            <p className="mt-4 text-sm text-muted-foreground">历史共用联系人（待核对）：{contactText(form.contactPerson, form.contactPhone)}。请按实际归属填写至上游或下游。</p>
           )}
         </Card>
 
@@ -623,13 +641,10 @@ export default function ContractEditor({ copyMode = false }: { copyMode?: boolea
           </div>
 
           {/* 定价参数 */}
+          {removedRecoveryRule && <p className="mt-3 text-sm text-warning">回收率扣价已暂停启用，保存本合同后将移除原有回收率扣价条款。</p>}
           <div className="grid grid-cols-3 gap-x-6 gap-y-4 mt-4">
             <FormField label="定价类型" required>
-              <select value={form.pricingType} onChange={e => set('pricingType', e.target.value)} className={SELECT_CLS}>
-                <option value="FIXED">固定价格（一口价）</option>
-                <option value="GRADE_TIER">按 CaF₂ 品位分档计价</option>
-                {!['FIXED', 'GRADE_TIER'].includes(form.pricingType) && <option value={form.pricingType}>历史定价方式</option>}
-              </select>
+              <PricingTypeSelect value={form.pricingType} onChange={value => set('pricingType', value)} />
               {form.pricingType === 'GRADE_TIER' && <span className="text-xs text-warning">行项单价与总额仅作预计，实际按确认的品位档位结算。</span>}
             </FormField>
             <FormField label="溢装比例(%)" required>

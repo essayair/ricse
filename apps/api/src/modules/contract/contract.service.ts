@@ -4,6 +4,7 @@ import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractStatusDto } from './dto/update-status.dto';
 import { Prisma } from '@prisma/client';
 import { parseGradePriceRules } from './grade-price-rules';
+import { editableContractPricing, editableGradePriceRule, RECOVERY_ADJUSTMENT_ENTRY_ENABLED } from '@ricse/shared-types/contract-pricing-policy';
 import { normalizeUploadFilename } from '../common/filename-encoding';
 import { AccessControlService } from '../access-control/access-control.service';
 import { resolvePagination } from '../common/pagination';
@@ -425,6 +426,9 @@ export class ContractService {
     if (contract.pricingType === 'GRADE_TIER') {
       for (const [index, line] of contract.lineItems.entries()) {
         const validatePrice = (snapshot: unknown, direction: string) => {
+          if (!RECOVERY_ADJUSTMENT_ENTRY_ENABLED && (snapshot as any)?.recoveryAdjustment) {
+            throw new BadRequestException(`第${index + 1}项货物${direction}仍含已暂停的回收率扣价，请编辑并保存合同后再提交`);
+          }
           try { parseGradePriceRules(snapshot, { requireQuantityBasis: true }); }
           catch (error) {
             if (error instanceof BadRequestException) throw new BadRequestException(`第${index + 1}项货物${direction}品位价格：${error.message}`);
@@ -514,6 +518,7 @@ export class ContractService {
   }
 
   async create(dto: CreateContractDto, userId: string) {
+    dto = editableContractPricing(dto);
     const access = await this.accessControl.assertPermission(userId, 'contract.create');
     if (access.isExternal && dto.type === 'BILATERAL') {
       throw new ForbiddenException('双边合同由内部运营人员维护；外部企业仅可查看本方方向资料');
@@ -586,6 +591,10 @@ export class ContractService {
           salesPaymentMethod: dto.type === 'BILATERAL' ? dto.salesPaymentMethod : null,
           contactPerson: dto.contactPerson,
           contactPhone: dto.contactPhone,
+          purchaseContactPerson: dto.purchaseContactPerson,
+          purchaseContactPhone: dto.purchaseContactPhone,
+          salesContactPerson: dto.salesContactPerson,
+          salesContactPhone: dto.salesContactPhone,
           pricingType: dto.pricingType,
           overfillPct: dto.overfillPct ?? 10,
           shortfallPct: dto.shortfallPct ?? 10,
@@ -1446,6 +1455,8 @@ export class ContractService {
       signingPartnerId?: string | null; companyId?: string; departmentId?: string | null; businessUnitId?: string | null; externalNo?: string;
       salesExternalNo?: string; salesSignedAt?: string | null; salesPaymentMethod?: string;
       contactPerson?: string; contactPhone?: string;
+      purchaseContactPerson?: string; purchaseContactPhone?: string;
+      salesContactPerson?: string; salesContactPhone?: string;
       pricingType?: string; overfillPct?: number; shortfallPct?: number;
       deliveryMethod?: string; deliveryLocation?: string;
       signedAt?: string; effectiveAt?: string | null; expireAt?: string | null;
@@ -1472,6 +1483,7 @@ export class ContractService {
     if (contract.status !== 'DRAFT' && contract.status !== 'REJECTED') {
       throw new BadRequestException('仅草稿或已驳回状态的合同可以编辑');
     }
+    dto = editableContractPricing(dto);
 
     const resolvedSigningPartnerId = dto.signingPartnerId !== undefined
       ? dto.signingPartnerId || undefined
@@ -1549,6 +1561,17 @@ export class ContractService {
         }
       }
 
+      // 仅修改标题等字段时，也清除可编辑合同已有的暂停条款；已审批合同不会进入这里。
+      if (lineItems === undefined) {
+        for (const line of contract.lineItems) {
+          if ((line.priceRulesSnapshot as any)?.recoveryAdjustment || (line.salesPriceRulesSnapshot as any)?.recoveryAdjustment) {
+            await tx.contractLineItem.update({ where: { id: line.id }, data: {
+              priceRulesSnapshot: (editableGradePriceRule(line.priceRulesSnapshot) ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+              salesPriceRulesSnapshot: (editableGradePriceRule(line.salesPriceRulesSnapshot) ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+            } });
+          }
+        }
+      }
       return tx.contract.update({
         where: { id },
         data: {
@@ -1562,6 +1585,10 @@ export class ContractService {
           salesPaymentMethod: dto.salesPaymentMethod,
           contactPerson: dto.contactPerson,
           contactPhone: dto.contactPhone,
+          purchaseContactPerson: dto.purchaseContactPerson,
+          purchaseContactPhone: dto.purchaseContactPhone,
+          salesContactPerson: dto.salesContactPerson,
+          salesContactPhone: dto.salesContactPhone,
           pricingType: dto.pricingType,
           overfillPct: dto.overfillPct,
           shortfallPct: dto.shortfallPct,
@@ -1575,7 +1602,7 @@ export class ContractService {
           moistureRule: dto.moistureRule,
           impurityRule: dto.impurityRule,
           remarks: dto.remarks,
-          draftData: draftData as Prisma.InputJsonValue | undefined,
+          draftData: (draftData ?? (contract.draftData ? editableContractPricing(contract.draftData) : undefined)) as Prisma.InputJsonValue | undefined,
           seller: sellerId === undefined
             ? undefined
             : sellerId

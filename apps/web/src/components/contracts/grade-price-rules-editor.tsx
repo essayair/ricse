@@ -9,6 +9,7 @@ import type { MoisturePricingRule } from '@ricse/shared-types/moisture-pricing';
 import { applicableGradeSpecs, SPEC_LABELS, type GradeSpecRule } from '@ricse/shared-types/grade-price-spec';
 import { confirmAction } from '@/lib/system-dialog';
 import { parsePastedBands } from '@/lib/grade-price-paste';
+import { RECOVERY_ADJUSTMENT_ENTRY_ENABLED } from '@ricse/shared-types/contract-pricing-policy';
 
 type Spec = 'FRAGMENT' | 'RUN_OF_MINE';
 type GradeBand = { lower: number | null; upper: number | null; rates: { FRAGMENT: number | null; RUN_OF_MINE: number | null } };
@@ -124,13 +125,8 @@ export function GradePriceRulesEditor({ value, taxRate = '13', onChange, errors 
     </div>
     <button type="button" className="mt-3 rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={() => onChange({ ...rule, bands: [...rule.bands, emptyBand()] })}>添加品位区间</button>
     <div className="mt-4"><label className="text-sm font-medium">从表格粘贴价格<textarea className="mt-1 min-h-20 w-full rounded-md border bg-background p-2 text-sm font-normal" value={pastedText} onChange={event => { setPastedText(event.target.value); setPasteError(''); }} placeholder={'统一计价：下限　上限　统一单价；分别计价：下限　上限　碎屑价　统矿价\n例如：10\t15\t14.80'} /></label><p className="mt-1 text-xs text-muted-foreground">从 Excel 复制多行即可；按不含税元/度读取，填入后替换当前区间。</p>{pasteError && <p role="alert" className="mt-1 text-sm text-destructive">{pasteError}</p>}<button type="button" className="mt-2 rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={pasteBands}>解析并填入</button></div>
-    <div data-validation-field={`${prefix}.formulaConfirmed`} onBlur={() => touch('formulaConfirmed')} className={`mt-4 scroll-mt-28 rounded-md p-2 ${errorFor('formulaConfirmed') ? 'border border-destructive bg-destructive/5' : ''}`}>
-      <label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" aria-required aria-invalid={Boolean(errorFor('formulaConfirmed'))} checked={rule.formulaConfirmed} onChange={event => onChange({ ...rule, formulaConfirmed: event.target.checked })} /><span>我已确认品位分档规则、元/度口径及人工例外处理<span className="ml-0.5 text-destructive">*</span></span></label>
-      <p className="mt-1 text-xs text-muted-foreground">1度为1个百分点（37%按37度）；税前金额＝结算吨数×实测度数×档位价格，另计合同约定扣价。</p>
-      {errorFor('formulaConfirmed') && <p role="alert" className="mt-1 text-xs text-destructive">{errorFor('formulaConfirmed')}</p>}
-    </div>
-    <div data-validation-field={`${prefix}.recovery`} onBlur={() => touch('recovery')} className="scroll-mt-28"><RecoveryAdjustmentFields rule={rule} taxRate={taxRate} onChange={onChange} />{errorFor('recovery') && <p role="alert" className="mt-1 text-xs text-destructive">{errorFor('recovery')}</p>}</div>
-    <p className="mt-2 text-xs text-warning">CaF₂ 不在表内、水分超上限或证据缺失时，系统不自动计算正式结算金额，须人工确认合同处理方式。</p>
+    {RECOVERY_ADJUSTMENT_ENTRY_ENABLED && <div data-validation-field={`${prefix}.recovery`} onBlur={() => touch('recovery')} className="scroll-mt-28"><RecoveryAdjustmentFields rule={rule} taxRate={taxRate} onChange={onChange} />{errorFor('recovery') && <p role="alert" className="mt-1 text-xs text-destructive">{errorFor('recovery')}</p>}</div>}
+    <p className="mt-3 text-xs text-muted-foreground">品位越档、水分超质量上限或证据缺失时，结算需人工确认。</p>
   </div>;
 }
 

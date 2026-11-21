@@ -193,6 +193,18 @@ describe('ContractService', () => {
   });
 
   describe('create', () => {
+    it('新草稿无论客户端是否发送回收率，正式行和缓存都按未启用保存', async () => {
+      prisma.contract.count.mockResolvedValue(0);
+      prisma.contract.create.mockResolvedValue(mockContract as any);
+      const rules = { recoveryAdjustment: { baselinePct: 86 }, bands: [] };
+      await service.create({ title: '暂停回收率测试', type: 'PURCHASE', totalAmount: 100,
+        lineItems: [{ materialId: 'material-1', quantity: 1, unitPrice: 100, priceRulesSnapshot: rules }],
+        draftData: { lineItems: [{ priceRulesSnapshot: rules, salesPriceRulesSnapshot: rules }] },
+      }, 'user-1');
+      const data = prisma.contract.create.mock.calls[0][0]?.data as any;
+      expect(data.lineItems.create[0].priceRulesSnapshot).toEqual({ bands: [] });
+      expect(data.draftData.lineItems[0].salesPriceRulesSnapshot).toEqual({ bands: [] });
+    });
     it('允许将尚未选择主体和货物的表单保存为草稿', async () => {
       prisma.contract.count.mockResolvedValue(0);
       prisma.contract.create.mockResolvedValue({
@@ -253,6 +265,8 @@ describe('ContractService', () => {
         signingPartnerId: 'internal-1',
         sellerId: 'supplier-1',
         buyerId: 'customer-1',
+        purchaseContactPerson: '上游对接人', purchaseContactPhone: '0570-1111111',
+        salesContactPerson: '下游对接人', salesContactPhone: '13900000000',
         totalAmount: 50000,
         lineItems: [{
           materialId: 'material-1', quantity: 100, unitPrice: 500, salesUnitPrice: 650,
@@ -270,6 +284,8 @@ describe('ContractService', () => {
               salesTotalPrice: 65000,
             })],
           },
+          purchaseContactPerson: '上游对接人', purchaseContactPhone: '0570-1111111',
+          salesContactPerson: '下游对接人', salesContactPhone: '13900000000',
         }),
       }));
     });
@@ -339,6 +355,30 @@ describe('ContractService', () => {
   });
 
   describe('update', () => {
+    it('仅修改草稿标题也会清除原行和缓存中的回收率，已审批合同仍不可编辑', async () => {
+      const rules = { recoveryAdjustment: { baselinePct: 86 }, bands: [] };
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, lineItems: [{ ...mockContract.lineItems[0], id: 'old-line', priceRulesSnapshot: rules, salesPriceRulesSnapshot: rules }], draftData: { lineItems: [{ priceRulesSnapshot: rules }] } } as any);
+      prisma.contract.update.mockResolvedValue(mockContract as any);
+      accessControl.getBusinessUnitOptions.mockResolvedValue([{ id: 'bu-1', isDefault: true }] as any);
+      await service.update('test-id', { title: '修改标题' }, 'user-1');
+      expect(prisma.contractLineItem.update).toHaveBeenCalledWith({ where: { id: 'old-line' }, data: { priceRulesSnapshot: { bands: [] }, salesPriceRulesSnapshot: { bands: [] } } });
+      expect((prisma.contract.update.mock.calls[0][0]?.data as any).draftData.lineItems[0].priceRulesSnapshot).toEqual({ bands: [] });
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'EXECUTING' } as any);
+      await expect(service.update('test-id', { title: '不得修改' }, 'user-1')).rejects.toThrow('仅草稿或已驳回');
+    });
+    it('双边联系人可独立修改和清空，不把历史共用联系人自动归到任意一侧', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ ...mockContract, type: 'BILATERAL', contactPerson: '历史共用联系人' } as any);
+      prisma.contract.update.mockResolvedValue(mockContract as any);
+      accessControl.getBusinessUnitOptions.mockResolvedValue([{ id: 'bu-1', isDefault: true }] as any);
+      await service.update('test-id', {
+        purchaseContactPerson: '', purchaseContactPhone: '',
+        salesContactPerson: '新下游联系人', salesContactPhone: '13900000000',
+      }, 'user-1');
+      expect(prisma.contract.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+        purchaseContactPerson: '', purchaseContactPhone: '', salesContactPerson: '新下游联系人', salesContactPhone: '13900000000', contactPerson: undefined,
+      }) }));
+    });
+
     it('已驳回合同可在原单据编辑保存，不另建合同、不抹去驳回状态和审批记录', async () => {
       prisma.contract.findFirst.mockResolvedValue({ ...mockContract, status: 'REJECTED' } as any);
       prisma.contract.update.mockResolvedValue({ ...mockContract, title: '驳回后修订', status: 'REJECTED' } as any);

@@ -17,6 +17,6 @@ export function BilateralPriceTools({ purchase, sales, onCopy }: { purchase?: Gr
   }}>复制采购档位至销售</Button>}</div>
     {JSON.stringify(applicableGradeSpecs(purchase)) !== JSON.stringify(applicableGradeSpecs(sales)) && <p className="text-sm text-warning">采销适用规格不同，直拨车辆规格必须同时满足两侧条款。</p>}
     <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-sm"><thead className="border-b text-left text-muted-foreground"><tr><th className="p-2">规格</th><th className="p-2">CaF₂区间（%）</th><th className="p-2">采购元/度</th><th className="p-2">销售元/度</th><th className="p-2">差价</th></tr></thead><tbody>{ranges.map(r => <tr key={`${r.spec}-${r.lower}`} className="border-b last:border-0"><td className="p-2">{SPEC_LABELS[r.spec]}</td><td className="p-2">{r.lower} ≤ CaF₂ &lt; {r.upper}</td><td className="p-2">{r.purchase ?? '待填'}</td><td className="p-2">{r.sales ?? '待填'}</td><td className={`p-2 ${r.purchase != null && r.sales != null && r.sales < r.purchase ? 'text-destructive' : ''}`}>{r.purchase == null || r.sales == null ? '—' : (r.sales - r.purchase).toFixed(4)}</td></tr>)}</tbody></table></div>
-    <p className="text-xs text-muted-foreground">不含税元/度，未计入回收率扣价、水分及其他费用。</p>
+    <p className="text-xs text-muted-foreground">不含税元/度，未计入{purchase?.recoveryAdjustment || sales?.recoveryAdjustment ? '回收率扣价、' : ''}水分及其他费用。</p>
   </div>;
 }

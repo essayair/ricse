@@ -24,7 +24,7 @@ export type GradePriceRules = MoisturePricingRule & GradeSpecRule & {
   moistureMaxPct: number | null;
   bands: GradePriceBand[];
   exceptionHandling: 'MANUAL_REVIEW';
-  formulaConfirmed: true;
+  formulaConfirmed?: boolean; // 历史字段兼容，不再以人工勾选作为规则有效性条件
   recoveryAdjustment?: RecoveryAdjustmentRule | null;
 };
 type Indicator = { code?: string; name?: string; unit?: string | null; measuredValue?: unknown };
@@ -65,9 +65,6 @@ export function parseGradePriceRules(value: unknown, options: { requireQuantityB
   }
   if (rules.exceptionHandling !== 'MANUAL_REVIEW') {
     throw new BadRequestException('人工例外处理规则缺失，请重新保存品位价格条款');
-  }
-  if (rules.formulaConfirmed !== true) {
-    throw new BadRequestException('请勾选确认品位分档规则、元/度口径及人工例外处理');
   }
   let previousUpper: number | null = null;
   for (const [index, band] of rules.bands.entries()) {

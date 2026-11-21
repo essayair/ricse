@@ -1,6 +1,7 @@
 'use client';
 
 import { attachmentCategoryLabel } from '@/lib/attachment-file';
+import { contactText, hasLegacyBilateralContact } from '@/lib/contract-contacts';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -36,6 +37,10 @@ interface ContractPrintDetail {
   totalAmount: string;
   contactPerson?: string | null;
   contactPhone?: string | null;
+  purchaseContactPerson?: string | null;
+  purchaseContactPhone?: string | null;
+  salesContactPerson?: string | null;
+  salesContactPhone?: string | null;
   pricingType?: string | null;
   overfillPct?: string | null;
   shortfallPct?: string | null;
@@ -176,7 +181,11 @@ export default function ContractPrintPage() {
           <Meta label="我方签约主体（内部）" value={partnerText(internalParty)} span={2} />
           <Meta label={item.type === 'PURCHASE' ? '交易对手方（供应商）' : item.type === 'SALES' ? '交易对手方（客户）' : '上游交易对手方（供应商）'} value={partnerText(item.seller)} />
           <Meta label={item.type === 'BILATERAL' ? '下游交易对手方（客户）' : '联系人及电话'} value={item.type === 'BILATERAL' ? partnerText(item.buyer) : `${item.contactPerson || '—'}${item.contactPhone ? ` / ${item.contactPhone}` : ''}`} />
-          {item.type === 'BILATERAL' && <Meta label="联系人及电话" value={`${item.contactPerson || '—'}${item.contactPhone ? ` / ${item.contactPhone}` : ''}`} span={2} />}
+          {item.type === 'BILATERAL' && <>
+            <Meta label="上游联系人及电话" value={contactText(item.purchaseContactPerson, item.purchaseContactPhone)} />
+            <Meta label="下游联系人及电话" value={contactText(item.salesContactPerson, item.salesContactPhone)} />
+            {hasLegacyBilateralContact(item) && <Meta label="历史共用联系人（待核对）" value={contactText(item.contactPerson, item.contactPhone)} span={2} />}
+          </>}
           <Meta label="签订日期" value={day(item.signedAt)} />
           <Meta label="生效日期" value={day(item.effectiveAt)} />
           <Meta label="到期日期" value={day(item.expireAt)} />

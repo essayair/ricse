@@ -18,6 +18,8 @@ import { TaxPriceFields, pairFromInclusive } from '@/components/contracts/tax-pr
 import { alertValidationErrors, confirmAction } from '@/lib/system-dialog';
 import { focusInvalidField, type FieldErrors } from '@/lib/form-validation';
 import { gradePriceRuleErrors } from '@/lib/grade-price-validation';
+import { partnerContactDefaults } from '@/lib/contract-contacts';
+import { PricingTypeSelect } from '@/components/contracts/pricing-type-select';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b pb-2 mb-4 mt-6 first:mt-0">{children}</div>;
@@ -96,6 +98,7 @@ export default function ContractCreatePage() {
     signingPartnerId: '', departmentId: '', businessUnitId: '', externalNo: '',
     salesExternalNo: '', salesSignedAt: '', salesPaymentMethod: '',
     sellerId: '', buyerId: '', contactPerson: '', contactPhone: '',
+    purchaseContactPerson: '', purchaseContactPhone: '', salesContactPerson: '', salesContactPhone: '',
     materialId: '', materialName: '', quantity: '', unit: 'TON',
     pricingType: 'FIXED', unitPrice: '', unitPriceExTax: '', saleUnitPrice: '', saleUnitPriceExTax: '', taxRatePct: '13', overfillPct: '10', shortfallPct: '10',
     deliveryMethod: '', deliveryLocation: '',
@@ -150,10 +153,10 @@ export default function ContractCreatePage() {
   const profit = saleAmount - purchaseAmount;
 
 
-  const handleSelectPartner = (id: string, field: string) => {
-    set(field, id);
+  const handleSelectPartner = (id: string, field: 'sellerId' | 'buyerId') => {
     const p = allPartners.find(x => x.id === id);
-    if (p) { set('contactPerson', p.contactPerson || ''); set('contactPhone', p.contactPhone || ''); }
+    setIsDirty(true);
+    setForm(current => ({ ...current, [field]: id, ...partnerContactDefaults(current.type, field, p) }));
   };
 
   const handleSelectMaterial = (id: string) => {
@@ -187,6 +190,10 @@ export default function ContractCreatePage() {
     salesSignedAt: form.type === 'BILATERAL' ? form.salesSignedAt || undefined : undefined,
     salesPaymentMethod: form.type === 'BILATERAL' ? form.salesPaymentMethod || undefined : undefined,
     contactPerson: form.contactPerson || undefined, contactPhone: form.contactPhone || undefined,
+    ...(form.type === 'BILATERAL' ? {
+      purchaseContactPerson: form.purchaseContactPerson, purchaseContactPhone: form.purchaseContactPhone,
+      salesContactPerson: form.salesContactPerson, salesContactPhone: form.salesContactPhone,
+    } : {}),
     pricingType: form.pricingType,
     overfillPct: form.overfillPct === '' ? undefined : Number(form.overfillPct),
     shortfallPct: form.shortfallPct === '' ? undefined : Number(form.shortfallPct),
@@ -441,7 +448,7 @@ export default function ContractCreatePage() {
           <SectionTitle>交易对手方</SectionTitle>
           {form.type === 'BILATERAL' ? (
             <>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div className="space-y-3 rounded-lg border border-business-purchase-border bg-business-purchase-bg p-4">
                   <div className="text-xs font-bold tracking-wider text-business-purchase">上游交易对手方 · 供应商（采购端）</div>
                   <FormField label="上游供应商" required>
@@ -450,6 +457,10 @@ export default function ContractCreatePage() {
                       {supplierPartners.map(p => <option key={p.id} value={p.id} disabled={p.id === form.signingPartnerId}>{p.code} {p.name}{p.id === form.signingPartnerId ? '（我方）' : ''}</option>)}
                     </select>
                   </FormField>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <FormField label="联系人"><Input maxLength={100} value={form.purchaseContactPerson} onChange={e => set('purchaseContactPerson', e.target.value)} /></FormField>
+                    <FormField label="联系电话"><Input maxLength={50} value={form.purchaseContactPhone} onChange={e => set('purchaseContactPhone', e.target.value)} /></FormField>
+                  </div>
                 </div>
                 <div className="space-y-3 rounded-lg border border-business-sales-border bg-business-sales-bg p-4">
                   <div className="text-xs font-bold tracking-wider text-business-sales">下游交易对手方 · 客户（销售端）</div>
@@ -463,12 +474,11 @@ export default function ContractCreatePage() {
                       })}
                     </select>
                   </FormField>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <FormField label="联系人"><Input maxLength={100} value={form.salesContactPerson} onChange={e => set('salesContactPerson', e.target.value)} /></FormField>
+                    <FormField label="联系电话"><Input maxLength={50} value={form.salesContactPhone} onChange={e => set('salesContactPhone', e.target.value)} /></FormField>
+                  </div>
                 </div>
-              </div>
-              <div className="mt-4 text-xs font-medium text-muted-foreground">本合同主要对接人（可选）</div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-4 mt-4">
-                <FormField label="联系人"><Input value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} /></FormField>
-                <FormField label="联系电话"><Input value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} /></FormField>
               </div>
             </>
           ) : (
@@ -498,7 +508,7 @@ export default function ContractCreatePage() {
               </select>
             </FormField>
             <FormField label="合同数量（吨）" required><Input type="number" value={form.quantity} onChange={e => set('quantity', e.target.value)} step="0.001" /></FormField>
-            <FormField label="定价类型" required><select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.pricingType} onChange={e => { set('pricingType', e.target.value); if (e.target.value === 'GRADE_TIER') { if (!gradePriceSnapshot) setGradePriceSnapshot(defaultGradePriceSnapshot); if (!gradeSalesPriceSnapshot) setGradeSalesPriceSnapshot(defaultGradePriceSnapshot); } }}><option value="FIXED">固定价格（一口价）</option><option value="GRADE_TIER">按 CaF₂ 品位分档计价</option></select></FormField>
+            <FormField label="定价类型" required><PricingTypeSelect value={form.pricingType} onChange={value => { set('pricingType', value); if (value === 'GRADE_TIER') { if (!gradePriceSnapshot) setGradePriceSnapshot(defaultGradePriceSnapshot); if (!gradeSalesPriceSnapshot) setGradeSalesPriceSnapshot(defaultGradePriceSnapshot); } }} /></FormField>
             <FormField label="增值税率（%）" required><Input type="number" min="0" max="100" step="0.01" value={form.taxRatePct} onChange={e => set('taxRatePct', e.target.value)} /></FormField>
             <FormField label="溢装比例(%)" required><Input type="number" min="0" max="100" step="0.01" value={form.overfillPct} onChange={e => set('overfillPct', e.target.value)} /></FormField>
             <FormField label="短装比例(%)" required><Input type="number" min="0" max="100" step="0.01" value={form.shortfallPct} onChange={e => set('shortfallPct', e.target.value)} /></FormField>

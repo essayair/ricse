@@ -1,5 +1,8 @@
+import { editableGradePriceRule } from '@ricse/shared-types/contract-pricing-policy';
+
 const FORM_FIELDS = [
   'type', 'title', 'signingPartnerId', 'sellerId', 'buyerId', 'businessUnitId', 'contactPerson', 'contactPhone',
+  'purchaseContactPerson', 'purchaseContactPhone', 'salesContactPerson', 'salesContactPhone',
   'pricingType', 'overfillPct', 'shortfallPct', 'deliveryMethod', 'deliveryLocation', 'settlementMethod', 'settlementBasis',
   'prepayPct', 'paymentDays', 'paymentMethod', 'salesPaymentMethod', 'moistureRule', 'impurityRule', 'remarks',
 ] as const;
@@ -27,12 +30,13 @@ export function buildContractCopyTemplate(source: any, defaults: { departmentId?
     const result: Record<string, any> = pickScalar(line, LINE_FIELDS);
     result.qualityRulesSnapshot = clone(line.qualityRulesSnapshot);
     for (const field of ['priceRulesSnapshot', 'salesPriceRulesSnapshot']) {
-      result[field] = line[field] ? { ...clone(line[field]), formulaConfirmed: false } : null;
+      result[field] = line[field] ? editableGradePriceRule({ ...clone(line[field]), formulaConfirmed: false }) : null;
     }
     return result;
   });
   return {
     ...form, status: 'DRAFT', lineItems, draftData: { form, lineItems }, attachments: [],
-    copySource: { id: source.id, contractNo: source.contractNo }, warnings: [] as string[],
+    copySource: { id: source.id, contractNo: source.contractNo }, warnings: rawLines.some((line: any) => line?.priceRulesSnapshot?.recoveryAdjustment || line?.salesPriceRulesSnapshot?.recoveryAdjustment)
+      ? ['回收率扣价已暂停启用，新合同不复制该条款；原合同保持不变。'] : [] as string[],
   };
 }

@@ -171,6 +171,22 @@ export class CreateContractDto {
   @IsOptional() @IsString()
   contactPhone?: string;
 
+  @ApiPropertyOptional({ description: '双边合同上游供应商联系人' })
+  @IsOptional() @IsString() @MaxLength(100)
+  purchaseContactPerson?: string;
+
+  @ApiPropertyOptional({ description: '双边合同上游供应商联系电话' })
+  @IsOptional() @IsString() @MaxLength(50)
+  purchaseContactPhone?: string;
+
+  @ApiPropertyOptional({ description: '双边合同下游客户联系人' })
+  @IsOptional() @IsString() @MaxLength(100)
+  salesContactPerson?: string;
+
+  @ApiPropertyOptional({ description: '双边合同下游客户联系电话' })
+  @IsOptional() @IsString() @MaxLength(50)
+  salesContactPhone?: string;
+
   // 货物与价格
   @ApiPropertyOptional({ description: '定价类型' })
   @IsOptional() @IsString()

@@ -969,6 +969,10 @@ model Contract {
   // 对手方
   contactPerson    String? // 对手方联系人
   contactPhone     String? // 对手方电话
+  purchaseContactPerson String? // 双边合同上游供应商联系人
+  purchaseContactPhone  String? // 双边合同上游供应商电话
+  salesContactPerson    String? // 双边合同下游客户联系人
+  salesContactPhone     String? // 双边合同下游客户电话
   // 货物与价格
   pricingType      String? // 定价类型：FIXED（固定价/一口价）| GRADE_TIER（按 CaF₂ 品位分档计价）
   overfillPct      Decimal?  @default(10) @db.Decimal(5, 2) // 溢装比例(%)，默认10%

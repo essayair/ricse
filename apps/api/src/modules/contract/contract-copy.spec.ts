@@ -26,6 +26,15 @@ describe('合同复制白名单与重置', () => {
   it('来源事业部不在创建范围时改当前默认，不沿用旧部门', () => {
     expect(buildContractCopyTemplate({ ...source(), businessUnitId: 'forbidden' }, defaults)).toMatchObject({ businessUnitId: 'my-unit', departmentId: 'my-dept' });
   });
+  it('复制时分别带入两侧联系人，历史共用信息不推断归属', () => {
+    const contacts = { purchaseContactPerson: '供方', purchaseContactPhone: '0570-1111111', salesContactPerson: '客户', salesContactPhone: '13900000000' };
+    expect(buildContractCopyTemplate({ ...source(), ...contacts }, defaults)).toMatchObject(contacts);
+    const legacy = buildContractCopyTemplate({ ...source(), contactPerson: '旧共用联系人', contactPhone: '123' }, defaults);
+    expect(legacy).toMatchObject({ contactPerson: '旧共用联系人', contactPhone: '123' });
+    expect(legacy).not.toHaveProperty('purchaseContactPerson');
+    expect(legacy).not.toHaveProperty('salesContactPerson');
+    expect(buildContractCopyTemplate({ ...source(), status: 'DRAFT', draftData: { form: contacts } }, defaults).draftData.form).toMatchObject(contacts);
+  });
   it('草稿恢复已保存但不完整的多行原值，不能让旧日期和原附件混入', () => {
     const copied = buildContractCopyTemplate({ ...source(), status: 'DRAFT', draftData: { form: { title: '尚未填完', externalNo: 'BAD', departmentId: 'old', signedAt: '2026-01-01', createdBy: 'hacker' }, lineItems: [{ materialId: '', quantity: '', unitPrice: '' }] } }, defaults);
     expect(copied).toMatchObject({ title: '尚未填完（副本）', departmentId: 'my-dept', externalNo: '', signedAt: '', lineItems: [{ materialId: '', quantity: '', unitPrice: '' }] });
